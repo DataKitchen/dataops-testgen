@@ -143,7 +143,15 @@ SELECT *
 -- TG-IF is_not_A
 SELECT
   COUNT("{COL_NAME}") AS value_ct,
+-- TG-ENDIF
+-- TG-IF is_distinct_countable
   COUNT(DISTINCT "{COL_NAME}") AS distinct_value_ct,
+-- TG-ENDIF
+-- TG-IF is_X_text_counted
+  -- An X type may have no equality operator (json, xml), so it is counted by its text form
+  COUNT(DISTINCT CAST("{COL_NAME}" AS TEXT)) AS distinct_value_ct,
+-- TG-ENDIF
+-- TG-IF is_not_A
   SUM(CASE WHEN "{COL_NAME}" IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
 -- TG-ENDIF
 -- TG-IF is_type_DN

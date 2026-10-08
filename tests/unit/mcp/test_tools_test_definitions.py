@@ -5,7 +5,7 @@ import pytest
 
 from testgen.common.custom_test_validation import CustomQueryResult
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY
-from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote
+from testgen.common.models.test_definition import ManagedTestDefinitionError, TestDefinition, TestDefinitionNote
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.tools.test_definitions import _DELETED_LISTING_LIMIT
 from tests.unit.sql_assertions import emitted_statements, scopes_to_a_version
@@ -1850,6 +1850,21 @@ def test_delete_tests_by_ids_reports_what_went(mock_list, _mock_notes, mock_dele
     assert sorted(_deleted_ids(mock_delete), key=str) == sorted([first, second], key=str)
 
 
+@patch.object(TestDefinition, "delete_where", side_effect=ManagedTestDefinitionError())
+@patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
+@patch.object(TestDefinition, "list_for_ids")
+def test_delete_tests_refuses_a_managed_test_as_a_user_error(
+    mock_list, _mock_notes, _mock_delete, db_session_mock
+):
+    test_id = uuid4()
+    mock_list.return_value = [_make_td_minimal(table_name="orders", column_name=None, test_id=test_id)]
+
+    from testgen.mcp.tools.test_definitions import delete_tests
+
+    with pytest.raises(MCPUserError, match="TestGen manages this test"):
+        delete_tests(test_definition_ids=[str(test_id)])
+
+
 @patch.object(TestDefinition, "delete_where")
 @patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
 @patch.object(TestDefinition, "list_for_ids")
@@ -2146,7 +2161,10 @@ def test_delete_tests_deletes_only_within_the_resolved_version(
 
     from testgen.mcp.tools.test_definitions import delete_tests
 
-    with patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={}):
+    with (
+        patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={}),
+        patch.object(TestDefinition, "_assert_no_managed_definitions"),
+    ):
         delete_tests(test_suite_id=str(uuid4()))
 
     deletes = [s for s in emitted_statements(session) if str(s).lstrip().lower().startswith("delete")]

@@ -19,6 +19,25 @@ SELECT
                     || CAST(c.numeric_scale AS VARCHAR) || ')', '')
            ELSE c.data_type
        END AS db_data_type,
+       CASE
+           WHEN LOWER(c.data_type) IN ('bigint', 'integer', 'smallint')
+               OR (c.data_type = 'numeric' AND c.numeric_scale = 0)
+               THEN 'integer'
+           WHEN LOWER(c.data_type) IN ('double precision', 'real', 'numeric')
+               THEN 'number'
+           WHEN c.data_type ILIKE 'char%' OR c.data_type = 'binary varying'
+               THEN 'string'
+           WHEN c.data_type = 'boolean'
+               THEN 'boolean'
+           WHEN c.data_type ILIKE 'date'
+               THEN 'date'
+           WHEN c.data_type ILIKE 'timestamp%'
+               THEN 'timestamp'
+           WHEN c.data_type ILIKE 'time with%'
+               THEN 'time'
+           WHEN c.data_type = 'super'
+               THEN 'object'
+       END AS logical_type,
        c.ordinal_position,
        CASE
            WHEN c.data_type ILIKE 'char%'

@@ -23,13 +23,34 @@ SELECT
            ELSE c.data_type END AS column_type,
        CASE
            WHEN c.data_type LIKE '%char' OR c.data_type LIKE '%binary'
-               THEN c.data_type + COALESCE('(' + CAST(c.character_maximum_length AS VARCHAR) + ')', '')
+               THEN c.data_type + COALESCE('(' + CASE WHEN c.character_maximum_length = -1 THEN 'max'
+                                                       ELSE CAST(c.character_maximum_length AS VARCHAR) END + ')', '')
            WHEN c.data_type IN ('datetime2', 'datetimeoffset', 'time')
                THEN c.data_type + COALESCE('(' + CAST(c.datetime_precision AS VARCHAR) + ')', '')
            WHEN c.data_type IN ('numeric', 'decimal')
                THEN c.data_type + COALESCE('(' + CAST(c.numeric_precision AS VARCHAR) + ','
                    + CAST(c.numeric_scale AS VARCHAR) + ')', '')
        ELSE c.data_type END AS db_data_type,
+       CASE
+           WHEN c.data_type LIKE '%int'
+               OR (c.data_type IN ('decimal', 'numeric') AND c.numeric_scale = 0)
+               THEN 'integer'
+           WHEN c.data_type IN ('real', 'float', 'decimal', 'numeric')
+               OR c.data_type LIKE '%money'
+               THEN 'number'
+           WHEN LOWER(c.data_type) LIKE '%char%'
+               OR c.data_type LIKE '%binary'
+               OR c.data_type IN ('text', 'ntext', 'image', 'uniqueidentifier', 'xml')
+               THEN 'string'
+           WHEN c.data_type = 'bit'
+               THEN 'boolean'
+           WHEN c.data_type = 'date'
+               THEN 'date'
+           WHEN c.data_type LIKE '%datetime%'
+               THEN 'timestamp'
+           WHEN c.data_type = 'time'
+               THEN 'time'
+       END AS logical_type,
        c.ordinal_position,
        CASE
            WHEN LOWER(c.data_type) LIKE '%char%'

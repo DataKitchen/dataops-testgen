@@ -25,8 +25,9 @@ CREATE TABLE stg_data_chars_updates (
    column_name           VARCHAR(120),
    position              INTEGER,
    general_type          VARCHAR(1),
-   column_type           VARCHAR(50),
-   db_data_type          VARCHAR(50),
+   column_type           VARCHAR,
+   db_data_type          VARCHAR,
+   logical_type          VARCHAR(20),
    is_decimal            BOOLEAN,
    object_type           VARCHAR(20),
    approx_record_ct      BIGINT,
@@ -307,8 +308,8 @@ CREATE TABLE profile_results (
    table_name            VARCHAR(120),
    position              INTEGER,
    column_name           VARCHAR(120),
-   column_type           VARCHAR(50),
-   db_data_type          VARCHAR(50),
+   column_type           VARCHAR,
+   db_data_type          VARCHAR,
    general_type          VARCHAR(1),
    record_ct             BIGINT,
    value_ct              BIGINT,
@@ -402,8 +403,8 @@ CREATE TABLE profile_anomaly_results (
    schema_name     VARCHAR(50),
    table_name      VARCHAR(120),
    column_name     VARCHAR(500),
-   column_type     VARCHAR(50),
-   db_data_type    VARCHAR(50),
+   column_type     VARCHAR,
+   db_data_type    VARCHAR,
    anomaly_id      VARCHAR(10),
    detail          VARCHAR,
    disposition     VARCHAR(20), -- Confirmed, Dismissed, Inactive
@@ -423,8 +424,8 @@ CREATE TABLE data_structure_log (
    column_name       VARCHAR(120),
    change_date       TIMESTAMP,
    change            VARCHAR(10),
-   old_data_type     VARCHAR(50),
-   new_data_type     VARCHAR(50)
+   old_data_type     VARCHAR,
+   new_data_type     VARCHAR
 );
 
 CREATE TABLE data_table_chars (
@@ -472,8 +473,9 @@ CREATE TABLE data_column_chars (
    column_name            VARCHAR(120),
    ordinal_position       INTEGER,
    general_type           VARCHAR(1),
-   column_type            VARCHAR(50),
-   db_data_type           VARCHAR(50),
+   column_type            VARCHAR,
+   db_data_type           VARCHAR,
+   logical_type           VARCHAR(20),
    is_decimal             BOOLEAN,
    functional_data_type   VARCHAR(50),
    description            VARCHAR(1000),

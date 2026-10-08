@@ -31,6 +31,27 @@ SELECT
            WHEN c.data_type LIKE 'ENUM(%' THEN 'ENUM'
            ELSE REPLACE(c.data_type, '''', '')
        END AS db_data_type,
+       CASE
+           WHEN c.data_type LIKE '%]' THEN 'array'
+           WHEN c.data_type LIKE 'STRUCT(%' OR c.data_type = 'JSON' THEN 'object'
+           WHEN c.data_type LIKE 'MAP(%' THEN 'map'
+           -- FLOAT and DOUBLE report a scale of 0 like the integer types do
+           WHEN c.data_type IN ('UTINYINT', 'USMALLINT', 'UINTEGER', 'UBIGINT', 'UHUGEINT', 'BIGNUM')
+                OR (c.numeric_scale = 0 AND c.data_type NOT IN ('FLOAT', 'DOUBLE'))
+               THEN 'integer'
+           WHEN c.numeric_precision IS NOT NULL
+               THEN 'number'
+           WHEN c.data_type IN ('VARCHAR', 'UUID', 'BLOB') OR c.data_type LIKE 'ENUM(%'
+               THEN 'string'
+           WHEN c.data_type = 'BOOLEAN'
+               THEN 'boolean'
+           WHEN c.data_type = 'DATE'
+               THEN 'date'
+           WHEN c.data_type IN ('TIMESTAMP', 'TIMESTAMP WITH TIME ZONE', 'TIMESTAMP_S', 'TIMESTAMP_MS', 'TIMESTAMP_NS')
+               THEN 'timestamp'
+           WHEN c.data_type IN ('TIME', 'TIME WITH TIME ZONE', 'TIME_NS')
+               THEN 'time'
+       END AS logical_type,
        c.ordinal_position,
        CASE
            WHEN c.data_type LIKE '%]'

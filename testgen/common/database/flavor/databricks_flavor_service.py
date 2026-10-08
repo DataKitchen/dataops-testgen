@@ -13,6 +13,8 @@ class DatabricksFlavorService(FlavorService):
 
     supports_approx_percentile = True
 
+    distinct_countable_x_types = frozenset({"binary"})
+
     def get_pre_connection_queries(self, params: ResolvedConnectionParams) -> list[tuple[str, dict | None]]:
         if params.dbname:
             return [(f"USE CATALOG `{params.dbname}`", None)]

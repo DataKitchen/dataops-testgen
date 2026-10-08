@@ -166,7 +166,15 @@ SELECT *
 -- TG-IF is_not_A
 SELECT
   COUNT(`{COL_NAME}`) AS value_ct,
+-- TG-ENDIF
+-- TG-IF is_distinct_countable
   COUNT(DISTINCT `{COL_NAME}`) AS distinct_value_ct,
+-- TG-ENDIF
+-- TG-IF is_X_text_counted
+  -- An X type may have no equality operator (JSON, STRUCT, ARRAY), so it is counted by its text form
+  COUNT(DISTINCT TO_JSON_STRING(`{COL_NAME}`)) AS distinct_value_ct,
+-- TG-ENDIF
+-- TG-IF is_not_A
   SUM(IF(`{COL_NAME}` IS NULL, 1, 0)) AS null_value_ct,
 -- TG-ENDIF
 -- TG-IF is_type_DN

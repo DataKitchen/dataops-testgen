@@ -13,7 +13,7 @@ import yaml
 from sqlalchemy import asc, delete, func, select
 from sqlalchemy.orm.attributes import flag_modified
 
-from testgen.commands.test_generation import run_test_generation
+from testgen.commands.test_generation import run_conformance_generation, run_test_generation
 from testgen.common.enums import SuiteType
 from testgen.common.generation_set_service import CONTRACT_GENERATION_SET
 from testgen.common.models import get_current_session
@@ -21,7 +21,7 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestDefinition
+from testgen.common.models.test_definition import MANAGED_TEST_TYPES, TestDefinition
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.odcs import render, serialize
 from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, build_server_block
@@ -142,7 +142,10 @@ def discard_draft(suite: TestSuite) -> int:
 
     session = get_current_session()
     term_count = session.scalar(
-        select(func.count()).select_from(TestDefinition).where(TestDefinition.version_id == draft.id)
+        select(func.count()).select_from(TestDefinition).where(
+            TestDefinition.version_id == draft.id,
+            TestDefinition.test_type.not_in(MANAGED_TEST_TYPES),
+        )
     ) or 0
     session.delete(draft)
     session.flush()
@@ -150,11 +153,19 @@ def discard_draft(suite: TestSuite) -> int:
 
 
 def save_metadata_document(suite: TestSuite, document: dict) -> UUID:
-    """Write the document to the suite's draft, creating the draft when there is none."""
+    """Write the document to the suite's draft, creating the draft when there is none.
+
+    Commits the session, then reconciles the draft's Schema Conformance tests with the tables
+    the document declares. Returns the draft's version id.
+    """
     version_id, _ = resolve_write_target(suite)
     version = SuiteVersion.get(version_id)
     version.metadata_document = document
-    get_current_session().flush()
+    flag_modified(version, "metadata_document")
+    session = get_current_session()
+    session.commit()
+    run_conformance_generation(suite.id)
+    TestDefinition.assign_missing_term_ids(version_id)
     return version_id
 
 
@@ -191,33 +202,6 @@ def initialize_contract(
     return draft
 
 
-# ODCS SchemaBaseProperty.logicalType is one of: string, date, timestamp, time, number,
-# integer, object, array, boolean, map, vector. "Other" is the one profiled general_type code
-# with no faithful match, and such a column carries no logicalType at all rather than a
-# guessed one. "Datetime" is absent because it needs the column's type name as well.
-_LOGICAL_TYPE_FROM_GENERAL_TYPE: dict[str, str] = {
-    "A": "string",
-    "N": "number",
-    "B": "boolean",
-    "T": "time",
-}
-
-
-def _logical_type(column: DataColumnChars) -> str | None:
-    """A profiled column's ODCS logical type, or None where none of them is faithful.
-
-    A "D" column is a date or a datetime, which ODCS separates and ``general_type`` does not,
-    so the type name decides: every flavor spells a datetime with "time" in it -- ``datetime``,
-    ``smalldatetime``, ``datetimeoffset``, ``timestamp`` and its suffixed and qualified forms
-    -- while a plain date is spelled ``date``. An Oracle ``DATE`` carries a time component and
-    still reads as a date here, which leaves it agreeing with its own physical type rather
-    than contradicting it.
-    """
-    if column.general_type == "D":
-        return "timestamp" if "time" in (column.column_type or "").lower() else "date"
-    return _LOGICAL_TYPE_FROM_GENERAL_TYPE.get(column.general_type)
-
-
 def declared_tables(document: dict | None) -> list[str]:
     """The table names a metadata document's schema section declares, in document order."""
     if not document:
@@ -228,16 +212,16 @@ def declared_tables(document: dict | None) -> list[str]:
 def _column_descriptor(column: DataColumnChars) -> dict:
     """A profiled column's ODCS ``SchemaProperty`` descriptor, built from scratch.
 
-    Carries only fields the ODCS schema defines: ``name`` (required), ``physicalType``
-    when profiling captured one, ``logicalType`` when the profiled general type maps to
-    one of the ODCS logical types with confidence, and the profiled functional type as a
-    ``customProperties`` entry (ODCS has no dedicated field for it).
+    Carries only fields the ODCS schema defines: ``name`` (required), ``physicalType`` as
+    the database declares the column's type, ``logicalType`` when the catalog maps the type
+    to an ODCS logical type, and the profiled functional type as a ``customProperties``
+    entry (ODCS has no dedicated field for it).
     """
     descriptor: dict = {"name": column.column_name}
-    if column.column_type:
-        descriptor["physicalType"] = column.column_type
-    if logical_type := _logical_type(column):
-        descriptor["logicalType"] = logical_type
+    if column.db_data_type:
+        descriptor["physicalType"] = column.db_data_type
+    if column.logical_type:
+        descriptor["logicalType"] = column.logical_type
     if column.functional_data_type:
         descriptor["customProperties"] = [{"property": "functionalDataType", "value": column.functional_data_type}]
     return descriptor
@@ -263,10 +247,10 @@ def _merge_column_descriptor(existing: dict, column: DataColumnChars) -> dict:
     about this time is left exactly as it was, not cleared.
     """
     merged = dict(existing)
-    if column.column_type:
-        merged["physicalType"] = column.column_type
-    if logical_type := _logical_type(column):
-        merged["logicalType"] = logical_type
+    if column.db_data_type:
+        merged["physicalType"] = column.db_data_type
+    if column.logical_type:
+        merged["logicalType"] = column.logical_type
     if column.functional_data_type:
         merged["customProperties"] = _merge_functional_data_type(
             merged.get("customProperties", []), column.functional_data_type
@@ -348,14 +332,14 @@ def remove_table(suite: TestSuite, table_name: str) -> dict:
     flag_modified(draft, "metadata_document")
 
     session = get_current_session()
-    result = session.execute(
+    removed_types = session.execute(
         delete(TestDefinition).where(
             TestDefinition.version_id == version_id,
             TestDefinition.table_name == table_name,
-        )
-    )
+        ).returning(TestDefinition.test_type)
+    ).scalars().all()
     session.flush()
-    return {"terms_removed": result.rowcount}
+    return {"terms_removed": sum(1 for test_type in removed_types if test_type not in MANAGED_TEST_TYPES)}
 
 
 def generate_terms(suite: TestSuite) -> dict:
@@ -382,7 +366,8 @@ def _profiled_columns(suite: TestSuite, table_name: str) -> list[DataColumnChars
 
 
 def _generate_for_tables(suite: TestSuite, table_names: list[str], version_id: UUID) -> None:
-    """Run test generation for a contract, filtered to the given declared tables.
+    """Run test generation for a contract, filtered to the given declared tables, and reconcile
+    its Schema Conformance tests with every table the draft declares.
 
     Generation reaches the database on its own connection and commits each statement itself,
     so the draft and the document change it is generating against have to be committed first:
@@ -398,4 +383,5 @@ def _generate_for_tables(suite: TestSuite, table_names: list[str], version_id: U
     session = get_current_session()
     session.commit()
     run_test_generation(suite.id, table_names=table_names)
+    run_conformance_generation(suite.id)
     TestDefinition.assign_missing_term_ids(version_id)
