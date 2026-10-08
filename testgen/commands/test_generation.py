@@ -5,7 +5,7 @@ from functools import cached_property
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from testgen.common.database.database_service import (
     execute_db_queries,
@@ -93,12 +93,18 @@ def run_monitor_generation(
     mode: MonitorGenerationMode = "upsert",
     table_names: list[str] | None = None,
     profile_run_id: UUID | None = None,
+    *,
+    in_session: bool = False,
 ) -> None:
     """
     Modes:
     - "upsert": Add tests for new tables + update tests for existing tables + no deletion
     - "insert": Only add tests for new tables
     - "delete": Only delete tests for dropped tables
+
+    With ``in_session``, the generation statements run in the current database session
+    instead of each committing on its own connection, so they see the session's
+    uncommitted rows and roll back with it.
     """
     if monitor_suite_id is None:
         raise ValueError("Monitor Suite ID was not specified")
@@ -113,7 +119,13 @@ def run_monitor_generation(
 
     TestGeneration(
         connection, table_group, monitor_suite, [MONITOR_GENERATION_SET], monitors, profile_run_id
-    ).monitor_run(mode, table_names=table_names)
+    ).monitor_run(mode, table_names=table_names, in_session=in_session)
+
+
+def _execute_in_session(queries: list[tuple[str, dict | None]]) -> None:
+    session = get_current_session()
+    for query, params in queries:
+        session.execute(text(query), params)
 
 
 def run_conformance_generation(test_suite_id: str | UUID, table_names: list[str] | None = None) -> None:
@@ -191,9 +203,12 @@ class TestGeneration:
             self._get_query("delete_overridden_autogen_tests.sql"),
         ])
 
-    def monitor_run(self, mode: MonitorGenerationMode, table_names: list[str] | None = None) -> None:
+    def monitor_run(
+        self, mode: MonitorGenerationMode, table_names: list[str] | None = None, *, in_session: bool = False
+    ) -> None:
+        execute = _execute_in_session if in_session else execute_db_queries
         if mode == "delete":
-            execute_db_queries([self._get_query("delete_stale_monitors.sql")])
+            execute([self._get_query("delete_stale_monitors.sql")])
             return
 
         extra_params = {"INSERT_ONLY": mode == "insert"}
@@ -202,9 +217,7 @@ class TestGeneration:
             extra_params["TABLE_FILTER"] = f"AND table_name IN ({table_list})"
 
         LOG.info("Running monitor generation queries")
-        execute_db_queries(
-            self._get_generation_queries(extra_params=extra_params),
-        )
+        execute(self._get_generation_queries(extra_params=extra_params))
 
     def conformance_run(self) -> None:
         TestDefinition.assert_version_writable(self.version_id)
