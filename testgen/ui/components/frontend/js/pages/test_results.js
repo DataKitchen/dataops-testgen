@@ -323,7 +323,7 @@ const RunTriggerInfo = (externalUrl, metadata, overrides, onOpenDetails) => {
         children.push(small({ class: 'text-caption' }, 'Run details:'));
         children.push(Button({
             type: 'icon',
-            icon: 'info',
+            icon: 'data_object',
             iconSize: 18,
             tooltip: 'View run details',
             tooltipPosition: 'bottom-left',
