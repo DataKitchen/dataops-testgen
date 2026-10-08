@@ -5,7 +5,7 @@ schema reaches the query builder.
 """
 
 from datetime import UTC, datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 from uuid import UUID
 
 import pytest
@@ -130,6 +130,7 @@ def test_prediction_templates_key_staging_on_the_test_run(template_name):
 def _file_refresh_generator() -> MagicMock:
     sql_generator = MagicMock()
     sql_generator.flavor_service.metadata_via_api = False
+    sql_generator.flavor_service.caches_tables.return_value = False
     sql_generator.get_schema_ddf.return_value = ("schema query", {})
     sql_generator.get_file_counts.return_value = [("file counts query", None)]
     sql_generator.get_row_counts.return_value = []
@@ -216,3 +217,36 @@ def test_metadata_via_api_flavors_scan_the_builder_s_schema(mock_sql_cls, _mock_
     run_data_chars_refresh(MagicMock(), MagicMock(table_group_schema="onboard_2026_09_10"), datetime.now(UTC))
 
     assert sql_generator.flavor_service.get_schema_columns.call_args.args[1] == "onboard_2026_09_10"
+
+
+@patch(f"{MODULE}.write_data_chars")
+@patch(f"{MODULE}.cache_target_tables")
+@patch(f"{MODULE}.fetch_from_db_threaded")
+@patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+def test_a_caching_connection_copies_its_tables_before_counting_them(
+    mock_sql, _fetch, mock_threaded, mock_cache, _write
+):
+    mock_sql.return_value = sql_generator = _file_refresh_generator()
+    sql_generator.flavor_service.caches_tables.return_value = True
+    order = MagicMock()
+    mock_cache.side_effect = lambda tables: order.cache(set(tables))
+    mock_threaded.side_effect = lambda *_args, **_kwargs: (order.count(), ROW_COUNTS)[1]
+
+    run_data_chars_refresh(_connection(SqlFlavorCode.S3), MagicMock(), datetime.now(UTC))
+
+    assert order.mock_calls[0] == call.cache({"claims", "orders"})
+    assert order.mock_calls[1] == call.count()
+
+
+@patch(f"{MODULE}.write_data_chars")
+@patch(f"{MODULE}.cache_target_tables")
+@patch(f"{MODULE}.fetch_from_db_threaded", return_value=ROW_COUNTS)
+@patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+def test_a_connection_that_reads_in_place_copies_nothing(mock_sql, _fetch, _threaded, mock_cache, _write):
+    mock_sql.return_value = _file_refresh_generator()
+
+    run_data_chars_refresh(_connection(), MagicMock(), datetime.now(UTC))
+
+    mock_cache.assert_not_called()

@@ -111,6 +111,16 @@ def set_target_db_params(connection_params: ConnectionParams, table_group: "Tabl
         engine_cache.target_db = None
 
 
+def cache_target_tables(table_names: Iterable[str]) -> None:
+    """Have the target's flavor keep a local copy of the named tables for the rest of the run."""
+    if not target_db_params:
+        raise ValueError("Target database connection parameters were not set")
+    flavor_service = get_flavor_service(target_db_params.connection["sql_flavor"])
+    params = resolve_connection_params(target_db_params.connection)
+    with _init_target_db_connection() as connection:
+        flavor_service.cache_tables(connection, params, target_db_params.declarations, table_names)
+
+
 def get_flavor_service(flavor: SQLFlavor) -> FlavorService:
     module_path = f"testgen.common.database.flavor.{flavor}_flavor_service"
     class_name = f"{flavor.replace('_', ' ').title().replace(' ', '')}FlavorService"
