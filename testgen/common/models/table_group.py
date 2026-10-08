@@ -31,8 +31,10 @@ from testgen.utils import dict_from_kv, is_uuid4
 # Quoting is what lets a name hold spaces and dashes, so the rule excludes the characters that
 # would end the quoting rather than restricting the name to a bare identifier: a schema named
 # `Sales-Data_2026_09` is one a table group can hold, and therefore one it can be moved to.
-# Control characters go too -- a trailing newline reads as a different schema to the target.
-SCHEMA_NAME_PATTERN = r"^[^\"'`\x00-\x1f\x7f]+$"
+# Control characters go too -- a trailing newline reads as a different schema to the target --
+# and so does the backslash, which Snowflake, Databricks and BigQuery read as an escape inside the
+# string literal their metadata query puts the name in.
+SCHEMA_NAME_PATTERN = r"^[^\\\"'`\x00-\x1f\x7f]+$"
 # The catalog columns (``data_table_chars`` / ``data_column_chars``) are the narrowest the name has
 # to land in; a longer one stages and then never joins, so it is rejected at the boundary instead.
 SCHEMA_NAME_MAX_LENGTH = 50

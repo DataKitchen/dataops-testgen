@@ -64,6 +64,7 @@ def test_accepts_a_name_the_templates_can_quote(value):
         'x" OR 1=1--',
         "x' OR 1=1--",
         "with`backtick",
+        "trailing\\",
         "with\ttab",
         "",
         "a" * (SCHEMA_NAME_MAX_LENGTH + 1),
