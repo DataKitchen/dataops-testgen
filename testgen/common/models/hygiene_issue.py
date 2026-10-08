@@ -541,7 +541,6 @@ class HygieneIssue(Entity):
                 other,
                 and_(
                     other.table_groups_id == cls.table_groups_id,
-                    other.schema_name == cls.schema_name,
                     other.table_name == cls.table_name,
                     other.column_name == cls.column_name,
                     other.type_id == cls.type_id,

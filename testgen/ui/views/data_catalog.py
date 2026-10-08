@@ -274,7 +274,6 @@ class DataCatalogPage(Page):
             if history_data:
                 column = _get_history_run_column(
                     run_id,
-                    history_data["schema_name"],
                     history_data["table_name"],
                     history_data["column_name"],
                 )
@@ -837,7 +836,7 @@ def _build_history_dialog_data(
         for run in profiling_runs
     ]
     first_run_id = profiling_runs_data[0]["run_id"]
-    selected_item = _get_history_run_column(first_run_id, schema_name, table_name, column_name)
+    selected_item = _get_history_run_column(first_run_id, table_name, column_name)
 
     if selected_item and not session.auth.user_has_permission("view_pii"):
         pii_columns = get_pii_columns(table_group_id, table_name=table_name)
@@ -854,7 +853,12 @@ def _build_history_dialog_data(
 
 
 @st.cache_data(show_spinner=False)
-def _get_history_run_column(run_id: str, schema_name: str, table_name: str, column_name: str) -> dict | None:
+def _get_history_run_column(run_id: str, table_name: str, column_name: str) -> dict | None:
+    """One column's profiling results from a given run.
+
+    The run identifies its own rows, so the schema is not matched: the caller holds the schema the
+    catalog names, and a run from before the table group moved scanned a different one.
+    """
     query = f"""
     SELECT
         profile_run_id::VARCHAR,
@@ -862,13 +866,11 @@ def _get_history_run_column(run_id: str, schema_name: str, table_name: str, colu
         {COLUMN_PROFILING_FIELDS}
     FROM profile_results
     WHERE profile_run_id = :run_id
-        AND schema_name = :schema_name
         AND table_name = :table_name
         AND column_name = :column_name;
     """
     params = {
         "run_id": run_id,
-        "schema_name": schema_name,
         "table_name": table_name,
         "column_name": column_name,
     }

@@ -35,7 +35,12 @@ from testgen.api.enums import (
     TableState,
 )
 from testgen.common.enums import JobSource, JobStatus, PublicJobKey
-from testgen.common.models.table_group import table_group_defaults
+from testgen.common.models.job_execution import EXTERNAL_URL_MAX_LENGTH, validate_caller_metadata
+from testgen.common.models.table_group import (
+    SCHEMA_NAME_MAX_LENGTH,
+    SCHEMA_NAME_PATTERN,
+    table_group_defaults,
+)
 from testgen.common.test_definition_export_import_service import ImportConfig, ImportPayload, ImportResponse
 
 SchemaName = Annotated[
@@ -59,6 +64,79 @@ class JobSubmittedResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class TableGroupUpdateRequest(BaseModel):
+    """Fields to change on a table group. Omitted fields are left unchanged, and unknown fields are
+    rejected."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_name: str | None = Field(
+        default=None,
+        pattern=SCHEMA_NAME_PATTERN,
+        max_length=SCHEMA_NAME_MAX_LENGTH,
+        description=(
+            "Schema to read the table group's tables from. When it changes, profiling, test "
+            "generation, monitors, and test runs read the new schema, and tests keep their history. "
+            "Referential tests keep the schema of their second table."
+        ),
+    )
+
+
+class TableGroupSchemaChange(BaseModel):
+    """What changing the schema did, present only when the request changed it."""
+
+    previous_schema_name: str
+    schema_name: str
+    definitions_repointed: int = Field(
+        description="Test definitions updated to the new schema.",
+    )
+    missing_tables: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Tables in the table group that the new schema does not have. The change still applies. "
+            "The next test run deactivates their tests, and the next monitor run deletes their "
+            "monitors along with the thresholds they learned."
+        ),
+    )
+
+
+class TestRunRequest(BaseModel):
+    """Optional body for a test run submission."""
+
+    match_schema_name: str | None = Field(
+        default=None,
+        pattern=SCHEMA_NAME_PATTERN,
+        max_length=SCHEMA_NAME_MAX_LENGTH,
+        description=(
+            "Schema to read the second table of each referential test from, for this run only. "
+            "Tests without a second table are unaffected, the stored test definitions are not changed, "
+            "and the run deactivates no tests. To read the table group's own tables from another "
+            "schema, change the table group's schema instead."
+        ),
+    )
+    external_url: str | None = Field(
+        default=None,
+        max_length=EXTERNAL_URL_MAX_LENGTH,
+        description=(
+            "Link back to whatever triggered this run, shown on the test results page."
+        ),
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "JSON object describing what triggered this run, up to 50 top-level keys and 10,240 "
+            "bytes. Stored with the run and shown on the test results page."
+        ),
+    )
+
+    @field_validator("metadata")
+    @classmethod
+    def _check_metadata(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        if error := validate_caller_metadata(value):
+            raise ValueError(error)
+        return value
 
 
 class JobResponse(BaseModel):
@@ -116,6 +194,8 @@ class TestRunResponse(BaseModel):
     table_group_id: UUID | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    external_url: str | None = None
+    metadata: dict[str, Any] | None = None
     result: TestRunResult | None = None
 
 
@@ -915,6 +995,12 @@ class TableGroupResponse(BaseModel):
     include_in_dashboard: bool
 
     catalog_tags: CatalogTags
+
+
+class TableGroupUpdateResponse(TableGroupResponse):
+    """The table group as it now stands, plus what a schema change did."""
+
+    schema_change: TableGroupSchemaChange | None = None
 
 
 _TABLE_GROUP_DEFAULTS = table_group_defaults()

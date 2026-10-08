@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
+from testgen.common.database.table_group_service import SchemaMove, SchemaMoveRefused
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
@@ -445,47 +446,58 @@ def test_update_table_group_no_op(mock_resolve, mock_tg_cls, db_session_mock):
     assert "No fields changed" in out
 
 
+@patch(f"{MODULE}.move_table_group_schema")
 @patch(f"{MODULE}.TableGroup")
 @patch(f"{MODULE}.resolve_table_group")
-def test_update_table_group_schema_locked_when_in_use(mock_resolve, mock_tg_cls, db_session_mock):
-    """``is_in_use=True`` + new schema → MCPUserError, no save."""
+def test_update_table_group_moves_the_schema_through_the_guarded_path(
+    mock_resolve, mock_tg_cls, mock_move, db_session_mock,
+):
+    """The move probes the target and repoints stored definitions, so a plain assignment
+    would skip both."""
     tg = _mock_table_group(table_group_schema="public")
     mock_resolve.return_value = tg
-    mock_tg_cls.is_in_use.return_value = True
+    def apply(table_group, schema, **_kwargs):
+        # The real move sets this; the tool saves only what its diff can see.
+        table_group.table_group_schema = schema
+        return SchemaMove(
+            previous_schema="public", schema=schema, missing_tables=[], definitions_repointed=3,
+        )
 
-    from testgen.mcp.tools.table_groups import update_table_group
-
-    with _patch_perms(), pytest.raises(MCPUserError) as exc:
-        update_table_group(table_group_id=str(tg.id), schema="staging")
-    assert "Schema cannot be changed" in str(exc.value)
-    assert "Delete and recreate" in str(exc.value)
-    tg.save.assert_not_called()
-
-
-@patch(f"{MODULE}.TableGroup")
-@patch(f"{MODULE}.resolve_table_group")
-def test_update_table_group_schema_unlocked_when_not_in_use(mock_resolve, mock_tg_cls, db_session_mock):
-    tg = _mock_table_group(table_group_schema="public")
-    mock_resolve.return_value = tg
-    mock_tg_cls.is_in_use.return_value = False
+    mock_move.side_effect = apply
 
     from testgen.mcp.tools.table_groups import update_table_group
 
     with _patch_perms():
         out = update_table_group(table_group_id=str(tg.id), schema="staging")
 
+    assert mock_move.call_args.args[1] == "staging"
     tg.save.assert_called_once()
-    assert "Schema" in out
     assert "staging" in out
+
+
+@patch(f"{MODULE}.move_table_group_schema")
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_surfaces_a_refused_move(mock_resolve, mock_tg_cls, mock_move, db_session_mock):
+    """A schema carrying none of the table group's tables is refused, and the caller is told why."""
+    tg = _mock_table_group(table_group_schema="public")
+    mock_resolve.return_value = tg
+    mock_move.side_effect = SchemaMoveRefused("schema_empty", "No tables in staging match this table group.")
+
+    from testgen.mcp.tools.table_groups import update_table_group
+
+    with _patch_perms(), pytest.raises(MCPUserError) as exc:
+        update_table_group(table_group_id=str(tg.id), schema="staging")
+
+    assert "No tables in staging" in str(exc.value)
 
 
 @patch(f"{MODULE}.TableGroup")
 @patch(f"{MODULE}.resolve_table_group")
-def test_update_table_group_same_schema_on_in_use_group_is_noop(mock_resolve, mock_tg_cls, db_session_mock):
-    """Re-supplying the current schema on an in-use group is a no-op, not a lock violation."""
+def test_update_table_group_same_schema_is_noop(mock_resolve, mock_tg_cls, db_session_mock):
+    """Re-supplying the current schema moves nothing, so there is nothing to save."""
     tg = _mock_table_group(table_group_schema="public")
     mock_resolve.return_value = tg
-    mock_tg_cls.is_in_use.return_value = True
 
     from testgen.mcp.tools.table_groups import update_table_group
 

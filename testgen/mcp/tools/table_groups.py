@@ -13,15 +13,18 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.exc import IntegrityError
 
 from testgen.common.database.table_group_service import (
+    SchemaMoveRefused,
+    apply_schema_move,
     apply_table_group_flavor_rules,
     is_duplicate_name_error,
+    move_table_group_schema,
     validate_table_group_fields,
 )
 from testgen.common.database.table_group_service import (
     preview_table_group as preview_table_group_service,
 )
 from testgen.common.enums import FileFormat
-from testgen.common.flavors import TableGroupSchemaLabel, declares_files, table_group_schema_label
+from testgen.common.flavors import declares_files, table_group_schema_label
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup, table_group_defaults
@@ -69,15 +72,6 @@ _CRITERIA_UNSUPPORTED_MESSAGE = (
     "Tables on this connection are files, so `table_set`, `include_mask` and `exclude_mask` do not "
     "apply. Name the tables to read with `file_declarations`."
 )
-
-
-def _schema_locked_message(label: str | None) -> str:
-    """The refusal for changing a used table group's schema, named as its connection names it."""
-    subject = label or TableGroupSchemaLabel.SCHEMA
-    return (
-        f"{subject} cannot be changed once the table group has been used. "
-        f"Delete and recreate the table group to use a different {subject.lower()}."
-    )
 
 
 def _schema_required_message(label: str | None) -> str:
@@ -627,10 +621,13 @@ def update_table_group(
     """Update fields on an existing table group. Atomic — no partial save.
 
     Connection and project are immutable — delete and recreate the table group
-    to re-parent it. ``schema`` is also immutable once the table group has been
-    used (profiled or has test suites); supply a different ``schema`` only on
-    unused table groups. On a file connection, ``file_declarations`` replaces the whole table
-    list — read the current one with ``get_table_group`` first.
+    to re-parent it. When ``schema`` changes, profiling, test generation, monitors, and test runs
+    read the new schema, and tests keep their history. Referential tests keep the schema of their
+    second table. The change is refused when the schema
+    cannot be read, when no table in it matches the table group's table filters, or while a job
+    for the table group is running. The result lists tables the new schema does not have. On a
+    file connection, ``schema`` cannot be changed, and ``file_declarations`` replaces the whole
+    table list — read the current one with ``get_table_group`` first.
     """
     supplied = {
         "table_group_name": table_group_name,
@@ -678,12 +675,7 @@ def update_table_group(
 
     schema_label = table_group_schema_label(connection.sql_flavor_code if connection else None)
 
-    if (
-        schema is not None
-        and schema != table_group.table_group_schema
-        and TableGroup.is_in_use([table_group.id])
-    ):
-        raise MCPUserError(_schema_locked_message(schema_label))
+    moving_to = schema if schema is not None and schema != table_group.table_group_schema else None
 
     if (
         profile_flag_pii is not None
@@ -693,12 +685,19 @@ def update_table_group(
         raise MCPPermissionDenied(_PII_FLAG_DENIED_MESSAGE)
 
     before = _snapshot(table_group)
-    _apply_args_to_table_group(table_group, **supplied)
+    _apply_args_to_table_group(table_group, **{k: v for k, v in supplied.items() if k != "schema"})
 
     apply_table_group_flavor_rules(table_group, connection)
     errors = validate_table_group_fields(table_group, connection, field_names=_FIELD_NAMES)
     if errors:
         _raise_validation_error(errors, "Update rejected. No changes saved.")
+
+    move = None
+    if moving_to:
+        try:
+            move = move_table_group_schema(table_group, moving_to)
+        except SchemaMoveRefused as refusal:
+            raise MCPUserError(refusal.message) from refusal
 
     after = _snapshot(table_group)
 
@@ -717,6 +716,17 @@ def update_table_group(
     except IntegrityError as err:
         _maybe_raise_duplicate_name(err)
         raise
+
+    if move:
+        apply_schema_move(move, table_group.id)
+        doc.field("Test definitions updated", str(move.definitions_repointed))
+        if move.missing_tables:
+            doc.text(
+                f"{len(move.missing_tables)} tables are not in `{move.schema}`. The next test run "
+                "deactivates their tests, and the next monitor run deletes their monitors along with "
+                "the thresholds they learned: "
+                + ", ".join(f"`{name}`" for name in sorted(move.missing_tables))
+            )
 
     return doc.render()
 

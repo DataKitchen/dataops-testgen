@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TypedDict
 from uuid import UUID
 
+from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
@@ -35,10 +37,15 @@ from testgen.common.database.file_declarations import (
 )
 from testgen.common.database.flavor.duckdb_flavor_service import base_location
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
+from testgen.common.enums import JobStatus
 from testgen.common.flavors import declares_files, fixed_table_group_schema, table_group_schema_label
+from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
-from testgen.common.models.table_group import TableGroup, TableGroupMinimal
+from testgen.common.models.data_table import DataTable
+from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.table_group import TableGroup, TableGroupMinimal, validate_schema_name
 from testgen.common.models.test_definition import TestDefinition
+from testgen.common.models.test_suite import TestSuite
 from testgen.ui.services.database_service import target_db_session
 
 LOG = logging.getLogger("testgen")
@@ -56,7 +63,6 @@ _BIGINT_MAX = 2**63 - 1
 
 # Widths of the ``table_groups`` VARCHAR columns (030_initialize_new_schema_structure.sql).
 _MAX_LENGTHS: dict[str, int] = {
-    "table_group_schema": 100,
     "profiling_table_set": 2000,
     "profiling_include_mask": 2000,
     "profiling_exclude_mask": 2000,
@@ -130,8 +136,10 @@ def validate_table_group_fields(
                 table_group.file_declarations, base_location(connection.sql_flavor_code, connection.parameters)
             )
         )
-    elif _missing(table_group.table_group_schema):
-        errors.append(f"{field('table_group_schema')} is required.")
+    elif error := validate_schema_name(table_group.table_group_schema or ""):
+        # The same rule the move applies, so a table group cannot be created on a schema it could
+        # never be moved to, nor on one wider than the catalog columns it has to land in.
+        errors.append(f"{field('table_group_schema')} {error}.")
 
     for attr, max_length in _MAX_LENGTHS.items():
         value = getattr(table_group, attr)
@@ -489,3 +497,189 @@ def _add_declaration_detail(
     elif failed:
         noun = "table" if failed == 1 else "tables"
         preview["message"] = f"{failed} {noun} could not be read. Check the highlighted paths."
+
+
+# ---------------------------------------------------------------------------
+# Moving a table group to another schema
+# ---------------------------------------------------------------------------
+
+class SchemaMoveRefused(Exception):
+    """The move cannot proceed. ``reason`` is a stable code; ``message`` is for the caller."""
+
+    def __init__(self, reason: str, message: str, missing_tables: list[str] | None = None):
+        super().__init__(message)
+        self.reason = reason
+        self.message = message
+        self.missing_tables = missing_tables or []
+
+
+@dataclass
+class SchemaMove:
+    """What a move did: where it went, and which catalogued tables the new schema lacks.
+
+    ``refresh_catalog`` rewrites the catalog against the schema the move names. It is handed back
+    rather than run, because it writes on its own connection and commits there and then -- see
+    ``apply_schema_move``.
+    """
+
+    previous_schema: str
+    schema: str
+    missing_tables: list[str]
+    definitions_repointed: int
+    refresh_catalog: Callable[[UUID], None] | None = field(default=None, repr=False, compare=False)
+
+
+def _tables_in_use(table_group_id: UUID) -> set[str]:
+    """Table names the table group's catalog holds, ignoring ones already marked dropped."""
+    session = get_current_session()
+    rows = session.execute(
+        select(DataTable.table_name).where(
+            DataTable.table_groups_id == table_group_id,
+            DataTable.drop_date.is_(None),
+        )
+    ).all()
+    return {row[0] for row in rows}
+
+
+def _has_job_in_flight(table_group: TableGroup) -> bool:
+    """Whether any non-terminal job would read this table group's schema while it changes."""
+    session = get_current_session()
+    suite_ids = session.scalars(
+        select(TestSuite.id).where(TestSuite.table_groups_id == table_group.id)
+    ).all()
+    named = [str(table_group.id), *[str(suite_id) for suite_id in suite_ids]]
+
+    active = session.scalars(
+        select(JobExecution.id).where(
+            JobExecution.project_code == table_group.project_code,
+            JobExecution.status.in_(list(JobStatus.active())),
+            or_(
+                JobExecution.kwargs["table_group_id"].astext.in_(named),
+                JobExecution.kwargs["test_suite_id"].astext.in_(named),
+                # Monitor generation names the suite under its own key, and profiling enqueues it
+                # as a follow-up, so this is the job most likely to be in flight during a move.
+                JobExecution.kwargs["monitor_suite_id"].astext.in_(named),
+            ),
+        )
+    ).first()
+    return active is not None
+
+
+def _repoint_definitions(table_group: TableGroup, previous: str, schema: str) -> int:
+    """Move the table group's stored test definitions onto ``schema``.
+
+    Every version is moved, frozen ones included. Where a contract's data is read is not one of
+    the terms it froze -- a contract checks a deliverable that is rebuilt each cycle, so an
+    agreement left reading the schema it was signed against would report every table missing from
+    the next run on. The terms themselves are untouched.
+
+    ``match_schema_name`` is left alone. A referential test compares against a table this table
+    group does not own, on whatever schema the author pointed it at, so moving this table group
+    says nothing about where that one lives. A run that needs it elsewhere carries it.
+    """
+    session = get_current_session()
+    suite_ids = session.scalars(
+        select(TestSuite.id).where(TestSuite.table_groups_id == table_group.id)
+    ).all()
+    if not suite_ids:
+        return 0
+
+    result = session.execute(
+        update(TestDefinition)
+        .where(
+            TestDefinition.test_suite_id.in_(suite_ids),
+            TestDefinition.schema_name == previous,
+        )
+        .values(schema_name=schema)
+    )
+    return result.rowcount or 0
+
+
+def move_table_group_schema(
+    table_group: TableGroup,
+    schema: str,
+    *,
+    connection: Connection | None = None,
+) -> SchemaMove:
+    """Point a table group, and everything that reads it, at another schema.
+
+    Probes the target database first: a schema that carries none of the table group's tables is
+    refused rather than moved into, since every later run would then find nothing. Tables the
+    catalog holds that the new schema lacks are reported rather than refused — a build that
+    genuinely dropped a table is a legitimate move — and the catalog reconciles them on the next
+    refresh.
+
+    Raises ``SchemaMoveRefused`` for a connection whose tables are not reached through a schema, an
+    unusable name, a job already in flight, or a schema that matches nothing. Returns what moved.
+    """
+    previous = table_group.table_group_schema
+    if schema == previous:
+        return SchemaMove(previous_schema=previous, schema=schema, missing_tables=[], definitions_repointed=0)
+
+    connection = connection or Connection.get(table_group.connection_id)
+    flavor_code = connection.sql_flavor_code if connection else None
+    if declares_files(flavor_code) or fixed_table_group_schema(flavor_code) is not None:
+        raise SchemaMoveRefused(
+            "schema_unsupported",
+            "Table groups on this connection have no schema to change.",
+        )
+
+    if error := validate_schema_name(schema):
+        raise SchemaMoveRefused("invalid_schema_name", f"schema {error}.")
+
+    if _has_job_in_flight(table_group):
+        raise SchemaMoveRefused(
+            "job_in_flight",
+            "A job for this table group is still running. Wait for it to finish, then try again.",
+        )
+
+    probe = TableGroup(**{
+        column.name: getattr(table_group, column.name) for column in TableGroup.__table__.columns
+    })
+    probe.table_group_schema = schema
+    preview, data_chars, sql_generator = preview_table_group(probe, connection=connection)
+
+    # An empty schema is reported as a failed preview too, so the two cases are told apart by what
+    # the probe returned rather than by `success`: a schema that was read and held nothing comes
+    # back with an empty list, one that could not be read at all with none.
+    if data_chars is None:
+        raise SchemaMoveRefused("schema_unreadable", preview["message"] or "The schema could not be read.")
+    if not preview["tables"]:
+        raise SchemaMoveRefused(
+            "schema_empty",
+            f"No tables in {schema} match this table group's table filters.",
+        )
+
+    missing = sorted(_tables_in_use(table_group.id) - set(preview["tables"]))
+
+    table_group.table_group_schema = schema
+    repointed = _repoint_definitions(table_group, previous, schema)
+
+    return SchemaMove(
+        previous_schema=previous,
+        schema=schema,
+        missing_tables=missing,
+        definitions_repointed=repointed,
+        refresh_catalog=(
+            make_save_data_chars(data_chars, sql_generator) if data_chars and sql_generator else None
+        ),
+    )
+
+
+def apply_schema_move(move: SchemaMove, table_group_id: UUID) -> None:
+    """Make the move durable, then rewrite the catalog against the schema it names.
+
+    The catalog is written on its own connection and commits there, so it cannot be undone by the
+    caller rolling back. Running it before the move is durable would leave a catalog describing a
+    schema that the table group and its test definitions do not name -- which reads as a full
+    table drop-and-add to the schema-change monitors.
+
+    A catalog that fails to write is recoverable: the next refresh rebuilds it.
+    """
+    get_current_session().commit()
+    if move.refresh_catalog is None:
+        return
+    try:
+        move.refresh_catalog(table_group_id)
+    except Exception:
+        LOG.exception("Catalog refresh after the schema move encountered errors")

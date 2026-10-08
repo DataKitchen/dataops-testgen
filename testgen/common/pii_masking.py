@@ -13,20 +13,23 @@ PROFILING_PII_FIELDS = (
 )
 
 
-def get_pii_columns(table_group_id: str, schema: str | None = None, table_name: str | None = None) -> set[str]:
-    """Look up PII-flagged column names from data_column_chars."""
+def get_pii_columns(table_group_id: str, table_name: str | None = None) -> set[str]:
+    """Look up PII-flagged column names from data_column_chars.
+
+    A catalogued column is identified by its table group and table. Narrowing by schema as well
+    would find nothing once the catalog follows a schema the caller does not hold, and an empty
+    result masks nothing.
+    """
 
     query = f"""
     SELECT column_name
     FROM data_column_chars
     WHERE table_groups_id = :table_group_id
         AND pii_flag IS NOT NULL
-        {"AND schema_name = :schema" if schema else ""}
         {"AND table_name = :table_name" if table_name else ""}
     """
     params: dict = {
         "table_group_id": table_group_id,
-        "schema": schema,
         "table_name": table_name,
     }
 

@@ -143,7 +143,7 @@ def fetch_table_sample(
     df = to_dataframe(results)
     pii_redacted = False
     if mask_pii:
-        pii_columns = get_pii_columns(str(table_group_id), schema_name, table_name)
+        pii_columns = get_pii_columns(str(table_group_id), table_name)
         pii_redacted = mask_source_data_pii(df, pii_columns)
     return TableSampleResult("OK", df=df, pii_redacted=pii_redacted)
 

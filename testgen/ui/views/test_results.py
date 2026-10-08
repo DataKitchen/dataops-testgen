@@ -542,6 +542,9 @@ class TestResultsPage(Page):
                     "run_date": run_date,
                     "project_code": run.project_code,
                     "is_latest_run": run.is_latest_run,
+                    "overrides": {"Match schema": run.match_schema_override} if run.match_schema_override else None,
+                    "external_url": run.external_url,
+                    "metadata": make_json_safe(run.caller_metadata) if run.caller_metadata else None,
                 },
                 "profiling_column": make_json_safe(profiling_column) if profiling_column else None,
                 "source_data": make_json_safe(source_data) if source_data else None,
@@ -934,6 +937,11 @@ def get_excel_report_data(
 ) -> FILE_DATA_TYPE:
     if data is None:
         data = test_result_queries.get_test_results(run_id)
+
+    # Each result records the schema its test read, which is where this run looked rather than
+    # where the table group reads now.
+    if not data.empty and "schema_name" in data:
+        schema = data["schema_name"].iloc[0] or schema
 
     columns = {
         "table_name": {"header": "Table"},

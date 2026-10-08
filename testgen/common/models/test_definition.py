@@ -1455,7 +1455,6 @@ class TestDefinition(Entity):
             INNER JOIN test_suites ts ON d.test_suite_id = ts.id
             LEFT JOIN data_column_chars dcc
                 ON d.table_groups_id = dcc.table_groups_id
-                AND d.schema_name = dcc.schema_name
                 AND d.table_name = dcc.table_name
                 AND d.column_name = dcc.column_name
             WHERE d.id = :test_definition_id

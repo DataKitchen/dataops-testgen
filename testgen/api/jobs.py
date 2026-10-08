@@ -16,6 +16,7 @@ from testgen.api.schemas import (
     JobResponse,
     JobSubmittedResponse,
     TestGenerationRequest,
+    TestRunRequest,
 )
 from testgen.common.enums import JobKey, JobSource, JobStatus, PublicJobKey
 from testgen.common.generation_set_service import resolve_generation_sets
@@ -53,13 +54,26 @@ def submit_profiling(table_group: TableGroup = resolve_table_group("edit")):  # 
     response_model=JobSubmittedResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
-def submit_test_run(test_suite: TestSuite = resolve_test_suite("edit")):  # noqa: B008
-    """Submit a test execution job for a test suite."""
+def submit_test_run(
+    test_suite: TestSuite = resolve_test_suite("edit"),  # noqa: B008
+    body: TestRunRequest | None = None,
+):
+    """Submit a test execution job for a test suite.
+
+    Runs against the table group's schema. A referential test's comparison schema can be
+    overridden for this run.
+    """
+    kwargs: dict[str, str] = {"test_suite_id": str(test_suite.id)}
+    if body and body.match_schema_name:
+        kwargs["match_schema_name"] = body.match_schema_name
+
     job = JobExecution.submit(
         job_key=JobKey.run_tests,
-        kwargs={"test_suite_id": str(test_suite.id)},
+        kwargs=kwargs,
         source=JobSource.api,
         project_code=test_suite.project_code,
+        external_url=body.external_url if body else None,
+        caller_metadata=body.metadata if body else None,
     )
     return JobSubmittedResponse.model_validate(job, from_attributes=True)
 

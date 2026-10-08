@@ -13,6 +13,7 @@ from testgen.commands.queries.execute_tests_query import (
     parse_cat_results,
 )
 from testgen.common.database.database_service import get_flavor_service, replace_params
+from testgen.common.enums import SuiteType
 from testgen.common.models.connection import Connection
 
 pytestmark = pytest.mark.unit
@@ -767,3 +768,65 @@ def test_freshness_exclusions_skip_other_test_types():
     instance = _make_freshness_execution_sql(datetime(2026, 12, 25, 12, 0), holiday_dates={date(2026, 12, 25)})
     td = _make_td(test_type="Volume_Trend", baseline_sum="2026-12-24 06:00:00")
     assert instance._freshness_exclusion_params(td) == {"EXCLUDED_MINUTES": 0, "IS_EXCLUDED_DAY": 0}
+
+
+# --- schema on the execution path ---
+
+
+def _make_schema_execution_sql() -> TestExecutionSQL:
+    """Build a TestExecutionSQL through __init__ so schema resolution is exercised."""
+    table_group = MagicMock(id=uuid4(), table_group_schema="test_schema")
+    test_suite = MagicMock(suite_type=SuiteType.REGULAR, predict_exclude_weekends=False, id=uuid4())
+    test_run = MagicMock(id=uuid4(), test_suite_id=uuid4(), test_starttime=datetime(2026, 1, 1, tzinfo=UTC))
+    return TestExecutionSQL(Connection(sql_flavor="postgresql"), table_group, test_suite, test_run)
+
+
+def test_the_table_group_schema_reaches_the_validation_query():
+    """Validation resolves identifiers in the schema the table group reads, which is the one its
+    tests run against."""
+    _query, params = _make_schema_execution_sql().get_target_identifiers(["test_schema"])
+
+    assert params["DATA_SCHEMA"] == "test_schema"
+
+
+def test_the_test_definition_drives_the_executed_sql():
+    """Every schema read on the execution path goes through ``TestExecutionDef.schema_name``.
+
+    A refactor sourcing the schema from the table group instead would run against the wrong one
+    whenever the two disagree, while reporting success.
+    """
+    sql_generator = _make_schema_execution_sql()
+    td = _make_td(schema_name="onboard_2026_09_10", measure="COUNT(*)", test_condition="100")
+
+    queries, groups = sql_generator.aggregate_cat_tests([td])
+
+    assert '"onboard_2026_09_10"."orders"' in queries[0][0]
+    assert "test_schema" not in queries[0][0]
+    assert groups == [[td]]
+
+
+def test_the_test_definition_drives_the_recorded_result_schema():
+    """Results carry the schema the run read, which the score rollup joins on."""
+    sql_generator = _make_schema_execution_sql()
+    td = _make_td(schema_name="onboard_2026_09_10", errors=["Deactivated", "Missing table: x"])
+
+    (row,) = sql_generator.get_test_errors([td])
+
+    assert row[TestExecutionSQL.result_columns.index("schema_name")] == "onboard_2026_09_10"
+
+
+def test_the_match_schema_is_independent_of_the_test_s_own():
+    """A referential test compares against a table outside the table group, so the two schemas
+    are separate inputs -- a run retargets the match side alone."""
+    sql_generator = _make_schema_execution_sql()
+    td = _make_td(
+        schema_name="onboard_2026_09_10",
+        match_schema_name="reference_2026_09_16",
+        match_table_name="orders",
+        match_column_names="customer_id",
+    )
+
+    params = sql_generator._get_params(td)
+
+    assert params["SCHEMA_NAME"] == "onboard_2026_09_10"
+    assert params["MATCH_SCHEMA_NAME"] == "reference_2026_09_16"

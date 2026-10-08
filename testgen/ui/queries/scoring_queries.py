@@ -71,7 +71,6 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]) -> list
             ON results.table_groups_id = groups.id
         LEFT JOIN data_column_chars column_chars
             ON (groups.id = column_chars.table_groups_id
-            AND results.schema_name = column_chars.schema_name
             AND results.table_name = column_chars.table_name
             AND results.column_name = column_chars.column_name)
         LEFT JOIN data_table_chars table_chars
@@ -142,7 +141,6 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]) -> list
             ON (results.test_run_id = test_runs.id)
         LEFT JOIN data_column_chars column_chars
             ON (groups.id = column_chars.table_groups_id
-            AND results.schema_name = column_chars.schema_name
             AND results.table_name = column_chars.table_name
             AND results.column_names = column_chars.column_name)
         LEFT JOIN data_table_chars table_chars

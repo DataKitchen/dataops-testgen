@@ -10,7 +10,7 @@ SELECT
   :TEST_SUITE_ID ::UUID   AS test_suite_id,
   :VERSION_ID ::UUID      AS version_id,
   'Volume_Trend'          AS test_type,
-  c.schema_name,
+  :DATA_SCHEMA            AS schema_name,
   c.table_name,
   'Y'                     AS test_active,
   :RUN_DATE ::TIMESTAMP   AS last_auto_gen_date,

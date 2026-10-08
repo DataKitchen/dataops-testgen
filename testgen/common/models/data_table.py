@@ -199,7 +199,6 @@ class DataTable(Entity):
                 ProfileResult,
                 and_(
                     ProfileResult.profile_run_id == DataColumnChars.last_complete_profile_run_id,
-                    ProfileResult.schema_name == DataColumnChars.schema_name,
                     ProfileResult.table_name == DataColumnChars.table_name,
                     ProfileResult.column_name == DataColumnChars.column_name,
                 ),
