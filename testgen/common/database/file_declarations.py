@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from testgen.common.database.sql_quoting import sql_identifier, sql_literal
 from testgen.common.enums import FileFormat
 
 LOG = logging.getLogger("testgen")
@@ -312,8 +313,8 @@ def file_count_query(base_path: str, declaration: FileDeclaration) -> str:
     Counts the files matched by ``read_pattern``, the same glob the view reads.
     """
     return (
-        f"SELECT {_sql_literal(declaration.name)} AS table_name, COUNT(*) AS file_ct"
-        f" FROM glob({_sql_literal(read_pattern(base_path, declaration))})"
+        f"SELECT {sql_literal(declaration.name)} AS table_name, COUNT(*) AS file_ct"
+        f" FROM glob({sql_literal(read_pattern(base_path, declaration))})"
     )
 
 
@@ -328,7 +329,7 @@ def create_view_statement(base_path: str, declaration: FileDeclaration, schema: 
     if not NAME_PATTERN.match(declaration.name):
         raise ValueError(NAME_INVALID)
 
-    arguments = [_sql_literal(read_pattern(base_path, declaration))]
+    arguments = [sql_literal(read_pattern(base_path, declaration))]
     arguments.extend(_FORMAT_ARGUMENTS[declaration.format])
 
     declared = _OPTIONS_BY_FORMAT[declaration.format]
@@ -343,20 +344,12 @@ def create_view_statement(base_path: str, declaration: FileDeclaration, schema: 
         arguments.append("union_by_name = true")
 
     reader = _READERS[declaration.format]
-    view = f"{_sql_identifier(schema)}.{_sql_identifier(declaration.name)}"
+    view = f"{sql_identifier(schema)}.{sql_identifier(declaration.name)}"
     # Not OR REPLACE: a name that folds onto an existing view must fail rather than replace it.
     return f'CREATE VIEW {view} AS SELECT * FROM {reader}({", ".join(arguments)})'
-
-
-def _sql_literal(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
-
-
-def _sql_identifier(value: str) -> str:
-    return '"' + value.replace('"', '""') + '"'
 
 
 def _sql_value(value: Any, kind: type) -> str:
     if kind is bool:
         return "true" if value in (True, "true", "True", 1) else "false"
-    return _sql_literal(str(value))
+    return sql_literal(str(value))

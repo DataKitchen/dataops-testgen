@@ -327,7 +327,8 @@ def test_credentials_are_registered_before_the_configuration_is_locked(monkeypat
         "SET enable_external_access",
         "SET lock_configuration",
     ]
-    assert "SET allowed_directories = ['s3://claims-bucket/monthly/']" in connection.statements
+    allow_list = next(statement for statement in connection.statements if "allowed_directories" in statement)
+    assert allow_list.startswith("SET allowed_directories = ['s3://claims-bucket/monthly/', ")
 
 
 def test_an_azure_connection_reads_through_the_curl_transport(monkeypatch):
