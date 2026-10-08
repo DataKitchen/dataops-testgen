@@ -1,3 +1,4 @@
+import inspect
 import sys
 from unittest.mock import MagicMock, Mock, patch
 from uuid import uuid4
@@ -11,6 +12,7 @@ from testgen.commands.job_registry import (
     JobConfig,
     run_final_callbacks,
 )
+from testgen.commands.run_test_execution import run_test_execution
 from testgen.common.enums import PAUSABLE_JOB_KEYS, JobKey
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.pausable_job import JobParked, PausableJob
@@ -319,3 +321,12 @@ def test_exec_job_sweeps_stale_spill_directories(mock_session):
         exec_job(job.id)
 
     sweep.assert_called_once_with()
+
+
+def test_run_tests_handler_accepts_the_payload_the_submit_routes_build():
+    """``exec_job`` dispatches with ``handler(**job_exec.kwargs)``, so a key the handler does not
+    name raises TypeError inside a scheduler subprocess rather than at submit time. Bind the
+    signature against the payload the REST route and the MCP tool produce."""
+    signature = inspect.signature(run_test_execution)
+    signature.bind(test_suite_id=str(uuid4()))
+    signature.bind(test_suite_id=str(uuid4()), match_schema_name="reference_2026_09_10")

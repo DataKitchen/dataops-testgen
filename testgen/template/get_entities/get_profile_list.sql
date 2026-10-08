@@ -4,7 +4,7 @@ Optional: table-name*/
 
 SELECT p.id as profile_run_id,
        p.project_code as project_key,
-       schema_name, p.table_groups_id,
+       r.schema_name, p.table_groups_id,
        profiling_starttime as start_time, je.status,
        COUNT(DISTINCT table_name) as tables,
        COUNT(DISTINCT table_name || '.' || column_name) as columns
@@ -14,6 +14,6 @@ INNER JOIN profile_results r
 INNER JOIN job_executions je
    ON (je.id = p.id)
  WHERE p.table_groups_id = :TABLE_GROUP_ID
-GROUP BY p.id, p.project_code, p.connection_id, schema_name, p.table_groups_id,
+GROUP BY p.id, p.project_code, p.connection_id, r.schema_name, p.table_groups_id,
        profiling_starttime, je.status
 ORDER BY profiling_starttime DESC;

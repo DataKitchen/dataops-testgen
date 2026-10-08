@@ -142,6 +142,7 @@ CREATE TABLE profiling_runs (
    project_code            VARCHAR(30) NOT NULL,
    connection_id           BIGINT      NOT NULL,
    table_groups_id         UUID        NOT NULL,
+   schema_name             VARCHAR(50),
    profiling_starttime     TIMESTAMP,
    progress                JSONB,
    table_ct                BIGINT,
@@ -1040,21 +1041,16 @@ CREATE INDEX ix_ares_anid
    ON profile_anomaly_results(anomaly_id);
 
 -- Index data_table_chars
-CREATE INDEX idx_dtc_tg_schema_table
-  ON data_table_chars (table_groups_id, schema_name, table_name);
-
-CREATE INDEX idx_dtc_id
-  ON data_table_chars (table_id);
+-- Unique: a table is identified by (table_groups_id, table_name), and reads join on that alone.
+CREATE UNIQUE INDEX uix_dtc_tg_table
+  ON data_table_chars (table_groups_id, table_name);
 
 -- Index data_column_chars
-CREATE INDEX idx_dcc_tg_schema_table_column
-  ON data_column_chars (table_groups_id, schema_name, table_name, column_name);
+CREATE UNIQUE INDEX uix_dcc_tg_table_column
+  ON data_column_chars (table_groups_id, table_name, column_name);
 
 CREATE INDEX idx_dcc_tableid_column
   ON data_column_chars (table_id, column_name);
-
-CREATE INDEX idx_dcc_id
-  ON data_column_chars (column_id);
 
 -- Conditional Index for dq_scoring views
 CREATE INDEX idx_test_results_filter_join
@@ -1125,7 +1121,9 @@ CREATE TABLE job_executions (
     completed_at    TIMESTAMPTZ,
     resume_state    JSONB,
     active_seconds  DOUBLE PRECISION,
-    in_process      BOOLEAN         NOT NULL DEFAULT FALSE
+    in_process      BOOLEAN         NOT NULL DEFAULT FALSE,
+    external_url    VARCHAR,
+    caller_metadata JSONB
 );
 
 -- The claim query selects status IN ('pending', 'interrupted', 'resume_requested', 'queued',

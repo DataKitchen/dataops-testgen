@@ -56,6 +56,8 @@ WITH score_calc
          ON (dcc.table_groups_id = tg.id)
       INNER JOIN projects proj
          ON (tg.project_code = proj.project_code)
+      -- The catalog is joined without schema_name: the catalog row's schema follows whichever
+      -- schema was last refreshed, while these rows keep the one they were written against.
       LEFT JOIN data_table_chars dtc
          ON (dcc.table_id = dtc.table_id)
       LEFT JOIN (test_results r
@@ -63,7 +65,6 @@ WITH score_calc
                      ON (r.test_suite_id = ts.id
                     AND  r.test_run_id = ts.last_complete_test_run_id))
          ON (dcc.table_groups_id = ts.table_groups_id
-        AND  dcc.schema_name = r.schema_name
         AND  dcc.table_name = r.table_name
         AND  dcc.column_name = r.column_names)
        WHERE dcc.table_groups_id = :TABLE_GROUPS_ID
@@ -104,11 +105,9 @@ WITH score_detail
                      ON (r.test_suite_id = ts.id
                     AND  r.test_run_id = ts.last_complete_test_run_id))
          ON (dtc.table_groups_id = ts.table_groups_id
-        AND  dtc.schema_name = r.schema_name
         AND  dtc.table_name = r.table_name)
       LEFT JOIN data_column_chars dcc
          ON (dtc.table_groups_id = dcc.table_groups_id
-        AND  dtc.schema_name = dcc.schema_name
         AND  dtc.table_name = dcc.table_name
         AND  r.column_names = dcc.column_name)
        WHERE dtc.table_groups_id = :TABLE_GROUPS_ID

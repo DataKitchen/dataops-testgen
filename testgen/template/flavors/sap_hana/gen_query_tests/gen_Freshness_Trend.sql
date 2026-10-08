@@ -13,14 +13,12 @@ latest_results AS (
     INNER JOIN latest_run lr ON p.profile_run_id = lr.profile_run_id
     INNER JOIN data_table_chars dtc ON (
       dtc.table_groups_id = p.table_groups_id
-      AND dtc.schema_name = p.schema_name
       AND dtc.table_name = p.table_name
       -- Ignore dropped tables
       AND dtc.drop_date IS NULL
     )
     INNER JOIN data_column_chars dcc ON (
       dcc.table_groups_id = p.table_groups_id
-      AND dcc.schema_name = p.schema_name
       AND dcc.table_name = p.table_name
       AND dcc.column_name = p.column_name
       -- Ignore dropped columns
@@ -164,7 +162,7 @@ SELECT
   :TEST_SUITE_ID ::UUID   AS test_suite_id,
   :VERSION_ID ::UUID      AS version_id,
   'Freshness_Trend'       AS test_type,
-  s.schema_name,
+  :DATA_SCHEMA            AS schema_name,
   s.table_name,
   s.column_names          AS groupby_names,
   'Y'                     AS test_active,

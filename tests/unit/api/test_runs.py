@@ -109,6 +109,8 @@ def _mock_job(**overrides):
         "project_code": "test_project",
         "started_at": datetime.now(UTC),
         "completed_at": datetime.now(UTC),
+        "external_url": None,
+        "caller_metadata": None,
     }
     defaults.update(overrides)
     job = MagicMock()
@@ -1370,3 +1372,28 @@ def test_column_profiles_carry_the_schema_when_the_database_type_names_one(mock_
     item = list_profiling_run_columns(_mock_job(), **_column_defaults()).items[0]
 
     assert item.schema_name == "sales_space"
+
+
+def test_get_test_run_returns_the_link_the_caller_sent(db_session_mock):
+    """The submit body takes a link, so reading the run gives it back."""
+    job = _mock_job(external_url="https://ci.example.com/runs/1")
+
+    with patch(f"{MODULE}.TestRun") as mock_tr, patch(f"{MODULE}.TestResult") as mock_res:
+        mock_tr.get.return_value = None
+        mock_res.count_by_status.return_value = {}
+        response = get_test_run(job)
+
+    assert response.external_url == "https://ci.example.com/runs/1"
+
+
+def test_get_test_run_returns_caller_metadata(db_session_mock):
+    """Whatever the caller sent at submit comes back on the run, unchanged."""
+    metadata = {"url": "https://ci.example.com/runs/1", "ctx": {"attempt": 2}}
+    job = _mock_job(caller_metadata=metadata)
+
+    with patch(f"{MODULE}.TestRun") as mock_tr, patch(f"{MODULE}.TestResult") as mock_res:
+        mock_tr.get.return_value = None
+        mock_res.count_by_status.return_value = {}
+        response = get_test_run(job)
+
+    assert response.metadata == metadata

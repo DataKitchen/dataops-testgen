@@ -21,7 +21,7 @@ from testgen.common.models.test_definition import MISSING_TEST_DEFINITION_MESSAG
 from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_source_data_pii
 from testgen.common.read_file import replace_templated_functions
 from testgen.ui.services.database_service import fetch_from_target_db
-from testgen.utils import to_dataframe, to_sql_timestamp
+from testgen.utils import dict_from_kv, to_dataframe, to_sql_timestamp
 
 LOG = logging.getLogger("testgen")
 DEFAULT_LIMIT = 500
@@ -209,6 +209,11 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         return None
 
     flavor_service = get_flavor_service(lookup_data.sql_flavor)
+
+    # The match schema is run-scoped, so the result row records what the run compared against.
+    # Callers resolving a test definition without a result row fall back to its stored value.
+    run_parameters = dict_from_kv(issue_data.get("input_parameters"))
+
     params = {
         "TARGET_SCHEMA": issue_data["schema_name"],
         "TABLE_NAME": issue_data["table_name"],
@@ -240,7 +245,7 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         "SUBSET_CONDITION": test_definition.subset_condition or "1=1",
         "GROUPBY_NAMES": test_definition.groupby_names,
         "HAVING_CONDITION": f"HAVING {test_definition.having_condition}" if test_definition.having_condition else "",
-        "MATCH_SCHEMA_NAME": test_definition.match_schema_name,
+        "MATCH_SCHEMA_NAME": run_parameters.get("match_schema_name") or test_definition.match_schema_name,
         "MATCH_TABLE_NAME": test_definition.match_table_name,
         "MATCH_COLUMN_NAMES": test_definition.match_column_names,
         "MATCH_SUBSET_CONDITION": test_definition.match_subset_condition or "1=1",

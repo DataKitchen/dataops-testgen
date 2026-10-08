@@ -12,7 +12,6 @@ selected_columns AS (
     AND NOT EXISTS (
       SELECT 1 FROM data_column_chars dcc
       WHERE dcc.table_groups_id = p.table_groups_id
-        AND dcc.schema_name = p.schema_name
         AND dcc.table_name = p.table_name
         AND dcc.column_name = p.column_name
         AND dcc.excluded_data_element IS TRUE
@@ -30,7 +29,7 @@ SELECT
   :TEST_SUITE_ID ::UUID   AS test_suite_id,
   :VERSION_ID ::UUID      AS version_id,
   :TEST_TYPE              AS test_type,
-  s.schema_name,
+  :DATA_SCHEMA            AS schema_name,
   s.table_name,
   s.column_name,
   'Y'                     AS test_active, 

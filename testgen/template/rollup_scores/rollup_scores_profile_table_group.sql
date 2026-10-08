@@ -48,9 +48,10 @@ WITH score_detail
          ON (tg.last_complete_profile_run_id = r.id)
       INNER JOIN profile_results pr
          ON (r.id = pr.profile_run_id)
+      -- The catalog is joined without schema_name: the catalog row's schema follows whichever
+      -- schema was last refreshed, while these rows keep the one they were written against.
       INNER JOIN data_column_chars dcc
          ON (pr.table_groups_id = dcc.table_groups_id
-        AND  pr.schema_name = dcc.schema_name
         AND  pr.table_name = dcc.table_name
         AND  pr.column_name = dcc.column_name)
       LEFT JOIN data_table_chars dtc
@@ -99,7 +100,6 @@ WITH score_detail
          ON (r.id = pr.profile_run_id)
       INNER JOIN data_column_chars dcc
          ON (pr.table_groups_id = dcc.table_groups_id
-        AND  pr.schema_name = dcc.schema_name
         AND  pr.table_name = dcc.table_name
         AND  pr.column_name = dcc.column_name)
       LEFT JOIN data_table_chars dtc

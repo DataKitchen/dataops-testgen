@@ -232,7 +232,7 @@ def validate_metric_expression(
     pii_columns: set[str] = (
         set()
         if can_view_pii
-        else get_pii_columns(str(tg.id), tg.table_group_schema, table_name)
+        else get_pii_columns(str(tg.id), table_name=table_name)
     )
 
     doc = MdDoc()

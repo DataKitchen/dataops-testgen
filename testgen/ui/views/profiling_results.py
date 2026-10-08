@@ -257,7 +257,7 @@ class ProfilingResultsPage(Page):
                 item.get("column_name"),
             )
             if preview_data.get("rows") and not session.auth.user_has_permission("view_pii"):
-                pii_columns = get_pii_columns(item["table_group_id"], item["schema_name"], item["table_name"])
+                pii_columns = get_pii_columns(item["table_group_id"], table_name=item["table_name"])
                 if pii_columns:
                     preview_df = pd.DataFrame(preview_data["rows"], columns=preview_data["columns"])
                     mask_source_data_pii(preview_df, pii_columns)

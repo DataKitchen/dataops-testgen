@@ -18,10 +18,16 @@ from testgen.api.schemas import (
     TableGroupItem,
     TableGroupListResponse,
     TableGroupResponse,
+    TableGroupSchemaChange,
+    TableGroupUpdateRequest,
+    TableGroupUpdateResponse,
 )
 from testgen.common.database.table_group_service import (
+    SchemaMoveRefused,
+    apply_schema_move,
     apply_table_group_flavor_rules,
     is_duplicate_name_error,
+    move_table_group_schema,
     schema_label_for_table_group,
     validate_table_group_fields,
 )
@@ -203,4 +209,69 @@ def _to_response(table_group: TableGroup) -> TableGroupResponse:
         profile_exclude_xde=table_group.profile_exclude_xde,
         include_in_dashboard=table_group.include_in_dashboard,
         catalog_tags=CatalogTags.model_validate(table_group, from_attributes=True),
+    )
+
+
+_REFUSAL_STATUS = {
+    "job_in_flight": 409,
+    "invalid_schema_name": 422,
+    "schema_empty": 422,
+    "schema_unreadable": 422,
+    "schema_unsupported": 422,
+}
+
+
+@router.patch(
+    "/table-groups/{table_group_id}",
+    response_model=TableGroupUpdateResponse,
+    summary="Update a table group",
+    responses={
+        409: {"model": ErrorResponse, "description": "A job for this table group is still running"},
+        422: {"model": ErrorResponse, "description": "A supplied field cannot be applied"},
+    },
+)
+def update_table_group(
+    table_group: TableGroup = resolve_table_group("edit"),  # noqa: B008
+    body: TableGroupUpdateRequest = Body(...),  # noqa: B008
+) -> TableGroupUpdateResponse:
+    """Change a table group's configuration. Omitted fields are left as they are.
+
+    When `schema_name` changes, profiling, test generation, monitors, and test runs read the new
+    schema, and tests keep their history. Referential tests keep the schema of their second table.
+
+    The change is refused when the schema cannot be read or no table in it matches the table group's
+    table filters. Tables the new schema does not have are listed under `schema_change.missing_tables`.
+    """
+    supplied = body.model_dump(exclude_unset=True)
+    if not supplied:
+        raise api_error(422, "no_fields", "No fields supplied to update.")
+    # A field sent as null reads as "clear it", which no field here supports. Omit it instead,
+    # rather than have the request look applied when it was skipped.
+    if nulled := sorted(name for name, value in supplied.items() if value is None):
+        raise api_error(
+            422,
+            "null_field",
+            f"{', '.join(nulled)} cannot be null. Omit a field to leave it unchanged.",
+        )
+
+    move = None
+    if body.schema_name is not None and body.schema_name != table_group.table_group_schema:
+        try:
+            move = move_table_group_schema(table_group, body.schema_name)
+        except SchemaMoveRefused as refusal:
+            raise api_error(
+                _REFUSAL_STATUS.get(refusal.reason, 422), refusal.reason, refusal.message
+            ) from refusal
+        apply_schema_move(move, table_group.id)
+
+    return TableGroupUpdateResponse(
+        **_to_response(table_group).model_dump(),
+        schema_change=TableGroupSchemaChange(
+            previous_schema_name=move.previous_schema,
+            schema_name=move.schema,
+            definitions_repointed=move.definitions_repointed,
+            missing_tables=move.missing_tables,
+        )
+        if move
+        else None,
     )

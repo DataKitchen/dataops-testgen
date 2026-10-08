@@ -1,6 +1,14 @@
+from unittest.mock import MagicMock, patch
+
 import pandas as pd
 
-from testgen.common.pii_masking import PII_REDACTED, mask_hygiene_detail, mask_profiling_pii, mask_source_data_pii
+from testgen.common.pii_masking import (
+    PII_REDACTED,
+    get_pii_columns,
+    mask_hygiene_detail,
+    mask_profiling_pii,
+    mask_source_data_pii,
+)
 
 
 class Test_mask_source_data_pii:
@@ -314,3 +322,24 @@ class Test_mask_hygiene_detail_list_with_pii_columns:
         issues = [{"column_name": "ssn", "detail": "Non-printing: 5", "detail_redactable": False}]
         mask_hygiene_detail(issues, pii_columns={"ssn"})
         assert issues[0]["detail"] == "Non-printing: 5"
+
+
+class Test_get_pii_columns:
+    def test_does_not_narrow_by_schema(self):
+        """A catalogued column is identified by its table group and table.
+
+        The catalog's schema follows the last refresh, so narrowing by a schema the caller holds
+        would find nothing once the two differ -- and an empty result masks nothing, which shows
+        PII to a viewer who may not see it. Asserting the emitted SQL rather than the arguments,
+        since a filter can come back by any route.
+        """
+        session = MagicMock()
+        session.execute.return_value.mappings.return_value.all.return_value = []
+
+        with patch("testgen.common.pii_masking.get_current_session", return_value=session):
+            get_pii_columns("a-table-group", table_name="orders")
+
+        emitted = str(session.execute.call_args.args[0])
+        assert "table_groups_id = :table_group_id" in emitted
+        assert "table_name = :table_name" in emitted
+        assert "schema_name" not in emitted

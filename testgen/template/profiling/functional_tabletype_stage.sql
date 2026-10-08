@@ -4,9 +4,13 @@
 -- The current run's tables come from profile_run_id, not from run_date: run_date is a label a
 -- run stamps on its rows. The history scan is scoped by table_groups_id rather than
 -- (project_code, schema_name), which two table groups of one project can share.
+--
+-- The schema comes off the current run rather than the historical row, so a table group that
+-- now reads another schema still has one classification per table built from its whole history.
+-- Matching history on schema would hand the first run after a move no previous record count.
 WITH tablesrank AS
          (SELECT DISTINCT p.project_code,
-                          p.schema_name,
+                          pt.schema_name,
                           p.table_name,
                           p.run_date,
                           p.record_ct,
@@ -15,10 +19,9 @@ WITH tablesrank AS
          INNER JOIN (SELECT DISTINCT schema_name, table_name
                        FROM profile_results
                       WHERE profile_run_id = :PROFILE_RUN_ID) pt
-                 ON (p.schema_name = pt.schema_name
-                AND  p.table_name = pt.table_name)
+                 ON p.table_name = pt.table_name
           WHERE p.table_groups_id = :TABLE_GROUPS_ID
-          ORDER BY p.schema_name, p.table_name, p.run_date DESC),
+          ORDER BY pt.schema_name, p.table_name, p.run_date DESC),
      tablescount AS
          (SELECT *
                , LAG(record_ct, 1)

@@ -188,7 +188,6 @@ def get_tables_by_condition(
         FROM test_definitions test_defs
             LEFT JOIN data_column_chars ON (
                 test_defs.table_groups_id = data_column_chars.table_groups_id
-                AND test_defs.schema_name = data_column_chars.schema_name
                 AND test_defs.table_name = data_column_chars.table_name
                 AND test_defs.column_name = data_column_chars.column_name
             )
@@ -234,7 +233,6 @@ def get_tables_by_condition(
     active_tests_join = """
         LEFT JOIN active_test_definitions active_tests ON (
             table_chars.table_groups_id = active_tests.table_groups_id
-            AND table_chars.schema_name = active_tests.schema_name
             AND table_chars.table_name = active_tests.table_name
         )
     """ if include_active_tests else ""
@@ -445,7 +443,6 @@ def get_columns_by_condition(
         )
         LEFT JOIN profile_results ON (
             column_chars.last_complete_profile_run_id = profile_results.profile_run_id
-            AND column_chars.schema_name = profile_results.schema_name
             AND column_chars.table_name = profile_results.table_name
             AND column_chars.column_name = profile_results.column_name
         )
@@ -628,7 +625,6 @@ def get_profiling_anomalies(
         ON r.table_groups_id = tg.id
     LEFT JOIN data_column_chars dcc
         ON (tg.id = dcc.table_groups_id
-        AND r.schema_name = dcc.schema_name
         AND r.table_name = dcc.table_name
         AND r.column_name = dcc.column_name)
     LEFT JOIN data_table_chars dtc
@@ -698,7 +694,6 @@ def get_profiling_anomalies_by_ids(anomaly_ids: list[str]) -> pd.DataFrame:
         ON r.table_groups_id = tg.id
     LEFT JOIN data_column_chars dcc
         ON (tg.id = dcc.table_groups_id
-        AND r.schema_name = dcc.schema_name
         AND r.table_name = dcc.table_name
         AND r.column_name = dcc.column_name)
     LEFT JOIN data_table_chars dtc

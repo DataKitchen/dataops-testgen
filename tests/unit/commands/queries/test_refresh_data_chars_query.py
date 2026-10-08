@@ -313,3 +313,25 @@ def test_the_files_of_a_table_group_are_counted_in_one_query(tmp_path):
     assert query.count(" UNION ALL ") == 1
     assert "'claims' AS table_name" in query
     assert "'orders' AS table_name" in query
+
+
+# --- schema resolution ---
+
+
+def test_every_read_of_the_scanned_schema_agrees():
+    """The scanned schema reaches the DDF query, the row counts and the access probe.
+
+    A refresh that scans one schema while probing another would catalog rows the run cannot
+    read, so all three have to agree.
+    """
+    connection = Connection(sql_flavor="postgresql", max_query_chars=10_000)
+    sql_generator = RefreshDataCharsSQL(connection, TableGroup(table_group_schema="onboard_2026_09_10"))
+
+    ddf_query, ddf_params = sql_generator.get_schema_ddf()
+    assert ddf_params["DATA_SCHEMA"] == "onboard_2026_09_10"
+
+    (count_query, _), = sql_generator.get_row_counts(["orders"])
+    assert '"onboard_2026_09_10"."orders"' in count_query
+
+    access_query, _ = sql_generator.verify_access("orders")
+    assert '"onboard_2026_09_10"."orders"' in access_query

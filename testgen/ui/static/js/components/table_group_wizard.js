@@ -24,7 +24,6 @@
  * @property {string?} sqlFlavorCode
  * @property {string?} schemaLabel
  * @property {string[]?} steps
- * @property {boolean?} is_in_use
  * @property {TableGroupPreview?} table_group_preview
  * @property {CronSample?} standard_cron_sample
  * @property {CronSample?} monitor_cron_sample
@@ -149,7 +148,6 @@ const TableGroupWizard = (props) => {
     tableGroup: stepsState.tableGroup.rawVal,
     showConnectionSelector: step0Connections.length > 1,
     disableConnectionSelector: false,
-    disableSchemaField: props.is_in_use ?? false,
     sqlFlavor: props.sqlFlavor,
     sqlFlavorCode: props.sqlFlavorCode,
     schemaLabel: props.schemaLabel,
