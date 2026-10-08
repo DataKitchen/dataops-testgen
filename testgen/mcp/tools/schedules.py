@@ -7,7 +7,7 @@ from typing import Annotated
 from pydantic import Field
 from sqlalchemy import select
 
-from testgen.common.cron_service import describe_cron, get_cron_sample
+from testgen.common.cron_service import describe_cron, normalize_cron, validate_schedule
 from testgen.common.enums import JOB_STATUS_LABEL, JobKey
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
@@ -32,6 +32,8 @@ from testgen.mcp.tools.markdown import MdDoc
 
 _DOC_GROUP = DocGroup.TRIGGER
 
+_FIELD_NAMES = {"cron_expr": "cron_expression", "cron_tz": "cron_tz"}
+
 
 class ScheduleType(StrEnum):
     profiling_run = "profiling_run"
@@ -55,16 +57,10 @@ def _kind_display(key: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _validate_cron(cron_expression: str, cron_tz: str) -> str:
-    """Validate cron expression + timezone. Returns the human-readable description."""
-    if not cron_expression:
-        raise MCPUserError("`cron_expression` is required.")
-    if not cron_tz:
-        raise MCPUserError("`cron_tz` is required (IANA name, e.g. `UTC`).")
-    sample = get_cron_sample(cron_expression, cron_tz, sample_count=1)
-    if "error" in sample:
-        raise MCPUserError(f"Invalid cron expression or timezone: {sample['error']}")
-    return sample["readable_expr"]
+def _validate_cron(cron_expression: str, cron_tz: str) -> None:
+    """Raise ``MCPUserError`` listing every reason the cron expression and timezone cannot be stored."""
+    if errors := validate_schedule(cron_expression, cron_tz, field_names=_FIELD_NAMES):
+        raise MCPUserError("\n".join(errors))
 
 
 def _parse_schedule_type(value: str) -> ScheduleType:
@@ -204,7 +200,7 @@ def create_profiling_schedule(
         project_code=table_group.project_code,
         key=JobKey.run_profile,
         kwargs={"table_group_id": str(table_group.id)},
-        cron_expr=cron_expression,
+        cron_expr=normalize_cron(cron_expression),
         cron_tz=cron_tz,
         active=active,
     )
@@ -241,7 +237,7 @@ def create_test_run_schedule(
         project_code=suite.project_code,
         key=JobKey.run_tests,
         kwargs={"test_suite_id": str(suite.id)},
-        cron_expr=cron_expression,
+        cron_expr=normalize_cron(cron_expression),
         cron_tz=cron_tz,
         active=active,
     )
@@ -280,9 +276,9 @@ def update_schedule(
         _validate_cron(new_expr, new_tz)
 
     changes: list[tuple[str, object, object]] = []
-    if cron_expression is not None and cron_expression != sched.cron_expr:
-        changes.append(("Cron expression", sched.cron_expr, cron_expression))
-        sched.cron_expr = cron_expression
+    if cron_expression is not None and (canonical := normalize_cron(cron_expression)) != sched.cron_expr:
+        changes.append(("Cron expression", sched.cron_expr, canonical))
+        sched.cron_expr = canonical
     if cron_tz is not None and cron_tz != sched.cron_tz:
         changes.append(("Timezone", sched.cron_tz, cron_tz))
         sched.cron_tz = cron_tz
