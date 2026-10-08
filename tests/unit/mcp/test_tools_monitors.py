@@ -1238,7 +1238,7 @@ def test_update_monitor_settings_unknown_holiday_code(mock_resolve, mock_js, moc
 
     from testgen.mcp.tools.monitors import update_monitor_settings
 
-    with _patch_perms(permission="edit"), pytest.raises(MCPUserError, match="Unknown holiday codes"):
+    with _patch_perms(permission="edit"), pytest.raises(MCPUserError, match="`holiday_codes` has unknown codes"):
         update_monitor_settings(str(tg.id), holiday_codes=["US_FEDERAL"])
 
     mock_update.assert_not_called()
