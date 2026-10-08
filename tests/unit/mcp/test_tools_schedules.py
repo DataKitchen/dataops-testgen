@@ -68,6 +68,20 @@ def test_create_profiling_schedule_happy_path(mock_resolve_tg, mock_sched_cls, d
     saved.save.assert_called_once()
 
 
+@patch("testgen.mcp.tools.schedules.JobSchedule")
+@patch("testgen.mcp.tools.schedules.resolve_table_group")
+def test_create_profiling_schedule_stores_the_canonical_expression(mock_resolve_tg, mock_sched_cls, db_session_mock):
+    tg = _make_table_group()
+    mock_resolve_tg.return_value = tg
+    mock_sched_cls.return_value = _make_sched(linked_id=str(tg.id))
+
+    from testgen.mcp.tools.schedules import create_profiling_schedule
+
+    create_profiling_schedule(table_group_id=str(tg.id), cron_expression="0  3 * * mon-fri", cron_tz="UTC")
+
+    assert mock_sched_cls.call_args.kwargs["cron_expr"] == "0 3 * * 1-5"
+
+
 @patch("testgen.mcp.tools.schedules.resolve_table_group")
 def test_create_profiling_schedule_invalid_cron(mock_resolve_tg, db_session_mock):
     mock_resolve_tg.return_value = _make_table_group()

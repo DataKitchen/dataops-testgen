@@ -60,6 +60,8 @@ _CRON_TZ_MAX = 30
 def validate_schedule(cron_expr: str | None, cron_tz: str | None, *, field_names: Mapping[str, str]) -> list[str]:
     """Return every reason a cron expression and timezone cannot be stored as a schedule (empty list = valid).
 
+    The expression's width is checked in canonical form (``normalize_cron``), which is how it is stored.
+
     Args:
         cron_expr: The cron expression, five space-separated fields.
         cron_tz: An IANA timezone name.
@@ -70,8 +72,6 @@ def validate_schedule(cron_expr: str | None, cron_tz: str | None, *, field_names
 
     if not cron_expr:
         errors.append(f"`{names['cron_expr']}` is required.")
-    elif len(cron_expr) > _CRON_EXPR_MAX:
-        errors.append(f"`{names['cron_expr']}` must be at most {_CRON_EXPR_MAX} characters.")
 
     if not cron_tz:
         errors.append(f"`{names['cron_tz']}` is required (IANA name, e.g. `UTC`).")
@@ -82,6 +82,11 @@ def validate_schedule(cron_expr: str | None, cron_tz: str | None, *, field_names
         sample = get_cron_sample(cron_expr, cron_tz, sample_count=1)
         if "error" in sample:
             errors.append(f"Invalid cron expression or timezone: {sample['error']}")
+        elif len(canonical := normalize_cron(cron_expr)) > _CRON_EXPR_MAX:
+            errors.append(
+                f"`{names['cron_expr']}` must be at most {_CRON_EXPR_MAX} characters once written out as "
+                f"`{canonical}` ({len(canonical)} characters)."
+            )
 
     return errors
 

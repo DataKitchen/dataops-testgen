@@ -142,13 +142,19 @@ def test_create_schedule_reports_every_validation_failure_without_storing():
 
 @pytest.mark.parametrize(
     ("cron_expression", "timezone"),
-    [("61 * * * *", "UTC"), ("0 3 * * * *", "UTC"), ("0 0 31 2 *", "UTC"), ("0 3 * * *", "Mars/Base")],
+    [
+        ("61 * * * *", "UTC"),
+        ("0 3 * * * *", "UTC"),
+        ("0 0 31 2 *", "UTC"),
+        ("0 3 * * *", "Mars/Base"),
+        ("*/7,3 */5,2 * * 1-5/2", "UTC"),
+    ],
 )
 def test_create_schedule_rejects_what_the_scheduler_cannot_run(cron_expression, timezone):
     resp, added, _, _ = _post(TEST_RUN_URL, {"cron_expression": cron_expression, "timezone": timezone})
 
     assert resp.status_code == 400
-    assert _error_entries(resp)[0]["detail"].startswith("Invalid cron expression or timezone: ")
+    assert _error_entries(resp)[0]["code"] == "invalid_schedule"
     assert added == []
 
 

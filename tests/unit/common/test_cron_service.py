@@ -49,12 +49,29 @@ def test_validate_rejects_an_unknown_timezone(cron_tz):
     ]
 
 
-def test_validate_rejects_values_wider_than_their_columns():
+def test_validate_rejects_a_timezone_wider_than_its_column():
     """``America/Argentina/ComodRivadavia`` is a valid IANA name that does not fit ``cron_tz``."""
-    assert validate_schedule("0 3 * * " + "1," * 30 + "1", "America/Argentina/ComodRivadavia", field_names=NAMES) == [
-        "`cron_expression` must be at most 50 characters.",
+    assert validate_schedule("0 3 * * *", "America/Argentina/ComodRivadavia", field_names=NAMES) == [
         "`timezone` must be at most 30 characters.",
     ]
+
+
+def test_validate_measures_the_expression_as_stored():
+    """A short expression can expand past the column once written out in canonical form."""
+    expr = "*/7,3 */5,2 * * 1-5/2"
+    canonical = normalize_cron(expr)
+    assert len(expr) <= 50 < len(canonical)
+
+    assert validate_schedule(expr, "UTC", field_names=NAMES) == [
+        f"`cron_expression` must be at most 50 characters once written out as `{canonical}` ({len(canonical)} characters).",
+    ]
+
+
+def test_validate_accepts_a_long_expression_that_stores_short():
+    expr = "0" + " " * 50 + "3 * * mon-fri"
+    assert len(expr) > 50
+
+    assert validate_schedule(expr, "UTC", field_names=NAMES) == []
 
 
 def test_validate_names_fields_by_the_supplied_mapping():
