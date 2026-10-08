@@ -1,20 +1,46 @@
 #!/usr/bin/env python
 """
-Test Definition Name Mapping Script
+Test Transfer Script
 
-Renames tables and columns in an exported test definition document, using a mapping table, so that tests
-generated on one table group can be imported into a table group whose tables or columns are named differently.
-Writes the mapped document and a change report. Review both before importing the mapped document.
+Transfers test definitions from one test suite to another whose table group names its tables or columns
+differently, renaming the tables and columns from a mapping table. Through the TestGen API, it exports the source
+test suite, maps it, and previews or applies the import into the destination test suite. It also maps an exported
+test definition document given as a file. Either way it writes the mapped document and a change report.
 
 Runs on Python 3.11+ with the standard library only; TestGen does not need to be installed.
 
 Usage:
-    python scripts/map_test_definitions.py \
+    export TESTGEN_API_TOKEN=<access token>
+    python scripts/transfer_tests.py \
+        --api-url <TestGen API URL> \
+        --export-from <source test suite ID> \
+        --import-to <destination test suite ID> \
+        --mapping mapping.csv \
+        --output mapped_suite.json \
+        --report transfer_report.txt \
+        [--apply] \
+        [--delete-absent] \
+        [--skip-unrewritable]
+
+    --import-to previews the import of the mapped document and adds the preview to the report; nothing is imported.
+    Run the same command again with --apply to import. The import creates tests the destination does not have and
+    locks the generated ones, overwrites matching tests even when locked, and leaves the destination's other tests
+    alone. It imports every test or none: when any test would be skipped, nothing is imported and the report lists the
+    skipped tests.
+
+    With --delete-absent, the import also deletes every destination test that is not in the mapped document,
+    including tests added to the destination test suite by hand and the destination copies of tests that
+    --skip-unrewritable leaves out. Pass it to the preview as well, so the preview counts the tests that would be
+    deleted.
+
+    To map an exported document file instead, pass --input in place of --export-from. Without --import-to, the script
+    only writes the mapped document and the report:
+
+    python scripts/transfer_tests.py \
         --mapping mapping.csv \
         --input source_suite.json \
         --output mapped_suite.json \
-        --report mapping_report.txt \
-        [--skip-unrewritable]
+        --report transfer_report.txt
 
 Mapping CSV:
     Four columns: source_table, source_column, target_table, target_column. Names are exact and case-sensitive,
@@ -44,14 +70,16 @@ What the script rewrites:
     absent. A test with a non-empty field that can embed a name in SQL (subset and having conditions, custom
     queries, the window date column, the referential match fields, other grouping columns) is refused, or, with
     --skip-unrewritable, left out of the mapped document and listed in the report. The mapped document also carries
-    a name_mapping entry that marks it as this script's output.
+    a test_transfer entry that marks it as this script's output.
 
 Refusals:
     The script writes nothing and exits with status 1 when the mapping is malformed; when the input is not valid
     JSON, not an export document of a supported format version, or this script's own output; when a test carries a
     field it cannot rewrite (unless --skip-unrewritable); when two source names would land on the same target name;
     when a keyed-hash test's key column would land on a different table than the test; or when the mapping, input,
-    output, and report paths are not all different files.
+    output, and report paths are not all different files. With the API, it also exits with status 1: having written
+    nothing, when the export or the preview fails; and after writing both files, when the --apply import fails or
+    would skip any test, or when it ran but the report could not be updated.
 """
 
 from __future__ import annotations
@@ -68,9 +96,23 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import HTTPRedirectHandler, Request, build_opener
+from uuid import UUID
 
 SUPPORTED_FORMAT_VERSIONS = {1}
-MARKER_KEY = "name_mapping"
+MARKER_KEY = "test_transfer"
+
+API_TOKEN_VARIABLE = "TESTGEN_API_TOKEN"  # noqa: S105
+API_TIMEOUT_SECONDS = 600
+IMPORT_POLICY = {"on_match": "overwrite_all", "on_new": "create_and_lock", "on_absence": "do_nothing"}
+SKIP_REASONS = {
+    "invalid_table": "table not found in the destination table group",
+    "invalid_test_type": "test type does not exist",
+    "non_public_test_type": "monitor test type",
+    "missing_external_id": "manual test without an external_id",
+    "missing_required_field": "required field left blank",
+}
 
 MAPPING_COLUMNS = ("source_table", "source_column", "target_table", "target_column")
 DROP = "DROP"
@@ -96,6 +138,15 @@ NON_PLAIN_NAME_CHARS = frozenset(",()\"'`[]")
 
 class MappingRefused(Exception):
     """Raised when the input cannot be mapped safely."""
+
+
+class ApiFailed(Exception):
+    """Raised when a TestGen API request fails."""
+
+    def __init__(self, message: str, status: int | None = None, body: Any = None) -> None:
+        super().__init__(message)
+        self.status = status
+        self.body = body
 
 
 @dataclass
@@ -473,10 +524,10 @@ def _is_plain_name(value: Any) -> bool:
     return isinstance(value, str) and value == value.strip() and not NON_PLAIN_NAME_CHARS & set(value)
 
 
-def format_report(report: Report, input_path: Path, mapping_path: Path) -> str:
+def format_report(report: Report, input_source: Path | str, mapping_path: Path) -> str:
     lines = [
-        "Test definition name mapping report",
-        f"Input:   {input_path}",
+        "Test transfer report",
+        f"Input:   {input_source}",
         f"Mapping: {mapping_path}",
         f"Tests:   {report.tests_in} read, {report.tests_out} written, {len(report.dropped)} dropped",
     ]
@@ -514,6 +565,183 @@ def format_report(report: Report, input_path: Path, mapping_path: Path) -> str:
 
 def _plural(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+class _RefuseRedirects(HTTPRedirectHandler):
+    """Refuses redirects: urllib would send the token to the redirect target and turn a POST into a GET."""
+
+    def redirect_request(
+        self, req: Request, fp: Any, code: int, msg: str, headers: Any, newurl: str  # noqa: ARG002
+    ) -> None:
+        raise ApiFailed(f"{req.full_url} redirected to {newurl}. Check the scheme, host, and port in --api-url.")
+
+
+_opener = build_opener(_RefuseRedirects)
+
+
+def _open(request: Request, timeout: float) -> Any:
+    return _opener.open(request, timeout=timeout)
+
+
+class ApiClient:
+    """Sends requests to the TestGen REST API with a bearer token."""
+
+    def __init__(self, api_url: str, token: str) -> None:
+        self.base_url = api_url.rstrip("/").removesuffix("/api/v1")
+        self._token = token
+
+    def request(self, method: str, path: str, body: Any = None) -> Any:
+        """Sends a request and returns the parsed JSON response.
+
+        :param path: The path below /api/v1.
+        :param body: The JSON request body, if any.
+        :raises ApiFailed: When the request cannot be sent, or the response is an error status or not JSON.
+        """
+        url = f"{self.base_url}/api/v1{path}"
+        headers = {"Authorization": f"Bearer {self._token}", "Accept": "application/json"}
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        request = Request(url, data=data, headers=headers, method=method)  # noqa: S310
+        try:
+            with _open(request, timeout=API_TIMEOUT_SECONDS) as response:
+                text = response.read().decode("utf-8")
+        except HTTPError as error:
+            error_body = _parse_json(error.read())
+            hint = ""
+            if error.code == 404 and not _has_error_code(error_body, "not_found"):
+                hint = ". Check that --api-url is the TestGen API URL, with no path"
+            raise ApiFailed(
+                f"{method} {url} returned HTTP {error.code}{_error_details(error_body)}{hint}", error.code, error_body
+            ) from error
+        except URLError as error:
+            raise ApiFailed(f"Could not reach {url}: {error.reason}") from error
+        except OSError as error:
+            raise ApiFailed(f"Could not reach {url}: {error}") from error
+
+        parsed = _parse_json(text.encode("utf-8"))
+        if parsed is None:
+            raise ApiFailed(f"{url} did not return JSON. Check that --api-url is the TestGen API URL, not the UI URL.")
+        return parsed
+
+
+def _parse_json(content: bytes) -> Any:
+    try:
+        return json.loads(content.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+
+
+def _error_details(body: Any) -> str:
+    detail = body.get("detail") if isinstance(body, dict) else None
+    if isinstance(detail, dict):
+        detail = detail.get("errors")
+    if isinstance(detail, list):
+        detail = "; ".join(
+            str(item.get("detail") or item.get("msg")) for item in detail
+            if isinstance(item, dict) and (item.get("detail") or item.get("msg"))
+        )
+    return f": {detail}" if isinstance(detail, str) and detail else ""
+
+
+def _has_error_code(body: Any, code: str) -> bool:
+    """Whether an API error body carries an error with the given code."""
+    detail = body.get("detail") if isinstance(body, dict) else None
+    errors = detail.get("errors") if isinstance(detail, dict) else None
+    return isinstance(errors, list) and any(isinstance(item, dict) and item.get("code") == code for item in errors)
+
+
+def _is_not_found(error: ApiFailed) -> bool:
+    """Whether the API reported a missing resource, as opposed to a URL that matches no endpoint."""
+    return error.status == 404 and _has_error_code(error.body, "not_found")
+
+
+def export_from_api(client: ApiClient, test_suite_id: str) -> Any:
+    """Exports every test definition in a test suite."""
+    try:
+        return client.request("GET", f"/test-suites/{test_suite_id}/test-definition-export")
+    except ApiFailed as error:
+        if _is_not_found(error):
+            raise ApiFailed(
+                f"Test suite {test_suite_id} was not found, or the token's user cannot view it", error.status
+            ) from error
+        raise
+
+
+def import_to_api(
+    client: ApiClient, test_suite_id: str, document: dict[str, Any], apply: bool, delete_absent: bool = False
+) -> tuple[dict[str, Any], bool]:
+    """Previews or applies the import of a mapped document into a test suite.
+
+    :param apply: Import with all-or-nothing semantics instead of previewing.
+    :param delete_absent: Delete the destination tests that are not in the document.
+    :return: The import result, and whether the import was refused because tests would be skipped.
+    """
+    config = {"mode": "apply_strict" if apply else "preview", **IMPORT_POLICY}
+    if delete_absent:
+        config["on_absence"] = "delete_all"
+    body = {"config": config, "payload": document}
+    try:
+        return client.request("POST", f"/test-suites/{test_suite_id}/test-definition-import", body), False
+    except ApiFailed as error:
+        detail = error.body.get("detail") if isinstance(error.body, dict) else None
+        if error.status == 400 and isinstance(detail, dict) and isinstance(detail.get("import_result"), dict):
+            return detail["import_result"], True
+        if _is_not_found(error):
+            raise ApiFailed(
+                f"Test suite {test_suite_id} was not found, or the token's user cannot edit it", error.status
+            ) from error
+        raise
+
+
+def format_import(
+    result: dict[str, Any], document: dict[str, Any], test_suite_id: str, applied: bool, refused: bool
+) -> str:
+    """The report section for an import preview or an applied import.
+
+    :param document: The mapped document that was sent, to name the tests the result refers to by index.
+    """
+    if refused:
+        title = f"Import into test suite {test_suite_id} refused: tests would be skipped, so nothing was imported"
+    elif applied:
+        title = f"Import into test suite {test_suite_id}"
+    else:
+        title = f"Import preview into test suite {test_suite_id} (nothing imported)"
+    lines = ["", title, f"  {_import_counts(result, applied and not refused)}"]
+
+    definitions = document.get("definitions") or []
+    skipped: defaultdict[str, Counter[str]] = defaultdict(Counter)
+    for item in result.get("items") or []:
+        if item.get("action") != "skip":
+            continue
+        reason = str(item.get("reason"))
+        for test in item.get("tds") or []:
+            index = test.get("idx")
+            definition = definitions[index] if isinstance(index, int) and 0 <= index < len(definitions) else {}
+            table = definition.get("table_name") or "no table"
+            if reason == "invalid_table":
+                skipped[reason][table] += 1
+            else:
+                column = definition.get("column_name")
+                location = f"{table}.{column}" if column else table
+                skipped[reason][f"{definition.get('test_type', 'test')} on {location}"] += 1
+    if skipped:
+        lines.extend(["", f"Tests skipped by the import ({sum(sum(tests.values()) for tests in skipped.values())})"])
+        for reason, locations in skipped.items():
+            lines.append(f"  {SKIP_REASONS.get(reason, reason)}:")
+            lines.extend(f"    {location}: {_plural(count, 'test')}" for location, count in sorted(locations.items()))
+    return "\n".join(lines) + "\n"
+
+
+def _import_counts(result: dict[str, Any], applied: bool) -> str:
+    summary = result.get("summary") or {}
+    verb = "" if applied else "would be "
+    counts = [
+        f"{_plural(count, 'test')} {verb}{action}" for action in ("created", "updated", "skipped", "deleted")
+        if (count := int(summary.get(action) or 0))
+    ]
+    return ", ".join(counts) if counts else "no tests to import"
 
 
 def _check_paths(*paths: Path) -> None:
@@ -561,39 +789,136 @@ def _read_document(path: Path) -> Any:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Rename tables and columns in a test definition export document from a mapping table."
+        description="Transfer test definitions between test suites, renaming tables and columns from a mapping table."
     )
     parser.add_argument("--mapping", type=Path, required=True, help="Mapping table (CSV)")
-    parser.add_argument("--input", type=Path, required=True, help="Export document to map (JSON)")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--input", type=Path, help="Export document to map (JSON)")
+    source.add_argument("--export-from", metavar="TEST_SUITE_ID", help="Test suite to export through the API")
     parser.add_argument("--output", type=Path, required=True, help="Mapped document to write (JSON)")
     parser.add_argument("--report", type=Path, required=True, help="Change report to write (text)")
     parser.add_argument(
         "--skip-unrewritable", action="store_true",
         help="Leave out tests with fields that can contain names the script cannot rewrite, instead of refusing",
     )
+    parser.add_argument(
+        "--api-url",
+        help=f"TestGen API URL, for --export-from and --import-to. The token is read from {API_TOKEN_VARIABLE}",
+    )
+    parser.add_argument(
+        "--import-to", metavar="TEST_SUITE_ID",
+        help="Test suite to import the mapped document into through the API. Previews the import unless --apply is set",
+    )
+    parser.add_argument("--apply", action="store_true", help="Import the mapped document instead of previewing")
+    parser.add_argument(
+        "--delete-absent", action="store_true",
+        help="Also delete the destination tests that are not in the mapped document, including tests added by hand",
+    )
     args = parser.parse_args(argv)
+    _check_arguments(parser, args)
+
+    client = None
+    if args.export_from or args.import_to:
+        token = os.environ.get(API_TOKEN_VARIABLE, "").strip()
+        if not token:
+            parser.error(f"--export-from and --import-to read the API token from {API_TOKEN_VARIABLE}, which is unset")
+        client = ApiClient(args.api_url, token)
 
     try:
-        _check_paths(args.mapping, args.input, args.output, args.report)
+        _check_paths(*filter(None, [args.mapping, args.input, args.output, args.report]))
         mapping = read_mapping(args.mapping)
-        document = _read_document(args.input)
+        if client and args.export_from:
+            document = export_from_api(client, args.export_from)
+            input_source = f"test suite {args.export_from} at {client.base_url}"
+        else:
+            document = _read_document(args.input)
+            input_source = str(args.input)
         marker = {"mapping_file": args.mapping.name, "mapped_at": datetime.now(UTC).isoformat(timespec="seconds")}
         mapped_document, report = map_document(document, mapping, marker, args.skip_unrewritable)
+        report_text = format_report(report, input_source, args.mapping)
+
+        import_result: dict[str, Any] | None = None
+        if client and args.import_to and not args.apply:
+            import_result, _ = import_to_api(
+                client, args.import_to, mapped_document, apply=False, delete_absent=args.delete_absent
+            )
+            report_text += format_import(import_result, mapped_document, args.import_to, applied=False, refused=False)
         _write_together({
             args.output: json.dumps(mapped_document, indent=2, ensure_ascii=False) + "\n",
-            args.report: format_report(report, args.input, args.mapping),
+            args.report: report_text,
         })
     except MappingRefused as error:
         sys.stderr.write(f"Refused: {error}\n")
+        return 1
+    except ApiFailed as error:
+        sys.stderr.write(f"Error: {error}\n")
         return 1
     except OSError as error:
         sys.stderr.write(f"Error: {error}\n")
         return 1
 
-    sys.stdout.write(
-        f"Wrote {args.output} ({report.tests_out} of {report.tests_in} tests) and {args.report}. "
-        "Review both before importing.\n"
-    )
+    wrote = f"Wrote {args.output} ({report.tests_out} of {report.tests_in} tests) and {args.report}."
+    if client is None or not args.import_to:
+        sys.stdout.write(f"{wrote} Review both before importing.\n")
+        return 0
+    if import_result is not None:
+        sys.stdout.write(
+            f"{wrote} Previewed the import into test suite {args.import_to}; nothing was imported. "
+            "Review both, then run the same command with --apply to import.\n"
+        )
+        return 0
+    return _apply_import(client, args, mapped_document, report_text, wrote)
+
+
+def _check_arguments(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    if args.apply and not args.import_to:
+        parser.error("--apply requires --import-to")
+    if args.delete_absent and not args.import_to:
+        parser.error("--delete-absent requires --import-to")
+    if (args.export_from or args.import_to) and not args.api_url:
+        parser.error("--export-from and --import-to require --api-url")
+    if args.api_url and not (args.export_from or args.import_to):
+        parser.error("--api-url is used only with --export-from or --import-to")
+    if args.api_url and not args.api_url.startswith(("http://", "https://")):
+        parser.error("--api-url must start with http:// or https://")
+    for option, value in (("--export-from", args.export_from), ("--import-to", args.import_to)):
+        if value is not None:
+            try:
+                UUID(value)
+            except ValueError:
+                parser.error(f"{option} takes a test suite ID, not {value!r}")
+    if args.export_from and args.import_to and UUID(args.export_from) == UUID(args.import_to):
+        parser.error("--export-from and --import-to must be different test suites")
+
+
+def _apply_import(
+    client: ApiClient, args: argparse.Namespace, document: dict[str, Any], report_text: str, wrote: str
+) -> int:
+    """Imports the mapped document after both files are written, and adds the result to the report."""
+    try:
+        result, refused = import_to_api(client, args.import_to, document, apply=True, delete_absent=args.delete_absent)
+    except ApiFailed as error:
+        # A 5xx can come from a proxy that gave up while the API went on to finish the import
+        outcome = (
+            "Nothing was imported." if error.status and error.status < 500
+            else "The import may have run. Running the command again is safe, because it updates the same tests."
+        )
+        sys.stderr.write(f"{wrote}\nError: {error}. {outcome}\n")
+        return 1
+
+    section = format_import(result, document, args.import_to, applied=True, refused=refused)
+    try:
+        _write_together({args.report: report_text + section})
+    except OSError as error:
+        sys.stderr.write(f"Error: the import ran, but the report could not be updated: {error}\n{section}")
+        return 1
+    if refused:
+        sys.stderr.write(
+            f"{wrote}\nRefused: the import into test suite {args.import_to} would skip tests, so nothing was "
+            f"imported. The report lists them.\n"
+        )
+        return 1
+    sys.stdout.write(f"{wrote} Imported into test suite {args.import_to}: {_import_counts(result, True)}.\n")
     return 0
 
 
