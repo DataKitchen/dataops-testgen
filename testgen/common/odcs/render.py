@@ -18,7 +18,7 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestDefinition, TestType
+from testgen.common.models.test_definition import MANAGED_TEST_TYPES, TestDefinition, TestType
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.odcs.quality_rules import (
     RULE_MAPPINGS,
@@ -260,11 +260,13 @@ def render_document(version: SuiteVersion) -> dict[str, Any]:
     its rule to; ``UnmappedFlavorError`` if the backing connection's flavor maps to no ODCS
     server type; and ``ValueError`` (from ``rule_scope``) if a term's test type is excluded --
     none is ever silently dropped or placed somewhere its query would not mean what it claims.
+    Terms of a managed test type are left out: they check what the document itself declares,
+    so the document is already their assertion.
     """
     document = copy.deepcopy(version.metadata_document) if version.metadata_document else {}
     _fill_root_fundamentals(document, version)
 
-    terms = _terms_for_version(version.id)
+    terms = [term for term in _terms_for_version(version.id) if term.test_type not in MANAGED_TEST_TYPES]
     if not terms:
         return document
 

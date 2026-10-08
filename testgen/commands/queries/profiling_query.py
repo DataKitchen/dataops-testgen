@@ -214,6 +214,7 @@ class ProfilingSQL:
         # samples: approximately where the target has the function, exactly otherwise.
         general_type = column_chars.general_type
         do_sample = bool(table_sampling)
+        x_countable = (column_chars.column_type or "").lower() in self.flavor_service.distinct_countable_x_types
 
         extra_params = {
             "TABLE_HINT": self.flavor_service.table_hint(self.connection.sql_flavor_code),
@@ -227,6 +228,8 @@ class ProfilingSQL:
             "is_type_X": general_type == "X",
             "is_not_A": general_type != "A",
             "is_not_A_or_X": general_type not in ("A", "X"),
+            "is_distinct_countable": general_type != "A" and (general_type != "X" or x_countable),
+            "is_X_text_counted": general_type == "X" and not x_countable,
             "is_A_sampling": general_type == "A" and do_sample,
             "is_A_no_sampling": general_type == "A" and not do_sample,
             "is_N_decimal": general_type == "N" and column_chars.is_decimal,

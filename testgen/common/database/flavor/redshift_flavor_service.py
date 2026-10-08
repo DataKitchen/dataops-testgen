@@ -38,6 +38,8 @@ class RedshiftFlavorService(FlavorService):
     # be probed on a derived row; every supported Redshift release has it.
     supports_approx_percentile = True
 
+    distinct_countable_x_types = frozenset({"binary varying", "varbyte"})
+
     def text_value(self, column_ref: str, column_type: str | None) -> str:
         # CHAR values are stored padded with spaces to the declared length.
         if column_type and re.fullmatch(r"char(\(\d+\))?", column_type.lower()):

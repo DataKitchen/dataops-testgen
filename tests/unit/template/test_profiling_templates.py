@@ -6,6 +6,7 @@ query rather than padded with a NULL placeholder to share one column list.
 
 import json
 import re
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import get_args
@@ -184,6 +185,23 @@ def test_every_non_text_type_counts_its_values(flavor, general_type):
     assert {"record_ct", "value_ct", "null_value_ct", "distinct_value_ct"} <= _aliases(
         _render(flavor, general_type, sampled=False)
     )
+
+
+@pytest.mark.parametrize(
+    ("flavor", "column_type", "counted_directly"),
+    [
+        ("postgresql", "interval", True),
+        ("postgresql", "json", False),
+        ("databricks", "binary", True),
+        ("databricks", "map<string,int>", False),
+        ("redshift", "binary varying", True),
+    ],
+)
+def test_an_x_column_is_counted_directly_when_the_engine_compares_its_type(flavor, column_type, counted_directly):
+    column = replace(_column("X"), column_type=column_type)
+    query, _ = _profiling_sql(flavor).run_column_profiling(column, None)
+    quote = get_flavor_service(flavor).quote_character
+    assert (f"COUNT(DISTINCT {quote}c{quote}) AS distinct_value_ct" in query) == counted_directly
 
 
 @pytest.mark.parametrize("general_type", ["N", "D", "B", "X", "T"])

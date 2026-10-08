@@ -14,6 +14,9 @@ class PostgresqlFlavorService(RedshiftFlavorService):
     # Inherited from Redshift, which has APPROXIMATE PERCENTILE_DISC; PostgreSQL has no equivalent.
     supports_approx_percentile = False
 
+    # Counting these over a text form would split values the engine treats as equal ('1 day' and '24 hours')
+    distinct_countable_x_types = frozenset({"bit", "bit varying", "bytea", "interval", "jsonb", "uuid"})
+
     def sampleable_object_types(self, sql_flavor_code: str) -> frozenset[ObjectType] | None:  # noqa: ARG002
         # TABLESAMPLE applies only to tables and materialized views.
         return frozenset({ObjectType.TABLE, ObjectType.MATERIALIZED_VIEW})

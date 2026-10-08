@@ -177,6 +177,7 @@ WITH new_chars AS (
       general_type,
       column_type,
       db_data_type,
+      logical_type,
       is_decimal,
       run_date
    FROM stg_data_chars_updates
@@ -189,6 +190,7 @@ update_chars AS (
       general_type = n.general_type,
       column_type = n.column_type,
       db_data_type = n.db_data_type,
+      logical_type = n.logical_type,
       is_decimal = n.is_decimal,
       last_mod_date = CASE WHEN n.db_data_type <> d.db_data_type THEN n.run_date ELSE d.last_mod_date END,
       drop_date = NULL
@@ -250,6 +252,7 @@ WITH new_chars AS (
       general_type,
       column_type,
       db_data_type,
+      logical_type,
       is_decimal,
       run_date
    FROM stg_data_chars_updates
@@ -267,6 +270,7 @@ inserted_records AS (
          general_type,
          column_type,
          db_data_type,
+         logical_type,
          is_decimal,
          add_date,
          last_mod_date
@@ -280,6 +284,7 @@ inserted_records AS (
       n.general_type,
       n.column_type,
       n.db_data_type,
+      n.logical_type,
       n.is_decimal,
       n.run_date,
       n.run_date

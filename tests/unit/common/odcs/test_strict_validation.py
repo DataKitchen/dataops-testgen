@@ -47,26 +47,26 @@ pytestmark = pytest.mark.unit
 _FLAVOR = SqlFlavorCode.POSTGRESQL
 _SCHEMA = "public"
 
-# (column_name, general_type, functional_data_type, column_type) -- the four DataColumnChars
-# fields `add_table` reads to write a column descriptor.
-_PROFILED_COLUMNS: dict[str, list[tuple[str, str, str, str]]] = {
+# (column_name, functional_data_type, column_type, db_data_type, logical_type) -- the
+# DataColumnChars fields `add_table` and the renderer read.
+_PROFILED_COLUMNS: dict[str, list[tuple[str, str, str, str, str]]] = {
     "orders": [
-        ("order_id", "N", "ID", "integer"),
-        ("customer_id", "N", "ID", "integer"),
-        ("status", "A", "Category", "varchar(20)"),
-        ("total_amount", "N", "Amount", "numeric(12,2)"),
-        ("order_date", "D", "Date", "date"),
+        ("order_id", "ID", "integer", "integer", "integer"),
+        ("customer_id", "ID", "integer", "integer", "integer"),
+        ("status", "Category", "varchar(20)", "character varying(20)", "string"),
+        ("total_amount", "Amount", "numeric(12,2)", "numeric(12,2)", "number"),
+        ("order_date", "Date", "date", "date", "date"),
     ],
     "customers": [
-        ("customer_id", "N", "ID", "integer"),
-        ("email", "A", "Email", "varchar(200)"),
-        ("city", "A", "City", "varchar(80)"),
-        ("state", "A", "State", "char(2)"),
+        ("customer_id", "ID", "integer", "integer", "integer"),
+        ("email", "Email", "varchar(200)", "character varying(200)", "string"),
+        ("city", "City", "varchar(80)", "character varying(80)", "string"),
+        ("state", "State", "char(2)", "character(2)", "string"),
     ],
     "order_items": [
-        ("order_id", "N", "ID", "integer"),
-        ("sku", "A", "Code", "varchar(40)"),
-        ("quantity", "N", "Measurement", "integer"),
+        ("order_id", "ID", "integer", "integer", "integer"),
+        ("sku", "Code", "varchar(40)", "character varying(40)", "string"),
+        ("quantity", "Measurement", "integer", "integer", "integer"),
     ],
 }
 
@@ -210,8 +210,10 @@ def _draft() -> SuiteVersion:
 
     for table_name, columns in _PROFILED_COLUMNS.items():
         profiled = [
-            MagicMock(column_name=name, general_type=general, functional_data_type=functional, column_type=physical)
-            for name, general, functional, physical in columns
+            MagicMock(
+                column_name=name, functional_data_type=functional, db_data_type=db_type, logical_type=logical
+            )
+            for name, functional, _column_type, db_type, logical in columns
         ]
         with (
             patch.object(contract_service, "resolve_write_target", return_value=(version.id, {})),
@@ -230,9 +232,9 @@ def _draft() -> SuiteVersion:
 def _rendered_contract(terms: list[TestDefinition]) -> dict:
     test_type_codes = {term.test_type for term in terms}
     column_types = {
-        (table_name, name): physical
+        (table_name, name): column_type
         for table_name, columns in _PROFILED_COLUMNS.items()
-        for name, _general, _functional, physical in columns
+        for name, _functional, column_type, _db_type, _logical in columns
     }
     with (
         patch.object(render, "_terms_for_version", return_value=terms),

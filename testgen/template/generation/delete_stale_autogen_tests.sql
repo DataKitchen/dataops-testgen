@@ -7,6 +7,8 @@ WHERE test_suite_id = :TEST_SUITE_ID ::UUID
   AND last_auto_gen_date IS NOT NULL
   -- Ignore locked tests
   AND lock_refresh = 'N'
+  -- Managed tests carry a run date but no generation set refreshes it, so they would always look stale
+  AND NOT (test_type = ANY(:MANAGED_TEST_TYPES))
   -- Filter by test types if specified (NULL = no filter)
   AND (:TEST_TYPES_FILTER IS NULL OR test_type = ANY(:TEST_TYPES_FILTER))
   {TABLE_FILTER};

@@ -20,6 +20,7 @@ from testgen.common.models.data_table import DataTable
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import (
+    MANAGED_TEST_TYPES,
     NON_PUBLIC_TEST_TYPES,
     TestDefinition,
     TestType,
@@ -397,7 +398,8 @@ def import_definitions(
     # Plan absence actions for unmatched existing TDs
     if config.on_absence != OnAbsence.do_nothing:
         for row in existing_rows:
-            if row.id not in matched_target_ids:
+            # Managed TDs are created and removed by TestGen, never by an import
+            if row.id not in matched_target_ids and row.test_type not in MANAGED_TEST_TYPES:
                 if config.on_absence == OnAbsence.delete_all:
                     actions.append(_PlannedAction(ImportAction.delete, ImportReason.absent, None, None, row))
                 elif config.on_absence == OnAbsence.delete_unlocked and not row.lock_refresh:

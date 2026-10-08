@@ -408,6 +408,7 @@ def test_copying_terms_mints_identities_on_the_target_version():
     with (
         patch("testgen.common.models.test_definition.get_current_session", return_value=session),
         patch.object(TestDefinition, "assert_version_writable"),
+        patch.object(TestDefinition, "_assert_no_managed_definitions"),
         patch.object(TestDefinition, "assign_missing_term_ids") as sweep,
     ):
         TestDefinition.copy([uuid4()], uuid4(), uuid4())
