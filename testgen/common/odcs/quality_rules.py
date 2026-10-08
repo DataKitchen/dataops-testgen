@@ -12,12 +12,17 @@ file-only ``templated_functions.yaml`` catalogue (via ``read_file.replace_templa
 to expand its macros, which is file access, not database access.
 """
 
+import dataclasses
+import logging
 import math
 import re
 from dataclasses import dataclass
+from datetime import date, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
+from testgen.common.clean_sql import parse_value_list, strip_trailing_semicolons
+from testgen.common.database.database_service import get_flavor_service
 from testgen.common.enums import OdcsDimension, QualityDimension, TestScope
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, SqlFlavorCode
 from testgen.common.models.test_definition import (
@@ -33,6 +38,9 @@ from testgen.common.read_file import replace_templated_functions
 
 if TYPE_CHECKING:
     from testgen.common.models.test_definition import TestDefinition, TestType
+
+
+LOG = logging.getLogger("testgen")
 
 
 class Operator(StrEnum):
@@ -141,14 +149,18 @@ class LibraryMetric(StrEnum):
 
 @dataclass(frozen=True)
 class RuleArgument:
-    """One library rule's ``arguments`` entry: the ODCS key, and the term field feeding it.
+    """One library rule's ``arguments`` entry: the ODCS key, and where its value comes from.
 
-    The field is named rather than assumed because the two are not the same across rows --
-    ``LOV_Match`` and ``Pattern_Match`` carry their predicate in ``baseline_value``, while
-    ``Dupe_Rows`` lists its grouping from ``groupby_names``.
+    Exactly one of ``term_field`` and ``fixed`` is set. ``term_field`` names the term field
+    feeding the argument, which differs across rows -- ``LOV_Match`` and ``Pattern_Match``
+    carry their predicate in ``baseline_value``, while ``Dupe_Rows`` lists its grouping from
+    ``groupby_names``. ``fixed`` is the argument itself, for a type whose predicate is part of
+    its definition rather than a parameter (``Email_Format``'s pattern, ``US_State``'s list);
+    a list is stored as a tuple so the row stays immutable.
     """
     name: str
-    term_field: str
+    term_field: str | None = None
+    fixed: str | tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -194,7 +206,42 @@ class CatCondition:
     test_condition: str
 
 
-# The seven test types with a direct ODCS library metric. `Missing_Pct` and `Row_Ct_Pct` carry
+# Fixed predicates of the test types whose library argument is part of their definition. Each
+# is the PostgreSQL measure's own check, restated as a pattern or list the engine evaluates the
+# same way: a NULL is never counted, and `''` is counted unless the type treats it as valid.
+EMAIL_PATTERN = r"^[A-Za-z0-9._'%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
+US_ZIP_PATTERN = r"^([0-9]{5}|[0-9]{9}|[0-9]{5}-[0-9]{4})$"
+US_ZIP3_PATTERN = r"^[0-9]{3}$"
+# `US_State` reads `NULLIF(column, '')`, so the empty string is valid there.
+US_STATE_VALID_VALUES: tuple[str, ...] = (
+    "AL", "AK", "AS", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FM", "FL", "GA", "GU", "HI", "ID",
+    "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MH", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE",
+    "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "MP", "OH", "OK", "OR", "PW", "PA", "PR", "RI", "SC",
+    "SD", "TN", "TX", "UT", "VT", "VI", "VA", "WA", "WV", "WI", "WY", "AE", "AP", "AA", "",
+)
+
+
+# Flavor families whose measure for a fixed-predicate type checks something other than its fixed
+# predicate -- a LIKE approximation, or a different regex. There the type renders `custom`.
+_INEXACT_FAMILIES: dict[str, frozenset[str]] = {
+    "Email_Format": frozenset({"bigquery", "mssql"}),
+}
+
+
+def _invalid_values_row(test_type: str, argument: RuleArgument) -> RuleMapping:
+    return RuleMapping(
+        test_type=test_type,
+        shape=RuleShape.LIBRARY,
+        scope=RuleScope.COLUMN,
+        operator=Operator.MUST_BE_LESS_OR_EQUAL_TO,
+        dimension=odcs_dimension(QualityDimension.VALIDITY),
+        metric=LibraryMetric.INVALID_VALUES,
+        unit="rows",
+        argument=argument,
+    )
+
+
+# The test types with a direct ODCS library metric. `Missing_Pct` and `Row_Ct_Pct` carry
 # `mustBeBetween`. `Missing_Pct`'s threshold is a Cohen's h drift bound, and Cohen's h is
 # monotonic in the underlying ratio, so one h-threshold around a fixed baseline maps onto a
 # closed interval on that ratio; `Row_Ct_Pct`'s is a plain percent deviation from a baseline
@@ -268,14 +315,55 @@ _LIBRARY_ROWS: dict[str, RuleMapping] = {
         argument=RuleArgument(name="properties", term_field="groupby_names"),
         scope_follows_term=True,
     ),
+    "Required_No_Placeholder": RuleMapping(
+        test_type="Required_No_Placeholder",
+        shape=RuleShape.LIBRARY,
+        scope=RuleScope.COLUMN,
+        operator=Operator.MUST_BE_LESS_OR_EQUAL_TO,
+        dimension=odcs_dimension(QualityDimension.COMPLETENESS),
+        metric=LibraryMetric.MISSING_VALUES,
+        unit="rows",
+        argument=RuleArgument(name="missingValues", term_field="baseline_value"),
+    ),
+    "Email_Format": _invalid_values_row("Email_Format", RuleArgument(name="pattern", fixed=EMAIL_PATTERN)),
+    "Valid_US_Zip": _invalid_values_row("Valid_US_Zip", RuleArgument(name="pattern", fixed=US_ZIP_PATTERN)),
+    "Valid_US_Zip3": _invalid_values_row("Valid_US_Zip3", RuleArgument(name="pattern", fixed=US_ZIP3_PATTERN)),
+    "US_State": _invalid_values_row("US_State", RuleArgument(name="validValues", fixed=US_STATE_VALID_VALUES)),
+    # Library only when its baseline is one literal of the property's own type -- see `constant_value`.
+    "Constant": _invalid_values_row("Constant", RuleArgument(name="validValues", term_field="baseline_value")),
+    "Match_Row_Ct": RuleMapping(
+        test_type="Match_Row_Ct",
+        shape=RuleShape.LIBRARY,
+        scope=RuleScope.TABLE,
+        operator=Operator.MUST_BE,
+        dimension=odcs_dimension(QualityDimension.CONSISTENCY),
+        metric=LibraryMetric.ROW_COUNT,
+        unit="rows",
+    ),
+    "Match_Null_Ct": RuleMapping(
+        test_type="Match_Null_Ct",
+        shape=RuleShape.LIBRARY,
+        scope=RuleScope.COLUMN,
+        operator=Operator.MUST_BE,
+        dimension=odcs_dimension(QualityDimension.CONSISTENCY),
+        metric=LibraryMetric.NULL_VALUES,
+        unit="rows",
+    ),
 }
 
-# Routed `sql` rules: the query is projected from `cat_test_conditions.measure`, and the
-# operator is the inversion (via `ACCEPTANCE_OPERATOR`) of the type's stored `test_operator`.
-# Empty in this tree: `SQL_Metric` is the only type this shape is decided for, and it is not
-# in the catalogue yet. `_build_sql_query` and the SQL branch of `project_rule` are kept
-# against its arrival.
-_SQL_ROWS: dict[str, RuleMapping] = {}
+# Routed `sql` rules. `SQL_Metric` is the only one: its query is the term's own, and its
+# operator is whichever `bound_clause` builds from the term's bounds, so the row's `operator`
+# names the two-sided case only. A row other than `SQL_Metric` projects its query from
+# `cat_test_conditions.measure` (`_build_sql_query`).
+_SQL_ROWS: dict[str, RuleMapping] = {
+    "SQL_Metric": RuleMapping(
+        test_type="SQL_Metric",
+        shape=RuleShape.SQL,
+        scope=RuleScope.TABLE,
+        operator=Operator.MUST_BE_BETWEEN,
+        dimension=odcs_dimension(QualityDimension.ACCURACY),
+    ),
+}
 
 # Every routed test type -- the union `render` and `resolve_rule` both read. Disjoint from
 # `EXCLUDED_TEST_TYPES`; a type in neither renders `custom`.
@@ -289,6 +377,180 @@ EXCLUDED_TEST_TYPES: dict[str, str] = {
     "Metric_Trend": "run-history type -- monitors an aggregate metric's drift over time, not a contract-testable state",
     "Schema_Drift": "run-history type -- monitors schema changes over time, not a contract-testable state",
 }
+
+# Test types that come close to an ODCS construct and render `custom` because the construct
+# would claim something the test does not check. The value is the difference, so the decision
+# is not re-litigated from the name alone. Every type outside this table, `RULE_MAPPINGS`,
+# `DECLARATION_TEST_TYPES` and `EXCLUDED_TEST_TYPES` renders `custom` for having no ODCS
+# counterpart at all.
+CUSTOM_ROUTING_REASONS: dict[str, str] = {
+    "Match_True_Ct": "invalidValues with validValues [false] is exact, but would call every TRUE value invalid",
+    "Street_Addr_Pattern": "its percent divides by non-null rows; an invalidValues percent divides by all rows",
+    "Match_Zero_Length_Ct": "missingValues with [''] also counts NULLs, which this test does not",
+    "Recency": "a freshness service level compares seconds with a strict bound, not calendar days, and is "
+    "contract-level, so it would lose the term's identity and severity",
+    "Match_Column_Type": "its date category accepts a date or a timestamp; an ODCS logicalType names one of them",
+    "LOV_All": "it also requires every listed value to be present; invalidValues only rejects values outside the list",
+    "Match_Min_Val": "a minimum is one-sided, so it cannot assert equality with the baseline",
+    "Match_Max_Val": "a maximum is one-sided, so it cannot assert equality with the baseline",
+    "Match_Min_Length": "a minLength is per value, so it cannot assert the shortest length equals the baseline",
+    "Match_Max_Length": "a maxLength is one-sided, so it cannot assert equality with the baseline",
+    "Match_Column_Ct": "ODCS has no column-count assertion",
+    "Combo_Match": "ODCS relationships are not checked by engines, and treat NULL combinations differently",
+    "Future_Date": "its bound is the run date, which no fixed declared value can express",
+    "Future_Date_1Y": "its bound moves with the run date, which no fixed declared value can express",
+}
+
+
+# The property `logicalType` values each declaration is exact for, per test type; `None` admits
+# any. A bound compares values of one kind -- and the schema shapes `logicalTypeOptions` by
+# `logicalType` -- so a term on a property declaring another type, or none, renders `custom`.
+_DECLARATION_LOGICAL_TYPES: dict[str, frozenset[str] | None] = {
+    "Min_Val": frozenset({"integer", "number"}),
+    "Max_Val": frozenset({"integer", "number"}),
+    "Min_Date": frozenset({"date", "timestamp"}),
+    "Max_Date": frozenset({"date", "timestamp"}),
+    "Text_Length_Range": frozenset({"string"}),
+    "Unique": None,
+}
+DECLARATION_TEST_TYPES: frozenset[str] = frozenset(_DECLARATION_LOGICAL_TYPES)
+
+
+def _allows_no_exceptions(term: "TestDefinition") -> bool:
+    """Whether ``term`` fails on a single offending value: a threshold of 0, which is also what
+    execution reads for an unset one."""
+    raw = term.threshold_value
+    if raw is None or not str(raw).strip():
+        return True
+    try:
+        return float(raw) == 0
+    except ValueError:
+        return False
+
+
+def _number_or_none(raw: str | None) -> int | float | None:
+    if raw is None or not str(raw).strip():
+        return None
+    try:
+        value = _numeric(str(raw))
+    except ValueError:
+        return None
+    return value if math.isfinite(value) else None
+
+
+def _whole_or_none(raw: str | None) -> int | None:
+    value = _number_or_none(raw)
+    return value if isinstance(value, int) else None
+
+
+def property_declaration(term: "TestDefinition", logical_type: str | None) -> dict[str, Any] | None:
+    """The schema-property fields that make exactly ``term``'s claim, or ``None`` when none do.
+
+    A declaration asserts every value of the column, so only a term that fails on a single
+    offending value is one. ``logical_type`` is the property's declared ``logicalType``. A
+    ``Text_Length_Range`` term declares whichever of its two bounds it sets. ``Unique`` also
+    declares ``required``, because its measure counts every NULL where ``unique`` alone ignores
+    them.
+    """
+    if term.test_type not in _DECLARATION_LOGICAL_TYPES or not _allows_no_exceptions(term):
+        return None
+    allowed = _DECLARATION_LOGICAL_TYPES[term.test_type]
+    if allowed is not None and logical_type not in allowed:
+        return None
+
+    if term.test_type == "Unique":
+        return {"unique": True, "required": True}
+    if term.test_type == "Text_Length_Range":
+        options = {}
+        for key, raw in (("minLength", term.lower_tolerance), ("maxLength", term.upper_tolerance)):
+            if raw is None or not str(raw).strip():
+                continue
+            # A non-whole length bound cannot be declared, and declaring only the other bound would claim
+            # less than the term checks.
+            if (value := _whole_or_none(raw)) is None:
+                return None
+            options[key] = value
+        return {"logicalTypeOptions": options} if options else None
+
+    # Accepted divergence: the Min_Val/Max_Val measures allow 1e-6 past the baseline, and the
+    # declaration does not. A generated baseline is a DOUBLE PRECISION profile value, so on a
+    # column holding more significant digits than a double, the engine can fail a value
+    # TestGen passes.
+    key = "minimum" if term.test_type.startswith("Min_") else "maximum"
+    if term.test_type.endswith("_Date"):
+        value: Any = (term.baseline_value or "").strip() or None
+    else:
+        value = _number_or_none(term.baseline_value)
+    return {"logicalTypeOptions": {key: value}} if value is not None else None
+
+
+# The `customProperties` entry naming a term rendered as a declaration on the property it sits on.
+DECLARATION_MARKER = "testgenTerm"
+
+
+def _declared_paths(declaration: dict[str, Any]) -> list[str]:
+    """The dotted field paths ``declaration`` sets, e.g. ``logicalTypeOptions.maximum``."""
+    return [
+        f"{key}.{sub_key}" if isinstance(value, dict) else key
+        for key, value in declaration.items()
+        for sub_key in (value if isinstance(value, dict) else [None])
+    ]
+
+
+def declaration_marker(term: "TestDefinition", test_type: "TestType", declaration: dict[str, Any]) -> dict[str, Any]:
+    """The ``customProperties`` entry recording that ``term`` rendered as ``declaration``.
+
+    A declaration has no rule to carry the term's identity, so this entry does: its id, its test
+    type, the fields it declares, and the descriptive fields its rule would otherwise have carried.
+    """
+    if not term.contract_term_id:
+        raise ValueError(
+            f"{term.test_type!r} term on {term.table_name}.{term.column_name} has no contract identity, "
+            "so its declaration has no id to carry."
+        )
+    metadata: dict[str, Any] = {"dimension": odcs_dimension(QualityDimension(test_type.dq_dimension))}
+    custom_properties = [
+        *_apply_reserved_subtree(metadata, term.custom_metadata),
+        *_user_custom_properties(term.custom_metadata),
+    ]
+    if custom_properties:
+        metadata["customProperties"] = custom_properties
+    return {
+        "property": DECLARATION_MARKER,
+        "value": {
+            "id": term.contract_term_id,
+            "testType": term.test_type,
+            "declares": _declared_paths(declaration),
+            **metadata,
+        },
+        "vendor": "testgen",
+    }
+
+
+def is_declaration_marker(entry: object) -> bool:
+    return isinstance(entry, dict) and entry.get("vendor") == "testgen" and entry.get("property") == DECLARATION_MARKER
+
+
+_SQL_STRING_LITERAL = re.compile(r"^'((?:[^']|'')*)'$")
+
+
+def constant_value(term: "TestDefinition", logical_type: str | None) -> str | int | float | bool | None:
+    """The one value a ``Constant`` term admits, typed as the property declares it, or ``None``
+    when its stored baseline is not a single literal of that type.
+
+    The baseline is stored as a SQL literal. A date is stored as a quoted string too, so a
+    property declaring no type, or a date or timestamp, yields ``None``: the value cannot be
+    told apart from text, and the engine would compare a string against a date.
+    """
+    raw = (term.baseline_value or "").strip()
+    if logical_type == "string":
+        match = _SQL_STRING_LITERAL.match(raw)
+        return match.group(1).replace("''", "'") if match else None
+    if logical_type in ("integer", "number"):
+        return _number_or_none(raw)
+    if logical_type == "boolean" and raw.upper() in ("TRUE", "FALSE"):
+        return raw.upper() == "TRUE"
+    return None
 
 
 def rule_shape(test_type: str) -> RuleShape | None:
@@ -317,9 +579,14 @@ def lov_values(raw: str) -> list[str]:
     return [match.replace("''", "'") for match in _LOV_LITERAL_VALUE.findall(raw)]
 
 
+# Identifier quote characters across flavors: ANSI double quotes, and BigQuery/Databricks backticks.
+_IDENTIFIER_QUOTES = ('"', "`")
+
+
 def _unquote_identifier(name: str) -> str:
-    if len(name) >= 2 and name.startswith('"') and name.endswith('"'):
-        return name[1:-1].replace('""', '"')
+    for quote in _IDENTIFIER_QUOTES:
+        if len(name) >= 2 and name.startswith(quote) and name.endswith(quote):
+            return name[1:-1].replace(quote * 2, quote)
     return name
 
 
@@ -366,19 +633,21 @@ def _numeric(raw: str) -> int | float:
     return int(value) if value.is_integer() else value
 
 
-def _required_threshold(term: "TestDefinition") -> str:
-    """The term's stored threshold text, or a ``ValueError`` naming the term when it has none.
+class _InexactTerm(Exception):
+    """A term whose stored values cannot be stated as its type's exact ODCS construct, so it
+    renders ``custom`` instead."""
 
-    Every library-routed test type declares ``threshold_value`` optional, so a term saved with
-    it cleared reaches rendering with no bound to compare against.
+
+def _required_number(term: "TestDefinition", field: str) -> int | float:
+    """The term's stored ``field`` as a number. Raises ``_InexactTerm`` when it is unset or not a number.
+
+    Every exactly-projected parameter is optional in the catalogue, so a term saved with one
+    cleared reaches rendering with nothing to compare against.
     """
-    raw = term.threshold_value
-    if raw is None or not str(raw).strip():
-        raise ValueError(
-            f"{term.test_type!r} term {term.contract_term_id!r} has no threshold value, "
-            "so the bound its rule compares against is undefined."
-        )
-    return str(raw)
+    value = _number_or_none(getattr(term, field))
+    if value is None:
+        raise _InexactTerm(f"{term.test_type!r} term {term.contract_term_id!r} has no numeric {field!r}.")
+    return value
 
 
 def _cohens_h_band(baseline_ratio: float, h: float) -> tuple[float, float]:
@@ -407,14 +676,15 @@ def _complement_percent_band(lower_ratio: float, upper_ratio: float) -> tuple[fl
 
 def _missing_pct_band(term: "TestDefinition") -> tuple[float, float, float, float]:
     """Null-percent band, baseline populated ratio and threshold bound for a ``Missing_Pct`` term."""
-    baseline_count = float(term.baseline_ct)
+    baseline_count = float(_required_number(term, "baseline_ct"))
     if baseline_count == 0:
-        raise ValueError(
-            f"{term.test_type!r} term {term.contract_term_id!r} has a baseline row count of 0, "
-            "so its baseline null ratio is undefined."
+        raise _InexactTerm(f"{term.test_type!r} term {term.contract_term_id!r} has a baseline row count of 0.")
+    baseline_ratio = _required_number(term, "baseline_value_ct") / baseline_count
+    if not 0 <= baseline_ratio <= 1:
+        raise _InexactTerm(
+            f"{term.test_type!r} term {term.contract_term_id!r} has a baseline populated ratio of {baseline_ratio}."
         )
-    baseline_ratio = float(term.baseline_value_ct) / baseline_count
-    h = float(_required_threshold(term))
+    h = float(_required_number(term, "threshold_value"))
     lower_ratio, upper_ratio = _cohens_h_band(baseline_ratio, h)
     lower, upper = _complement_percent_band(lower_ratio, upper_ratio)
     return lower, upper, baseline_ratio, h
@@ -425,13 +695,10 @@ def _row_ct_pct_band(term: "TestDefinition") -> tuple[float, float, float, float
 
     ``|100*(n-b)/b| <= T`` rearranges to ``n in [b*(1-T/100), b*(1+T/100)]``.
     """
-    baseline_count = float(term.baseline_ct)
+    baseline_count = float(_required_number(term, "baseline_ct"))
     if baseline_count == 0:
-        raise ValueError(
-            f"{term.test_type!r} term {term.contract_term_id!r} has a baseline row count of 0, "
-            "so its percent change from baseline is undefined."
-        )
-    percent = float(_required_threshold(term))
+        raise _InexactTerm(f"{term.test_type!r} term {term.contract_term_id!r} has a baseline row count of 0.")
+    percent = float(_required_number(term, "threshold_value"))
     lower = baseline_count * (1 - percent / 100)
     upper = baseline_count * (1 + percent / 100)
     return lower, upper, baseline_count, percent
@@ -658,7 +925,10 @@ def _resolved_bound(
     for token, value in _sql_literal_substitutions(term, column_type).items():
         if value is not None and token in condition_text:
             condition_text = condition_text.replace(token, str(value))
-    return operator, _numeric(condition_text)
+    bound = _number_or_none(condition_text)
+    if bound is None:
+        raise _InexactTerm(f"{term.test_type!r} term {term.contract_term_id!r} has no numeric bound {condition_text!r}.")
+    return operator, bound
 
 
 # TestGen's own placeholder shape -- {ALL_CAPS_WITH_UNDERSCORES} -- versus the two ODCS
@@ -671,6 +941,17 @@ _LEGAL_ODCS_PLACEHOLDERS = frozenset({"{object}", "{property}"})
 # form is replaced as a unit so the result is the bare keyword CURRENT_DATE, not a quoted
 # string reading "CURRENT_DATE" that a date cast would then fail to parse.
 _RUN_DATE_QUOTED = re.compile(r"'\{RUN_DATE\}'")
+
+
+def _check_no_leftover_placeholder(query: str, term: "TestDefinition", server_type: ServerType) -> None:
+    """Raise ``_InexactTerm`` when a TestGen placeholder survives in ``query`` -- no other engine
+    could run it."""
+    leftover = sorted({token for token in _LEFTOVER_PLACEHOLDER.findall(query) if token not in _LEGAL_ODCS_PLACEHOLDERS})
+    if leftover:
+        raise _InexactTerm(
+            f"{term.test_type!r} on {server_type.value!r} left {leftover} unresolved in its sql query -- "
+            "no data was available to substitute it."
+        )
 
 
 def _build_sql_query(
@@ -694,10 +975,8 @@ def _build_sql_query(
     expander the execution engine uses (``read_file.replace_templated_functions``), not a
     second one.
 
-    Raises ``ValueError`` naming the type, the server and the exact leftover token(s) if
-    anything TestGen-shaped survives substitution -- a leftover placeholder would still
-    validate against the schema and then fail at the counterparty, which is the failure this
-    whole task exists to prevent.
+    Raises ``_InexactTerm`` if anything TestGen-shaped survives substitution -- a leftover
+    placeholder would still validate against the schema and then fail at the counterparty.
     """
     measure = condition.measure
 
@@ -719,13 +998,153 @@ def _build_sql_query(
     measure = replace_templated_functions(measure, _flavor_family_for(server_type))
 
     query = f"SELECT {measure} FROM {{object}}"
-    leftover = sorted({token for token in _LEFTOVER_PLACEHOLDER.findall(query) if token not in _LEGAL_ODCS_PLACEHOLDERS})
-    if leftover:
-        raise ValueError(
-            f"{term.test_type!r} on {server_type.value!r} left {leftover} unresolved in its sql query -- "
-            "no data was available to substitute it."
-        )
+    _check_no_leftover_placeholder(query, term, server_type)
     return query
+
+
+def _sql_metric_query(term: "TestDefinition", server_type: ServerType) -> str:
+    """A ``SQL_Metric`` term's ``sql`` rule query: the term's own query, which already returns
+    the one value its bounds compare against, with the table group's schema substituted for
+    ``{DATA_SCHEMA}``.
+
+    Raises ``_InexactTerm`` when the term has no query, or when a TestGen placeholder survives
+    substitution.
+    """
+    query = strip_trailing_semicolons(term.custom_query)
+    if not query:
+        raise _InexactTerm(f"{term.test_type!r} term {term.contract_term_id!r} has no query.")
+    query = query.replace("{DATA_SCHEMA}", term.schema_name)
+    _check_no_leftover_placeholder(query, term, server_type)
+    return query
+
+
+def _argument_value(term: "TestDefinition", argument: RuleArgument, logical_type: str | None) -> Any:
+    """The value of a library rule's ``argument`` for ``term``, or ``None`` when it renders none.
+
+    ``Dupe_Rows`` names its columns only when it groups on more than one; a single column is
+    the node the rule sits on. ``Required_No_Placeholder``'s list may be empty, which leaves a
+    plain null check. Every other argument is required, so a value that does not parse raises
+    ``_InexactTerm``.
+    """
+    if argument.fixed is not None:
+        return list(argument.fixed) if isinstance(argument.fixed, tuple) else argument.fixed
+    if argument.term_field == "groupby_names":
+        names = [name.strip() for name in (term.groupby_names or "").split(",") if name.strip()]
+        # An unquoted name folds to the flavor's default case when TestGen runs it, so it may not be
+        # the column's exact name, which a property name must be.
+        if any(_unquote_identifier(name) == name for name in names):
+            raise _InexactTerm(f"{term.test_type!r} term {term.contract_term_id!r} groups on an unquoted name.")
+        columns = _groupby_columns(term)
+        return columns if len(columns) > 1 else None
+
+    raw = getattr(term, argument.term_field)
+    if argument.name == "missingValues":
+        return parse_value_list(raw) or None
+
+    value: Any
+    if term.test_type == "Constant":
+        literal = constant_value(term, logical_type)
+        value = [literal] if literal is not None else None
+    elif argument.name == "validValues":
+        value = lov_values(raw) if raw else None
+    else:
+        value = raw
+    if not value:
+        raise _InexactTerm(
+            f"{term.test_type!r} term {term.contract_term_id!r} has no parseable "
+            f"{argument.term_field!r} to render its {argument.name!r} argument."
+        )
+    return value
+
+
+def _custom_check(
+    term: "TestDefinition", test_type: "TestType", server_type: ServerType
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """The fields of ``term``'s ``custom`` rule, and the ``testgen`` system properties it carries."""
+    rule = {
+        "type": RuleShape.CUSTOM.value,
+        "engine": "testgen",
+        "name": term.test_description or test_type.test_name_long or test_type.test_name_short or term.test_type,
+        "description": _custom_description(term, test_type),
+        "implementation": _custom_implementation(term, test_type),
+    }
+    return rule, [_server_type_marker(server_type)]
+
+
+def _exact_check(
+    term: "TestDefinition",
+    server_type: ServerType,
+    mapping: RuleMapping,
+    condition: CatCondition | None,
+    column_type: str | None,
+    logical_type: str | None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """The check fields of ``term``'s rule in its mapped shape, and the ``testgen`` system
+    properties that recover the term from it.
+
+    Raises ``_InexactTerm`` when the term's stored values cannot be stated in that shape.
+    """
+    rule: dict[str, Any] = {"type": mapping.shape.value}
+    system_properties: list[dict[str, Any]] = []
+
+    if mapping.shape is RuleShape.LIBRARY:
+        if mapping.metric is None:
+            # Every LIBRARY row carries a metric -- test_rule_mapping_coverage.py's
+            # test_a_library_row_carries_a_metric_and_a_scope_and_nothing_else_does enforces it.
+            raise ValueError(f"{term.test_type!r} is mapped as a library rule but carries no metric.")
+        rule["metric"] = mapping.metric.value
+        if mapping.unit is not None:
+            rule["unit"] = mapping.unit
+        if mapping.argument is not None:
+            value = _argument_value(term, mapping.argument, logical_type)
+            if value:
+                rule["arguments"] = {mapping.argument.name: value}
+
+        if term.test_type == "Missing_Pct":
+            lower, upper, baseline_ratio, h = _missing_pct_band(term)
+            rule.update(bound_clause(lower, upper))
+            system_properties += _conversion_properties(baseline_ratio, h)
+            # The ratio alone does not give back the two counts it was computed from.
+            system_properties += _conversion_properties(
+                _numeric(term.baseline_ct), _numeric(term.baseline_value_ct),
+                baseline_property="baselineCt", bound_property="baselineValueCt",
+            )
+        elif term.test_type == "Row_Ct_Pct":
+            lower, upper, baseline_count, percent = _row_ct_pct_band(term)
+            rule.update(bound_clause(lower, upper))
+            system_properties += _conversion_properties(
+                baseline_count, percent, baseline_property="baselineCount", bound_property="thresholdPercent"
+            )
+        elif term.test_type == "Dupe_Rows":
+            rule[mapping.operator.value] = term.skip_errors or 0
+        elif term.test_type == "Match_Null_Ct":
+            rule[mapping.operator.value] = _required_number(term, "baseline_ct")
+        else:
+            rule[mapping.operator.value] = _required_number(term, "threshold_value")
+
+    elif term.test_type == "SQL_Metric":
+        rule["query"] = _sql_metric_query(term, server_type)
+        if rule["query"] != term.custom_query:
+            # The query as written is kept to export it back: the rendered one names the schema
+            # and drops a trailing semicolon.
+            system_properties.append({"property": "queryTemplate", "value": term.custom_query, "vendor": "testgen"})
+        bound = bound_clause(_number_or_none(term.lower_tolerance), _number_or_none(term.upper_tolerance))
+        if not bound:
+            raise _InexactTerm(f"{term.test_type!r} term {term.contract_term_id!r} sets neither a minimum nor a maximum.")
+        rule.update(bound)
+        system_properties.append(_server_type_marker(server_type))
+
+    else:
+        if condition is None:
+            raise ValueError(
+                f"project_rule needs a resolved CatCondition to render {term.test_type!r}'s sql rule."
+            )
+        rule["query"] = _build_sql_query(term, condition, mapping.scope, server_type, column_type)
+        operator, bound = _resolved_bound(condition, term, column_type)
+        rule[operator.value] = bound
+        system_properties.append(_server_type_marker(server_type))
+
+    return rule, system_properties
 
 
 def project_rule(
@@ -734,6 +1153,7 @@ def project_rule(
     server_type: ServerType,
     condition: CatCondition | None = None,
     column_type: str | None = None,
+    logical_type: str | None = None,
 ) -> dict[str, Any]:
     """Project one contract term into one ODCS quality-rule object.
 
@@ -749,8 +1169,13 @@ def project_rule(
     renderer, which holds a session) resolves it and passes it in. ``column_type`` is the
     profiled column's data type (``DataColumnChars.column_type``) -- needed only by the
     handful of ``SQL``-shape measures whose declared flavor casts a baseline value to it
-    (bigquery/sap_hana); every other term ignores it, and it may be left ``None``. The
-    result is plain JSON-safe data -- ``dict``, ``list``, ``str``, ``int``, ``float`` and
+    (bigquery/sap_hana); every other term ignores it, and it may be left ``None``.
+    ``logical_type`` is the ``logicalType`` the term's column property declares; a ``Constant``
+    term renders ``custom`` unless its baseline is one literal of that type (``constant_value``).
+    A routed term renders ``custom`` whenever its stored values cannot be stated in its
+    mapped shape -- a cleared threshold or bound, a baseline count of 0, an unparseable
+    argument, or a placeholder no other engine could substitute.
+    The result is plain JSON-safe data -- ``dict``, ``list``, ``str``, ``int``, ``float`` and
     ``bool`` only -- so it serializes with ``yaml.safe_dump`` and validates against the
     pinned ODCS schema.
     """
@@ -760,69 +1185,17 @@ def project_rule(
             f"{term.test_type!r} renders no quality rule, so {term.contract_term_id!r} should not exist."
         )
     mapping = RULE_MAPPINGS.get(term.test_type)
+    if _flavor_family_for(server_type) in _INEXACT_FAMILIES.get(term.test_type, frozenset()):
+        mapping = None
 
-    rule: dict[str, Any] = {"type": shape.value}
-    system_properties: list[dict[str, Any]] = []
-
-    if mapping is None or shape is RuleShape.CUSTOM:
-        rule["engine"] = "testgen"
-        rule["name"] = (
-            term.test_description or test_type.test_name_long
-            or test_type.test_name_short or term.test_type
-        )
-        rule["description"] = _custom_description(term, test_type)
-        rule["implementation"] = _custom_implementation(term, test_type)
-        system_properties.append(_server_type_marker(server_type))
-
-    elif shape is RuleShape.LIBRARY:
-        if mapping.metric is None:
-            # Every LIBRARY row carries a metric -- test_rule_mapping_coverage.py's
-            # test_a_library_row_carries_a_metric_and_a_scope_and_nothing_else_does enforces it.
-            raise ValueError(f"{term.test_type!r} is mapped as a library rule but carries no metric.")
-        rule["metric"] = mapping.metric.value
-        if mapping.unit is not None:
-            rule["unit"] = mapping.unit
-        if mapping.argument is not None:
-            value: Any
-            if mapping.argument.term_field == "groupby_names":
-                columns = _groupby_columns(term)
-                value = columns if len(columns) > 1 else None
-            else:
-                value = getattr(term, mapping.argument.term_field)
-                if value and mapping.argument.name == "validValues":
-                    value = lov_values(value)
-            if mapping.argument.term_field != "groupby_names" and not value:
-                raise ValueError(
-                    f"{term.test_type!r} term {term.contract_term_id!r} has no parseable "
-                    f"{mapping.argument.term_field!r} to render its {mapping.argument.name!r} argument."
-                )
-            if value:
-                rule["arguments"] = {mapping.argument.name: value}
-
-        if term.test_type == "Missing_Pct":
-            lower, upper, baseline_ratio, h = _missing_pct_band(term)
-            rule.update(bound_clause(lower, upper))
-            system_properties += _conversion_properties(baseline_ratio, h)
-        elif term.test_type == "Row_Ct_Pct":
-            lower, upper, baseline_count, percent = _row_ct_pct_band(term)
-            rule.update(bound_clause(lower, upper))
-            system_properties += _conversion_properties(
-                baseline_count, percent, baseline_property="baselineCount", bound_property="thresholdPercent"
-            )
-        elif term.test_type == "Dupe_Rows":
-            rule[mapping.operator.value] = term.skip_errors or 0
-        else:
-            rule[mapping.operator.value] = _numeric(_required_threshold(term))
-
-    elif shape is RuleShape.SQL:
-        if condition is None:
-            raise ValueError(
-                f"project_rule needs a resolved CatCondition to render {term.test_type!r}'s sql rule."
-            )
-        rule["query"] = _build_sql_query(term, condition, mapping.scope, server_type, column_type)
-        operator, bound = _resolved_bound(condition, term, column_type)
-        rule[operator.value] = bound
-        system_properties.append(_server_type_marker(server_type))
+    check = None
+    if mapping is not None and mapping.shape is not RuleShape.CUSTOM:
+        try:
+            check = _exact_check(term, server_type, mapping, condition, column_type, logical_type)
+        except _InexactTerm as reason:
+            LOG.info(f"{reason} Rendering it as a custom rule.")
+            mapping = None
+    rule, system_properties = check or _custom_check(term, test_type, server_type)
 
     if not term.contract_term_id:
         raise ValueError(
@@ -873,12 +1246,13 @@ def project_rule(
 #      target test type does not have, or an `invalidValues` rule with neither or both of its
 #      two recognised arguments.
 
-# The `_conversion_properties` entries a percent-shape term's rule carries -- the baseline
-# ratio/count and the threshold bound the rendered band was computed from. Reading them back
-# is what makes `Missing_Pct`/`Row_Ct_Pct` recoverable from `ResolvedTerm` alone;
-# without it, a caller would have to re-parse `customProperties` itself -- a second reader of
-# the same data that could disagree with this one.
-_CONVERSION_PROPERTY_NAMES = frozenset({"baselineRatio", "baselineCount", "thresholdBound", "thresholdPercent"})
+# The `testgen` customProperties a rule carries so its term is recoverable from the rule alone:
+# the baseline ratio/count, baseline counts and threshold bound a converted band was computed
+# from, and the query a `SQL_Metric` term was written with before its schema was substituted.
+_CONVERSION_PROPERTY_NAMES = frozenset({
+    "baselineRatio", "baselineCount", "thresholdBound", "thresholdPercent", "baselineCt", "baselineValueCt",
+    "queryTemplate",
+})
 
 
 @dataclass(frozen=True)
@@ -890,16 +1264,22 @@ class ResolvedTerm:
     incoming bound is strict but the target's measure is integral (see ``_resolve_row_count``). For
     ``Missing_Pct``/``Row_Ct_Pct`` this is the *rendered* band, not the term's own threshold --
     see ``conversion``. ``arguments`` is the rule's ``arguments`` mapping when the target test type has one
-    (``LOV_Match``, ``Pattern_Match``), otherwise empty. ``conversion`` is the rule's own
-    ``_conversion_properties`` entries (``baselineRatio``/``baselineCount`` and
-    ``thresholdBound``/``thresholdPercent``), read back by name -- non-empty only for a marked
-    ``Missing_Pct``/``Row_Ct_Pct`` rule, and it is what lets a caller recover that term's own
-    ``threshold_value`` without re-parsing the rule's ``customProperties`` itself.
+    (``LOV_Match``, ``Pattern_Match``), otherwise empty. ``conversion`` is the rule's
+    ``testgen`` system properties named in ``_CONVERSION_PROPERTY_NAMES``, read back by name --
+    non-empty only for a marked ``Missing_Pct``/``Row_Ct_Pct``/``SQL_Metric`` rule.
+
+    ``parameters`` is what a caller stores on the term: its values for the parameters the test
+    type declares, as ``test_definitions`` holds them. ``contract_term_id`` is the rule's ``id``.
+    ``metadata`` is the rule's descriptive fields -- everything but its check, its id and the
+    ``testgen`` system properties.
     """
     test_type: str
     thresholds: dict[str, Any]
     arguments: dict[str, Any]
     conversion: dict[str, Any]
+    parameters: dict[str, Any] = dataclasses.field(default_factory=dict)
+    contract_term_id: str | None = None
+    metadata: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
 def _marker_test_type(rule: dict[str, Any]) -> str | None:
@@ -1034,8 +1414,10 @@ def _resolve_marker(
     with its own routed shape.
 
     A custom-routed type must carry no operator: its bound is one of its parameters, never an
-    operator on the rule. A library type must agree with its ``RULE_MAPPINGS`` row's scope,
-    operator and (for ``LOV_Match``/``Pattern_Match``) argument shape; an optional argument such as
+    operator on the rule. So must a routed type's rule rendered ``custom``, as one is when its
+    term's values cannot be stated in the mapped shape. An ``sql`` type carries exactly one operator, which
+    its own bounds decide. A library type must agree with its ``RULE_MAPPINGS`` row's scope,
+    operator and (for a ``validValues``/``pattern`` row) argument shape; an optional argument such as
     ``Dupe_Rows``'s column list is not required. An incoming document is
     untrusted input, so a rule this cannot place is declined rather than raised on.
 
@@ -1054,25 +1436,66 @@ def _resolve_marker(
         return None
     marker_operator = present_operators[0] if present_operators else None
 
-    if shape is RuleShape.CUSTOM:
+    if shape is RuleShape.CUSTOM or rule.get("type") == RuleShape.CUSTOM.value:
         if marker_operator is not None:
             return None
         return marker
 
     mapping = RULE_MAPPINGS[marker]
+    if mapping.shape is RuleShape.SQL:
+        if marker_operator not in _BOUND_OPERATORS:
+            return None
+        between = rule[marker_operator.value] if marker_operator is Operator.MUST_BE_BETWEEN else None
+        if between is not None and not (isinstance(between, list) and len(between) == 2):
+            return None
+        return marker
     if scope is not mapping.scope and not mapping.scope_follows_term:
         return None
     if marker_operator is None or not _operator_matches(marker_operator, mapping.operator):
         return None
-    if mapping.argument is not None and mapping.argument.name in _INVALID_VALUES_ARGUMENT_KEYS:
-        arguments = _unambiguous_argument(rule)
-        if arguments is None or mapping.argument.name not in arguments:
-            return None
+    if mapping.argument is not None and not _argument_is_well_formed(rule, marker, mapping.argument):
+        return None
     return marker
 
 
+# The operators `bound_clause` writes, and so the only ones a `SQL_Metric` rule can carry.
+_BOUND_OPERATORS = frozenset({
+    Operator.MUST_BE, Operator.MUST_BE_BETWEEN, Operator.MUST_BE_GREATER_OR_EQUAL_TO, Operator.MUST_BE_LESS_OR_EQUAL_TO,
+})
+
+
+def _argument_is_well_formed(rule: dict[str, Any], marker: str, argument: RuleArgument) -> bool:
+    """Whether ``rule`` carries ``argument`` in the shape its type's projection writes.
+
+    A fixed argument must be the type's own predicate: a rule whose pattern or list was edited
+    checks something else. A ``Constant`` list holds exactly one value, and a ``missingValues``
+    list, which may be absent, holds no NULL.
+    """
+    if argument.name in _INVALID_VALUES_ARGUMENT_KEYS:
+        arguments = _unambiguous_argument(rule)
+        if arguments is None or argument.name not in arguments:
+            return False
+        value = arguments[argument.name]
+        if argument.fixed is not None:
+            return value == (list(argument.fixed) if isinstance(argument.fixed, tuple) else argument.fixed)
+        if argument.name == "validValues":
+            return isinstance(value, list) and (len(value) == 1 if marker == "Constant" else bool(value)) and (
+                None not in value
+            )
+        return isinstance(value, str)
+    if argument.name == "missingValues":
+        value = _arguments_from_rule(rule).get("missingValues")
+        return value is None or (isinstance(value, list) and None not in value)
+    return True
+
+
 def resolve_rule(
-    rule: dict[str, Any], scope: RuleScope, known_test_types: frozenset[str]
+    rule: dict[str, Any],
+    scope: RuleScope,
+    known_test_types: frozenset[str],
+    subject: str | None = None,
+    *,
+    server_type: ServerType,
 ) -> ResolvedTerm | None:
     """Resolve one incoming ODCS quality-rule object onto the TestGen test type that verifies
     exactly the claim it makes, or ``None`` when no TestGen type does.
@@ -1091,6 +1514,12 @@ def resolve_rule(
     guessed and nothing is defaulted, so most incoming shapes -- any ``percent`` unit, an
     unrecognised unit, ``missingValues``, an operator TestGen cannot state, a ``text``/``sql``/
     ``custom`` rule -- decline rather than resolve.
+
+    ``subject`` is the name of the property the rule sits on, for a column rule; a single-column
+    ``Dupe_Rows`` names its grouping by its node alone. ``server_type`` is the server the
+    resolved term runs against; a ``Dupe_Rows`` grouping is quoted with its flavor's identifier
+    quote character. A ``custom`` rule whose ``implementation``
+    is not an object declines: its parameters cannot be read.
     """
     conversion = _conversion_properties_from_rule(rule)
 
@@ -1099,11 +1528,11 @@ def resolve_rule(
         resolved_marker = _resolve_marker(rule, marker, scope, known_test_types)
         if resolved_marker is None:
             return None
-        return ResolvedTerm(
-            test_type=resolved_marker,
-            thresholds=_thresholds_from_rule(rule),
-            arguments=_arguments_from_rule(rule),
-            conversion=conversion,
+        if rule.get("type") == RuleShape.CUSTOM.value and not isinstance(rule.get("implementation"), dict):
+            return None
+        return _resolved(
+            rule, resolved_marker, _thresholds_from_rule(rule), _arguments_from_rule(rule), conversion, subject,
+            server_type,
         )
 
     if rule.get("unit") != "rows":
@@ -1125,4 +1554,231 @@ def resolve_rule(
         return None
 
     test_type, thresholds, arguments = result
-    return ResolvedTerm(test_type=test_type, thresholds=thresholds, arguments=arguments, conversion=conversion)
+    return _resolved(rule, test_type, thresholds, arguments, conversion, subject, server_type)
+
+
+def _resolved(
+    rule: dict[str, Any],
+    test_type: str,
+    thresholds: dict[str, Any],
+    arguments: dict[str, Any],
+    conversion: dict[str, Any],
+    subject: str | None,
+    server_type: ServerType,
+) -> ResolvedTerm:
+    return ResolvedTerm(
+        test_type=test_type,
+        thresholds=thresholds,
+        arguments=arguments,
+        conversion=conversion,
+        parameters=_rule_parameters(rule, test_type, thresholds, arguments, conversion, subject, server_type),
+        contract_term_id=rule.get("id"),
+        metadata=_rule_metadata_from(rule),
+    )
+
+
+# A rule's keys that carry its check rather than describe it.
+_CHECK_KEYS = frozenset({
+    "id", "type", "engine", "implementation", "metric", "unit", "arguments", "query", "customProperties",
+    *(op.value for op in Operator),
+})
+
+
+def _rule_metadata_from(rule: dict[str, Any]) -> dict[str, Any]:
+    """``rule``'s descriptive fields: every key but its check and its id, plus the
+    ``customProperties`` entries no ``testgen`` system property put there."""
+    metadata = {key: value for key, value in rule.items() if key not in _CHECK_KEYS}
+    custom_properties = [
+        entry for entry in rule.get("customProperties") or []
+        if not (isinstance(entry, dict) and entry.get("vendor") == "testgen")
+    ]
+    if custom_properties:
+        metadata["customProperties"] = custom_properties
+    return metadata
+
+
+def _stored(value: Any) -> str:
+    """``value`` as ``test_definitions`` stores a parameter: text, with a whole number written
+    without a decimal point."""
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _lov_literal(values: list[Any]) -> str:
+    """The stored ``LOV_Match`` literal for ``values`` -- the inverse of ``lov_values``."""
+    return "(" + ",".join("'" + str(value).replace("'", "''") + "'" for value in values) + ")"
+
+
+def _value_list(values: list[Any]) -> str:
+    """The stored CSV list for ``values`` -- the inverse of ``parse_value_list``, quoting a value
+    only where unquoted CSV would not read it back."""
+    def quoted(value: str) -> str:
+        if value == "" or value != value.strip() or any(char in value for char in ',"'):
+            return '"' + value.replace('"', '""') + '"'
+        return value
+    return ",".join(quoted(str(value)) for value in values)
+
+
+def _constant_literal(value: Any) -> str:
+    """The stored ``Constant`` baseline for ``value`` -- the inverse of ``constant_value``."""
+    if isinstance(value, str):
+        return "'" + value.replace("'", "''") + "'"
+    return _stored(value)
+
+
+def _bounds_from(thresholds: dict[str, Any]) -> dict[str, str]:
+    """``lower_tolerance``/``upper_tolerance`` for a rule built by ``bound_clause``."""
+    if Operator.MUST_BE_BETWEEN.value in thresholds:
+        lower, upper = thresholds[Operator.MUST_BE_BETWEEN.value]
+        return {"lower_tolerance": _stored(lower), "upper_tolerance": _stored(upper)}
+    if Operator.MUST_BE.value in thresholds:
+        value = _stored(thresholds[Operator.MUST_BE.value])
+        return {"lower_tolerance": value, "upper_tolerance": value}
+    if Operator.MUST_BE_GREATER_OR_EQUAL_TO.value in thresholds:
+        return {"lower_tolerance": _stored(thresholds[Operator.MUST_BE_GREATER_OR_EQUAL_TO.value])}
+    if Operator.MUST_BE_LESS_OR_EQUAL_TO.value in thresholds:
+        return {"upper_tolerance": _stored(thresholds[Operator.MUST_BE_LESS_OR_EQUAL_TO.value])}
+    return {}
+
+
+def _rule_parameters(
+    rule: dict[str, Any],
+    test_type: str,
+    thresholds: dict[str, Any],
+    arguments: dict[str, Any],
+    conversion: dict[str, Any],
+    subject: str | None,
+    server_type: ServerType,
+) -> dict[str, Any]:
+    """The term parameters ``rule`` was projected from -- the inverse of ``project_rule``.
+
+    A ``custom`` rule carries them in its ``implementation``. Every other rule carries them in its
+    bound, its arguments and its ``testgen`` conversion properties, as the type's own projection
+    put them there.
+    """
+    if rule.get("type") == RuleShape.CUSTOM.value:
+        return dict(rule.get("implementation") or {})
+
+    bound = next(iter(thresholds.values()), None)
+    if test_type == "SQL_Metric":
+        return {"custom_query": conversion.get("queryTemplate", rule.get("query")), **_bounds_from(thresholds)}
+    if test_type in ("Missing_Pct", "Row_Ct_Pct"):
+        # A document may carry the ratio without the baseline counts; only the properties present are read.
+        sources = (
+            {"baseline_ct": "baselineCt", "baseline_value_ct": "baselineValueCt", "threshold_value": "thresholdBound"}
+            if test_type == "Missing_Pct"
+            else {"baseline_ct": "baselineCount", "threshold_value": "thresholdPercent"}
+        )
+        return {name: _stored(conversion[source]) for name, source in sources.items() if source in conversion}
+    if test_type == "Dupe_Rows":
+        # Quoted as generation stores them: a property name is the column's exact name.
+        columns = arguments.get("properties") or ([subject] if subject else [])
+        quote = get_flavor_service(_flavor_family_for(server_type)).quote_character
+        grouping = ", ".join(quote + str(column).replace(quote, quote * 2) + quote for column in columns)
+        return {"groupby_names": grouping, "skip_errors": bound} if columns else {"skip_errors": bound}
+    if test_type == "Match_Null_Ct":
+        return {"baseline_ct": _stored(bound)}
+
+    parameters = {"threshold_value": _stored(bound)}
+    if test_type == "LOV_Match":
+        parameters["baseline_value"] = _lov_literal(arguments.get("validValues") or [])
+    elif test_type == "Pattern_Match":
+        parameters["baseline_value"] = arguments.get("pattern")
+    elif test_type == "Required_No_Placeholder" and arguments.get("missingValues"):
+        parameters["baseline_value"] = _value_list(arguments["missingValues"])
+    elif test_type == "Constant":
+        parameters["baseline_value"] = _constant_literal((arguments.get("validValues") or [None])[0])
+    return parameters
+
+
+# The fields each declaration type's marker must name -- Text_Length_Range names one or both.
+_DECLARATION_PATHS: dict[str, frozenset[str]] = {
+    "Min_Val": frozenset({"logicalTypeOptions.minimum"}),
+    "Min_Date": frozenset({"logicalTypeOptions.minimum"}),
+    "Max_Val": frozenset({"logicalTypeOptions.maximum"}),
+    "Max_Date": frozenset({"logicalTypeOptions.maximum"}),
+    "Text_Length_Range": frozenset({"logicalTypeOptions.minLength", "logicalTypeOptions.maxLength"}),
+    "Unique": frozenset({"unique", "required"}),
+}
+
+_MARKER_IDENTITY_KEYS = frozenset({"id", "testType", "declares"})
+
+
+def _field_at(prop: dict[str, Any], path: str) -> Any:
+    node: Any = prop
+    for key in path.split("."):
+        node = node.get(key) if isinstance(node, dict) else None
+    return node
+
+
+def _declaration_parameters(test_type: str, declared: dict[str, Any]) -> dict[str, Any] | None:
+    """The term parameters a declaration was projected from -- the inverse of
+    ``property_declaration`` -- or ``None`` when the declared values are not ones it writes."""
+    parameters: dict[str, Any] = {"threshold_value": "0"}
+    if test_type == "Unique":
+        return parameters if all(value is True for value in declared.values()) else None
+    if test_type == "Text_Length_Range":
+        for path, key in (
+            ("logicalTypeOptions.minLength", "lower_tolerance"),
+            ("logicalTypeOptions.maxLength", "upper_tolerance"),
+        ):
+            if path in declared:
+                if not _is_integral(declared[path]):
+                    return None
+                parameters[key] = _stored(declared[path])
+        return parameters
+    (value,) = declared.values()
+    if isinstance(value, date):
+        # An unquoted date in YAML loads as a date, not as the string the projection wrote.
+        value = value.isoformat(sep=" ") if isinstance(value, datetime) else value.isoformat()
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        return None
+    parameters["baseline_value"] = _stored(value)
+    return parameters
+
+
+def resolve_declarations(prop: dict[str, Any], known_test_types: frozenset[str]) -> list[ResolvedTerm]:
+    """The terms rendered as declarations on the schema property ``prop``.
+
+    Read from the property's ``testgenTerm`` entries (``declaration_marker``), each naming its
+    term's id, test type and declared fields; the declared values are read from the property
+    itself. An entry naming a type that is not a declaration type or not in
+    ``known_test_types``, a field its type does not declare, or a field the property does not
+    carry, resolves to nothing. A declaration no entry names -- one the stored metadata
+    carries, or another tool wrote -- also resolves to nothing: it stays part of the document.
+    """
+    resolved = []
+    for entry in prop.get("customProperties") or []:
+        if not is_declaration_marker(entry) or not isinstance(entry.get("value"), dict):
+            continue
+        value = entry["value"]
+        test_type, term_id, paths = value.get("testType"), value.get("id"), value.get("declares")
+        if (
+            test_type not in _DECLARATION_PATHS
+            or test_type not in known_test_types
+            or not isinstance(term_id, str)
+            or not isinstance(paths, list)
+            or not paths
+            or not set(paths) <= _DECLARATION_PATHS[test_type]
+            or (test_type != "Text_Length_Range" and set(paths) != _DECLARATION_PATHS[test_type])
+        ):
+            continue
+        declared = {path: _field_at(prop, path) for path in paths}
+        if any(declared_value is None for declared_value in declared.values()):
+            continue
+        parameters = _declaration_parameters(test_type, declared)
+        if parameters is None:
+            continue
+        resolved.append(ResolvedTerm(
+            test_type=test_type,
+            thresholds={},
+            arguments={},
+            conversion={},
+            parameters=parameters,
+            contract_term_id=term_id,
+            metadata={key: item for key, item in value.items() if key not in _MARKER_IDENTITY_KEYS},
+        ))
+    return resolved

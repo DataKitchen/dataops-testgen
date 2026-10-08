@@ -1,12 +1,20 @@
+import re
 from types import SimpleNamespace
 
 import pytest
 import yaml
 
 from testgen.common.odcs.quality_rules import (
+    _INEXACT_FAMILIES,
     _LIBRARY_ROWS,
+    CUSTOM_ROUTING_REASONS,
+    DECLARATION_TEST_TYPES,
+    EMAIL_PATTERN,
     EXCLUDED_TEST_TYPES,
     RULE_MAPPINGS,
+    US_STATE_VALID_VALUES,
+    US_ZIP3_PATTERN,
+    US_ZIP_PATTERN,
     RuleScope,
     RuleShape,
     rule_scope,
@@ -92,15 +100,66 @@ def test_a_type_outside_the_catalogue_falls_through_to_custom():
     assert rule_shape("No_Such_Test_Type") is RuleShape.CUSTOM
 
 
-def test_the_library_table_holds_exactly_the_decided_seven():
+def test_the_library_table_holds_exactly_the_decided_types():
     assert set(_LIBRARY_ROWS) == {
         "Required", "Missing_Pct", "Row_Ct", "Row_Ct_Pct",
         "Dupe_Rows", "LOV_Match", "Pattern_Match",
+        "Required_No_Placeholder", "Email_Format", "Valid_US_Zip", "Valid_US_Zip3", "US_State", "Constant",
+        "Match_Row_Ct", "Match_Null_Ct",
     }
 
 
+def test_sql_metric_is_the_only_sql_row():
+    assert {test_type for test_type, mapping in RULE_MAPPINGS.items() if mapping.shape is RuleShape.SQL} == {
+        "SQL_Metric"
+    }
+
+
+def test_the_declaration_types_are_the_decided_six():
+    assert DECLARATION_TEST_TYPES == {"Min_Val", "Max_Val", "Min_Date", "Max_Date", "Text_Length_Range", "Unique"}
+
+
+def test_every_custom_routing_reason_names_a_custom_catalogue_type():
+    catalogue = _catalogue_test_types()
+    for test_type, reason in CUSTOM_ROUTING_REASONS.items():
+        assert reason.strip(), f"{test_type} carries no reason"
+        assert test_type in catalogue, f"{test_type} is not in the catalogue"
+        assert rule_shape(test_type) is RuleShape.CUSTOM, f"{test_type} has a reason to stay custom but is routed"
+        assert test_type not in DECLARATION_TEST_TYPES
+
+
+def _postgresql_measure(test_type: str) -> str:
+    conditions = _catalogue_entries()[test_type]["cat_test_conditions"]
+    return next(condition["measure"] for condition in conditions if condition["sql_flavor"] == "postgresql")
+
+
+def test_the_fixed_email_pattern_is_the_one_the_measure_checks():
+    # The measure writes the apostrophe doubled, as a SQL string literal must.
+    assert f"!~ '{EMAIL_PATTERN.replace(chr(39), chr(39) * 2)}'" in _postgresql_measure("Email_Format")
+
+
+def test_the_fixed_state_list_is_the_one_the_measure_checks():
+    measure = _postgresql_measure("US_State")
+    listed = re.search(r"NOT IN \(([^)]*)\)", measure).group(1)
+    assert [code.strip().strip("'") for code in listed.split(",")] + [""] == list(US_STATE_VALID_VALUES)
+    assert "NULLIF({COLUMN_NAME}, '')" in measure, "the empty string is only valid while the measure excludes it"
+
+
+@pytest.mark.parametrize(("test_type", "pattern", "valid", "invalid"), [
+    ("Valid_US_Zip", US_ZIP_PATTERN, ["02139", "021391234", "02139-1234"], ["", "0213", "0213X", "02139-12"]),
+    ("Valid_US_Zip3", US_ZIP3_PATTERN, ["021"], ["", "02", "0213", "02X"]),
+])
+def test_a_fixed_zip_pattern_accepts_exactly_the_shapes_the_measure_accepts(test_type, pattern, valid, invalid):
+    """The measure maps every digit to 9 and compares the result against fixed shapes."""
+    measure = _postgresql_measure(test_type)
+    shapes = re.findall(r"'(9[9-]*)'", measure.split("'999999999')", 1)[-1])
+    for value in [*valid, *invalid]:
+        translated = value.translate(str.maketrans("012345678", "999999999"))
+        assert (re.search(pattern, value) is not None) == (translated in shapes), value
+
+
 @pytest.mark.parametrize("test_type", [
-    "Unique", "Table_Freshness", "Unique_Pct",
+    "Table_Freshness", "Unique_Pct",
     "Aggregate_Balance", "Aggregate_Balance_Percent", "Aggregate_Balance_Range",
     "Aggregate_Minimum", "Combo_Match", "Distribution_Shift",
     "Timeframe_Combo_Gain", "Timeframe_Combo_Match", "CUSTOM",
@@ -161,3 +220,11 @@ def test_an_excluded_type_is_refused_rather_than_placed():
         term = SimpleNamespace(test_type=test_type, groupby_names=None)
         with pytest.raises(ValueError, match="no node to attach"):
             rule_scope(term, _test_type_stub(entry))
+
+
+def test_a_fixed_pattern_is_exact_on_every_family_not_listed_as_inexact():
+    """A family whose measure states the pattern renders the library rule; any other renders custom."""
+    literal = f"'{EMAIL_PATTERN.replace(chr(39), chr(39) * 2)}'"
+    for condition in _catalogue_entries()["Email_Format"]["cat_test_conditions"]:
+        states_pattern = literal in condition["measure"]
+        assert states_pattern != (condition["sql_flavor"] in _INEXACT_FAMILIES["Email_Format"]), condition["sql_flavor"]

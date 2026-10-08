@@ -4,7 +4,6 @@ from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.odcs.quality_rules import (
     EXCLUDED_TEST_TYPES,
     RULE_MAPPINGS,
-    LibraryMetric,
     RuleMapping,
     RuleScope,
     RuleShape,
@@ -16,6 +15,9 @@ from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, ServerType
 from testgen.common.odcs.validation import validate_document
 
 pytestmark = pytest.mark.unit
+
+# The test types tier 2 (the exact-equivalence table) resolves an unmarked rule onto.
+_TIER_TWO_TARGETS = frozenset({"Required", "Row_Ct", "LOV_Match", "Pattern_Match"})
 
 _KNOWN = frozenset({"Required", "Row_Ct", "LOV_Match", "Pattern_Match", "Avg_Shift", "Unique", "Missing_Pct", "CUSTOM"})
 
@@ -74,7 +76,12 @@ def _rule_from(mapping: RuleMapping) -> tuple[dict, TestDefinition]:
     against the term's own stored values, not just its test type.
     """
     argument_value = None
-    if mapping.argument is not None and mapping.argument.name == "validValues":
+    logical_type = None
+    if mapping.test_type == "Constant":
+        argument_value, logical_type = "'Y'", "string"
+    elif mapping.argument is not None and mapping.argument.name == "missingValues":
+        argument_value = '"",N/A'
+    elif mapping.argument is not None and mapping.argument.name == "validValues":
         argument_value = "('Y','N')"
     elif mapping.argument is not None and mapping.argument.name == "pattern":
         argument_value = "[A-Z]{3}"
@@ -84,7 +91,7 @@ def _rule_from(mapping: RuleMapping) -> tuple[dict, TestDefinition]:
         baseline_value=argument_value,
         contract_term_id=f"term-{mapping.test_type}",
     )
-    return project_rule(term, _test_type(mapping.test_type), ServerType.POSTGRES), term
+    return project_rule(term, _test_type(mapping.test_type), ServerType.POSTGRES, logical_type=logical_type), term
 
 
 def _pending_rule(test_type_code: str) -> dict:
@@ -116,7 +123,7 @@ def test_the_testgen_marker_is_honoured_before_the_table():
         "mustBeBetween": [1, 2],
         "customProperties": [{"property": "testType", "value": "Missing_Pct", "vendor": "testgen"}],
     }
-    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN)
+    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES)
     assert resolved is not None
     assert resolved.test_type == "Missing_Pct"
     assert resolved.thresholds == {"mustBeBetween": [1, 2]}
@@ -132,7 +139,7 @@ def test_a_marker_naming_an_unknown_test_type_resolves_to_unverifiable():
         "mustBeLessOrEqualTo": 5,
         "customProperties": [{"property": "testType", "value": "Not_A_Real_Test_Type", "vendor": "testgen"}],
     }
-    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES) is None
 
 
 def test_a_marker_whose_bound_does_not_match_its_types_own_operator_resolves_to_unverifiable():
@@ -144,7 +151,7 @@ def test_a_marker_whose_bound_does_not_match_its_types_own_operator_resolves_to_
         "mustBeBetween": [1, 2],
         "customProperties": [{"property": "testType", "value": "Required", "vendor": "testgen"}],
     }
-    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES) is None
 
 
 def test_a_marker_carrying_two_operators_at_once_resolves_to_unverifiable():
@@ -157,7 +164,7 @@ def test_a_marker_carrying_two_operators_at_once_resolves_to_unverifiable():
         "mustBeBetween": [1, 2],
         "customProperties": [{"property": "testType", "value": "Required", "vendor": "testgen"}],
     }
-    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES) is None
 
 
 def test_a_marker_carrying_both_valid_values_and_a_pattern_resolves_to_unverifiable():
@@ -171,7 +178,7 @@ def test_a_marker_carrying_both_valid_values_and_a_pattern_resolves_to_unverifia
         "arguments": {"validValues": ["Y", "N"], "pattern": "[A-Z]"},
         "customProperties": [{"property": "testType", "value": "LOV_Match", "vendor": "testgen"}],
     }
-    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES) is None
 
 
 def test_a_routed_types_marker_resolves_on_its_own_node_and_declines_on_the_other():
@@ -180,15 +187,15 @@ def test_a_routed_types_marker_resolves_on_its_own_node_and_declines_on_the_othe
     # type's own shape -- tier 1 refuses it exactly as tier 2 refuses a metric on the wrong
     # scope.
     rule, _ = _rule_from(RULE_MAPPINGS["Required"])
-    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN)
+    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES)
     assert resolved is not None
     assert resolved.test_type == "Required"
-    assert resolve_rule(rule, RuleScope.TABLE, _KNOWN) is None
+    assert resolve_rule(rule, RuleScope.TABLE, _KNOWN, server_type=ServerType.POSTGRES) is None
 
 
 def test_a_marker_for_a_custom_routed_type_resolves_on_its_declared_node():
     rule = _pending_rule("CUSTOM")
-    resolved = resolve_rule(rule, RuleScope.TABLE, _KNOWN)
+    resolved = resolve_rule(rule, RuleScope.TABLE, _KNOWN, server_type=ServerType.POSTGRES)
     assert resolved is not None
     assert resolved.test_type == "CUSTOM"
 
@@ -206,8 +213,8 @@ def test_a_marker_naming_an_excluded_type_declines_and_does_not_raise():
             "type": "text",
             "customProperties": [{"property": "testType", "value": test_type_code, "vendor": "testgen"}],
         }
-        assert resolve_rule(rule, RuleScope.TABLE, known) is None
-        assert resolve_rule(rule, RuleScope.COLUMN, known) is None
+        assert resolve_rule(rule, RuleScope.TABLE, known, server_type=ServerType.POSTGRES) is None
+        assert resolve_rule(rule, RuleScope.COLUMN, known, server_type=ServerType.POSTGRES) is None
 
 
 @pytest.mark.parametrize(
@@ -225,7 +232,7 @@ def test_a_collapsed_band_resolves_back_to_the_type_that_rendered_it(test_type, 
     rule = project_rule(term, _test_type(test_type), ServerType.POSTGRES)
     assert "mustBe" in rule, "bound_clause no longer collapses equal bounds; this case is moot"
 
-    resolved = resolve_rule(rule, scope, _KNOWN | {test_type})
+    resolved = resolve_rule(rule, scope, _KNOWN | {test_type}, server_type=ServerType.POSTGRES)
 
     assert resolved is not None, f"a projected {test_type} rule was declined by the resolver"
     assert resolved.test_type == test_type
@@ -245,21 +252,21 @@ def test_a_marker_carrying_a_conversion_band_surfaces_it_for_reconstruction():
             {"property": "thresholdBound", "value": 3.0, "vendor": "testgen"},
         ],
     }
-    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN)
+    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES)
     assert resolved is not None
     assert resolved.conversion == {"baselineRatio": 0.95, "thresholdBound": 3.0}
 
 
 def test_a_rule_with_no_conversion_properties_surfaces_an_empty_conversion():
     rule = {"metric": "nullValues", "unit": "rows", "mustBeLessOrEqualTo": 5}
-    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN)
+    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES)
     assert resolved is not None
     assert resolved.conversion == {}
 
 
 def test_a_null_values_rule_in_rows_resolves_to_required():
     rule = {"metric": "nullValues", "unit": "rows", "mustBeLessOrEqualTo": 5}
-    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN)
+    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES)
     assert resolved is not None
     assert resolved.test_type == "Required"
     assert resolved.thresholds == {"mustBeLessOrEqualTo": 5}
@@ -271,11 +278,11 @@ def test_a_null_values_rule_in_percent_is_declined_not_defaulted_to_missing_pct(
     # proportion, so nullValues/percent has no equivalent at all. Resolving it onto
     # Missing_Pct would assert a Cohen's h drift bound the contract never stated.
     rule = {"metric": "nullValues", "unit": "percent", "mustBeBetween": [1, 2]}
-    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES) is None
 
 
 def test_an_unrecognised_unit_resolves_to_unverifiable_and_is_not_defaulted_to_rows():
-    assert resolve_rule({"metric": "nullValues", "unit": "percentage", "mustBe": 0}, RuleScope.COLUMN, _KNOWN) is None
+    assert resolve_rule({"metric": "nullValues", "unit": "percentage", "mustBe": 0}, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES) is None
 
 
 def test_a_row_based_duplicate_values_rule_resolves_by_scope():
@@ -284,8 +291,8 @@ def test_a_row_based_duplicate_values_rule_resolves_by_scope():
     # duplicateValues/rows rule declines on both nodes rather than a (metric, unit) key
     # picking one of the two test types and being wrong for the other.
     rule = {"metric": "duplicateValues", "unit": "rows", "mustBeLessOrEqualTo": 0}
-    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
-    assert resolve_rule(rule, RuleScope.TABLE, _KNOWN) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES) is None
+    assert resolve_rule(rule, RuleScope.TABLE, _KNOWN, server_type=ServerType.POSTGRES) is None
 
 
 def test_a_rule_carrying_both_valid_values_and_a_pattern_resolves_to_unverifiable():
@@ -295,7 +302,7 @@ def test_a_rule_carrying_both_valid_values_and_a_pattern_resolves_to_unverifiabl
         "mustBeLessOrEqualTo": 0,
         "arguments": {"validValues": ["Y", "N"], "pattern": "[A-Z]"},
     }
-    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES) is None
 
 
 def test_an_invalid_values_rule_with_an_unrecognised_argument_resolves_to_unverifiable():
@@ -308,7 +315,7 @@ def test_an_invalid_values_rule_with_an_unrecognised_argument_resolves_to_unveri
         "mustBeLessOrEqualTo": 0,
         "arguments": {"validValues": ["Y", "N"], "somethingElse": True},
     }
-    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES) is None
 
 
 def test_a_metric_on_the_wrong_scope_resolves_to_unverifiable():
@@ -316,8 +323,8 @@ def test_a_metric_on_the_wrong_scope_resolves_to_unverifiable():
     # a table-scoped test type, so a caller that knows the rule sits on a column node must
     # not get a resolution back.
     rule = {"metric": "rowCount", "unit": "rows", "mustBeGreaterOrEqualTo": 100}
-    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
-    resolved = resolve_rule(rule, RuleScope.TABLE, _KNOWN)
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES) is None
+    resolved = resolve_rule(rule, RuleScope.TABLE, _KNOWN, server_type=ServerType.POSTGRES)
     assert resolved is not None
     assert resolved.test_type == "Row_Ct"
 
@@ -327,17 +334,17 @@ def test_the_operator_is_part_of_the_key():
     # mustBeLessOrEqualTo: 0 -- none of them is Required's exact shape, even though some
     # would coincide with it at this particular value.
     base = {"metric": "nullValues", "unit": "rows"}
-    assert resolve_rule({**base, "mustBe": 0}, RuleScope.COLUMN, _KNOWN) is None
-    assert resolve_rule({**base, "mustBeLessThan": 5}, RuleScope.COLUMN, _KNOWN) is None
-    assert resolve_rule({**base, "mustNotBe": 0}, RuleScope.COLUMN, _KNOWN) is None
-    assert resolve_rule({**base, "mustBeLessOrEqualTo": 0}, RuleScope.COLUMN, _KNOWN) is not None
+    assert resolve_rule({**base, "mustBe": 0}, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES) is None
+    assert resolve_rule({**base, "mustBeLessThan": 5}, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES) is None
+    assert resolve_rule({**base, "mustNotBe": 0}, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES) is None
+    assert resolve_rule({**base, "mustBeLessOrEqualTo": 0}, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES) is not None
 
 
 def test_a_strict_row_count_bound_is_reexpressed_as_the_next_integer():
     # rowCount counts rows -- always integral -- so re-expressing a strict lower bound as
     # the inclusive one is sound (unlike doing the same over a float-valued measure).
     rule = {"metric": "rowCount", "unit": "rows", "mustBeGreaterThan": 100}
-    resolved = resolve_rule(rule, RuleScope.TABLE, _KNOWN)
+    resolved = resolve_rule(rule, RuleScope.TABLE, _KNOWN, server_type=ServerType.POSTGRES)
     assert resolved is not None
     assert resolved.test_type == "Row_Ct"
     assert resolved.thresholds == {"mustBeGreaterOrEqualTo": 101}
@@ -345,12 +352,12 @@ def test_a_strict_row_count_bound_is_reexpressed_as_the_next_integer():
 
 def test_a_text_rule_always_resolves_to_unverifiable():
     rule = {"type": "text", "description": "Some free text quality expectation."}
-    assert resolve_rule(rule, RuleScope.TABLE, _KNOWN) is None
+    assert resolve_rule(rule, RuleScope.TABLE, _KNOWN, server_type=ServerType.POSTGRES) is None
 
 
 def test_a_custom_rule_always_resolves_to_unverifiable():
     rule = {"type": "custom", "engine": "soda", "implementation": "checks for tables:\n  - name: x"}
-    assert resolve_rule(rule, RuleScope.TABLE, _KNOWN) is None
+    assert resolve_rule(rule, RuleScope.TABLE, _KNOWN, server_type=ServerType.POSTGRES) is None
 
 
 def test_every_library_mapping_resolves_back_to_the_test_type_it_came_from():
@@ -364,7 +371,7 @@ def test_every_library_mapping_resolves_back_to_the_test_type_it_came_from():
         # With the marker: every library mapping round-trips through tier 1 -- this alone
         # says nothing about tier 2 (the exact-equivalence table), since the marker resolves
         # before the table is ever consulted.
-        resolved = resolve_rule(rule, mapping.scope, frozenset(RULE_MAPPINGS))
+        resolved = resolve_rule(rule, mapping.scope, frozenset(RULE_MAPPINGS), server_type=ServerType.POSTGRES)
         assert resolved is not None, f"{test_type} did not resolve from its own projected rule"
         assert resolved.test_type == test_type
 
@@ -379,20 +386,19 @@ def test_every_library_mapping_resolves_back_to_the_test_type_it_came_from():
         else:
             assert float(term.threshold_value) in resolved.conversion.values()
 
-        # With the marker stripped: only the table can resolve it now. Partitioned on the
-        # mapping's own `unit` -- not a hardcoded name list -- so a mapping added later lands
-        # on the right side automatically: a single-bound `unit: rows` mapping is the table's
-        # exact-equivalence shape and must still resolve to the same test type via the table
-        # alone; any other (the converted-band rows) has no table entry and must decline,
-        # exactly as it does under `resolve_rule` directly.
-        # `duplicateValues` has no table row either: `Unique`'s measure counts NULLs as duplicates,
-        # so `Dupe_Rows` is reachable through its marker alone.
-        stripped = resolve_rule(_without_marker(rule), mapping.scope, frozenset(RULE_MAPPINGS))
-        if mapping.operator.value != "mustBeBetween" and mapping.metric is not LibraryMetric.DUPLICATE_VALUES:
+        # With the marker stripped: only the table can resolve it now. The table's own targets
+        # resolve back to themselves. Every other library type either declines or resolves to
+        # the table target checking the same predicate -- an unmarked email pattern is a
+        # Pattern_Match, an unmarked list of valid values a LOV_Match -- since nothing left in
+        # the rule says which of the two wrote it.
+        stripped = resolve_rule(_without_marker(rule), mapping.scope, frozenset(RULE_MAPPINGS), server_type=ServerType.POSTGRES)
+        if test_type in _TIER_TWO_TARGETS:
             assert stripped is not None, f"{test_type} did not resolve via the table once its marker was stripped"
             assert stripped.test_type == test_type
         else:
-            assert stripped is None, f"{test_type} resolved with no marker and no table row for its unit"
+            assert stripped is None or stripped.test_type in _TIER_TWO_TARGETS, (
+                f"{test_type} resolved with no marker to {stripped.test_type}, which the table does not name"
+            )
 
 
 def test_a_marker_naming_a_custom_routed_type_resolves():
@@ -400,12 +406,24 @@ def test_a_marker_naming_a_custom_routed_type_resolves():
     the lossless round-trip of a rule this renderer wrote.
     """
     rule = {
-        "type": "custom", "engine": "testgen",
+        "type": "custom", "engine": "testgen", "implementation": {"threshold_value": "2"},
         "customProperties": [{"property": "testType", "value": "Avg_Shift", "vendor": "testgen"}],
     }
-    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN)
+    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES)
     assert resolved is not None
     assert resolved.test_type == "Avg_Shift"
+    assert resolved.parameters == {"threshold_value": "2"}
+
+
+@pytest.mark.parametrize("implementation", [None, "threshold_value: 2", ["2"]])
+def test_a_custom_rule_whose_implementation_is_not_an_object_is_declined(implementation):
+    """Its parameters cannot be read, so it is kept unverifiable rather than resolved with none."""
+    rule = {
+        "type": "custom", "engine": "testgen",
+        "customProperties": [{"property": "testType", "value": "Avg_Shift", "vendor": "testgen"}],
+        **({"implementation": implementation} if implementation is not None else {}),
+    }
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES) is None
 
 
 def test_a_custom_rule_claiming_a_comparison_operator_is_declined():
@@ -414,7 +432,7 @@ def test_a_custom_rule_claiming_a_comparison_operator_is_declined():
         "type": "custom", "engine": "testgen", "mustBeLessOrEqualTo": 0,
         "customProperties": [{"property": "testType", "value": "Avg_Shift", "vendor": "testgen"}],
     }
-    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES) is None
 
 
 def test_a_marker_naming_a_type_the_caller_does_not_know_is_declined():
@@ -422,7 +440,7 @@ def test_a_marker_naming_a_type_the_caller_does_not_know_is_declined():
         "type": "custom", "engine": "testgen",
         "customProperties": [{"property": "testType", "value": "Renamed_Away", "vendor": "testgen"}],
     }
-    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN, server_type=ServerType.POSTGRES) is None
 
 
 def test_a_dupe_rows_rule_resolves_on_either_node():
@@ -432,22 +450,69 @@ def test_a_dupe_rows_rule_resolves_on_either_node():
         "customProperties": [{"property": "testType", "value": "Dupe_Rows", "vendor": "testgen"}],
     }
     for scope in (RuleScope.COLUMN, RuleScope.TABLE):
-        resolved = resolve_rule(rule, scope, frozenset({"Dupe_Rows"}))
+        resolved = resolve_rule(rule, scope, frozenset({"Dupe_Rows"}), server_type=ServerType.POSTGRES)
         assert resolved is not None
         assert resolved.test_type == "Dupe_Rows"
 
 
-@pytest.mark.parametrize("groupby_names", ["order_id", "order_id,customer_id"])
+@pytest.mark.parametrize("groupby_names", ['"order_id"', '"order_id","customer_id"'])
 def test_a_dupe_rows_rule_round_trips_on_the_scope_it_renders_to(groupby_names):
     term = _term(test_type="Dupe_Rows", column_name=None, groupby_names=groupby_names, contract_term_id="term-d")
     test_type = _test_type("Dupe_Rows")
     scope = rule_scope(term, test_type)
     rule = project_rule(term, test_type, ServerType.POSTGRES)
-    resolved = resolve_rule(rule, scope, frozenset({"Dupe_Rows"}))
+    resolved = resolve_rule(rule, scope, frozenset({"Dupe_Rows"}), server_type=ServerType.POSTGRES)
     assert resolved is not None
     assert resolved.test_type == "Dupe_Rows"
 
 
 def test_a_non_term_dependent_library_type_still_declines_on_the_wrong_node():
     rule, _ = _rule_from(RULE_MAPPINGS["Required"])
-    assert resolve_rule(rule, RuleScope.TABLE, frozenset({"Required"})) is None
+    assert resolve_rule(rule, RuleScope.TABLE, frozenset({"Required"}), server_type=ServerType.POSTGRES) is None
+
+
+@pytest.mark.parametrize(
+    ("server_type", "groupby_names", "subject"),
+    [
+        (ServerType.POSTGRES, '"order_id", "line_no"', None),
+        (ServerType.BIGQUERY, "`order_id`, `line_no`", None),
+        (ServerType.DATABRICKS, "`order_id`, `line_no`", None),
+        (ServerType.BIGQUERY, "`order_id`", "order_id"),
+    ],
+)
+def test_a_dupe_rows_grouping_round_trips_in_its_flavors_quoting(server_type, groupby_names, subject):
+    term = _term(test_type="Dupe_Rows", column_name=None, groupby_names=groupby_names, contract_term_id="term-d")
+    test_type = _test_type("Dupe_Rows")
+    scope = rule_scope(term, test_type)
+    rule = project_rule(term, test_type, server_type)
+    if subject is None:
+        assert rule["arguments"]["properties"] == ["order_id", "line_no"]
+
+    resolved = resolve_rule(rule, scope, frozenset({"Dupe_Rows"}), subject, server_type=server_type)
+
+    assert resolved is not None
+    assert resolved.parameters["groupby_names"] == groupby_names
+
+
+@pytest.mark.parametrize(
+    ("test_type", "fields"),
+    [
+        ("Required", {"threshold_value": None}),
+        ("Row_Ct_Pct", {"baseline_ct": "0", "threshold_value": "10"}),
+        ("Match_Null_Ct", {"baseline_ct": None}),
+        ("SQL_Metric", {"column_name": None, "custom_query": "SELECT COUNT(*) FROM {DATA_SCHEMA}.orders"}),
+    ],
+)
+def test_a_term_rendered_custom_for_its_values_resolves_back_to_its_type(test_type, fields):
+    term = _term(test_type=test_type, **fields)
+    catalogue_type = _test_type(test_type, default_parm_columns="threshold_value,baseline_ct,custom_query")
+    rule = project_rule(term, catalogue_type, ServerType.POSTGRES)
+    assert rule["type"] == "custom"
+
+    resolved = resolve_rule(
+        rule, rule_scope(term, catalogue_type), frozenset({test_type}), server_type=ServerType.POSTGRES
+    )
+
+    assert resolved is not None
+    assert resolved.test_type == test_type
+    assert resolved.parameters == rule["implementation"]
