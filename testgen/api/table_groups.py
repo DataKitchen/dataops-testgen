@@ -18,7 +18,7 @@ from testgen.api.schemas import (
     TableGroupItem,
     TableGroupListResponse,
     TableGroupResponse,
-    TableGroupSchemaMove,
+    TableGroupSchemaChange,
     TableGroupUpdateRequest,
     TableGroupUpdateResponse,
 )
@@ -240,7 +240,7 @@ def update_table_group(
     schema, and tests keep their history. Referential tests keep the schema of their second table.
 
     The change is refused when the schema cannot be read or no table in it matches the table group's
-    table filters. Tables the new schema does not have are listed under `schema_move.missing_tables`.
+    table filters. Tables the new schema does not have are listed under `schema_change.missing_tables`.
     """
     supplied = body.model_dump(exclude_unset=True)
     if not supplied:
@@ -266,7 +266,7 @@ def update_table_group(
 
     return TableGroupUpdateResponse(
         **_to_response(table_group).model_dump(),
-        schema_move=TableGroupSchemaMove(
+        schema_change=TableGroupSchemaChange(
             previous_schema_name=move.previous_schema,
             schema_name=move.schema,
             definitions_repointed=move.definitions_repointed,

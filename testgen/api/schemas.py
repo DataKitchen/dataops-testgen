@@ -84,7 +84,7 @@ class TableGroupUpdateRequest(BaseModel):
     )
 
 
-class TableGroupSchemaMove(BaseModel):
+class TableGroupSchemaChange(BaseModel):
     """What changing the schema did, present only when the request changed it."""
 
     previous_schema_name: str
@@ -1000,7 +1000,7 @@ class TableGroupResponse(BaseModel):
 class TableGroupUpdateResponse(TableGroupResponse):
     """The table group as it now stands, plus what a schema change did."""
 
-    schema_move: TableGroupSchemaMove | None = None
+    schema_change: TableGroupSchemaChange | None = None
 
 
 _TABLE_GROUP_DEFAULTS = table_group_defaults()

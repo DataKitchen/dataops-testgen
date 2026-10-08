@@ -813,9 +813,9 @@ def test_update_table_group_moves_the_schema_and_reports_what_moved(
 
     assert resp.status_code == 200
     body = resp.json()
-    assert body["schema_move"]["previous_schema_name"] == "public"
-    assert body["schema_move"]["missing_tables"] == ["archive"]
-    assert body["schema_move"]["definitions_repointed"] == 3
+    assert body["schema_change"]["previous_schema_name"] == "public"
+    assert body["schema_change"]["missing_tables"] == ["archive"]
+    assert body["schema_change"]["definitions_repointed"] == 3
     mock_apply.assert_called_once()
 
 
@@ -831,7 +831,7 @@ def test_update_table_group_resending_the_current_schema_moves_nothing(
     resp = _client().patch(f"/api/v1/table-groups/{TG_ID}", json={"schema_name": "public"})
 
     assert resp.status_code == 200
-    assert resp.json()["schema_move"] is None
+    assert resp.json()["schema_change"] is None
     mock_move.assert_not_called()
     mock_apply.assert_not_called()
 
