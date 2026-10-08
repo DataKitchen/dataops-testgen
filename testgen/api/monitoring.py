@@ -1,5 +1,6 @@
 """API v1 — a table group's monitoring configuration."""
 
+from collections.abc import Collection
 from datetime import UTC
 from typing import Any
 from uuid import UUID
@@ -16,6 +17,7 @@ from testgen.common.models.scheduler import JobSchedule
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.monitor_service import (
+    MONITOR_SETTING_PUBLIC_NAMES,
     canonical_holiday_codes,
     count_monitors,
     create_monitor_schedule,
@@ -29,14 +31,7 @@ _error_responses = {404: {"model": ErrorResponse, "description": "Not found, or 
 _invalid_response = {400: {"model": ErrorResponse, "description": "One entry per invalid setting or schedule field"}}
 
 # Request field → monitor TestSuite column.
-_SETTING_COLUMNS = {
-    "lookback_runs": "monitor_lookback",
-    "regenerate_freshness": "monitor_regenerate_freshness",
-    "min_training_lookback": "predict_min_lookback",
-    "sensitivity": "predict_sensitivity",
-    "exclude_weekends": "predict_exclude_weekends",
-    "holiday_codes": "predict_holiday_codes",
-}
+_SETTING_COLUMNS = {public: column for column, public in MONITOR_SETTING_PUBLIC_NAMES.items()}
 
 _SCHEDULE_FIELD_NAMES = {"cron_expr": "cron_expression", "cron_tz": "timezone"}
 
@@ -77,13 +72,15 @@ def put_monitoring(
     """
     settings = _settings(body, body.model_fields)
     _validate(body.cron_expression, body.timezone, settings)
+    settings = _canonical(settings)
     cron_expr = normalize_cron(body.cron_expression)
 
     # The lock makes a concurrent or retried PUT wait for this one, then take the replace path.
     monitor_suite_id = lock_monitor_link(table_group)
     monitor_suite = _monitor_suite(monitor_suite_id)
+    monitor_count = None
     if monitor_suite is None:
-        monitor_suite, _ = enable_monitoring(table_group, cron_expr, body.timezone, suite_attrs=settings)
+        monitor_suite, monitor_count = enable_monitoring(table_group, cron_expr, body.timezone, suite_attrs=settings)
         schedule = JobSchedule.get_for_monitor_suite(monitor_suite.id)
         response.status_code = 201
     else:
@@ -93,7 +90,7 @@ def put_monitoring(
         update_monitoring(monitor_suite, schedule, suite_attrs=settings, cron_expr=cron_expr, cron_tz=body.timezone)
 
     get_current_session().flush()
-    return _to_response(table_group, monitor_suite, schedule)
+    return _to_response(table_group, monitor_suite, schedule, monitor_count=monitor_count)
 
 
 @router.patch(
@@ -125,6 +122,7 @@ def patch_monitoring(
         cron_expr = normalize_cron(cron_expr) if cron_expr is not None else None
     else:
         _validate(None, None, settings)
+    settings = _canonical(settings)
 
     active = body.active if "active" in sent else None
     update_monitoring(
@@ -134,7 +132,7 @@ def patch_monitoring(
     return _to_response(table_group, monitor_suite, schedule)
 
 
-def _settings(body: MonitoringConfig | MonitoringUpdate, fields) -> dict[str, Any]:
+def _settings(body: MonitoringConfig | MonitoringUpdate, fields: Collection[str]) -> dict[str, Any]:
     """Map the body's settings among ``fields`` to monitor TestSuite columns."""
     settings: dict[str, Any] = {}
     for name, column in _SETTING_COLUMNS.items():
@@ -146,15 +144,20 @@ def _settings(body: MonitoringConfig | MonitoringUpdate, fields) -> dict[str, An
 
 
 def _validate(cron_expr: str | None, cron_tz: str | None, settings: dict[str, Any]) -> None:
-    """Raise a 400 listing every invalid schedule field and setting; then store holiday codes canonically."""
-    errors = []
+    """Raise a 400 listing every invalid schedule field and setting."""
+    errors: list[str] = []
     if cron_expr is not None or cron_tz is not None:
         errors = validate_schedule(cron_expr, cron_tz, field_names=_SCHEDULE_FIELD_NAMES)
     errors.extend(validate_monitor_settings(settings))
     if errors:
         raise api_errors(400, "invalid_monitoring", errors)
-    if "predict_holiday_codes" in settings:
-        settings["predict_holiday_codes"] = canonical_holiday_codes(settings["predict_holiday_codes"])
+
+
+def _canonical(settings: dict[str, Any]) -> dict[str, Any]:
+    """Return ``settings`` with any holiday codes in canonical form. Call after ``_validate``."""
+    if "predict_holiday_codes" not in settings:
+        return settings
+    return {**settings, "predict_holiday_codes": canonical_holiday_codes(settings["predict_holiday_codes"])}
 
 
 def _monitor_suite(monitor_suite_id: UUID | None) -> TestSuite | None:
@@ -171,13 +174,15 @@ def _require_monitoring(table_group: TableGroup) -> tuple[TestSuite, JobSchedule
     return monitor_suite, schedule
 
 
-def _to_response(table_group: TableGroup, monitor_suite: TestSuite, schedule: JobSchedule) -> MonitoringResponse:
+def _to_response(
+    table_group: TableGroup, monitor_suite: TestSuite, schedule: JobSchedule, *, monitor_count: int | None = None
+) -> MonitoringResponse:
     sensitivity = monitor_suite.predict_sensitivity
     if sensitivity is not None:
         sensitivity = MonitorSensitivity(getattr(sensitivity, "value", sensitivity))
     return MonitoringResponse(
         table_group_id=table_group.id,
-        monitor_count=count_monitors(monitor_suite),
+        monitor_count=count_monitors(monitor_suite) if monitor_count is None else monitor_count,
         cron_expression=schedule.cron_expr,
         timezone=schedule.cron_tz,
         description=describe_cron(schedule.cron_expr),

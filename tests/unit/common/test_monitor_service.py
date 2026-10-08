@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from testgen.common.enums import SuiteType
 
@@ -109,7 +110,15 @@ def test_enable_monitoring_merges_defaults_skipping_none(mock_ts, mock_js, mock_
     assert returned_suite is suite
     assert count == 4
     mock_gen.assert_called_once_with(suite.id, ["Volume_Trend", "Schema_Drift"], in_session=True)
-    tg.save.assert_called()
+    tg.save.assert_not_called()
+    [link_update] = [
+        call.args[0] for call in mock_session.return_value.execute.call_args_list
+        if str(call.args[0]).startswith("UPDATE table_groups")
+    ]
+    sql = str(link_update.compile(dialect=postgresql.dialect()))
+    assert sql.startswith("UPDATE table_groups SET monitor_test_suite_id=")
+    assert "WHERE table_groups.id =" in sql
+    assert link_update.compile().params["monitor_test_suite_id"] == suite.id
     assert tg.monitor_test_suite_id == suite.id
     mock_session.return_value.commit.assert_not_called()
 
@@ -278,3 +287,22 @@ def test_count_monitors_counts_the_resolved_version(mock_session):
     sql = str(query.compile(dialect=postgresql.dialect()))
     assert "test_definitions.test_suite_id =" in sql
     assert "test_definitions.version_id =" in sql
+
+
+def test_table_group_save_never_writes_the_monitor_link():
+    """A general edit loaded before monitoring was enabled must not write back a stale link."""
+    from testgen.common.models.table_group import TableGroup
+
+    tg = TableGroup(id=uuid4(), table_groups_name="Sales", table_group_schema="public", monitor_test_suite_id=None)
+    with patch("testgen.common.models.table_group.get_current_session") as mock_session:
+        tg.save()
+
+    statement = mock_session.return_value.execute.call_args.args[0]
+    assert "table_groups_name" in statement.compile().params
+    assert "monitor_test_suite_id" not in statement.compile().params
+
+
+def test_validate_monitor_settings_ignores_blank_holiday_codes():
+    from testgen.common.monitor_service import validate_monitor_settings
+
+    assert validate_monitor_settings({"predict_holiday_codes": ["US", "", "  "]}) == []

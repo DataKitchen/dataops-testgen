@@ -398,7 +398,6 @@ SCHEDULE_KIND_TO_JOB_KEY: dict[ScheduleKind, JobKey] = {
 SCHEDULE_KIND_FROM_JOB_KEY: dict[JobKey, ScheduleKind] = {v: k for k, v in SCHEDULE_KIND_TO_JOB_KEY.items()}
 
 
-# A pure rename of PredictSensitivity, derived from it so the two cannot drift.
 MonitorSensitivity = StrEnum("MonitorSensitivity", {m.name: m.value for m in PredictSensitivity})  # type: ignore[misc]
 MonitorSensitivity.__doc__ = (
     "How readily monitors flag a deviation: ``high`` flags smaller deviations, ``low`` only large ones."

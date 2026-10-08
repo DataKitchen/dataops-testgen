@@ -31,6 +31,7 @@ class PredictSensitivity(enum.Enum):
     medium = "medium"
     high = "high"
 
+
 # Monitor configuration a monitor suite starts with, mirroring the UI's setup form.
 MONITOR_SETTING_DEFAULTS: dict[str, Any] = {
     "monitor_lookback": 14,

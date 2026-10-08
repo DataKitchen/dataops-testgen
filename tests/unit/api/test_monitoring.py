@@ -53,7 +53,7 @@ def _schedule(**overrides) -> JobSchedule:
 
 _MISSING = object()
 # The lock and schedule-creation mocks of the most recent ``_call``.
-LAST_CALL = SimpleNamespace(lock=None, create_schedule=None)
+LAST_CALL = SimpleNamespace(lock=None, create_schedule=None, count=None)
 
 
 def _call(method: str, body: dict | None = None, *, monitored: bool = True, permitted: bool = True, suite=None,
@@ -68,7 +68,7 @@ def _call(method: str, body: dict | None = None, *, monitored: bool = True, perm
         patch(f"{MODULE}.JobSchedule") as mock_schedule_cls,
         patch(f"{MODULE}.enable_monitoring", return_value=(suite, 2)) as mock_enable,
         patch(f"{MODULE}.update_monitoring") as mock_update,
-        patch(f"{MODULE}.count_monitors", return_value=2),
+        patch(f"{MODULE}.count_monitors", return_value=2) as mock_count,
         patch(f"{MODULE}.lock_monitor_link", return_value=SUITE_ID if monitored else None) as mock_lock,
         patch(f"{MODULE}.create_monitor_schedule", return_value=_schedule()) as mock_create_schedule,
         patch(f"{MODULE}.get_current_session"),
@@ -78,7 +78,7 @@ def _call(method: str, body: dict | None = None, *, monitored: bool = True, perm
         mock_suite_cls.get.return_value = suite if monitored else None
         mock_schedule_cls.get_for_monitor_suite.return_value = schedule
         resp = getattr(_client(), method)(URL, **({"json": body} if body is not None else {}))
-    LAST_CALL.lock, LAST_CALL.create_schedule = mock_lock, mock_create_schedule
+    LAST_CALL.lock, LAST_CALL.create_schedule, LAST_CALL.count = mock_lock, mock_create_schedule, mock_count
     return resp, mock_enable, mock_update, mock_perm
 
 
@@ -346,3 +346,17 @@ def test_put_rejects_active():
 
     assert resp.status_code == 422
     mock_update.assert_not_called()
+
+
+def test_put_enable_reports_the_count_enable_monitoring_returned():
+    resp, _, _, _ = _call("put", {"cron_expression": "0 6 * * *"}, monitored=False)
+
+    assert resp.json()["monitor_count"] == 2
+    LAST_CALL.count.assert_not_called()
+
+
+def test_put_accepts_blank_holiday_codes():
+    resp, mock_enable, _, _ = _call("put", {"cron_expression": "0 6 * * *", "holiday_codes": ["us", ""]}, monitored=False)
+
+    assert resp.status_code == 201
+    assert mock_enable.call_args.kwargs["suite_attrs"]["predict_holiday_codes"] == ["US"]

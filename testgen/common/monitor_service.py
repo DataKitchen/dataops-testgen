@@ -12,7 +12,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.enums import MonitorType, SuiteType
@@ -43,7 +43,7 @@ _MONITOR_SETTING_COLUMNS = tuple(MONITOR_SETTING_DEFAULTS)
 LOOKBACK_RUNS_RANGE = (1, 200)
 MIN_TRAINING_LOOKBACK_RANGE = (20, 1000)
 
-_PUBLIC_FIELD_NAMES = {
+MONITOR_SETTING_PUBLIC_NAMES = {
     "monitor_lookback": "lookback_runs",
     "monitor_regenerate_freshness": "regenerate_freshness",
     "predict_min_lookback": "min_training_lookback",
@@ -65,7 +65,7 @@ def validate_monitor_settings(suite_attrs: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
 
     def field(attr: str) -> str:
-        return f"`{_PUBLIC_FIELD_NAMES[attr]}`"
+        return f"`{MONITOR_SETTING_PUBLIC_NAMES[attr]}`"
 
     for attr, (low, high) in (
         ("monitor_lookback", LOOKBACK_RUNS_RANGE),
@@ -81,7 +81,9 @@ def validate_monitor_settings(suite_attrs: Mapping[str, Any]) -> list[str]:
         errors.append(f"{field('predict_sensitivity')} must be one of {valid}.")
 
     codes = suite_attrs.get("predict_holiday_codes")
-    if codes is not None and (unknown := [code for code in codes if not is_supported_holiday_code(code.strip())]):
+    if codes is not None and (
+        unknown := [code for code in codes if code.strip() and not is_supported_holiday_code(code.strip())]
+    ):
         errors.append(
             f"{field('predict_holiday_codes')} has unknown codes: {', '.join(unknown)}. Countries use ISO 3166-1 "
             f"alpha-2 codes (e.g. `US`, `GB`); financial markets use one of: {', '.join(list_market_holiday_codes())}."
@@ -107,7 +109,9 @@ def lock_monitor_link(table_group: TableGroup) -> UUID | None:
     )
 
 
-def create_monitor_schedule(monitor_suite: TestSuite, cron_expr: str, cron_tz: str, *, active: bool = True) -> JobSchedule:
+def create_monitor_schedule(
+    monitor_suite: TestSuite, cron_expr: str, cron_tz: str, *, active: bool = True
+) -> JobSchedule:
     """Create the run-monitors schedule for a monitor suite."""
     schedule = JobSchedule(
         project_code=monitor_suite.project_code,
@@ -165,8 +169,10 @@ def enable_monitoring(
 
     create_monitor_schedule(monitor_suite, cron_expr, cron_tz, active=active)
 
+    get_current_session().execute(
+        update(TableGroup).where(TableGroup.id == table_group.id).values(monitor_test_suite_id=monitor_suite.id)
+    )
     table_group.monitor_test_suite_id = monitor_suite.id
-    table_group.save()
 
     run_monitor_generation(monitor_suite.id, INITIAL_MONITOR_TYPES, in_session=True)
 
@@ -175,11 +181,14 @@ def enable_monitoring(
 
 def count_monitors(monitor_suite: TestSuite) -> int:
     """Return the number of monitors in a monitor suite."""
-    return get_current_session().scalar(
-        select(func.count())
-        .select_from(TestDefinition)
-        .where(TestDefinition.test_suite_id == monitor_suite.id, TestDefinition.version_clause())
-    ) or 0
+    return (
+        get_current_session().scalar(
+            select(func.count())
+            .select_from(TestDefinition)
+            .where(TestDefinition.test_suite_id == monitor_suite.id, TestDefinition.version_clause())
+        )
+        or 0
+    )
 
 
 def update_monitoring(
