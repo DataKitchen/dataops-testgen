@@ -411,7 +411,10 @@ def test_the_rendered_rule_count_equals_the_term_count():
             test_type="Avg_Shift", column_name="SUM(total_amount)", table_name="orders",
             threshold_value="5", contract_term_id="term-avg-shift",
         ),
-        _term(test_type="Unique", column_name="amount", table_name="orders", contract_term_id="term-unique"),
+        _term(
+            test_type="Unique", column_name="amount", table_name="orders", threshold_value="1",
+            contract_term_id="term-unique",
+        ),
     ]
     test_types = {
         "Row_Ct": _test_type("Row_Ct", test_scope="table", dq_dimension="Completeness"),
@@ -628,7 +631,7 @@ def test_a_rendered_document_with_several_tables_and_both_rule_scopes_validates(
 def test_a_dupe_rows_term_grouped_on_one_column_lands_on_that_column():
     version = _version(metadata_document={"schema": [{"name": "orders", "properties": [{"name": "order_id"}]}]})
     term = _term(
-        test_type="Dupe_Rows", table_name="orders", column_name=None, groupby_names="order_id",
+        test_type="Dupe_Rows", table_name="orders", column_name=None, groupby_names='"order_id"',
         contract_term_id="term-dupe",
     )
     test_types = {"Dupe_Rows": _test_type("Dupe_Rows", test_scope="table", dq_dimension="Uniqueness")}
@@ -642,7 +645,7 @@ def test_a_dupe_rows_term_grouped_on_one_column_lands_on_that_column():
 def test_a_dupe_rows_term_grouped_on_several_columns_lands_on_the_table():
     version = _version(metadata_document={"schema": [{"name": "orders"}]})
     term = _term(
-        test_type="Dupe_Rows", table_name="orders", column_name=None, groupby_names="order_id, line_no",
+        test_type="Dupe_Rows", table_name="orders", column_name=None, groupby_names='"order_id", "line_no"',
         contract_term_id="term-dupe",
     )
     test_types = {"Dupe_Rows": _test_type("Dupe_Rows", test_scope="table", dq_dimension="Uniqueness")}
@@ -656,7 +659,7 @@ def test_a_dupe_rows_term_grouped_on_several_columns_lands_on_the_table():
 def test_a_formerly_deferred_term_renders_a_custom_rule_not_a_text_one():
     version = _version(metadata_document={"schema": [{"name": "orders", "properties": [{"name": "order_id"}]}]})
     term = _term(
-        test_type="Unique", table_name="orders", column_name="order_id", threshold_value="0",
+        test_type="Unique", table_name="orders", column_name="order_id", threshold_value="1",
         contract_term_id="term-unique",
     )
     test_types = {"Unique": _test_type("Unique", test_scope="column", dq_dimension="Uniqueness")}
@@ -696,3 +699,181 @@ def test_terms_render_in_an_order_that_ties_cannot_reshuffle():
         "test_definitions.contract_term_id",
         "test_definitions.id",
     ]
+
+
+def _declaring_version(*properties: dict) -> SuiteVersion:
+    return _version(metadata_document={
+        "apiVersion": ODCS_API_VERSION, "kind": ODCS_KIND, "id": "contract-1", "version": "1.0.0",
+        "schema": [{"name": "orders", "properties": list(properties)}],
+    })
+
+
+_COLUMN_TYPES = {
+    code: _test_type(code, test_scope="column")
+    for code in ("Min_Val", "Max_Val", "Min_Date", "Max_Date", "Text_Length_Range", "Unique", "Constant")
+}
+
+
+def test_a_bound_allowing_no_exceptions_renders_as_a_declaration_and_no_rule():
+    version = _declaring_version({"name": "amount", "logicalType": "number"})
+    terms = [
+        _term(test_type="Min_Val", baseline_value="-5.5", contract_term_id="term-min"),
+        _term(test_type="Max_Val", baseline_value="100", threshold_value="", contract_term_id="term-max"),
+    ]
+
+    document = _render_with(version=version, terms=terms, test_types=_COLUMN_TYPES)
+
+    amount = _property_named(document, "amount")
+    assert amount["logicalTypeOptions"] == {"minimum": -5.5, "maximum": 100}
+    assert _all_rules(document) == []
+    assert validate_document(document) == []
+
+
+def test_a_bound_allowing_exceptions_renders_as_a_custom_rule():
+    version = _declaring_version({"name": "amount", "logicalType": "number"})
+    term = _term(test_type="Max_Val", baseline_value="100", threshold_value="2", contract_term_id="term-max")
+
+    document = _render_with(version=version, terms=[term], test_types=_COLUMN_TYPES)
+
+    assert "logicalTypeOptions" not in _property_named(document, "amount")
+    assert [rule["type"] for rule in _all_rules(document)] == ["custom"]
+
+
+@pytest.mark.parametrize(("test_type", "logical_type"), [
+    ("Max_Val", "string"), ("Max_Val", None), ("Max_Date", "number"), ("Text_Length_Range", "integer"),
+])
+def test_a_bound_on_a_property_of_another_type_renders_as_a_custom_rule(test_type, logical_type):
+    prop = {"name": "amount", **({"logicalType": logical_type} if logical_type else {})}
+    term = _term(
+        test_type=test_type, baseline_value="2026-01-01" if test_type.endswith("Date") else "5",
+        lower_tolerance="1", upper_tolerance="9", contract_term_id="term-bound",
+    )
+
+    document = _render_with(version=_declaring_version(prop), terms=[term], test_types=_COLUMN_TYPES)
+
+    assert "logicalTypeOptions" not in _property_named(document, "amount")
+    assert [rule["type"] for rule in _all_rules(document)] == ["custom"]
+
+
+def test_a_date_bound_declares_a_string_and_a_length_range_only_the_bounds_it_sets():
+    version = _declaring_version(
+        {"name": "shipped", "logicalType": "date"},
+        {"name": "code", "logicalType": "string"},
+    )
+    terms = [
+        _term(test_type="Max_Date", column_name="shipped", baseline_value="2026-01-31", contract_term_id="term-date"),
+        _term(test_type="Text_Length_Range", column_name="code", upper_tolerance="12", contract_term_id="term-len"),
+    ]
+
+    document = _render_with(version=version, terms=terms, test_types=_COLUMN_TYPES)
+
+    assert _property_named(document, "shipped")["logicalTypeOptions"] == {"maximum": "2026-01-31"}
+    assert _property_named(document, "code")["logicalTypeOptions"] == {"maxLength": 12}
+    assert validate_document(document) == []
+
+
+def test_unique_declares_required_too():
+    version = _declaring_version({"name": "order_id", "logicalType": "integer", "required": False})
+    term = _term(test_type="Unique", column_name="order_id", contract_term_id="term-unique")
+
+    document = _render_with(version=version, terms=[term], test_types=_COLUMN_TYPES)
+
+    prop = _property_named(document, "order_id")
+    assert (prop["unique"], prop["required"]) == (True, True)
+    assert _all_rules(document) == []
+
+
+def test_a_declaration_replaces_the_value_stored_in_the_metadata():
+    version = _declaring_version({"name": "amount", "logicalType": "number", "logicalTypeOptions": {"maximum": 10}})
+    term = _term(test_type="Max_Val", baseline_value="100", contract_term_id="term-max")
+
+    document = _render_with(version=version, terms=[term], test_types=_COLUMN_TYPES)
+
+    assert _property_named(document, "amount")["logicalTypeOptions"] == {"maximum": 100}
+    assert version.metadata_document["schema"][0]["properties"][0]["logicalTypeOptions"] == {"maximum": 10}
+
+
+def test_a_second_term_declaring_a_different_value_renders_as_a_rule_instead():
+    version = _declaring_version({"name": "amount", "logicalType": "number"})
+    terms = [
+        _term(test_type="Max_Val", baseline_value="100", contract_term_id="term-first"),
+        _term(test_type="Max_Val", baseline_value="200", contract_term_id="term-second"),
+        _term(test_type="Max_Val", baseline_value="100", contract_term_id="term-same"),
+    ]
+
+    document = _render_with(version=version, terms=terms, test_types=_COLUMN_TYPES)
+
+    assert _property_named(document, "amount")["logicalTypeOptions"] == {"maximum": 100}
+    assert [rule["id"] for rule in _all_rules(document)] == ["term-second"]
+
+
+def test_a_bound_on_an_undeclared_column_renders_as_a_rule():
+    term = _term(test_type="Max_Val", column_name="amount", baseline_value="100", contract_term_id="term-max")
+
+    document = _render_with(version=_declaring_version(), terms=[term], test_types=_COLUMN_TYPES)
+
+    assert [rule["type"] for rule in _all_rules(document)] == ["custom"]
+
+
+@pytest.mark.parametrize(("logical_type", "baseline", "rendered"), [
+    ("string", "'it''s'", ["it's"]),
+    ("integer", "42", [42]),
+    ("boolean", "FALSE", [False]),
+])
+def test_a_constant_of_the_property_type_renders_as_a_valid_values_rule(logical_type, baseline, rendered):
+    version = _declaring_version({"name": "amount", "logicalType": logical_type})
+    term = _term(test_type="Constant", baseline_value=baseline, contract_term_id="term-constant")
+
+    document = _render_with(version=version, terms=[term], test_types=_COLUMN_TYPES)
+
+    (rule,) = _all_rules(document)
+    assert (rule["type"], rule["metric"], rule["arguments"]) == ("library", "invalidValues", {"validValues": rendered})
+    assert validate_document(document) == []
+
+
+@pytest.mark.parametrize(("logical_type", "baseline"), [("date", "'2026-01-01'"), ("string", "42"), (None, "'x'")])
+def test_a_constant_that_is_not_one_literal_of_the_property_type_renders_as_a_custom_rule(logical_type, baseline):
+    prop = {"name": "amount", **({"logicalType": logical_type} if logical_type else {})}
+    term = _term(test_type="Constant", baseline_value=baseline, contract_term_id="term-constant")
+
+    document = _render_with(version=_declaring_version(prop), terms=[term], test_types=_COLUMN_TYPES)
+
+    assert [rule["type"] for rule in _all_rules(document)] == ["custom"]
+
+
+def test_a_bound_after_a_synthesized_measure_property_renders_as_a_rule():
+    """A measure property this render minted is not a declared column, whatever order the terms come in."""
+    terms = [
+        _term(test_type="Avg_Shift", column_name="amount", threshold_value="2", contract_term_id="term-avg"),
+        _term(test_type="Max_Val", column_name="amount", baseline_value="100", contract_term_id="term-max"),
+    ]
+    test_types = {**_COLUMN_TYPES, "Avg_Shift": _test_type("Avg_Shift", test_scope="column")}
+
+    document = _render_with(version=_declaring_version(), terms=terms, test_types=test_types)
+
+    assert "logicalTypeOptions" not in _property_named(document, "amount")
+    assert {rule["id"] for rule in _all_rules(document)} == {"term-avg", "term-max"}
+
+
+@pytest.mark.parametrize(("lower", "upper"), [("1", "10.5"), ("abc", "10")])
+def test_a_length_bound_that_is_not_whole_renders_as_a_rule(lower, upper):
+    version = _declaring_version({"name": "code", "logicalType": "string"})
+    term = _term(
+        test_type="Text_Length_Range", column_name="code", lower_tolerance=lower, upper_tolerance=upper,
+        contract_term_id="term-len",
+    )
+
+    document = _render_with(version=version, terms=[term], test_types=_COLUMN_TYPES)
+
+    assert "logicalTypeOptions" not in _property_named(document, "code")
+    assert [rule["type"] for rule in _all_rules(document)] == ["custom"]
+
+
+@pytest.mark.parametrize("baseline", ["inf", "nan"])
+def test_a_bound_that_is_not_a_finite_number_renders_as_a_rule(baseline):
+    version = _declaring_version({"name": "amount", "logicalType": "number"})
+    term = _term(test_type="Max_Val", baseline_value=baseline, contract_term_id="term-max")
+
+    document = _render_with(version=version, terms=[term], test_types=_COLUMN_TYPES)
+
+    assert [rule["type"] for rule in _all_rules(document)] == ["custom"]
