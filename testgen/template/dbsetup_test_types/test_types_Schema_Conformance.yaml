@@ -1,0 +1,799 @@
+test_types:
+  id: '1700'
+  test_type: Schema_Conformance
+  test_name_short: Schema Conformance
+  test_name_long: Table schema matches the declared schema
+  test_description: |-
+    Tests that the table's columns and their types match the schema the contract declares.
+  except_message: |-
+    Table schema does not match the declared schema.
+  measure_uom: Schema differences
+  measure_uom_description: null
+  selection_criteria: null
+  generation_template: null
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: null
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: null
+  default_parm_values: null
+  default_parm_prompts: null
+  default_parm_help: null
+  default_parm_required: ''
+  default_severity: Fail
+  run_type: METADATA
+  test_scope: table
+  dq_dimension: Validity
+  impact_dimension: Conformance
+  health_dimension: Schema Drift
+  threshold_description: |-
+    No differences from the declared schema
+  result_visualization: binary_chart
+  result_visualization_params: '{"legend":{"labels":{"0":"Conforms","1":"Differences"}}}'
+  usage_notes: |-
+    This test compares the table's columns and their types against the schema the contract version declares. It reports a declared table that TestGen no longer finds in the source, a column the contract declares that the table does not have, a column the table has that the contract does not declare, and a column whose type differs from the declared type. It is created for every table a contract declares that TestGen has found in the source, and cannot be added or deleted on its own.
+  active: Y
+  ai_redact_values: false
+  algorithm: Schema / metadata
+  cat_test_conditions: []
+  target_data_lookups: []
+  test_templates:
+  - id: '11200'
+    test_type: Schema_Conformance
+    sql_flavor: bigquery
+    template: |-
+      WITH declared AS (
+            SELECT prop ->> 'name' AS declared_column,
+                  prop ->> 'physicalType' AS declared_physical,
+                  prop ->> 'logicalType' AS declared_logical
+            FROM {APP_SCHEMA_NAME}.suite_versions sv
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
+            WHERE sv.id = '{VERSION_ID}'::UUID
+                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND prop ->> 'name' IS NOT NULL
+      ),
+      live AS (
+            SELECT dcc.column_name AS live_column,
+                  dcc.db_data_type AS live_physical,
+                  dcc.logical_type AS live_logical
+            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
+            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.drop_date IS NULL
+      ),
+      column_differences AS (
+            SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
+                  CASE
+                        WHEN l.live_column IS NULL THEN 'Missing column: ' || d.declared_column
+                        WHEN d.declared_column IS NULL THEN 'Unexpected column: ' || l.live_column
+                        WHEN d.declared_physical IS NOT NULL THEN
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_physical
+                              || ', found ' || COALESCE(l.live_physical, 'unknown')
+                        ELSE
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_logical
+                              || ', found ' || COALESCE(l.live_logical, 'unknown')
+                  END AS diff_text
+            FROM declared d
+                  FULL OUTER JOIN live l
+                        ON d.declared_column = l.live_column
+            WHERE l.live_column IS NULL
+                  OR d.declared_column IS NULL
+                  OR (d.declared_physical IS NOT NULL AND LOWER(d.declared_physical) IS DISTINCT FROM LOWER(l.live_physical))
+                  -- A live type with no ODCS logical type cannot be compared; a declared number admits integers
+                  OR (d.declared_physical IS NULL AND d.declared_logical IS NOT NULL AND l.live_logical IS NOT NULL
+                        AND LOWER(d.declared_logical) <> l.live_logical
+                        AND NOT (LOWER(d.declared_logical) = 'number' AND l.live_logical = 'integer'))
+      ),
+      differences AS (
+            SELECT diff_column, diff_text FROM column_differences
+            WHERE EXISTS (SELECT 1 FROM live)
+            UNION ALL
+            SELECT '{TABLE_NAME}', 'Missing table: {TABLE_NAME}'
+            WHERE NOT EXISTS (SELECT 1 FROM live)
+      )
+      SELECT
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            '{TABLE_NAME}'  AS table_name,
+            NULL AS column_names,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            COUNT(*)::VARCHAR AS result_signal,
+            CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END AS result_code,
+            STRING_AGG(diff_text, '; ' ORDER BY diff_column) AS result_message,
+            COUNT(*) AS result_measure
+      FROM differences;
+  - id: '11201'
+    test_type: Schema_Conformance
+    sql_flavor: databricks
+    template: |-
+      WITH declared AS (
+            SELECT prop ->> 'name' AS declared_column,
+                  prop ->> 'physicalType' AS declared_physical,
+                  prop ->> 'logicalType' AS declared_logical
+            FROM {APP_SCHEMA_NAME}.suite_versions sv
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
+            WHERE sv.id = '{VERSION_ID}'::UUID
+                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND prop ->> 'name' IS NOT NULL
+      ),
+      live AS (
+            SELECT dcc.column_name AS live_column,
+                  dcc.db_data_type AS live_physical,
+                  dcc.logical_type AS live_logical
+            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
+            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.drop_date IS NULL
+      ),
+      column_differences AS (
+            SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
+                  CASE
+                        WHEN l.live_column IS NULL THEN 'Missing column: ' || d.declared_column
+                        WHEN d.declared_column IS NULL THEN 'Unexpected column: ' || l.live_column
+                        WHEN d.declared_physical IS NOT NULL THEN
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_physical
+                              || ', found ' || COALESCE(l.live_physical, 'unknown')
+                        ELSE
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_logical
+                              || ', found ' || COALESCE(l.live_logical, 'unknown')
+                  END AS diff_text
+            FROM declared d
+                  FULL OUTER JOIN live l
+                        ON d.declared_column = l.live_column
+            WHERE l.live_column IS NULL
+                  OR d.declared_column IS NULL
+                  OR (d.declared_physical IS NOT NULL AND LOWER(d.declared_physical) IS DISTINCT FROM LOWER(l.live_physical))
+                  -- A live type with no ODCS logical type cannot be compared; a declared number admits integers
+                  OR (d.declared_physical IS NULL AND d.declared_logical IS NOT NULL AND l.live_logical IS NOT NULL
+                        AND LOWER(d.declared_logical) <> l.live_logical
+                        AND NOT (LOWER(d.declared_logical) = 'number' AND l.live_logical = 'integer'))
+      ),
+      differences AS (
+            SELECT diff_column, diff_text FROM column_differences
+            WHERE EXISTS (SELECT 1 FROM live)
+            UNION ALL
+            SELECT '{TABLE_NAME}', 'Missing table: {TABLE_NAME}'
+            WHERE NOT EXISTS (SELECT 1 FROM live)
+      )
+      SELECT
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            '{TABLE_NAME}'  AS table_name,
+            NULL AS column_names,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            COUNT(*)::VARCHAR AS result_signal,
+            CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END AS result_code,
+            STRING_AGG(diff_text, '; ' ORDER BY diff_column) AS result_message,
+            COUNT(*) AS result_measure
+      FROM differences;
+  - id: '11202'
+    test_type: Schema_Conformance
+    sql_flavor: mssql
+    template: |-
+      WITH declared AS (
+            SELECT prop ->> 'name' AS declared_column,
+                  prop ->> 'physicalType' AS declared_physical,
+                  prop ->> 'logicalType' AS declared_logical
+            FROM {APP_SCHEMA_NAME}.suite_versions sv
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
+            WHERE sv.id = '{VERSION_ID}'::UUID
+                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND prop ->> 'name' IS NOT NULL
+      ),
+      live AS (
+            SELECT dcc.column_name AS live_column,
+                  dcc.db_data_type AS live_physical,
+                  dcc.logical_type AS live_logical
+            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
+            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.drop_date IS NULL
+      ),
+      column_differences AS (
+            SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
+                  CASE
+                        WHEN l.live_column IS NULL THEN 'Missing column: ' || d.declared_column
+                        WHEN d.declared_column IS NULL THEN 'Unexpected column: ' || l.live_column
+                        WHEN d.declared_physical IS NOT NULL THEN
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_physical
+                              || ', found ' || COALESCE(l.live_physical, 'unknown')
+                        ELSE
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_logical
+                              || ', found ' || COALESCE(l.live_logical, 'unknown')
+                  END AS diff_text
+            FROM declared d
+                  FULL OUTER JOIN live l
+                        ON d.declared_column = l.live_column
+            WHERE l.live_column IS NULL
+                  OR d.declared_column IS NULL
+                  OR (d.declared_physical IS NOT NULL AND LOWER(d.declared_physical) IS DISTINCT FROM LOWER(l.live_physical))
+                  -- A live type with no ODCS logical type cannot be compared; a declared number admits integers
+                  OR (d.declared_physical IS NULL AND d.declared_logical IS NOT NULL AND l.live_logical IS NOT NULL
+                        AND LOWER(d.declared_logical) <> l.live_logical
+                        AND NOT (LOWER(d.declared_logical) = 'number' AND l.live_logical = 'integer'))
+      ),
+      differences AS (
+            SELECT diff_column, diff_text FROM column_differences
+            WHERE EXISTS (SELECT 1 FROM live)
+            UNION ALL
+            SELECT '{TABLE_NAME}', 'Missing table: {TABLE_NAME}'
+            WHERE NOT EXISTS (SELECT 1 FROM live)
+      )
+      SELECT
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            '{TABLE_NAME}'  AS table_name,
+            NULL AS column_names,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            COUNT(*)::VARCHAR AS result_signal,
+            CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END AS result_code,
+            STRING_AGG(diff_text, '; ' ORDER BY diff_column) AS result_message,
+            COUNT(*) AS result_measure
+      FROM differences;
+  - id: '11203'
+    test_type: Schema_Conformance
+    sql_flavor: postgresql
+    template: |-
+      WITH declared AS (
+            SELECT prop ->> 'name' AS declared_column,
+                  prop ->> 'physicalType' AS declared_physical,
+                  prop ->> 'logicalType' AS declared_logical
+            FROM {APP_SCHEMA_NAME}.suite_versions sv
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
+            WHERE sv.id = '{VERSION_ID}'::UUID
+                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND prop ->> 'name' IS NOT NULL
+      ),
+      live AS (
+            SELECT dcc.column_name AS live_column,
+                  dcc.db_data_type AS live_physical,
+                  dcc.logical_type AS live_logical
+            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
+            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.drop_date IS NULL
+      ),
+      column_differences AS (
+            SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
+                  CASE
+                        WHEN l.live_column IS NULL THEN 'Missing column: ' || d.declared_column
+                        WHEN d.declared_column IS NULL THEN 'Unexpected column: ' || l.live_column
+                        WHEN d.declared_physical IS NOT NULL THEN
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_physical
+                              || ', found ' || COALESCE(l.live_physical, 'unknown')
+                        ELSE
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_logical
+                              || ', found ' || COALESCE(l.live_logical, 'unknown')
+                  END AS diff_text
+            FROM declared d
+                  FULL OUTER JOIN live l
+                        ON d.declared_column = l.live_column
+            WHERE l.live_column IS NULL
+                  OR d.declared_column IS NULL
+                  OR (d.declared_physical IS NOT NULL AND LOWER(d.declared_physical) IS DISTINCT FROM LOWER(l.live_physical))
+                  -- A live type with no ODCS logical type cannot be compared; a declared number admits integers
+                  OR (d.declared_physical IS NULL AND d.declared_logical IS NOT NULL AND l.live_logical IS NOT NULL
+                        AND LOWER(d.declared_logical) <> l.live_logical
+                        AND NOT (LOWER(d.declared_logical) = 'number' AND l.live_logical = 'integer'))
+      ),
+      differences AS (
+            SELECT diff_column, diff_text FROM column_differences
+            WHERE EXISTS (SELECT 1 FROM live)
+            UNION ALL
+            SELECT '{TABLE_NAME}', 'Missing table: {TABLE_NAME}'
+            WHERE NOT EXISTS (SELECT 1 FROM live)
+      )
+      SELECT
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            '{TABLE_NAME}'  AS table_name,
+            NULL AS column_names,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            COUNT(*)::VARCHAR AS result_signal,
+            CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END AS result_code,
+            STRING_AGG(diff_text, '; ' ORDER BY diff_column) AS result_message,
+            COUNT(*) AS result_measure
+      FROM differences;
+  - id: '11204'
+    test_type: Schema_Conformance
+    sql_flavor: redshift
+    template: |-
+      WITH declared AS (
+            SELECT prop ->> 'name' AS declared_column,
+                  prop ->> 'physicalType' AS declared_physical,
+                  prop ->> 'logicalType' AS declared_logical
+            FROM {APP_SCHEMA_NAME}.suite_versions sv
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
+            WHERE sv.id = '{VERSION_ID}'::UUID
+                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND prop ->> 'name' IS NOT NULL
+      ),
+      live AS (
+            SELECT dcc.column_name AS live_column,
+                  dcc.db_data_type AS live_physical,
+                  dcc.logical_type AS live_logical
+            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
+            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.drop_date IS NULL
+      ),
+      column_differences AS (
+            SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
+                  CASE
+                        WHEN l.live_column IS NULL THEN 'Missing column: ' || d.declared_column
+                        WHEN d.declared_column IS NULL THEN 'Unexpected column: ' || l.live_column
+                        WHEN d.declared_physical IS NOT NULL THEN
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_physical
+                              || ', found ' || COALESCE(l.live_physical, 'unknown')
+                        ELSE
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_logical
+                              || ', found ' || COALESCE(l.live_logical, 'unknown')
+                  END AS diff_text
+            FROM declared d
+                  FULL OUTER JOIN live l
+                        ON d.declared_column = l.live_column
+            WHERE l.live_column IS NULL
+                  OR d.declared_column IS NULL
+                  OR (d.declared_physical IS NOT NULL AND LOWER(d.declared_physical) IS DISTINCT FROM LOWER(l.live_physical))
+                  -- A live type with no ODCS logical type cannot be compared; a declared number admits integers
+                  OR (d.declared_physical IS NULL AND d.declared_logical IS NOT NULL AND l.live_logical IS NOT NULL
+                        AND LOWER(d.declared_logical) <> l.live_logical
+                        AND NOT (LOWER(d.declared_logical) = 'number' AND l.live_logical = 'integer'))
+      ),
+      differences AS (
+            SELECT diff_column, diff_text FROM column_differences
+            WHERE EXISTS (SELECT 1 FROM live)
+            UNION ALL
+            SELECT '{TABLE_NAME}', 'Missing table: {TABLE_NAME}'
+            WHERE NOT EXISTS (SELECT 1 FROM live)
+      )
+      SELECT
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            '{TABLE_NAME}'  AS table_name,
+            NULL AS column_names,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            COUNT(*)::VARCHAR AS result_signal,
+            CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END AS result_code,
+            STRING_AGG(diff_text, '; ' ORDER BY diff_column) AS result_message,
+            COUNT(*) AS result_measure
+      FROM differences;
+  - id: '11205'
+    test_type: Schema_Conformance
+    sql_flavor: redshift_spectrum
+    template: |-
+      WITH declared AS (
+            SELECT prop ->> 'name' AS declared_column,
+                  prop ->> 'physicalType' AS declared_physical,
+                  prop ->> 'logicalType' AS declared_logical
+            FROM {APP_SCHEMA_NAME}.suite_versions sv
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
+            WHERE sv.id = '{VERSION_ID}'::UUID
+                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND prop ->> 'name' IS NOT NULL
+      ),
+      live AS (
+            SELECT dcc.column_name AS live_column,
+                  dcc.db_data_type AS live_physical,
+                  dcc.logical_type AS live_logical
+            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
+            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.drop_date IS NULL
+      ),
+      column_differences AS (
+            SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
+                  CASE
+                        WHEN l.live_column IS NULL THEN 'Missing column: ' || d.declared_column
+                        WHEN d.declared_column IS NULL THEN 'Unexpected column: ' || l.live_column
+                        WHEN d.declared_physical IS NOT NULL THEN
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_physical
+                              || ', found ' || COALESCE(l.live_physical, 'unknown')
+                        ELSE
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_logical
+                              || ', found ' || COALESCE(l.live_logical, 'unknown')
+                  END AS diff_text
+            FROM declared d
+                  FULL OUTER JOIN live l
+                        ON d.declared_column = l.live_column
+            WHERE l.live_column IS NULL
+                  OR d.declared_column IS NULL
+                  OR (d.declared_physical IS NOT NULL AND LOWER(d.declared_physical) IS DISTINCT FROM LOWER(l.live_physical))
+                  -- A live type with no ODCS logical type cannot be compared; a declared number admits integers
+                  OR (d.declared_physical IS NULL AND d.declared_logical IS NOT NULL AND l.live_logical IS NOT NULL
+                        AND LOWER(d.declared_logical) <> l.live_logical
+                        AND NOT (LOWER(d.declared_logical) = 'number' AND l.live_logical = 'integer'))
+      ),
+      differences AS (
+            SELECT diff_column, diff_text FROM column_differences
+            WHERE EXISTS (SELECT 1 FROM live)
+            UNION ALL
+            SELECT '{TABLE_NAME}', 'Missing table: {TABLE_NAME}'
+            WHERE NOT EXISTS (SELECT 1 FROM live)
+      )
+      SELECT
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            '{TABLE_NAME}'  AS table_name,
+            NULL AS column_names,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            COUNT(*)::VARCHAR AS result_signal,
+            CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END AS result_code,
+            STRING_AGG(diff_text, '; ' ORDER BY diff_column) AS result_message,
+            COUNT(*) AS result_measure
+      FROM differences;
+  - id: '11206'
+    test_type: Schema_Conformance
+    sql_flavor: snowflake
+    template: |-
+      WITH declared AS (
+            SELECT prop ->> 'name' AS declared_column,
+                  prop ->> 'physicalType' AS declared_physical,
+                  prop ->> 'logicalType' AS declared_logical
+            FROM {APP_SCHEMA_NAME}.suite_versions sv
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
+            WHERE sv.id = '{VERSION_ID}'::UUID
+                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND prop ->> 'name' IS NOT NULL
+      ),
+      live AS (
+            SELECT dcc.column_name AS live_column,
+                  dcc.db_data_type AS live_physical,
+                  dcc.logical_type AS live_logical
+            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
+            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.drop_date IS NULL
+      ),
+      column_differences AS (
+            SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
+                  CASE
+                        WHEN l.live_column IS NULL THEN 'Missing column: ' || d.declared_column
+                        WHEN d.declared_column IS NULL THEN 'Unexpected column: ' || l.live_column
+                        WHEN d.declared_physical IS NOT NULL THEN
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_physical
+                              || ', found ' || COALESCE(l.live_physical, 'unknown')
+                        ELSE
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_logical
+                              || ', found ' || COALESCE(l.live_logical, 'unknown')
+                  END AS diff_text
+            FROM declared d
+                  FULL OUTER JOIN live l
+                        ON d.declared_column = l.live_column
+            WHERE l.live_column IS NULL
+                  OR d.declared_column IS NULL
+                  OR (d.declared_physical IS NOT NULL AND LOWER(d.declared_physical) IS DISTINCT FROM LOWER(l.live_physical))
+                  -- A live type with no ODCS logical type cannot be compared; a declared number admits integers
+                  OR (d.declared_physical IS NULL AND d.declared_logical IS NOT NULL AND l.live_logical IS NOT NULL
+                        AND LOWER(d.declared_logical) <> l.live_logical
+                        AND NOT (LOWER(d.declared_logical) = 'number' AND l.live_logical = 'integer'))
+      ),
+      differences AS (
+            SELECT diff_column, diff_text FROM column_differences
+            WHERE EXISTS (SELECT 1 FROM live)
+            UNION ALL
+            SELECT '{TABLE_NAME}', 'Missing table: {TABLE_NAME}'
+            WHERE NOT EXISTS (SELECT 1 FROM live)
+      )
+      SELECT
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            '{TABLE_NAME}'  AS table_name,
+            NULL AS column_names,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            COUNT(*)::VARCHAR AS result_signal,
+            CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END AS result_code,
+            STRING_AGG(diff_text, '; ' ORDER BY diff_column) AS result_message,
+            COUNT(*) AS result_measure
+      FROM differences;
+  - id: '11207'
+    test_type: Schema_Conformance
+    sql_flavor: oracle
+    template: |-
+      WITH declared AS (
+            SELECT prop ->> 'name' AS declared_column,
+                  prop ->> 'physicalType' AS declared_physical,
+                  prop ->> 'logicalType' AS declared_logical
+            FROM {APP_SCHEMA_NAME}.suite_versions sv
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
+            WHERE sv.id = '{VERSION_ID}'::UUID
+                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND prop ->> 'name' IS NOT NULL
+      ),
+      live AS (
+            SELECT dcc.column_name AS live_column,
+                  dcc.db_data_type AS live_physical,
+                  dcc.logical_type AS live_logical
+            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
+            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.drop_date IS NULL
+      ),
+      column_differences AS (
+            SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
+                  CASE
+                        WHEN l.live_column IS NULL THEN 'Missing column: ' || d.declared_column
+                        WHEN d.declared_column IS NULL THEN 'Unexpected column: ' || l.live_column
+                        WHEN d.declared_physical IS NOT NULL THEN
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_physical
+                              || ', found ' || COALESCE(l.live_physical, 'unknown')
+                        ELSE
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_logical
+                              || ', found ' || COALESCE(l.live_logical, 'unknown')
+                  END AS diff_text
+            FROM declared d
+                  FULL OUTER JOIN live l
+                        ON d.declared_column = l.live_column
+            WHERE l.live_column IS NULL
+                  OR d.declared_column IS NULL
+                  OR (d.declared_physical IS NOT NULL AND LOWER(d.declared_physical) IS DISTINCT FROM LOWER(l.live_physical))
+                  -- A live type with no ODCS logical type cannot be compared; a declared number admits integers
+                  OR (d.declared_physical IS NULL AND d.declared_logical IS NOT NULL AND l.live_logical IS NOT NULL
+                        AND LOWER(d.declared_logical) <> l.live_logical
+                        AND NOT (LOWER(d.declared_logical) = 'number' AND l.live_logical = 'integer'))
+      ),
+      differences AS (
+            SELECT diff_column, diff_text FROM column_differences
+            WHERE EXISTS (SELECT 1 FROM live)
+            UNION ALL
+            SELECT '{TABLE_NAME}', 'Missing table: {TABLE_NAME}'
+            WHERE NOT EXISTS (SELECT 1 FROM live)
+      )
+      SELECT
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            '{TABLE_NAME}'  AS table_name,
+            NULL AS column_names,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            COUNT(*)::VARCHAR AS result_signal,
+            CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END AS result_code,
+            STRING_AGG(diff_text, '; ' ORDER BY diff_column) AS result_message,
+            COUNT(*) AS result_measure
+      FROM differences;
+  - id: '11208'
+    test_type: Schema_Conformance
+    sql_flavor: sap_hana
+    template: |-
+      WITH declared AS (
+            SELECT prop ->> 'name' AS declared_column,
+                  prop ->> 'physicalType' AS declared_physical,
+                  prop ->> 'logicalType' AS declared_logical
+            FROM {APP_SCHEMA_NAME}.suite_versions sv
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
+            WHERE sv.id = '{VERSION_ID}'::UUID
+                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND prop ->> 'name' IS NOT NULL
+      ),
+      live AS (
+            SELECT dcc.column_name AS live_column,
+                  dcc.db_data_type AS live_physical,
+                  dcc.logical_type AS live_logical
+            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
+            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.drop_date IS NULL
+      ),
+      column_differences AS (
+            SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
+                  CASE
+                        WHEN l.live_column IS NULL THEN 'Missing column: ' || d.declared_column
+                        WHEN d.declared_column IS NULL THEN 'Unexpected column: ' || l.live_column
+                        WHEN d.declared_physical IS NOT NULL THEN
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_physical
+                              || ', found ' || COALESCE(l.live_physical, 'unknown')
+                        ELSE
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_logical
+                              || ', found ' || COALESCE(l.live_logical, 'unknown')
+                  END AS diff_text
+            FROM declared d
+                  FULL OUTER JOIN live l
+                        ON d.declared_column = l.live_column
+            WHERE l.live_column IS NULL
+                  OR d.declared_column IS NULL
+                  OR (d.declared_physical IS NOT NULL AND LOWER(d.declared_physical) IS DISTINCT FROM LOWER(l.live_physical))
+                  -- A live type with no ODCS logical type cannot be compared; a declared number admits integers
+                  OR (d.declared_physical IS NULL AND d.declared_logical IS NOT NULL AND l.live_logical IS NOT NULL
+                        AND LOWER(d.declared_logical) <> l.live_logical
+                        AND NOT (LOWER(d.declared_logical) = 'number' AND l.live_logical = 'integer'))
+      ),
+      differences AS (
+            SELECT diff_column, diff_text FROM column_differences
+            WHERE EXISTS (SELECT 1 FROM live)
+            UNION ALL
+            SELECT '{TABLE_NAME}', 'Missing table: {TABLE_NAME}'
+            WHERE NOT EXISTS (SELECT 1 FROM live)
+      )
+      SELECT
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            '{TABLE_NAME}'  AS table_name,
+            NULL AS column_names,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            COUNT(*)::VARCHAR AS result_signal,
+            CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END AS result_code,
+            STRING_AGG(diff_text, '; ' ORDER BY diff_column) AS result_message,
+            COUNT(*) AS result_measure
+      FROM differences;
+  - id: '11209'
+    test_type: Schema_Conformance
+    sql_flavor: salesforce_data360
+    template: |-
+      WITH declared AS (
+            SELECT prop ->> 'name' AS declared_column,
+                  prop ->> 'physicalType' AS declared_physical,
+                  prop ->> 'logicalType' AS declared_logical
+            FROM {APP_SCHEMA_NAME}.suite_versions sv
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
+            WHERE sv.id = '{VERSION_ID}'::UUID
+                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND prop ->> 'name' IS NOT NULL
+      ),
+      live AS (
+            SELECT dcc.column_name AS live_column,
+                  dcc.db_data_type AS live_physical,
+                  dcc.logical_type AS live_logical
+            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
+            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.drop_date IS NULL
+      ),
+      column_differences AS (
+            SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
+                  CASE
+                        WHEN l.live_column IS NULL THEN 'Missing column: ' || d.declared_column
+                        WHEN d.declared_column IS NULL THEN 'Unexpected column: ' || l.live_column
+                        WHEN d.declared_physical IS NOT NULL THEN
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_physical
+                              || ', found ' || COALESCE(l.live_physical, 'unknown')
+                        ELSE
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_logical
+                              || ', found ' || COALESCE(l.live_logical, 'unknown')
+                  END AS diff_text
+            FROM declared d
+                  FULL OUTER JOIN live l
+                        ON d.declared_column = l.live_column
+            WHERE l.live_column IS NULL
+                  OR d.declared_column IS NULL
+                  OR (d.declared_physical IS NOT NULL AND LOWER(d.declared_physical) IS DISTINCT FROM LOWER(l.live_physical))
+                  -- A live type with no ODCS logical type cannot be compared; a declared number admits integers
+                  OR (d.declared_physical IS NULL AND d.declared_logical IS NOT NULL AND l.live_logical IS NOT NULL
+                        AND LOWER(d.declared_logical) <> l.live_logical
+                        AND NOT (LOWER(d.declared_logical) = 'number' AND l.live_logical = 'integer'))
+      ),
+      differences AS (
+            SELECT diff_column, diff_text FROM column_differences
+            WHERE EXISTS (SELECT 1 FROM live)
+            UNION ALL
+            SELECT '{TABLE_NAME}', 'Missing table: {TABLE_NAME}'
+            WHERE NOT EXISTS (SELECT 1 FROM live)
+      )
+      SELECT
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            '{TABLE_NAME}'  AS table_name,
+            NULL AS column_names,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            COUNT(*)::VARCHAR AS result_signal,
+            CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END AS result_code,
+            STRING_AGG(diff_text, '; ' ORDER BY diff_column) AS result_message,
+            COUNT(*) AS result_measure
+      FROM differences;
+  - id: '11210'
+    test_type: Schema_Conformance
+    sql_flavor: duckdb
+    template: |-
+      WITH declared AS (
+            SELECT prop ->> 'name' AS declared_column,
+                  prop ->> 'physicalType' AS declared_physical,
+                  prop ->> 'logicalType' AS declared_logical
+            FROM {APP_SCHEMA_NAME}.suite_versions sv
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
+                  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
+            WHERE sv.id = '{VERSION_ID}'::UUID
+                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND prop ->> 'name' IS NOT NULL
+      ),
+      live AS (
+            SELECT dcc.column_name AS live_column,
+                  dcc.db_data_type AS live_physical,
+                  dcc.logical_type AS live_logical
+            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
+            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.drop_date IS NULL
+      ),
+      column_differences AS (
+            SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
+                  CASE
+                        WHEN l.live_column IS NULL THEN 'Missing column: ' || d.declared_column
+                        WHEN d.declared_column IS NULL THEN 'Unexpected column: ' || l.live_column
+                        WHEN d.declared_physical IS NOT NULL THEN
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_physical
+                              || ', found ' || COALESCE(l.live_physical, 'unknown')
+                        ELSE
+                              'Type mismatch on ' || d.declared_column || ': declared ' || d.declared_logical
+                              || ', found ' || COALESCE(l.live_logical, 'unknown')
+                  END AS diff_text
+            FROM declared d
+                  FULL OUTER JOIN live l
+                        ON d.declared_column = l.live_column
+            WHERE l.live_column IS NULL
+                  OR d.declared_column IS NULL
+                  OR (d.declared_physical IS NOT NULL AND LOWER(d.declared_physical) IS DISTINCT FROM LOWER(l.live_physical))
+                  -- A live type with no ODCS logical type cannot be compared; a declared number admits integers
+                  OR (d.declared_physical IS NULL AND d.declared_logical IS NOT NULL AND l.live_logical IS NOT NULL
+                        AND LOWER(d.declared_logical) <> l.live_logical
+                        AND NOT (LOWER(d.declared_logical) = 'number' AND l.live_logical = 'integer'))
+      ),
+      differences AS (
+            SELECT diff_column, diff_text FROM column_differences
+            WHERE EXISTS (SELECT 1 FROM live)
+            UNION ALL
+            SELECT '{TABLE_NAME}', 'Missing table: {TABLE_NAME}'
+            WHERE NOT EXISTS (SELECT 1 FROM live)
+      )
+      SELECT
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            '{TABLE_NAME}'  AS table_name,
+            NULL AS column_names,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            COUNT(*)::VARCHAR AS result_signal,
+            CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END AS result_code,
+            STRING_AGG(diff_text, '; ' ORDER BY diff_column) AS result_message,
+            COUNT(*) AS result_measure
+      FROM differences;

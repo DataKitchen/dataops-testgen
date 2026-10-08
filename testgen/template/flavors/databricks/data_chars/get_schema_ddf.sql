@@ -10,9 +10,21 @@ SELECT
            ELSE lower(c.full_data_type)
        END AS column_type,
        c.full_data_type AS db_data_type,
+       CASE
+           WHEN c.data_type IN ('BYTE', 'SHORT', 'INT', 'LONG')
+               OR (c.data_type = 'DECIMAL' AND c.numeric_scale = 0) THEN 'integer'
+           WHEN c.data_type IN ('DECIMAL', 'FLOAT', 'DOUBLE') THEN 'number'
+           WHEN c.data_type IN ('STRING', 'CHAR', 'VARCHAR', 'BINARY') THEN 'string'
+           WHEN c.data_type = 'BOOLEAN' THEN 'boolean'
+           WHEN c.data_type = 'DATE' THEN 'date'
+           WHEN c.data_type IN ('TIMESTAMP', 'TIMESTAMP_NTZ') THEN 'timestamp'
+           WHEN c.data_type IN ('STRUCT', 'VARIANT') THEN 'object'
+           WHEN c.data_type = 'ARRAY' THEN 'array'
+           WHEN c.data_type = 'MAP' THEN 'map'
+       END AS logical_type,
        c.ordinal_position,
        CASE
-           WHEN c.data_type IN ('STRING', 'CHAR') THEN 'A'
+           WHEN c.data_type IN ('STRING', 'CHAR', 'VARCHAR') THEN 'A'
            WHEN c.data_type = 'BOOLEAN' THEN 'B'
            WHEN c.data_type IN ('DATE', 'TIMESTAMP', 'TIMESTAMP_NTZ') THEN 'D'
            WHEN c.data_type IN ('BYTE', 'SHORT', 'INT', 'LONG', 'DECIMAL', 'FLOAT', 'DOUBLE') THEN 'N'

@@ -22,7 +22,7 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestDefinition
+from testgen.common.models.test_definition import MANAGED_TEST_TYPES, TestDefinition
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.read_file import read_template_sql_file
 from testgen.utils import to_sql_timestamp
@@ -116,6 +116,22 @@ def run_monitor_generation(
     ).monitor_run(mode, table_names=table_names)
 
 
+def run_conformance_generation(test_suite_id: str | UUID, table_names: list[str] | None = None) -> None:
+    """Reconcile a contract draft's Schema Conformance tests with the tables it declares.
+
+    Adds a test for each declared table the table group's catalog holds and has no test yet,
+    and deletes the tests of tables the draft no longer declares. ``table_names`` limits the
+    additions to those tables; the deletions always cover the whole draft.
+    """
+    test_suite = TestSuite.get(test_suite_id)
+    if test_suite.suite_type != SuiteType.CONTRACT:
+        raise ValueError("Cannot run conformance generation for a suite that is not a contract")
+    table_group = TableGroup.get(test_suite.table_groups_id)
+    connection = Connection.get(table_group.connection_id)
+
+    TestGeneration(connection, table_group, test_suite, [], table_names=table_names).conformance_run()
+
+
 class TestGeneration:
 
     def __init__(
@@ -190,6 +206,14 @@ class TestGeneration:
             self._get_generation_queries(extra_params=extra_params),
         )
 
+    def conformance_run(self) -> None:
+        TestDefinition.assert_version_writable(self.version_id)
+        LOG.info("Running conformance generation queries")
+        execute_db_queries([
+            self._get_query("gen_Schema_Conformance.sql"),
+            self._get_query("delete_undeclared_conformance.sql"),
+        ])
+
     def _get_generation_queries(self, extra_params: dict | None = None) -> list[tuple[str, dict]]:
         test_types = fetch_dict_from_db(*self._get_query("get_test_types.sql", extra_params=extra_params))
         test_types = [TestTypeParams(**item) for item in test_types]
@@ -244,6 +268,7 @@ class TestGeneration:
             "DATA_SCHEMA": self.table_group.table_group_schema,
             "GENERATION_SETS": self.generation_sets,
             "TEST_TYPES_FILTER": self.test_types_filter,
+            "MANAGED_TEST_TYPES": sorted(MANAGED_TEST_TYPES),
             "PROFILE_RUN_ID": self.profile_run_id,
             "RUN_DATE": to_sql_timestamp(self.run_date),
             "AS_OF_DATE": to_sql_timestamp(self.as_of_date),

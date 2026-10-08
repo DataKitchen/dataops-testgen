@@ -261,6 +261,7 @@ class DataColumnChars(Entity):
     general_type: str | None = Column(String)
     column_type: str | None = Column(String)
     db_data_type: str | None = Column(String)
+    logical_type: str | None = Column(String)
     is_decimal: bool | None = Column(Boolean)
     functional_data_type: str | None = Column(String)
     critical_data_element: bool | None = Column(Boolean)

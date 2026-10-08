@@ -5,6 +5,7 @@ from sqlalchemy.pool import StaticPool
 
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.flavor.flavor_service import FlavorService, ResolvedConnectionParams
+from testgen.common.enums import OdcsLogicalType
 
 # Register the dialect so create_engine("salesforce_data360://") works
 # without requiring an installed entry point.
@@ -15,14 +16,14 @@ registry.register("salesforce_data360", "testgen.common.database.salesforce_data
 # have been observed against profiled DMOs and DLOs. Unknown types preserve the
 # raw metadata string as column_type and fall through to general_type "X" in
 # get_schema_columns(), matching get_schema_ddf.sql behavior for other flavors.
-_TYPE_MAP: dict[str, tuple[str, str, bool]] = {
-    # metadata_type → (column_type, general_type, is_decimal)
-    "STRING": ("varchar", "A", False),
-    "NUMBER": ("numeric", "N", True),
-    "BIGINT": ("bigint", "N", False),
-    "BOOLEAN": ("boolean", "B", False),
-    "DATE": ("date", "D", False),
-    "DATE_TIME": ("datetime", "D", False),
+_TYPE_MAP: dict[str, tuple[str, str, OdcsLogicalType, bool]] = {
+    # metadata_type → (column_type, general_type, logical_type, is_decimal)
+    "STRING": ("varchar", "A", OdcsLogicalType.STRING, False),
+    "NUMBER": ("numeric", "N", OdcsLogicalType.NUMBER, True),
+    "BIGINT": ("bigint", "N", OdcsLogicalType.INTEGER, False),
+    "BOOLEAN": ("boolean", "B", OdcsLogicalType.BOOLEAN, False),
+    "DATE": ("date", "D", OdcsLogicalType.DATE, False),
+    "DATE_TIME": ("datetime", "D", OdcsLogicalType.TIMESTAMP, False),
 }
 
 
@@ -118,9 +119,9 @@ class SalesforceData360FlavorService(FlavorService):
                 meta_type = (field.type or "").upper()
                 mapped = _TYPE_MAP.get(meta_type)
                 if mapped is not None:
-                    column_type, general_type, is_decimal = mapped
+                    column_type, general_type, logical_type, is_decimal = mapped
                 else:
-                    column_type, general_type, is_decimal = meta_type.lower(), "X", False
+                    column_type, general_type, logical_type, is_decimal = meta_type.lower(), "X", None, False
 
                 columns.append(ColumnChars(
                     schema_name=schema,
@@ -128,6 +129,7 @@ class SalesforceData360FlavorService(FlavorService):
                     column_name=field.name,
                     column_type=column_type,
                     db_data_type=meta_type,
+                    logical_type=logical_type,
                     ordinal_position=ordinal,
                     general_type=general_type,
                     is_decimal=is_decimal,

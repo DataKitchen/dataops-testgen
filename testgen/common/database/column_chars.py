@@ -20,6 +20,7 @@ class ColumnChars:
     general_type: str | None = None
     column_type: str | None = None
     db_data_type: str | None = None
+    logical_type: str | None = None
     is_decimal: bool = False
     object_type: ObjectType | None = None
     approx_record_ct: int | None = None

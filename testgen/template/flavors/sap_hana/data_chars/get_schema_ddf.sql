@@ -23,9 +23,21 @@ SELECT
     END AS column_type,
     CASE
         WHEN c.DATA_TYPE_NAME IN ('NVARCHAR', 'VARCHAR', 'NCHAR', 'CHAR', 'ALPHANUM', 'SHORTTEXT') THEN c.DATA_TYPE_NAME || '(' || c.LENGTH || ')'
+        WHEN c.DATA_TYPE_NAME = 'DECIMAL' AND c.SCALE IS NULL THEN 'DECIMAL'
         WHEN c.DATA_TYPE_NAME = 'DECIMAL' THEN 'DECIMAL(' || c.LENGTH || ',' || c.SCALE || ')'
         ELSE c.DATA_TYPE_NAME
     END AS db_data_type,
+    CASE
+        WHEN c.DATA_TYPE_NAME IN ('INTEGER', 'BIGINT', 'SMALLINT', 'TINYINT')
+            OR (c.DATA_TYPE_NAME = 'DECIMAL' AND c.SCALE = 0) THEN 'integer'
+        WHEN c.DATA_TYPE_NAME IN ('DECIMAL', 'DOUBLE', 'REAL', 'SMALLDECIMAL') THEN 'number'
+        WHEN c.DATA_TYPE_NAME IN ('NVARCHAR', 'VARCHAR', 'NCHAR', 'CHAR', 'ALPHANUM', 'SHORTTEXT',
+                                  'CLOB', 'NCLOB', 'TEXT', 'BINTEXT', 'VARBINARY', 'BINARY', 'BLOB') THEN 'string'
+        WHEN c.DATA_TYPE_NAME = 'BOOLEAN' THEN 'boolean'
+        WHEN c.DATA_TYPE_NAME = 'DATE' THEN 'date'
+        WHEN c.DATA_TYPE_NAME IN ('TIMESTAMP', 'SECONDDATE') THEN 'timestamp'
+        WHEN c.DATA_TYPE_NAME = 'TIME' THEN 'time'
+    END AS logical_type,
     c.POSITION AS ordinal_position,
     CASE
         WHEN c.DATA_TYPE_NAME IN ('NVARCHAR', 'VARCHAR', 'NCHAR', 'CHAR', 'ALPHANUM', 'SHORTTEXT')

@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from testgen.commands.test_generation import TestGeneration, run_test_generation
+from testgen.commands.test_generation import TestGeneration, run_conformance_generation, run_test_generation
 from testgen.common.enums import SuiteType
 from testgen.common.models.suite_version import FrozenVersionError
 
@@ -365,3 +365,84 @@ def test_generation_refuses_to_write_a_frozen_contract_version(_mock_gen, _mock_
     ):
         with pytest.raises(FrozenVersionError):
             generation.run()
+
+
+# --- Managed tests ---
+
+
+@patch(f"{MODULE}.execute_db_queries")
+@patch.object(TestGeneration, "_get_generation_queries", return_value=[("SELECT 1", {})])
+def test_the_stale_delete_spares_managed_tests(_mock_gen, mock_exec):
+    """A conformance test is generated with a run date like any other but by no generation
+    set, so set-based generation would find it stale on every run and delete it."""
+    tg = _make_generation()
+
+    tg.run()
+
+    stale_query, stale_params = next(
+        (query, params) for query, params in mock_exec.call_args[0][0]
+        if "last_auto_gen_date < :RUN_DATE" in query
+    )
+
+    assert "NOT (test_type = ANY(:MANAGED_TEST_TYPES))" in stale_query
+    assert stale_params["MANAGED_TEST_TYPES"] == ["Schema_Conformance"]
+
+
+@patch(f"{MODULE}.execute_db_queries")
+def test_conformance_run_adds_then_removes_against_the_resolved_version(mock_exec):
+    tg = _make_generation()
+
+    tg.conformance_run()
+
+    (insert_query, insert_params), (delete_query, delete_params) = mock_exec.call_args[0][0]
+    assert "INSERT INTO test_definitions" in insert_query
+    assert "'Schema_Conformance'" in insert_query
+    assert "DELETE FROM test_definitions" in delete_query
+    assert insert_params["VERSION_ID"] == delete_params["VERSION_ID"] == tg.version_id
+
+
+@patch(f"{MODULE}.execute_db_queries")
+def test_conformance_run_scopes_additions_to_the_named_tables(mock_exec):
+    tg = _generation(table_names=["orders"])
+
+    tg.conformance_run()
+
+    (insert_query, insert_params), (delete_query, _) = mock_exec.call_args[0][0]
+    assert "AND table_name = ANY(:TABLE_NAMES)" in insert_query
+    assert insert_params["TABLE_NAMES"] == ["orders"]
+    assert "TABLE_NAMES" not in delete_query
+
+
+@patch(f"{MODULE}.execute_db_queries")
+def test_conformance_run_refuses_to_write_a_frozen_contract_version(mock_exec):
+    frozen_version_id = uuid4()
+    generation = _make_generation()
+    generation.version_id = frozen_version_id
+
+    with patch(
+        "testgen.common.models.suite_version.get_current_session",
+        return_value=MagicMock(**{"scalar.return_value": frozen_version_id}),
+    ):
+        with pytest.raises(FrozenVersionError):
+            generation.conformance_run()
+
+    mock_exec.assert_not_called()
+
+
+@pytest.mark.parametrize("suite_type", [SuiteType.REGULAR, SuiteType.MONITOR])
+def test_conformance_generation_refuses_a_suite_that_is_not_a_contract(generation_mocks, suite_type):
+    generation_mocks["suite"].suite_type = suite_type
+
+    with pytest.raises(ValueError, match="not a contract"):
+        run_conformance_generation("suite-1")
+
+    generation_mocks["generation"].assert_not_called()
+
+
+def test_conformance_generation_reconciles_a_contract(generation_mocks):
+    generation_mocks["suite"].suite_type = SuiteType.CONTRACT
+
+    run_conformance_generation("suite-1", table_names=["orders"])
+
+    generation_mocks["generation"].return_value.conformance_run.assert_called_once_with()
+    assert generation_mocks["generation"].call_args.kwargs["table_names"] == ["orders"]
