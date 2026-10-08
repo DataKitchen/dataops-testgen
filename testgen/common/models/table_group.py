@@ -380,6 +380,8 @@ class TableGroup(Entity):
         id,
         project_code,
         connection_id,
+        # Written only by enable_monitoring, so a general edit never overwrites the monitor link.
+        monitor_test_suite_id,
         last_complete_profile_run_id,
         dq_score_profiling,
         dq_score_testing,

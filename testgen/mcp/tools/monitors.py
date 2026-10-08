@@ -12,11 +12,6 @@ from testgen.common.history_calculation_service import (
     format_calculation_expression,
     parse_calculation_expression,
 )
-from testgen.common.holiday_service import (
-    canonicalize_holiday_code,
-    is_supported_holiday_code,
-    list_market_holiday_codes,
-)
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.data_structure_log import (
     SCHEMA_CHANGE_ADDED,
@@ -42,7 +37,13 @@ from testgen.common.monitor_forecast import (
     gated_forecast_prediction,
     next_update_window,
 )
-from testgen.common.monitor_service import disable_monitoring, enable_monitoring, update_monitoring
+from testgen.common.monitor_service import (
+    canonical_holiday_codes,
+    disable_monitoring,
+    enable_monitoring,
+    update_monitoring,
+    validate_monitor_settings,
+)
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import mcp_permission
 from testgen.mcp.services.source_data_protection import mcp_source_data_protected
@@ -402,9 +403,6 @@ def _format_row_count_change(row: MonitorTableSummary) -> str | None:
 # Lifecycle & settings tools
 # ---------------------------------------------------------------------------
 
-_LOOKBACK_RUNS_RANGE = (1, 200)
-_MIN_TRAINING_LOOKBACK_RANGE = (20, 1000)
-
 
 @with_database_session
 @mcp_permission("edit")
@@ -543,25 +541,21 @@ def update_monitor_settings(
     if sensitivity is not None:
         suite_attrs["predict_sensitivity"] = _parse_sensitivity(sensitivity)
     if lookback_runs is not None:
-        _validate_range(lookback_runs, "lookback_runs", *_LOOKBACK_RUNS_RANGE)
         suite_attrs["monitor_lookback"] = lookback_runs
     if min_training_lookback is not None:
-        _validate_range(min_training_lookback, "min_training_lookback", *_MIN_TRAINING_LOOKBACK_RANGE)
         suite_attrs["predict_min_lookback"] = min_training_lookback
     if exclude_weekends is not None:
         suite_attrs["predict_exclude_weekends"] = exclude_weekends
     if holiday_codes is not None:
-        cleaned = [code.strip() for code in holiday_codes if code.strip()]
-        invalid = [code for code in cleaned if not is_supported_holiday_code(code)]
-        if invalid:
-            raise MCPUserError(
-                f"Unknown holiday codes: {', '.join(invalid)}. Countries use ISO 3166-1 alpha-2 codes "
-                f"(e.g. `US`, `GB`); financial markets use one of: {', '.join(list_market_holiday_codes())}."
-            )
-        canonical = list(dict.fromkeys(canonicalize_holiday_code(code) for code in cleaned))
-        suite_attrs["predict_holiday_codes"] = canonical or None
+        suite_attrs["predict_holiday_codes"] = holiday_codes
     if regenerate_freshness is not None:
         suite_attrs["monitor_regenerate_freshness"] = regenerate_freshness
+
+    # Sensitivity is already parsed into the enum above; the shared rules check the rest.
+    if errors := validate_monitor_settings({k: v for k, v in suite_attrs.items() if k != "predict_sensitivity"}):
+        raise MCPUserError("\n".join(errors))
+    if holiday_codes is not None:
+        suite_attrs["predict_holiday_codes"] = canonical_holiday_codes(holiday_codes)
 
     if cron_expression is not None or cron_tz is not None:
         effective_expr = cron_expression if cron_expression is not None else schedule.cron_expr
@@ -609,11 +603,6 @@ def disable_monitors(
 
 def _parse_sensitivity(value: str) -> PredictSensitivity:
     return parse_enum(value, PredictSensitivity, "sensitivity")
-
-
-def _validate_range(value: int, label: str, low: int, high: int) -> None:
-    if not low <= value <= high:
-        raise MCPUserError(f"Invalid {label} `{value}`: must be between {low} and {high}.")
 
 
 def _validate_cron_verbatim(cron_expr: str, cron_tz: str) -> None:
