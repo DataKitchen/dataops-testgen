@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 
 from testgen.api.deps import db_session, get_authorized_user
 from testgen.api.schedules import router
+from testgen.common.cron_service import describe_cron
 from testgen.common.enums import JobKey
 from testgen.common.models.scheduler import JobSchedule
 
@@ -95,7 +96,7 @@ def test_create_profiling_schedule_stores_a_run_profile_schedule():
     assert body["kind"] == "profiling_run"
     assert body["table_group_id"] == str(TG_ID)
     assert body["test_suite_id"] is None
-    assert body["description"] == "At 03:00"
+    assert body["description"] == describe_cron("0 3 * * *")
 
 
 def test_create_test_run_schedule_stores_a_run_tests_schedule():

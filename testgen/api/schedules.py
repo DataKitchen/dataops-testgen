@@ -30,6 +30,8 @@ _create_responses = {
     409: {"model": ErrorResponse, "description": "An identical schedule already exists"},
 }
 
+_FIELD_NAMES = {"cron_expr": "cron_expression", "cron_tz": "timezone"}
+
 router = APIRouter(tags=["Schedules"], dependencies=[Depends(db_session)], responses=_error_responses)
 
 
@@ -97,7 +99,7 @@ def get_schedule(schedule: JobSchedule = resolve_schedule("view")):  # noqa: B00
 
 
 def _create(project_code: str, key: JobKey, kwargs: dict[str, str], body: ScheduleCreate) -> ScheduleResponse:
-    if errors := validate_schedule(body.cron_expression, body.timezone):
+    if errors := validate_schedule(body.cron_expression, body.timezone, field_names=_FIELD_NAMES):
         raise api_errors(400, "invalid_schedule", errors)
 
     schedule = JobSchedule(

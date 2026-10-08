@@ -32,6 +32,8 @@ from testgen.mcp.tools.markdown import MdDoc
 
 _DOC_GROUP = DocGroup.TRIGGER
 
+_FIELD_NAMES = {"cron_expr": "cron_expression", "cron_tz": "cron_tz"}
+
 
 class ScheduleType(StrEnum):
     profiling_run = "profiling_run"
@@ -57,7 +59,7 @@ def _kind_display(key: str) -> str:
 
 def _validate_cron(cron_expression: str, cron_tz: str) -> None:
     """Raise ``MCPUserError`` listing every reason the cron expression and timezone cannot be stored."""
-    if errors := validate_schedule(cron_expression, cron_tz, field_names={"cron_tz": "cron_tz"}):
+    if errors := validate_schedule(cron_expression, cron_tz, field_names=_FIELD_NAMES):
         raise MCPUserError("\n".join(errors))
 
 

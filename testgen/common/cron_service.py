@@ -57,19 +57,15 @@ def describe_cron(cron_expr: str) -> str | None:
 _CRON_EXPR_MAX = 50
 _CRON_TZ_MAX = 30
 
-_PUBLIC_FIELD_NAMES = {"cron_expr": "cron_expression", "cron_tz": "timezone"}
-
-
-def validate_schedule(cron_expr: str | None, cron_tz: str | None, *, field_names: Mapping[str, str] | None = None) -> list[str]:
+def validate_schedule(cron_expr: str | None, cron_tz: str | None, *, field_names: Mapping[str, str]) -> list[str]:
     """Return every reason a cron expression and timezone cannot be stored as a schedule (empty list = valid).
 
     Args:
         cron_expr: The cron expression, five space-separated fields.
         cron_tz: An IANA timezone name.
-        field_names: Name to show in the messages for ``cron_expr`` and ``cron_tz``. Overrides the
-            public field names, ``cron_expression`` and ``timezone``.
+        field_names: Name to show in the messages for each input, keyed ``cron_expr`` and ``cron_tz``.
     """
-    names = {**_PUBLIC_FIELD_NAMES, **(field_names or {})}
+    names = field_names
     errors: list[str] = []
 
     if not cron_expr:
