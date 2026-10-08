@@ -311,7 +311,6 @@ class DataColumnChars(Entity):
                 ProfileResult,
                 and_(
                     ProfileResult.profile_run_id == cls.last_complete_profile_run_id,
-                    ProfileResult.schema_name == cls.schema_name,
                     ProfileResult.table_name == cls.table_name,
                     ProfileResult.column_name == cls.column_name,
                 ),
@@ -408,7 +407,6 @@ class DataColumnChars(Entity):
                 ProfileResult,
                 and_(
                     profile_run_filter,
-                    ProfileResult.schema_name == cls.schema_name,
                     ProfileResult.table_name == cls.table_name,
                     ProfileResult.column_name == cls.column_name,
                 ),
@@ -417,7 +415,6 @@ class DataColumnChars(Entity):
                 hygiene_subq,
                 and_(
                     hygiene_subq.c.profile_run_id == ProfileResult.profile_run_id,
-                    hygiene_subq.c.schema_name == cls.schema_name,
                     hygiene_subq.c.table_name == cls.table_name,
                     hygiene_subq.c.column_name == cls.column_name,
                 ),
@@ -578,7 +575,6 @@ class DataColumnChars(Entity):
                 ProfileResult,
                 and_(
                     profile_run_filter,
-                    ProfileResult.schema_name == cls.schema_name,
                     ProfileResult.table_name == cls.table_name,
                     ProfileResult.column_name == cls.column_name,
                 ),
@@ -587,7 +583,6 @@ class DataColumnChars(Entity):
                 hygiene_subq,
                 and_(
                     hygiene_subq.c.profile_run_id == ProfileResult.profile_run_id,
-                    hygiene_subq.c.schema_name == cls.schema_name,
                     hygiene_subq.c.table_name == cls.table_name,
                     hygiene_subq.c.column_name == cls.column_name,
                 ),

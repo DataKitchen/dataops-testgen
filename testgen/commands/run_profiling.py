@@ -146,6 +146,7 @@ class ProfilingJob(PausableJob[ColumnChars]):
                 project_code=self.table_group.project_code,
                 connection_id=self.connection.connection_id,
                 table_groups_id=self.table_group.id,
+                schema_name=self.table_group.table_group_schema,
                 profiling_starttime=datetime.now(UTC) + self.time_delta,
             )
         self.profiling_run.init_progress()

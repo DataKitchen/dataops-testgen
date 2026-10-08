@@ -50,7 +50,6 @@
  * @property {Connection[]} connections
  * @property {boolean?} showConnectionSelector
  * @property {boolean?} disableConnectionSelector
- * @property {boolean?} disableSchemaField
  * @property {string?} sqlFlavor
  * @property {string?} sqlFlavorCode
  * @property {string?} schemaLabel
@@ -233,7 +232,6 @@ const TableGroupForm = (props) => {
         }));
     });
     const showConnectionSelector = getValue(props.showConnectionSelector) ?? false;
-    const disableSchemaField = van.derive(() => getValue(props.disableSchemaField) ?? false)
 
     // A null label means the database type has no schema to name. Only an absent value falls back,
     // so the checks below test for presence rather than using ??, which would treat the two alike.
@@ -343,7 +341,7 @@ const TableGroupForm = (props) => {
             })
             : undefined,
         MainForm(
-            { disableSchemaField, schemaLabel, declaresFiles: declaresFilesState, setValidity: setFieldValidity },
+            { schemaLabel, declaresFiles: declaresFilesState, setValidity: setFieldValidity },
             tableGroupsName,
             tableGroupSchema,
         ),
@@ -423,7 +421,6 @@ const MainForm = (
             class: 'tg-column-flex',
             help: `${getValue(options.schemaLabel)} containing the tables for the Table Group`,
             helpPlacement: 'bottom-left',
-            disabled: options.disableSchemaField,
             onChange: (value, state) => {
                 tableGroupSchema.val = value;
                 options.setValidity?.('table_group_schema', state.valid);

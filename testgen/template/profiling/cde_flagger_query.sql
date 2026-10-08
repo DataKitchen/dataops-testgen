@@ -29,6 +29,5 @@ UPDATE data_column_chars
    SET critical_data_element = TRUE
   FROM cde_selects
  WHERE data_column_chars.table_groups_id = cde_selects.table_groups_id
-   AND data_column_chars.schema_name = cde_selects.schema_name
    AND data_column_chars.table_name = cde_selects.table_name
    AND data_column_chars.column_name = cde_selects.column_name;

@@ -718,3 +718,60 @@ def test_a_run_that_errored_is_still_reported():
         report_profiling_run(job_exec)
 
     mixpanel.return_value.send_event.assert_called_once()
+
+
+# --- the schema a run scanned ---
+
+
+def _profiling_job() -> ProfilingJob:
+    job = ProfilingJob.__new__(ProfilingJob)
+    job.job_id = uuid4()
+    job.table_group_id = uuid4()
+    job.time_delta = timedelta(0)
+    return job
+
+
+@patch("testgen.commands.run_profiling.get_current_session")
+@patch("testgen.commands.run_profiling.ProfilingSQL")
+@patch("testgen.commands.run_profiling.set_target_db_params")
+@patch("testgen.commands.run_profiling.Connection")
+@patch("testgen.commands.run_profiling.TableGroup")
+@patch("testgen.commands.run_profiling.ProfilingRun")
+def test_a_new_run_records_the_schema_it_scans(
+    mock_run_cls, mock_tg_cls, _conn, _params, _sql, _session,
+):
+    """The run list and its summary read this rather than the table group, so a run from before
+    a move keeps the schema it actually read instead of being relabelled."""
+    mock_tg_cls.get.return_value = MagicMock(
+        id=uuid4(), project_code="DEFAULT", connection_id=1, table_group_schema="onboard_2026_09_16"
+    )
+    mock_run_cls.get.return_value = None
+    job = _profiling_job()
+
+    job.on_start()
+
+    assert mock_run_cls.call_args.kwargs["schema_name"] == "onboard_2026_09_16"
+
+
+@patch("testgen.commands.run_profiling.get_current_session")
+@patch("testgen.commands.run_profiling.ProfilingSQL")
+@patch("testgen.commands.run_profiling.set_target_db_params")
+@patch("testgen.commands.run_profiling.Connection")
+@patch("testgen.commands.run_profiling.TableGroup")
+@patch("testgen.commands.run_profiling.ProfilingRun")
+def test_a_resumed_run_keeps_the_schema_it_started_on(
+    mock_run_cls, mock_tg_cls, _conn, _params, _sql, _session,
+):
+    """A resumed run reuses its row, so it is still reported against the schema it began reading
+    even if the table group moved while it was stopped."""
+    mock_tg_cls.get.return_value = MagicMock(
+        id=uuid4(), project_code="DEFAULT", connection_id=1, table_group_schema="onboard_2026_09_16"
+    )
+    existing = MagicMock(schema_name="onboard_2026_09_10")
+    mock_run_cls.get.return_value = existing
+    job = _profiling_job()
+
+    job.on_start()
+
+    mock_run_cls.assert_not_called()
+    assert existing.schema_name == "onboard_2026_09_10"

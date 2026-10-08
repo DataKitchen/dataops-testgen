@@ -32,7 +32,6 @@ SET functional_table_type = COALESCE(n.functional_table_type, d.functional_table
 FROM new_chars n
    INNER JOIN data_table_chars d ON (
       n.table_groups_id = d.table_groups_id
-      AND n.schema_name = d.schema_name
       AND n.table_name = d.table_name
    )
 WHERE data_table_chars.table_id = d.table_id;

@@ -11,9 +11,10 @@ UPDATE test_results
    SET dq_record_ct = tc.record_ct,
        dq_prevalence = 0
   FROM test_results r
+-- The catalog is joined without schema_name: the catalog row's schema follows whichever
+-- schema was last refreshed, while these rows keep the one they were written against.
 INNER JOIN data_table_chars tc
   ON (r.table_groups_id = tc.table_groups_id
- AND r.schema_name = tc.schema_name
  AND r.table_name ILIKE tc.table_name)
  WHERE r.test_run_id = '{RUN_ID}'::UUID
    AND test_results.id = r.id;
@@ -51,7 +52,6 @@ WITH result_calc
              AND r.column_names = p.column_name)
           LEFT JOIN data_table_chars tc
                 ON (r.table_groups_id = tc.table_groups_id
-             AND r.schema_name = tc.schema_name
              AND r.table_name ILIKE tc.table_name)
          WHERE r.test_run_id = '{RUN_ID}'::UUID
            AND result_code = 0
@@ -81,7 +81,6 @@ WITH result_calc
                 ON r.test_type = tt.test_type
           INNER JOIN data_table_chars tc
                 ON (r.table_groups_id = tc.table_groups_id
-             AND r.schema_name = tc.schema_name
              AND r.table_name ILIKE tc.table_name)
          WHERE r.test_run_id = '{RUN_ID}'::UUID
            AND result_code = 0

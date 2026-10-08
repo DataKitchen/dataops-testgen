@@ -2,6 +2,12 @@
 -- |   Table Characteristics
 -- ==============================================================================
 
+-- A catalogued table or column is identified by (table_groups_id, table_name[, column_name]).
+-- schema_name is an attribute of the row, set to whatever schema the refresh scanned, and is
+-- deliberately absent from every join condition below: a refresh may scan a schema other than the
+-- one the catalog holds, and reconciling on schema would mark the entire catalog dropped, re-add it
+-- under new table_ids, and emit a spurious drop-and-add for every table and column.
+
 -- Update existing records
 WITH new_chars AS (
    SELECT table_groups_id,
@@ -23,7 +29,8 @@ WITH new_chars AS (
 ),
 updated_records AS (
    UPDATE data_table_chars
-   SET object_type = n.object_type,
+   SET schema_name = n.schema_name,
+      object_type = n.object_type,
       approx_record_ct = n.approx_record_ct,
       record_ct = n.record_ct,
       file_ct = n.file_ct,
@@ -33,7 +40,6 @@ updated_records AS (
    FROM new_chars n
       INNER JOIN data_table_chars d ON (
          n.table_groups_id = d.table_groups_id
-         AND n.schema_name = d.schema_name
          AND n.table_name = d.table_name
       )
    WHERE data_table_chars.table_id = d.table_id
@@ -99,7 +105,6 @@ inserted_records AS (
    FROM new_chars n
       LEFT JOIN data_table_chars d ON (
          n.table_groups_id = d.table_groups_id
-         AND n.schema_name = d.schema_name
          AND n.table_name = d.table_name
       )
    WHERE d.table_id IS NULL
@@ -137,7 +142,6 @@ deleted_records AS (
    FROM data_table_chars d
       LEFT JOIN new_chars n ON (
          d.table_groups_id = n.table_groups_id
-         AND d.schema_name = n.schema_name
          AND d.table_name = n.table_name
       )
    WHERE data_table_chars.table_id = d.table_id
@@ -186,7 +190,8 @@ WITH new_chars AS (
 ),
 update_chars AS (
    UPDATE data_column_chars
-   SET ordinal_position = n.position,
+   SET schema_name = n.schema_name,
+      ordinal_position = n.position,
       general_type = n.general_type,
       column_type = n.column_type,
       db_data_type = n.db_data_type,
@@ -197,7 +202,6 @@ update_chars AS (
    FROM new_chars n
       INNER JOIN data_column_chars d ON (
          n.table_groups_id = d.table_groups_id
-         AND n.schema_name = d.schema_name
          AND n.table_name = d.table_name
          AND n.column_name = d.column_name
       )
@@ -291,12 +295,10 @@ inserted_records AS (
    FROM new_chars n
       INNER JOIN data_table_chars dtc ON (
          n.table_groups_id = dtc.table_groups_id
-         AND n.schema_name = dtc.schema_name
          AND n.table_name = dtc.table_name
       )
       LEFT JOIN data_column_chars d ON (
          n.table_groups_id = d.table_groups_id
-         AND n.schema_name = d.schema_name
          AND n.table_name = d.table_name
          AND n.column_name = d.column_name
       )
@@ -339,7 +341,6 @@ deleted_records AS (
    FROM data_column_chars d
       LEFT JOIN new_chars n ON (
          d.table_groups_id = n.table_groups_id
-         AND d.schema_name = n.schema_name
          AND d.table_name = n.table_name
          AND d.column_name = n.column_name
       )

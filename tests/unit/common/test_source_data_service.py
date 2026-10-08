@@ -1,6 +1,8 @@
+import dataclasses
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -8,6 +10,7 @@ import pytest
 from yaml import safe_load
 
 import testgen
+from testgen.commands.queries.execute_tests_query import InputParameters, TestExecutionSQL
 from testgen.common.pii_masking import PII_REDACTED
 from testgen.common.source_data_service import (
     LookupData,
@@ -49,6 +52,13 @@ def _standard_issue_data(**overrides):
     }
     base.update(overrides)
     return base
+
+
+def _run_input_parameters(**values: str) -> str:
+    """Build an ``input_parameters`` blob with the writer that test execution uses."""
+    fields = {field.name: "" for field in dataclasses.fields(InputParameters)}
+    fields.update(values)
+    return TestExecutionSQL._get_input_parameters(MagicMock(), SimpleNamespace(**fields))
 
 
 def _custom_issue_data(**overrides):
@@ -218,6 +228,60 @@ def test_every_lookup_placeholder_is_substituted(mock_lookup, mock_td, sql_flavo
     )
     query = _build_query_standard(_standard_issue_data(column_names="email"), limit=500)
     assert not re.findall(r"\{[A-Z_0-9]+\}", query)
+
+
+# ---------------------------------------------------------------------------
+# _build_query_standard: match schema resolution
+# ---------------------------------------------------------------------------
+
+class Test_match_schema_resolution:
+    """The match schema is run-scoped, so the result row wins over the stored definition."""
+
+    def _build(self, test_definition, issue_data):
+        with (
+            patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q),
+            patch(f"{MODULE}.TestDefinition.get", return_value=test_definition),
+            patch(f"{MODULE}._get_lookup_data") as mock_lookup,
+        ):
+            mock_lookup.return_value = LookupData(
+                lookup_query="SELECT 1 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}",
+                sql_flavor="postgresql",
+            )
+            return _build_query_standard(issue_data, limit=500)
+
+    def test_run_value_wins_over_definition(self):
+        query = self._build(
+            _FakeTestDefinition(match_schema_name="stored_schema", match_table_name="ref"),
+            _standard_issue_data(input_parameters=_run_input_parameters(match_schema_name="build_20260402")),
+        )
+        assert "build_20260402.ref" in query
+        assert "stored_schema" not in query
+
+    def test_falls_back_when_blob_omits_the_match_schema(self):
+        query = self._build(
+            _FakeTestDefinition(match_schema_name="stored_schema", match_table_name="ref"),
+            _standard_issue_data(input_parameters=_run_input_parameters(threshold_value="0")),
+        )
+        assert "stored_schema.ref" in query
+
+    def test_falls_back_when_caller_has_no_result_row(self):
+        query = self._build(
+            _FakeTestDefinition(match_schema_name="stored_schema", match_table_name="ref"),
+            _standard_issue_data(),
+        )
+        assert "stored_schema.ref" in query
+
+    def test_survives_a_semicolon_in_a_neighbouring_condition(self):
+        query = self._build(
+            _FakeTestDefinition(match_schema_name="stored_schema", match_table_name="ref"),
+            _standard_issue_data(
+                input_parameters=_run_input_parameters(
+                    subset_condition="a = 1; b = 2",
+                    match_schema_name="build_20260402",
+                ),
+            ),
+        )
+        assert "build_20260402.ref" in query
 
 
 # ---------------------------------------------------------------------------

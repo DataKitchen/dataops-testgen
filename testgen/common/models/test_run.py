@@ -41,6 +41,9 @@ class TestRunMinimal(EntityMinimal):
     test_starttime: datetime
     dq_score_test_run: float
     is_latest_run: bool
+    match_schema_override: str | None
+    external_url: str | None
+    caller_metadata: dict | None
 
 
 @dataclass
@@ -138,6 +141,10 @@ class TestRun(Entity):
             (id == TestSuite.last_complete_test_run_id, True),
             else_=False,
         ).label("is_latest_run"),
+        # Only set when the run pointed its referential tests at another schema.
+        JobExecution.kwargs["match_schema_name"].astext.label("match_schema_override"),
+        JobExecution.external_url,
+        JobExecution.caller_metadata,
     )
 
     @classmethod
@@ -148,6 +155,7 @@ class TestRun(Entity):
         query = (
             select(*cls._minimal_columns)
             .join(TestSuite)
+            .join(JobExecution, cls.id == JobExecution.id)
             .where(cls.id == run_id)
         )
         result = get_current_session().execute(query).mappings().first()

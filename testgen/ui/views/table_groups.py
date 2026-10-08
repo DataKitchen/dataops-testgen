@@ -7,7 +7,10 @@ import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
 from testgen.common.database.table_group_service import (
+    SchemaMoveRefused,
+    apply_schema_move,
     apply_table_group_flavor_rules,
+    move_table_group_schema,
     schema_label_for_table_group,
 )
 from testgen.common.enums import JobSource
@@ -343,7 +346,6 @@ class TableGroupsPage(Page):
         if table_group_id:
             table_group = get_table_group(table_group_id)
             original_table_group_schema = table_group.table_group_schema
-            is_table_group_used = TableGroup.is_in_use([table_group_id])
 
         add_scorecard_definition = False
         for key, value in get_table_group().items():
@@ -474,7 +476,6 @@ class TableGroupsPage(Page):
             "project_code": project_code,
             "connections": wizard_connections,
             "table_group": table_group.to_dict(json_safe=True),
-            "is_in_use": is_table_group_used,
             "table_group_preview": table_group_preview,
             "steps": steps,
             "dialog": dialog,
@@ -527,7 +528,6 @@ class TableGroupsPage(Page):
 
         table_group = get_table_group(table_group_id)
         original_schema = table_group.table_group_schema
-        is_in_use = TableGroup.is_in_use([table_group_id])
 
         edit_tg_data = get_edit_tg()
         can_view_pii = session.auth.user_has_permission("view_pii")
@@ -540,9 +540,6 @@ class TableGroupsPage(Page):
                 continue
             else:
                 setattr(table_group, key, value)
-
-        if is_in_use:
-            table_group.table_group_schema = original_schema
 
         edit_connections = connections
         if table_group.connection_id and table_group.id:
@@ -564,12 +561,30 @@ class TableGroupsPage(Page):
         result = None
         if should_save():
             if table_group_preview and table_group_preview.get("success"):
+                moving_to = (
+                    table_group.table_group_schema
+                    if table_group.table_group_schema != original_schema
+                    else None
+                )
+                move = None
                 try:
+                    if moving_to:
+                        # The move reads the schema being left off the instance, and the form has
+                        # already written the new one onto it.
+                        table_group.table_group_schema = original_schema
+                        move = move_table_group_schema(table_group, moving_to)
                     table_group.save(add_scorecard_definition)
+                except SchemaMoveRefused as refusal:
+                    table_group.table_group_schema = original_schema
+                    result = {"success": False, "message": refusal.message}
                 except IntegrityError:
                     result = {"success": False, "message": "A Table Group with the same name already exists."}
                 else:
-                    if save_data_chars:
+                    if move:
+                        # The move probed the schema it is moving to, so its catalog write is the
+                        # one that describes where the table group now reads.
+                        apply_schema_move(move, table_group.id)
+                    elif save_data_chars:
                         try:
                             save_data_chars(table_group.id)
                         except Exception:
@@ -585,7 +600,6 @@ class TableGroupsPage(Page):
             "dialog": {"open": True, "title": "Edit Table Group"},
             "connections": edit_connections,
             "table_group": table_group.to_dict(json_safe=True),
-            "is_in_use": is_in_use,
             "table_group_preview": table_group_preview,
             "result": result,
         }

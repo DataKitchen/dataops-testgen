@@ -42,7 +42,6 @@ WITH mults AS (   SELECT p.project_code,
               AND p.column_name = m.column_name
             LEFT JOIN v_inactive_anomalies i
               ON (p.table_groups_id = i.table_groups_id
-             AND  p.schema_name = i.schema_name
              AND  p.table_name = i.table_name
              AND  p.column_name = i.column_name
              AND  :ANOMALY_ID = i.anomaly_id)

@@ -612,7 +612,6 @@ SET general_type = n.general_type,
 FROM new_chars n
   INNER JOIN data_column_chars d ON (
       n.table_groups_id = d.table_groups_id
-      AND n.schema_name = d.schema_name
       AND n.table_name = d.table_name
       AND n.column_name = d.column_name
   )

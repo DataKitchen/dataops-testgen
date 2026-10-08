@@ -453,7 +453,6 @@ class ProfileResult(Entity):
 
         natural_key = and_(
             DataColumnChars.table_groups_id == cls.table_groups_id,
-            DataColumnChars.schema_name == cls.schema_name,
             DataColumnChars.table_name == cls.table_name,
             DataColumnChars.column_name == cls.column_name,
         )

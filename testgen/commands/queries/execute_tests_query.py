@@ -304,7 +304,13 @@ class TestExecutionSQL:
         ),
     }
 
-    def __init__(self, connection: Connection, table_group: TableGroup, test_suite: TestSuite, test_run: TestRun):
+    def __init__(
+        self,
+        connection: Connection,
+        table_group: TableGroup,
+        test_suite: TestSuite,
+        test_run: TestRun,
+    ):
         self.connection = connection
         self.table_group = table_group
         self.test_suite = test_suite

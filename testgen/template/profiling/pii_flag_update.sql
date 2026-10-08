@@ -13,6 +13,5 @@ UPDATE data_column_chars
    SET pii_flag = pii_selects.pii_flag
   FROM pii_selects
  WHERE data_column_chars.table_groups_id = pii_selects.table_groups_id
-   AND data_column_chars.schema_name = pii_selects.schema_name
    AND data_column_chars.table_name = pii_selects.table_name
    AND data_column_chars.column_name = pii_selects.column_name;

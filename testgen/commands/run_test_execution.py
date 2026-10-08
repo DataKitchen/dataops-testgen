@@ -34,12 +34,30 @@ from .run_test_validation import run_test_validation
 LOG = logging.getLogger("testgen")
 
 
+def retarget_match_schema(test_defs: list[TestExecutionDef], match_schema_name: str) -> None:
+    """Point loaded referential tests at ``match_schema_name`` for this run.
+
+    A referential test compares against a table outside its own table group, so where that table
+    lives is not a property of the table group and does not move with it. A run whose reference
+    data landed somewhere else carries the schema it landed in.
+
+    A definition with no match schema stays without one: it has no referential target, and
+    inventing one would turn a test validation reports as incomplete into a silent comparison.
+
+    The stored ``test_definitions`` rows are untouched.
+    """
+    for test_def in test_defs:
+        if test_def.match_schema_name:
+            test_def.match_schema_name = match_schema_name
+
+
 @with_database_session
 def run_test_execution(
     test_suite_id: str | UUID,
     username: str | None = None,
     run_date: datetime | None = None,
     version_id: str | UUID | None = None,
+    match_schema_name: str | None = None,
 ) -> UUID:
     if test_suite_id is None:
         raise ValueError("Test Suite ID was not specified")
@@ -58,7 +76,6 @@ def run_test_execution(
         if version_id
         else get_current_session().scalar(select(SuiteVersion.for_run(test_suite_id)))
     )
-
     LOG.info("Creating test run record")
     test_run = TestRun(
         id=job_context.get().job_id,
@@ -101,13 +118,16 @@ def run_test_execution(
         test_defs = fetch_dict_from_db(*sql_generator.get_active_test_definitions())
         test_defs = [TestExecutionDef(**item) for item in test_defs]
 
+        if match_schema_name:
+            retarget_match_schema(test_defs, match_schema_name)
+
         if test_defs:
             LOG.info(f"Active test definitions: {len(test_defs)}")
             test_run.set_progress("validation", "Running")
             test_run.save()
             session.commit()
 
-            valid_test_defs = run_test_validation(sql_generator, test_defs)
+            valid_test_defs = run_test_validation(sql_generator, test_defs, deactivate_invalid=not match_schema_name)
             invalid_count = len(test_defs) - len(valid_test_defs)
             test_run.set_progress(
                 "validation",

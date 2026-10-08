@@ -1,6 +1,7 @@
 """Tests for ``run_refresh_data_chars``.
 
-Covers ``write_data_chars``'s staging key and its empty-input guard.
+Covers ``write_data_chars``'s staging key and its empty-input guard, and that the scanned
+schema reaches the query builder.
 """
 
 from datetime import UTC, datetime
@@ -196,3 +197,22 @@ def test_a_catalog_refresh_records_no_file_counts(mock_sql, _fetch, mock_threade
     assert {(c.object_type, c.file_ct) for c in data_chars} == {(None, None)}
     sql_generator.get_file_counts.assert_not_called()
     mock_threaded.assert_called_once()
+
+
+# --- the scanned schema ---
+
+
+@patch(f"{MODULE}.resolve_connection_params", return_value={})
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+def test_metadata_via_api_flavors_scan_the_builder_s_schema(mock_sql_cls, _mock_params):
+    """Flavors with no information_schema take the schema as an argument rather than through a
+    template, so they read it off the builder."""
+    sql_generator = mock_sql_cls.return_value
+    sql_generator.flavor_service.metadata_via_api = True
+    sql_generator.schema = "onboard_2026_09_10"
+    sql_generator.flavor_service.get_schema_columns.return_value = []
+    sql_generator.filter_schema_columns.return_value = []
+
+    run_data_chars_refresh(MagicMock(), MagicMock(table_group_schema="onboard_2026_09_10"), datetime.now(UTC))
+
+    assert sql_generator.flavor_service.get_schema_columns.call_args.args[1] == "onboard_2026_09_10"

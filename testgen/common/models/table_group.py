@@ -1,3 +1,4 @@
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -24,6 +25,34 @@ from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_suite import TestSuite
 from testgen.utils import dict_from_kv, is_uuid4
+
+# A schema name reaches the target database by name substitution into the SQL templates
+# (``replace_params``), either inside the flavor's quote characters or inside a string literal.
+# Quoting is what lets a name hold spaces and dashes, so the rule excludes the characters that
+# would end the quoting rather than restricting the name to a bare identifier: a schema named
+# `Sales-Data_2026_09` is one a table group can hold, and therefore one it can be moved to.
+# Control characters go too -- a trailing newline reads as a different schema to the target --
+# and so does the backslash, which Snowflake, Databricks and BigQuery read as an escape inside the
+# string literal their metadata query puts the name in.
+SCHEMA_NAME_PATTERN = r"^[^\\\"'`\x00-\x1f\x7f]+$"
+# The catalog columns (``data_table_chars`` / ``data_column_chars``) are the narrowest the name has
+# to land in; a longer one stages and then never joins, so it is rejected at the boundary instead.
+SCHEMA_NAME_MAX_LENGTH = 50
+
+
+def validate_schema_name(value: str) -> str | None:
+    """Return an error message if ``value`` is unusable as a target-database schema, else ``None``.
+
+    ``SCHEMA_NAME_PATTERN`` is also given to Pydantic, which anchors it as a full match; this
+    matches that rather than leaving one surface more permissive than the other.
+    """
+    if not value.strip():
+        return "is required"
+    if len(value) > SCHEMA_NAME_MAX_LENGTH:
+        return f"must be at most {SCHEMA_NAME_MAX_LENGTH} characters"
+    if not re.fullmatch(SCHEMA_NAME_PATTERN, value):
+        return "must not contain quote characters or control characters"
+    return None
 
 
 @dataclass
