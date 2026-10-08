@@ -1311,6 +1311,9 @@ class MonitoringUpdate(BaseModel):
     sensitivity: MonitorSensitivity | None = Field(default=None, description=_SENSITIVITY)
     exclude_weekends: StrictBool | None = Field(default=None, description=_EXCLUDE_WEEKENDS)
     holiday_codes: list[str] | None = Field(default=None, description=_HOLIDAY_CODES)
+    active: StrictBool | None = Field(
+        default=None, description="`false` pauses the monitor schedule, `true` resumes it."
+    )
 
     @model_validator(mode="after")
     def _sent_fields_are_not_null(self) -> "MonitoringUpdate":
@@ -1327,7 +1330,7 @@ class MonitoringResponse(BaseModel):
     cron_expression: str = Field(description="The schedule's expression as stored, in canonical form.")
     timezone: str
     description: str | None = Field(default=None, description="The expression in words, e.g. `Every 12 hours`.")
-    active: bool = Field(description="False when the schedule is paused in the TestGen UI.")
+    active: bool = Field(description="False while the monitor schedule is paused.")
     next_run_at: datetime | None = Field(
         default=None, description="When monitors next run, in UTC. Null while the schedule is paused."
     )

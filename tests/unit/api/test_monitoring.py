@@ -317,3 +317,32 @@ def test_patch_asks_for_edit_permission():
     _, _, _, mock_perm = _call("patch", {"sensitivity": "high"})
 
     assert mock_perm.call_args.args[1:] == ("demo", "edit")
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_patch_pauses_or_resumes_the_schedule(active):
+    resp, _, mock_update, _ = _call("patch", {"active": active})
+
+    assert resp.status_code == 200
+    assert mock_update.call_args.kwargs["active"] is active
+    assert mock_update.call_args.kwargs["suite_attrs"] == {}
+
+
+def test_patch_leaves_the_pause_state_alone_when_active_is_not_sent():
+    _, _, mock_update, _ = _call("patch", {"sensitivity": "high"})
+
+    assert mock_update.call_args.kwargs["active"] is None
+
+
+def test_put_never_changes_the_pause_state():
+    """A retried onboarding PUT must not resume a schedule someone paused."""
+    _, _, mock_update, _ = _call("put", {"cron_expression": "0 6 * * *"})
+
+    assert mock_update.call_args.kwargs.get("active") is None
+
+
+def test_put_rejects_active():
+    resp, _, mock_update, _ = _call("put", {"cron_expression": "0 6 * * *", "active": False})
+
+    assert resp.status_code == 422
+    mock_update.assert_not_called()

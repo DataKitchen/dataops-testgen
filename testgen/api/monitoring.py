@@ -73,6 +73,7 @@ def put_monitoring(
     schedule they run on. Freshness monitors follow once the table group has profiling data.
     When monitoring is already enabled, the settings and schedule are replaced, settings left out of
     the body return to their defaults, and the existing monitors and their history are kept (200).
+    A paused schedule stays paused; resume it with PATCH.
     """
     settings = _settings(body, body.model_fields)
     _validate(body.cron_expression, body.timezone, settings)
@@ -106,7 +107,8 @@ def patch_monitoring(
     body: MonitoringUpdate = Body(...),  # noqa: B008
 ) -> MonitoringResponse:
     """Change some of a table group's monitor settings or its schedule, leaving the rest as they are.
-    Returns 404 when monitoring is not enabled.
+
+    Send `active` to pause or resume the monitor schedule. Returns 404 when monitoring is not enabled.
     """
     monitor_suite, schedule = _require_monitoring(table_group)
 
@@ -124,7 +126,10 @@ def patch_monitoring(
     else:
         _validate(None, None, settings)
 
-    update_monitoring(monitor_suite, schedule, suite_attrs=settings, cron_expr=cron_expr, cron_tz=cron_tz)
+    active = body.active if "active" in sent else None
+    update_monitoring(
+        monitor_suite, schedule, suite_attrs=settings, cron_expr=cron_expr, cron_tz=cron_tz, active=active
+    )
     get_current_session().flush()
     return _to_response(table_group, monitor_suite, schedule)
 
