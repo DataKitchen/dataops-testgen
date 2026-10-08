@@ -621,13 +621,13 @@ def update_table_group(
     """Update fields on an existing table group. Atomic — no partial save.
 
     Connection and project are immutable — delete and recreate the table group
-    to re-parent it. A different ``schema`` moves the table group to it: profiling, test
-    generation, the data catalog and later runs all read the new schema, and the test
-    definitions keep their identity and their history. A schema carrying none of the table
-    group's tables is refused, as is a table group with a job still running; tables the new
-    schema lacks are reported. On a file connection, tables are not reached through a schema,
-    so there is nothing to move to, and ``file_declarations`` replaces the whole table list —
-    read the current one with ``get_table_group`` first.
+    to re-parent it. When ``schema`` changes, profiling, test generation, monitors, and test runs
+    read the new schema, and tests keep their history. Referential tests keep the schema of their
+    second table. The change is refused when the schema
+    cannot be read, when no table in it matches the table group's table filters, or while a job
+    for the table group is running. The result lists tables the new schema does not have. On a
+    file connection, ``schema`` cannot be changed, and ``file_declarations`` replaces the whole
+    table list — read the current one with ``get_table_group`` first.
     """
     supplied = {
         "table_group_name": table_group_name,
@@ -719,13 +719,12 @@ def update_table_group(
 
     if move:
         apply_schema_move(move, table_group.id)
-        doc.field("Test definitions repointed", str(move.definitions_repointed))
+        doc.field("Test definitions updated", str(move.definitions_repointed))
         if move.missing_tables:
             doc.text(
-                f"{len(move.missing_tables)} catalogued tables are not in `{move.schema}`. Their tests "
-                "report a missing table until the schema carries them or the tests are removed, and "
-                "their monitors are removed on the suite's next run with the thresholds they had "
-                "learned: "
+                f"{len(move.missing_tables)} tables are not in `{move.schema}`. The next test run "
+                "deactivates their tests, and the next monitor run deletes their monitors along with "
+                "the thresholds they learned: "
                 + ", ".join(f"`{name}`" for name in sorted(move.missing_tables))
             )
 

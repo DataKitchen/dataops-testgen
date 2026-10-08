@@ -236,13 +236,11 @@ def update_table_group(
 ) -> TableGroupUpdateResponse:
     """Change a table group's configuration. Omitted fields are left as they are.
 
-    Changing `schema_name` moves the table group to that schema: profiling, test generation, the
-    data catalog and every later run read it from then on, and the suite keeps its test
-    definitions, their history and their predicted thresholds.
+    When `schema_name` changes, profiling, test generation, monitors, and test runs read the new
+    schema, and tests keep their history. Referential tests keep the schema of their second table.
 
-    The new schema has to carry the tables the table group covers. One carrying none of them is
-    refused; one missing some is applied and the missing tables are listed back under
-    `schema_move`.
+    The change is refused when the schema cannot be read or no table in it matches the table group's
+    table filters. Tables the new schema does not have are listed under `schema_move.missing_tables`.
     """
     supplied = body.model_dump(exclude_unset=True)
     if not supplied:

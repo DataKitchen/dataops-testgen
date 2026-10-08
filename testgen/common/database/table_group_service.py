@@ -621,7 +621,7 @@ def move_table_group_schema(
     if declares_files(flavor_code) or fixed_table_group_schema(flavor_code) is not None:
         raise SchemaMoveRefused(
             "schema_unsupported",
-            "Tables on this connection are not reached through a schema, so there is nothing to move to.",
+            "Table groups on this connection have no schema to change.",
         )
 
     if error := validate_schema_name(schema):
@@ -630,7 +630,7 @@ def move_table_group_schema(
     if _has_job_in_flight(table_group):
         raise SchemaMoveRefused(
             "job_in_flight",
-            "A job for this table group is still running. Wait for it to finish, then move the schema.",
+            "A job for this table group is still running. Wait for it to finish, then try again.",
         )
 
     probe = TableGroup(**{
@@ -647,7 +647,7 @@ def move_table_group_schema(
     if not preview["tables"]:
         raise SchemaMoveRefused(
             "schema_empty",
-            f"No tables in {schema} match this table group's filters, so its tests would all fail.",
+            f"No tables in {schema} match this table group's table filters.",
         )
 
     missing = sorted(_tables_in_use(table_group.id) - set(preview["tables"]))

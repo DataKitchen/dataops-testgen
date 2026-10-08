@@ -67,8 +67,8 @@ class JobSubmittedResponse(BaseModel):
 
 
 class TableGroupUpdateRequest(BaseModel):
-    """Fields to change on a table group. Omitted fields are left alone; unknown fields are
-    rejected, so a caller is told when it names a field this endpoint does not take yet."""
+    """Fields to change on a table group. Omitted fields are left unchanged, and unknown fields are
+    rejected."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -77,9 +77,9 @@ class TableGroupUpdateRequest(BaseModel):
         pattern=SCHEMA_NAME_PATTERN,
         max_length=SCHEMA_NAME_MAX_LENGTH,
         description=(
-            "Schema on the target database the table group's data now lives in. Changing it moves "
-            "the table group: profiling, test generation, the data catalog and later runs all read "
-            "the new schema, and the test definitions keep their identity and their history."
+            "Schema to read the table group's tables from. When it changes, profiling, test "
+            "generation, monitors, and test runs read the new schema, and tests keep their history. "
+            "Referential tests keep the schema of their second table."
         ),
     )
 
@@ -90,15 +90,14 @@ class TableGroupSchemaMove(BaseModel):
     previous_schema_name: str
     schema_name: str
     definitions_repointed: int = Field(
-        description="Test definitions whose stored schema was moved.",
+        description="Test definitions updated to the new schema.",
     )
     missing_tables: list[str] = Field(
         default_factory=list,
         description=(
-            "Catalogued tables the new schema does not carry. The move still applies. Their tests "
-            "report a missing table until the schema carries them or the tests are removed, and "
-            "their monitors are removed on the suite's next run, along with the thresholds those "
-            "monitors had learned."
+            "Tables in the table group that the new schema does not have. The change still applies. "
+            "The next test run deactivates their tests, and the next monitor run deletes their "
+            "monitors along with the thresholds they learned."
         ),
     )
 
@@ -111,24 +110,24 @@ class TestRunRequest(BaseModel):
         pattern=SCHEMA_NAME_PATTERN,
         max_length=SCHEMA_NAME_MAX_LENGTH,
         description=(
-            "Schema holding the tables that referential tests compare against, for this run only. "
-            "Applies to tests configured with a second table; tests without one are unaffected, "
-            "and the stored test definitions are left unchanged. To change where the table group's "
-            "own data is read from, update the table group's schema instead."
+            "Schema to read the second table of each referential test from, for this run only. "
+            "Tests without a second table are unaffected, the stored test definitions are not changed, "
+            "and the run deactivates no tests. To read the table group's own tables from another "
+            "schema, change the table group's schema instead."
         ),
     )
     external_url: str | None = Field(
         default=None,
         max_length=EXTERNAL_URL_MAX_LENGTH,
         description=(
-            "Link back to whatever triggered this run, shown on the results page beside the score."
+            "Link back to whatever triggered this run, shown on the test results page."
         ),
     )
     metadata: dict[str, Any] | None = Field(
         default=None,
         description=(
-            "Free-form detail about what triggered this run, stored with it and shown on the "
-            "results page. Its shape is yours; TestGen lists it back as given."
+            "JSON object describing what triggered this run, up to 50 top-level keys and 10,240 "
+            "bytes. Stored with the run and shown on the test results page."
         ),
     )
 

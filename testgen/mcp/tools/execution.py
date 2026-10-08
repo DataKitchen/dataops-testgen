@@ -25,24 +25,24 @@ def run_tests(
     match_schema_name: Annotated[
         str | None,
         Field(
-            description="Schema holding the tables that referential tests compare against, for this run only. "
-            "Applies to tests configured with a second table; tests without one are unaffected, and the stored "
-            "test definitions are left unchanged. To change where the table group's own data is read from, update "
-            "the table group's schema instead.",
+            description="Schema to read the second table of each referential test from, for this run only. "
+            "Tests without a second table are unaffected, the stored test definitions are not changed, and the run "
+            "deactivates no tests. To read the table group's own tables from another schema, change the table "
+            "group's schema instead.",
         ),
     ] = None,
     external_url: Annotated[
         str | None,
         Field(
-            description="Link back to whatever triggered this run, shown on the results page beside the score.",
+            description="Link back to whatever triggered this run, shown on the test results page.",
             max_length=EXTERNAL_URL_MAX_LENGTH,
         ),
     ] = None,
     metadata: Annotated[
         dict | None,
         Field(
-            description="Free-form detail about what triggered this run, stored with it and shown on the results "
-            "page. Its shape is yours; TestGen lists it back as given.",
+            description="JSON object describing what triggered this run, up to 50 top-level keys and 10,240 "
+            "bytes. Stored with the run and shown on the test results page.",
         ),
     ] = None,
 ) -> str:
