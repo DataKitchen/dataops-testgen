@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypedDict
 from urllib.parse import quote_plus
@@ -299,6 +300,22 @@ class FlavorService:
     def declaration_failures(self, connection: Connection) -> dict[str, str]:  # noqa: ARG002
         """Name and reason for each file declaration ``init`` could not make queryable."""
         return {}
+
+    def caches_tables(self, sql_flavor_code: str) -> bool:  # noqa: ARG002
+        """Whether ``cache_tables`` keeps local copies for this connection type."""
+        return False
+
+    def cache_tables(
+        self,
+        connection: Connection,
+        params: ResolvedConnectionParams,
+        declarations: list[FileDeclaration],
+        table_names: Iterable[str],
+    ) -> None:
+        """Keep a local copy of the named tables for the rest of this connection's life.
+
+        Does nothing by default: a flavor reads its tables where they are.
+        """
 
     def file_count_queries(
         self,

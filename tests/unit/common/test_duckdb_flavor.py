@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -1237,7 +1238,7 @@ def test_the_allow_list_is_set_before_external_access_is_closed():
             pass
 
     recorder = Recorder()
-    DuckdbFlavorService()._confine_reads(recorder, "/data/claims")
+    DuckdbFlavorService()._confine_reads(recorder, ["/data/claims"])
 
     assert recorder.statements == [
         "SET allowed_directories = ['/data/claims']",
@@ -1258,7 +1259,7 @@ def test_a_quote_in_the_base_path_cannot_end_the_allow_list_literal():
             pass
 
     recorder = Recorder()
-    DuckdbFlavorService()._confine_reads(recorder, "/da'ta")
+    DuckdbFlavorService()._confine_reads(recorder, ["/da'ta"])
     assert recorder.statements[0] == "SET allowed_directories = ['/da''ta']"
 
 
@@ -1688,3 +1689,277 @@ def test_the_attached_database_still_needs_its_schema(customer_database):
                 connection.execute(text('SELECT COUNT(*) FROM "orders"'))
     finally:
         engine.dispose()
+
+
+# --- The run cache an object-storage connection keeps ---
+
+
+@pytest.fixture
+def storage_connection(data_directory, monkeypatch):
+    """A connection that takes the object-storage path in ``init``, reading the local data directory."""
+    class LocalStore:
+        def base_location(self, parameters):
+            return parameters["base_path"]
+
+        def storage_error_message(self, _parameters, error):
+            return str(error).splitlines()[0]
+
+    store = LocalStore()
+    monkeypatch.setattr(duckdb_flavor_service.object_storage, "store_for", lambda code: store if code == "files" else None)
+    monkeypatch.setattr(DuckdbFlavorService, "_register_storage_secret", lambda *_args: None)
+    service = DuckdbFlavorService()
+    params = files_params(data_directory)
+    declarations = [
+        {"name": "claims", "uri": "claims_*.csv", "format": "csv"},
+        {"name": "dim", "uri": "dim.parquet", "format": "parquet"},
+        {"name": "notes", "uri": "notes.json", "format": "json"},
+    ]
+    engine, connection = open_files_connection(service, params, declarations)
+    yield service, engine, connection, resolve_connection_params(params), parse_file_declarations(declarations)
+    connection.close()
+    engine.dispose()
+
+
+def _reads_source(connection, table: str) -> bool:
+    plan = connection.execute(text(f'EXPLAIN SELECT * FROM "main"."{table}"')).fetchall()[0][1]
+    return "READ_CSV" in plan or "READ_JSON" in plan or "READ_PARQUET" in plan
+
+
+def test_cached_tables_are_read_from_the_local_copy(storage_connection, data_directory):
+    service, _engine, connection, params, declarations = storage_connection
+
+    service.cache_tables(connection, params, declarations, ["claims", "notes"])
+    (data_directory / "claims_2024.csv").unlink()
+
+    assert not _reads_source(connection, "claims")
+    assert connection.execute(text('SELECT COUNT(*) FROM "main"."claims"')).scalar() == 3
+    assert connection.execute(text('SELECT COUNT(*) FROM "main"."notes"')).scalar() == 2
+
+
+def test_a_cached_table_keeps_its_columns(storage_connection):
+    """The catalog refresh reads the default database's columns, which the copies must not change."""
+    service, _engine, connection, params, declarations = storage_connection
+    columns = (
+        "SELECT column_name, data_type FROM information_schema.columns "
+        "WHERE table_catalog = current_database() AND table_name = 'claims' ORDER BY ordinal_position"
+    )
+    before = connection.execute(text(columns)).fetchall()
+
+    service.cache_tables(connection, params, declarations, ["claims"])
+
+    assert connection.execute(text(columns)).fetchall() == before
+
+
+def test_parquet_and_unnamed_tables_stay_on_storage(storage_connection):
+    service, _engine, connection, params, declarations = storage_connection
+
+    service.cache_tables(connection, params, declarations, ["claims", "dim"])
+
+    assert _reads_source(connection, "dim")
+    assert _reads_source(connection, "notes")
+
+
+def test_a_table_that_fails_to_copy_keeps_reading_from_storage(storage_connection, data_directory, caplog):
+    service, _engine, connection, params, declarations = storage_connection
+    # Past the rows the view sniffed for its column types, so the view still binds.
+    good_rows = "".join(f"{row},1.0,gold\n" for row in range(30_000))
+    (data_directory / "claims_2025.csv").write_text(f"claim_id,amount,plan\n{good_rows}1,2,3,4,5\n")
+
+    service.cache_tables(connection, params, declarations, ["claims", "notes"])
+
+    assert _reads_source(connection, "claims")
+    assert not _reads_source(connection, "notes")
+    assert "Declaration claims could not be copied locally" in caplog.text
+
+
+def test_a_table_whose_source_cannot_be_read_does_not_stop_the_rest(storage_connection, data_directory):
+    service, _engine, connection, params, declarations = storage_connection
+    for path in data_directory.glob("claims_*.csv"):
+        path.unlink()
+
+    service.cache_tables(connection, params, declarations, ["claims", "notes"])
+
+    assert not _reads_source(connection, "notes")
+    assert duckdb_flavor_service._RUN_CACHE_DIRECTORY_KEY in connection.info
+
+
+def test_a_copy_that_cannot_be_written_stops_the_rest(storage_connection, caplog):
+    service, _engine, connection, params, declarations = storage_connection
+    cache_directory = connection.info[duckdb_flavor_service._RUN_CACHE_DIRECTORY_KEY]
+    # A directory where the write-ahead log goes fails the copy's commit, as a full disk would.
+    (cache_directory / "run.duckdb.wal").mkdir(parents=True)
+
+    service.cache_tables(connection, params, declarations, ["claims", "notes"])
+
+    assert _reads_source(connection, "claims")
+    assert _reads_source(connection, "notes")
+    assert "not copied locally, so read from storage: notes" in caplog.text
+    assert duckdb_flavor_service._RUN_CACHE_DIRECTORY_KEY not in connection.info
+    assert not cache_directory.exists()
+    assert "Could not detach" not in caplog.text
+
+
+def test_a_source_row_that_reads_like_a_full_disk_does_not_stop_the_rest(storage_connection, data_directory):
+    service, _engine, connection, params, declarations = storage_connection
+    # Past the rows the view sniffed for its column types, so the view still binds.
+    good_rows = "".join(f"{row},1.0,gold\n" for row in range(30_000))
+    (data_directory / "claims_2025.csv").write_text(f"claim_id,amount,plan\n{good_rows}9,No space left on device,gold\n")
+
+    service.cache_tables(connection, params, declarations, ["claims", "notes"])
+
+    assert _reads_source(connection, "claims")
+    assert not _reads_source(connection, "notes")
+
+
+def test_a_table_is_copied_once(storage_connection, data_directory):
+    service, _engine, connection, params, declarations = storage_connection
+    service.cache_tables(connection, params, declarations, ["claims"])
+    (data_directory / "claims_2025.csv").write_text("claim_id,amount,plan\n3,30.0,gold\n6,60.0,gold\n")
+
+    service.cache_tables(connection, params, declarations, ["claims"])
+
+    assert connection.execute(text('SELECT COUNT(*) FROM "main"."claims"')).scalar() == 3
+
+
+def test_the_copies_are_removed_when_the_connection_closes(storage_connection):
+    service, engine, connection, params, declarations = storage_connection
+    service.cache_tables(connection, params, declarations, ["claims"])
+    cache_directory = connection.info[duckdb_flavor_service._RUN_CACHE_DIRECTORY_KEY]
+    assert cache_directory.is_dir()
+
+    connection.close()
+    engine.dispose()
+
+    assert not cache_directory.exists()
+
+
+def test_the_copies_are_named_like_a_spill_directory(storage_connection):
+    _service, _engine, connection, _params, _declarations = storage_connection
+    cache_directory = connection.info[duckdb_flavor_service._RUN_CACHE_DIRECTORY_KEY]
+
+    assert cache_directory.parent == duckdb_flavor_service.TEMP_DIRECTORY
+    assert duckdb_flavor_service._SPILL_DIRECTORY_PATTERN.fullmatch(cache_directory.name)
+
+
+def test_a_connection_that_reads_files_in_place_copies_nothing(data_directory):
+    service = DuckdbFlavorService()
+    params = files_params(data_directory)
+    declarations = [{"name": "claims", "uri": "claims_*.csv", "format": "csv"}]
+    engine, connection = open_files_connection(service, params, declarations)
+    try:
+        assert not service.caches_tables("files")
+        service.cache_tables(connection, resolve_connection_params(params), parse_file_declarations(declarations), ["claims"])
+        assert _reads_source(connection, "claims")
+    finally:
+        connection.close()
+        engine.dispose()
+
+
+def test_a_cache_directory_that_cannot_be_made_leaves_every_table_on_storage(storage_connection, data_directory, caplog):
+    service, _engine, connection, params, declarations = storage_connection
+    connection.info[duckdb_flavor_service._RUN_CACHE_DIRECTORY_KEY] = data_directory / "piped.csv" / "cache"
+
+    service.cache_tables(connection, params, declarations, ["claims", "notes"])
+
+    assert _reads_source(connection, "claims")
+    assert "no local copy could be set up" in caplog.text
+    service.cache_tables(connection, params, declarations, ["claims"])
+    assert caplog.text.count("no local copy could be set up") == 1
+
+
+def test_a_cache_database_that_cannot_be_attached_leaves_every_table_on_storage(storage_connection, caplog):
+    service, _engine, connection, params, declarations = storage_connection
+    cache_directory = connection.info[duckdb_flavor_service._RUN_CACHE_DIRECTORY_KEY]
+    (cache_directory / "run.duckdb").mkdir(parents=True)
+
+    service.cache_tables(connection, params, declarations, ["claims", "notes"])
+
+    assert _reads_source(connection, "claims")
+    assert connection.execute(text('SELECT COUNT(*) FROM "main"."claims"')).scalar() == 3
+    assert not cache_directory.exists()
+    assert "no local copy could be set up" in caplog.text
+
+
+@pytest.mark.parametrize("code", ["s3", "azure_blob"])
+def test_object_storage_connections_cache_their_tables(code):
+    assert DuckdbFlavorService().caches_tables(code)
+
+
+def test_the_copies_are_detached_before_their_directory_is_deleted(storage_connection, monkeypatch):
+    """Windows refuses to delete a file that is still open."""
+    service, engine, connection, params, declarations = storage_connection
+    service.cache_tables(connection, params, declarations, ["claims"])
+    raw_connection = connection.connection.dbapi_connection
+    attached_at_delete = []
+    real_rmtree = shutil.rmtree
+
+    def rmtree(path, **kwargs):
+        cursor = raw_connection.cursor()
+        cursor.execute("SELECT database_name FROM duckdb_databases()")
+        attached_at_delete.extend(name for (name,) in cursor.fetchall())
+        real_rmtree(path, **kwargs)
+
+    monkeypatch.setattr(duckdb_flavor_service.shutil, "rmtree", rmtree)
+    connection.close()
+    engine.dispose()
+
+    assert attached_at_delete
+    assert duckdb_flavor_service.RUN_CACHE_CATALOG not in attached_at_delete
+
+
+def test_copying_registers_a_release_at_exit(storage_connection, monkeypatch):
+    """A job process exits without disposing its engine."""
+    service, engine, connection, params, declarations = storage_connection
+    registered = []
+    monkeypatch.setattr(duckdb_flavor_service.atexit, "register", lambda *args: registered.append(args))
+
+    service.cache_tables(connection, params, declarations, ["claims"])
+
+    cache_directory = connection.info[duckdb_flavor_service._RUN_CACHE_DIRECTORY_KEY]
+    assert registered == [(duckdb_flavor_service._release_run_cache_at_exit, engine, cache_directory)]
+
+
+def test_the_release_at_exit_closes_the_connection_before_deleting(storage_connection):
+    service, engine, connection, params, declarations = storage_connection
+    service.cache_tables(connection, params, declarations, ["claims"])
+    cache_directory = connection.info[duckdb_flavor_service._RUN_CACHE_DIRECTORY_KEY]
+    connection.close()
+
+    duckdb_flavor_service._release_run_cache_at_exit(engine, cache_directory)
+
+    assert engine.pool.checkedin() == 0
+    assert not cache_directory.exists()
+
+
+def test_the_sweep_never_signals_a_process_on_windows(spill_root, monkeypatch):
+    """On Windows os.kill terminates the process whatever the signal, so it cannot probe one."""
+    live_pid, dead_pid = 4242, 4343
+    live = spill_root / f"{live_pid}-{'f' * 32}"
+    dead = spill_root / f"{dead_pid}-{'f' * 32}"
+    for directory in (live, dead):
+        directory.mkdir(parents=True)
+        _aged(directory, duckdb_flavor_service._STALE_SPILL_AGE)
+
+    def signal(*_args):
+        raise AssertionError("os.kill was called")
+
+    monkeypatch.setattr(duckdb_flavor_service.sys, "platform", "win32")
+    monkeypatch.setattr(duckdb_flavor_service.os, "kill", signal)
+    monkeypatch.setattr(duckdb_flavor_service, "_windows_process_is_alive", lambda pid: pid == live_pid, raising=False)
+
+    duckdb_flavor_service.sweep_stale_spill_directories()
+
+    assert live.exists()
+    assert not dead.exists()
+
+
+def test_a_connection_closed_mid_transaction_still_detaches_its_copies(storage_connection, caplog):
+    service, _engine, connection, params, declarations = storage_connection
+    service.cache_tables(connection, params, declarations, ["claims"])
+    cache_directory = connection.info[duckdb_flavor_service._RUN_CACHE_DIRECTORY_KEY]
+    connection.execute(text('SELECT COUNT(*) FROM "main"."claims"'))
+
+    connection.invalidate()
+
+    assert "Could not detach" not in caplog.text
+    assert not cache_directory.exists()
