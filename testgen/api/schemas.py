@@ -32,6 +32,7 @@ from testgen.api.enums import (
     PiiFlag,
     PiiRisk,
     ResultStatus,
+    ScheduleKind,
     TableState,
 )
 from testgen.common.enums import JobSource, JobStatus, PublicJobKey
@@ -1188,3 +1189,46 @@ class TestSuiteCreate(BaseModel):
     @classmethod
     def _null_takes_the_default(cls, value: Any, info: ValidationInfo) -> Any:
         return cls.model_fields[info.field_name].default if value is None else value
+
+
+# --- Schedules ---
+
+
+class ScheduleCreate(BaseModel):
+    """A recurring schedule. Unknown fields are rejected."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cron_expression: str = Field(
+        description="Five-field cron expression (minute, hour, day of month, month, day of week), "
+        "e.g. `0 3 * * *` for every day at 3:00.",
+    )
+    timezone: str = Field(default="UTC", description="IANA timezone the expression is read in.")
+
+
+class ScheduleResponse(BaseModel):
+    """A recurring profiling or test run schedule."""
+
+    schedule_id: UUID
+    kind: ScheduleKind
+    project_code: str
+    table_group_id: UUID | None = Field(
+        default=None, description="The table group a profiling schedule profiles. Null for a test run schedule."
+    )
+    test_suite_id: UUID | None = Field(
+        default=None, description="The test suite a test run schedule runs. Null for a profiling schedule."
+    )
+    cron_expression: str = Field(description="The expression as stored, in canonical form.")
+    timezone: str
+    description: str | None = Field(default=None, description="The expression in words, e.g. `At 03:00`.")
+    active: bool = Field(description="False when the schedule is paused in the TestGen UI.")
+    next_run_at: datetime | None = Field(
+        default=None, description="When the schedule next starts a job, in UTC. Null while it is paused."
+    )
+
+
+class ScheduleListResponse(BaseModel):
+    items: list[ScheduleResponse]
+    page: int
+    limit: int
+    total: int
