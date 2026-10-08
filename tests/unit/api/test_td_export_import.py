@@ -7,12 +7,15 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy.engine.result import result_tuple
 from sqlalchemy.sql.dml import Delete
 
-from testgen.api.schemas import ImportRequest
+from testgen.api.deps import db_session, get_authorized_user
+from testgen.api.schemas import ErrorResponse, ImportRequest, ImportStrictError
+from testgen.api.test_definitions import router
 from testgen.common.enums import SuiteType
 from testgen.common.models.suite_version import FrozenVersionError
 from testgen.common.models.test_definition import TestDefinition, TestType
@@ -1718,3 +1721,59 @@ class Test_import_reference_schema:
         )
 
         assert "match_schema_name='main'" in self._set_clause(session)
+
+
+# --- HTTP layer: error bodies match the declared response models ---
+
+
+def _client() -> TestClient:
+    """A TestClient over the export/import router, bypassing auth and db_session."""
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    app.dependency_overrides[db_session] = lambda: iter([None])
+    app.dependency_overrides[get_authorized_user] = lambda: MagicMock(id=uuid4())
+    return TestClient(app)
+
+
+def _response_schema_ref(path: str, method: str, status: str) -> set[str]:
+    response = _client().app.openapi()["paths"][path][method]["responses"][status]
+    schema = response["content"]["application/json"]["schema"]
+    return {option["$ref"].rsplit("/", 1)[-1] for option in schema.get("anyOf", [schema])}
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch("testgen.api.deps.TestSuite")
+def test_strict_import_400_body_matches_the_declared_model(mock_suite_cls, _perm):
+    mock_suite_cls.get_regular.return_value = _make_test_suite()
+    body = ImportRequest(
+        config=_make_config(mode=ImportMode.apply_strict),
+        payload=_make_payload(_make_import_td(test_type="Alpha", table_name="t1")),
+    )
+    violation = ImportStrictViolation(ImportResponse(summary=ImportSummary(skipped=1), items=[]))
+
+    with patch(f"{ENDPOINT_MODULE}.import_definitions", side_effect=violation):
+        resp = _client().post(
+            f"/api/v1/test-suites/{uuid4()}/test-definition-import", json=body.model_dump(mode="json")
+        )
+
+    assert resp.status_code == 400
+    error = ImportStrictError.model_validate(resp.json())
+    assert error.detail.errors[0].code == "strict_validation_failed"
+    assert error.detail.import_result.summary.skipped == 1
+    assert "ImportStrictError" in _response_schema_ref(
+        "/api/v1/test-suites/{test_suite_id}/test-definition-import", "post", "400"
+    )
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch("testgen.api.deps.TestSuite")
+def test_not_found_body_matches_the_declared_model(mock_suite_cls, _perm):
+    mock_suite_cls.get_regular.return_value = None
+
+    resp = _client().get(f"/api/v1/test-suites/{uuid4()}/test-definition-export")
+
+    assert resp.status_code == 404
+    assert ErrorResponse.model_validate(resp.json()).detail.errors[0].code == "not_found"
+    assert _response_schema_ref(
+        "/api/v1/test-suites/{test_suite_id}/test-definition-export", "get", "404"
+    ) == {"ErrorResponse"}

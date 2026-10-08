@@ -439,10 +439,16 @@ class ErrorDetail(BaseModel):
     detail: str
 
 
+class ErrorBody(BaseModel):
+    """The ``detail`` of a business logic error response."""
+
+    errors: list[ErrorDetail]
+
+
 class ErrorResponse(BaseModel):
     """Standardized error response for business logic errors (400, 404, 409)."""
 
-    errors: list[ErrorDetail]
+    detail: ErrorBody
 
 
 # --- Test Definition Export/Import (wire types) ---
@@ -453,10 +459,16 @@ class ImportRequest(BaseModel):
     payload: ImportPayload
 
 
-class ImportStrictError(ErrorResponse):
-    """400 response for apply_strict when entries would be skipped."""
+class ImportStrictErrorBody(ErrorBody):
+    """The ``detail`` of the apply_strict error response."""
 
     import_result: ImportResponse
+
+
+class ImportStrictError(BaseModel):
+    """400 response for apply_strict when entries would be skipped."""
+
+    detail: ImportStrictErrorBody
 
 
 # --- Test Generation ---
