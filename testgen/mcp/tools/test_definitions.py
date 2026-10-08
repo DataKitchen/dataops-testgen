@@ -20,6 +20,7 @@ from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import (
     NON_PUBLIC_TEST_TYPES,
     InvalidTestDefinitionFields,
+    ManagedTestDefinitionError,
     TestDefinition,
     TestDefinitionMinimal,
     TestDefinitionNote,
@@ -955,7 +956,10 @@ def _delete_resolved_tests(scope: str, selected: list[TestDefinitionMinimal]) ->
     """
     ids = [td.id for td in selected]
     note_counts = TestDefinitionNote.get_notes_count_by_ids([str(td_id) for td_id in ids])
-    TestDefinition.delete_where(TestDefinition.id.in_(ids), TestDefinition.version_clause())
+    try:
+        TestDefinition.delete_where(TestDefinition.id.in_(ids), TestDefinition.version_clause())
+    except ManagedTestDefinitionError as error:
+        raise MCPUserError(str(error)) from error
     return _render_deleted(scope, selected, sum(note_counts.values()))
 
 

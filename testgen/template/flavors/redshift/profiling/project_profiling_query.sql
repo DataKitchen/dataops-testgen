@@ -135,7 +135,11 @@ SELECT *
 -- TG-IF is_not_A
 SELECT
   COUNT("{COL_NAME}") AS value_ct,
+-- TG-ENDIF
+-- TG-IF is_distinct_countable
   COUNT(DISTINCT "{COL_NAME}") AS distinct_value_ct,
+-- TG-ENDIF
+-- TG-IF is_not_A
   SUM(NVL2("{COL_NAME}", 0, 1)) AS null_value_ct,
 -- TG-ENDIF
 -- TG-IF is_type_DN

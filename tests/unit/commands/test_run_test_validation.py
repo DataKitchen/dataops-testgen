@@ -77,6 +77,21 @@ def test_collect_table_scope_collects_table_only():
     assert (td.schema_name.lower(), td.table_name.lower(), None) in identifiers
 
 
+def test_collect_skips_a_managed_test():
+    """A managed test reads the app database's catalog, so a table missing from the target is
+    what it reports, not a reason to error it before it runs."""
+    td = _make_td(test_type="Schema_Conformance", run_type="METADATA", test_scope="table", column_name=None)
+    identifiers, schemas, errors = collect_test_identifiers([td], '"')
+    assert identifiers == {}
+    assert errors == {}
+
+
+def test_collect_validates_an_unmanaged_metadata_test():
+    td = _make_td(test_type="Match_Column_Type", run_type="METADATA", test_scope="column", column_name="amount")
+    identifiers, schemas, errors = collect_test_identifiers([td], '"')
+    assert ("public", "orders", "amount") in identifiers
+
+
 def test_collect_column_scope_single_column():
     td = _make_td(test_scope="column", column_name="amount")
     identifiers, schemas, errors = collect_test_identifiers([td], '"')

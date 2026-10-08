@@ -7,6 +7,7 @@ from testgen.common import execute_db_queries, fetch_dict_from_db
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import write_to_app_db
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
+from testgen.common.models.test_definition import MANAGED_TEST_TYPES
 
 LOG = logging.getLogger("testgen")
 
@@ -49,8 +50,9 @@ def collect_test_identifiers(
         errors[test_id].append(error)
 
     for td in test_defs:
-        # No validation needed for custom query or table group tests
-        if td.test_type == "CUSTOM" or td.test_scope == "tablegroup":
+        # No validation needed for custom query, table group, or managed tests (managed tests read
+        # the app database's catalog, where a table missing from the target is a result, not an error)
+        if td.test_type == "CUSTOM" or td.test_scope == "tablegroup" or td.test_type in MANAGED_TEST_TYPES:
             continue
 
         if td.schema_name and td.table_name and (td.column_name or td.test_scope in ["table", "custom"]):

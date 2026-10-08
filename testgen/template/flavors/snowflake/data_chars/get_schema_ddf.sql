@@ -24,6 +24,30 @@ SELECT
                THEN c.data_type || COALESCE('(' || CAST(c.datetime_precision AS VARCHAR) || ')', '')
            ELSE c.data_type
        END AS db_data_type,
+       CASE
+           WHEN c.data_type = 'NUMBER' AND c.numeric_scale = 0
+               THEN 'integer'
+           WHEN c.data_type IN ('NUMBER', 'FLOAT')
+               THEN 'number'
+           WHEN c.data_type IN ('TEXT', 'BINARY')
+               THEN 'string'
+           WHEN c.data_type = 'BOOLEAN'
+               THEN 'boolean'
+           WHEN c.data_type = 'DATE'
+               THEN 'date'
+           WHEN c.data_type ILIKE 'TIMESTAMP%'
+               THEN 'timestamp'
+           WHEN c.data_type = 'TIME'
+               THEN 'time'
+           WHEN c.data_type IN ('VARIANT', 'OBJECT')
+               THEN 'object'
+           WHEN c.data_type = 'ARRAY'
+               THEN 'array'
+           WHEN c.data_type = 'MAP'
+               THEN 'map'
+           WHEN c.data_type = 'VECTOR'
+               THEN 'vector'
+       END AS logical_type,
        c.ordinal_position,
        CASE
            WHEN c.data_type = 'TEXT'

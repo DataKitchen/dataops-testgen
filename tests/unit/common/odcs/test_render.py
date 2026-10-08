@@ -188,6 +188,33 @@ def test_a_column_level_term_lands_on_its_column_node():
     assert [rule["id"] for rule in table["properties"][0]["quality"]] == ["term-required"]
 
 
+def test_a_schema_conformance_term_renders_no_rule():
+    """The declared schema is already the assertion a conformance term makes, so the term is
+    left out of the quality arrays rather than refused or rendered as a custom rule."""
+    version = _version(
+        metadata_document={"schema": [{"name": "orders", "properties": [{"name": "amount"}]}]}
+    )
+    terms = [
+        _term(test_type="Required", column_name="amount", table_name="orders", threshold_value="0", contract_term_id="term-required"),
+        _term(test_type="Schema_Conformance", column_name=None, table_name="orders", threshold_value=None, contract_term_id="term-conformance"),
+    ]
+    test_types = {"Required": _test_type("Required", test_scope="column", dq_dimension="Completeness")}
+
+    rendered = _render_with(version=version, terms=terms, test_types=test_types)
+
+    assert [rule["id"] for rule in _all_rules(rendered)] == ["term-required"]
+
+
+def test_a_version_holding_only_conformance_terms_renders_its_document_unchanged():
+    document = {"schema": [{"name": "orders", "properties": [{"name": "amount"}]}]}
+    version = _version(metadata_document=copy.deepcopy(document))
+    term = _term(test_type="Schema_Conformance", column_name=None, table_name="orders", threshold_value=None)
+
+    rendered = _render_with(version=version, terms=[term], test_types={})
+
+    assert rendered["schema"] == document["schema"]
+
+
 def test_rules_are_never_a_root_key():
     version = _version(metadata_document={"schema": [{"name": "orders"}]})
     term = _term(test_type="Row_Ct", column_name=None, table_name="orders", threshold_value="10", contract_term_id="term-row-ct")

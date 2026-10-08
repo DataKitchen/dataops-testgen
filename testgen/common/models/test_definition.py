@@ -20,6 +20,7 @@ from sqlalchemy import (
     TypeDecorator,
     asc,
     delete,
+    exists,
     func,
     insert,
     select,
@@ -28,6 +29,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.expression import case, literal
 
 from testgen.common.enums import MonitorCalculation, MonitorType, OdcsDimension, SuiteType, TestScope
@@ -588,9 +590,25 @@ def _enum_by_value(enum_cls: type[StrEnum]) -> Enum:
     return Enum(enum_cls, native_enum=False, values_callable=lambda cls: [member.value for member in cls])
 
 
+# Test types whose definitions TestGen creates and removes itself, never a user or a generation
+# set. Schema_Conformance follows the tables a contract declares, one definition per table.
+MANAGED_TEST_TYPES: frozenset[str] = frozenset({"Schema_Conformance"})
+
 # Test types that are never offered as regular tests: the monitor types, which only monitor suites
-# generate and manage.
-NON_PUBLIC_TEST_TYPES: frozenset[str] = frozenset(monitor_type.value for monitor_type in MonitorType)
+# generate and manage, and the managed types, whose definitions TestGen creates and removes itself.
+NON_PUBLIC_TEST_TYPES: frozenset[str] = frozenset(
+    {*(monitor_type.value for monitor_type in MonitorType), *MANAGED_TEST_TYPES}
+)
+
+
+class ManagedTestDefinitionError(ValueError):
+    """Raised when a write would delete, move or copy a definition of a managed test type."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "TestGen manages this test and removes it when what it checks goes away. "
+            "It cannot be deleted, moved, or copied on its own."
+        )
 
 
 class TestType(ParamFieldsMixin, Entity):
@@ -945,6 +963,19 @@ class TestDefinition(Entity):
                 raise FrozenVersionError(version_id)
             self.id = copied_ids[row_id]
         self.version_id = target_version_id
+
+    @classmethod
+    def delete_where(cls, *clauses: ColumnElement[bool]) -> int:
+        cls._assert_no_managed_definitions(*clauses)
+        return super().delete_where(*clauses)
+
+    @classmethod
+    def _assert_no_managed_definitions(cls, *clauses: ColumnElement[bool]) -> None:
+        """Raise if any row matching the clauses belongs to a managed test type."""
+        if get_current_session().scalar(
+            select(exists().where(*clauses, cls.test_type.in_(MANAGED_TEST_TYPES)))
+        ):
+            raise ManagedTestDefinitionError
 
     @classmethod
     def _assert_batch_writable(cls, test_definition_ids: list[str | UUID]) -> None:
@@ -1306,6 +1337,7 @@ class TestDefinition(Entity):
         db_session = get_current_session()
         target_version = db_session.scalar(select(SuiteVersion.resolved_for(target_test_suite_id)))
         cls.assert_version_writable(target_version)
+        cls._assert_no_managed_definitions(cls.id.in_([UUID(str(identifier)) for identifier in test_definition_ids]))
         scoped_ids = db_session.scalars(
             select(cls.id).where(
                 cls.id.in_([UUID(str(identifier)) for identifier in test_definition_ids]),
@@ -1351,6 +1383,7 @@ class TestDefinition(Entity):
         db_session = get_current_session()
         target_version = db_session.scalar(select(SuiteVersion.resolved_for(target_test_suite_id)))
         cls.assert_version_writable(target_version)
+        cls._assert_no_managed_definitions(cls.id.in_([UUID(str(identifier)) for identifier in test_definition_ids]))
 
         modified_columns = [
             cls.id,

@@ -9,17 +9,31 @@ SELECT
            ELSE LOWER(c.data_type)
        END AS column_type,
        c.data_type AS db_data_type,
+       CASE
+           WHEN LOWER(c.data_type) = 'int64'
+               OR REGEXP_CONTAINS(LOWER(c.data_type), r'^(big)?(numeric|decimal)\(\d+(, *0)?\)$') THEN 'integer'
+           WHEN LOWER(c.data_type) = 'float64'
+               OR REGEXP_CONTAINS(LOWER(c.data_type), r'^(big)?(numeric|decimal)') THEN 'number'
+           WHEN REGEXP_CONTAINS(LOWER(c.data_type), r'^(string|bytes)(\(|$)') THEN 'string'
+           WHEN LOWER(c.data_type) = 'bool' THEN 'boolean'
+           WHEN LOWER(c.data_type) = 'date' THEN 'date'
+           WHEN LOWER(c.data_type) IN ('datetime', 'timestamp') THEN 'timestamp'
+           WHEN LOWER(c.data_type) = 'time' THEN 'time'
+           WHEN LOWER(c.data_type) = 'json'
+               OR STARTS_WITH(LOWER(c.data_type), 'struct') THEN 'object'
+           WHEN STARTS_WITH(LOWER(c.data_type), 'array') THEN 'array'
+       END AS logical_type,
        c.ordinal_position,
        CASE
-           WHEN LOWER(c.data_type) = 'string' THEN 'A'
+           WHEN REGEXP_CONTAINS(LOWER(c.data_type), r'^string(\(|$)') THEN 'A'
            WHEN LOWER(c.data_type) = 'bool' THEN 'B'
            WHEN LOWER(c.data_type) IN ('date', 'datetime', 'timestamp') THEN 'D'
            WHEN LOWER(c.data_type) = 'time' THEN 'T'
            WHEN LOWER(c.data_type) IN ('int64', 'float64') THEN 'N'
-           WHEN REGEXP_CONTAINS(LOWER(c.data_type), r'(decimal|numeric|bignumeric)') THEN 'N'
+           WHEN REGEXP_CONTAINS(LOWER(c.data_type), r'^(big)?(numeric|decimal)') THEN 'N'
            ELSE 'X'
        END AS general_type,
-       REGEXP_CONTAINS(LOWER(c.data_type), r'(decimal|numeric|bignumeric)') AS is_decimal,
+       REGEXP_CONTAINS(LOWER(c.data_type), r'^(big)?(numeric|decimal)') AS is_decimal,
        CASE it.table_type
             WHEN 'BASE TABLE' THEN 'TABLE'
             WHEN 'VIEW' THEN 'VIEW'

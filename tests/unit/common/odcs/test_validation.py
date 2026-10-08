@@ -1,11 +1,13 @@
 import json
+import re
 from importlib import resources
+from pathlib import Path
 
 import pytest
 
-from testgen.common.contract_service import _LOGICAL_TYPE_FROM_GENERAL_TYPE, _logical_type
-from testgen.common.enums import OdcsDimension
-from testgen.common.models.data_column import DataColumnChars
+import testgen
+from testgen.common.database.flavor.salesforce_data360_flavor_service import _TYPE_MAP
+from testgen.common.enums import OdcsDimension, OdcsLogicalType
 from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, ServerType
 from testgen.common.odcs.validation import validate_document
 
@@ -109,21 +111,27 @@ def test_the_dimension_enum_matches_the_schema():
     assert code_values == schema_values
 
 
-def test_every_emitted_logical_type_is_in_the_schema_enum():
-    # SchemaBaseProperty.logicalType has 11 values. Calls the actual function rather than
-    # reading the dict's values, so the "D" branch -- general_type == "D" resolves to
-    # "date" or "timestamp" by column_type, bypassing the dict entirely -- is covered too.
-    # Driven from the dict's own keys plus "D", the input domain _logical_type branches on,
-    # so a general_type added later is caught rather than silently uncovered.
-    schema_values = set(_schema()["$defs"]["SchemaBaseProperty"]["properties"]["logicalType"]["enum"])
+def _logical_type_schema_values() -> set[str]:
+    return set(_schema()["$defs"]["SchemaBaseProperty"]["properties"]["logicalType"]["enum"])
 
-    dict_driven_values = {
-        _logical_type(DataColumnChars(general_type=code, column_type=None))
-        for code in _LOGICAL_TYPE_FROM_GENERAL_TYPE
-    }
-    date_value = _logical_type(DataColumnChars(general_type="D", column_type="date"))
-    timestamp_value = _logical_type(DataColumnChars(general_type="D", column_type="datetimeoffset"))
 
-    assert date_value == "date"
-    assert timestamp_value == "timestamp"
-    assert dict_driven_values | {date_value, timestamp_value} <= schema_values
+def test_odcs_logical_type_matches_the_schema_enum():
+    assert {member.value for member in OdcsLogicalType} == _logical_type_schema_values()
+
+
+def test_every_catalog_logical_type_is_in_the_schema_enum():
+    """Each flavor's catalog query computes the column's ODCS logical type, which a contract
+    declares as is, so a value outside the enum would fail strict validation at freeze."""
+    flavors_dir = Path(testgen.__file__).parent / "template" / "flavors"
+    emitted: dict[str, set[str]] = {}
+    for path in sorted(flavors_dir.glob("*/data_chars/get_schema_ddf.sql")):
+        before, found, _ = path.read_text().partition("END AS logical_type")
+        assert found, f"{path.parent.parent.name}: no logical_type column"
+        case = before.rsplit("CASE", 1)[1]
+        emitted[path.parent.parent.name] = set(re.findall(r"THEN '([a-z]+)'", case))
+    emitted["salesforce_data360"] = {logical_type.value for _, _, logical_type, _ in _TYPE_MAP.values()}
+
+    schema_values = _logical_type_schema_values()
+    for flavor, values in emitted.items():
+        assert values, f"{flavor}: no logical types"
+        assert values <= schema_values, f"{flavor}: {sorted(values - schema_values)} outside the ODCS enum"

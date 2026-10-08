@@ -400,7 +400,7 @@ class Test_import_matching:
         from testgen.common.test_definition_export_import_service import import_definitions
 
         with (
-            patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}),
+            patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")),
             patch.object(TestDefinition, "assert_version_writable"),
             patch.object(TestDefinition, "assign_missing_term_ids") as sweep,
         ):
@@ -556,6 +556,33 @@ class Test_import_policies:
             result = import_definitions(ts, config, _make_payload(td))
 
         # Locked orphan is omitted entirely — not deleted, not reported
+        assert result.summary.deleted == 0
+        assert result.summary.created == 1
+
+    @pytest.mark.parametrize("on_absence", [OnAbsence.delete_all, OnAbsence.delete_unlocked])
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_on_absence_spares_managed_tests(self, mock_session_fn, mock_tg_cls, mock_dt_cls, on_absence):
+        """A conformance test follows the contract's declared tables, so an import file that
+        does not carry it is no reason to delete it."""
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+
+        conformance = _make_existing_row(test_type="Schema_Conformance", table_name="t2", column_name=None)
+        session.execute.return_value.all.return_value = [conformance]
+
+        ts = _make_test_suite()
+        td = _make_import_td(test_type="Alpha", table_name="t1")
+        config = _make_config(on_new=OnNew.create, on_absence=on_absence)
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
+            result = import_definitions(ts, config, _make_payload(td))
+
         assert result.summary.deleted == 0
         assert result.summary.created == 1
 

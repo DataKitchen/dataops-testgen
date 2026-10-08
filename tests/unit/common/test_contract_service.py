@@ -220,6 +220,10 @@ def test_discarding_returns_the_number_of_terms_removed():
     statement = session.scalar.call_args.args[0]
     conjuncts = _conjuncts(statement.whereclause)
     assert any(equality_conjunct(term, "version_id", "test_definitions", draft.id) for term in conjuncts)
+    assert any(
+        getattr(term.left, "key", None) == "test_type" and term.operator is operators.not_in_op
+        for term in conjuncts
+    )
     assert term_count == 3
 
 
@@ -249,11 +253,56 @@ def test_save_metadata_document_writes_to_the_resolved_version_and_returns_its_i
         patch.object(SuiteVersion, "draft_for", return_value=draft),
         patch.object(SuiteVersion, "get", return_value=draft),
         patch("testgen.common.contract_service.get_current_session", return_value=session),
+        patch("testgen.common.contract_service.run_conformance_generation"),
+        patch.object(TestDefinition, "assign_missing_term_ids"),
     ):
         version_id = contract_service.save_metadata_document(suite, document)
 
     assert version_id == draft.id
     assert draft.metadata_document == document
+
+
+def test_saving_a_document_marks_it_modified_even_when_it_is_the_drafts_own_object():
+    """A caller that edits the draft's document in place and passes it back hands the column the
+    object it already holds; without the flag no UPDATE is issued and the commit stores nothing."""
+    suite = _suite()
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, metadata_document={"schema": []})
+    document = draft.metadata_document
+    document["schema"].append({"name": "orders"})
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(SuiteVersion, "get", return_value=draft),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+        patch("testgen.common.contract_service.run_conformance_generation"),
+        patch.object(TestDefinition, "assign_missing_term_ids"),
+        patch("testgen.common.contract_service.flag_modified") as flagged,
+    ):
+        contract_service.save_metadata_document(suite, document)
+
+    flagged.assert_called_once_with(draft, "metadata_document")
+
+
+def test_saving_a_document_reconciles_conformance_tests_after_committing_it():
+    """Conformance generation reads the declared tables on its own connection, so the document
+    has to be committed before it runs or the reconciliation sees the previous declaration."""
+    suite = _suite()
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
+    session = MagicMock()
+    calls = []
+    session.commit.side_effect = lambda: calls.append("commit")
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(SuiteVersion, "get", return_value=draft),
+        patch("testgen.common.contract_service.get_current_session", return_value=session),
+        patch(
+            "testgen.common.contract_service.run_conformance_generation",
+            side_effect=lambda *_args, **_kwargs: calls.append("reconcile"),
+        ),
+        patch.object(TestDefinition, "assign_missing_term_ids"),
+    ):
+        contract_service.save_metadata_document(suite, {"schema": [{"name": "orders"}]})
+
+    assert calls == ["commit", "reconcile"]
 
 
 def test_initializing_a_contract_creates_a_first_draft_with_the_prefilled_document():
@@ -356,8 +405,8 @@ def test_adding_a_table_appends_a_descriptor_built_from_profiling():
     suite = _suite()
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, metadata_document={"schema": []})
     columns = [
-        MagicMock(column_name="id", general_type="N", functional_data_type="ID", column_type="integer"),
-        MagicMock(column_name="total", general_type="N", functional_data_type="Amount", column_type="numeric"),
+        MagicMock(column_name="id", functional_data_type="ID", db_data_type="integer", logical_type="integer"),
+        MagicMock(column_name="total", functional_data_type="Amount", db_data_type="numeric", logical_type="number"),
     ]
     with (
         patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
@@ -375,7 +424,7 @@ def test_adding_a_table_appends_a_descriptor_built_from_profiling():
     assert report["declared"] == ["orders"]
     assert descriptor["properties"] == [
         {
-            "name": "id", "physicalType": "integer", "logicalType": "number",
+            "name": "id", "physicalType": "integer", "logicalType": "integer",
             "customProperties": [{"property": "functionalDataType", "value": "ID"}],
         },
         {
@@ -385,10 +434,10 @@ def test_adding_a_table_appends_a_descriptor_built_from_profiling():
     ]
 
 
-def test_a_column_whose_general_type_has_no_odcs_logical_type_carries_none():
+def test_a_column_the_catalog_gives_no_odcs_logical_type_carries_none():
     suite = _suite()
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, metadata_document={"schema": []})
-    columns = [MagicMock(column_name="raw_blob", general_type="X", functional_data_type="Other", column_type="text")]
+    columns = [MagicMock(column_name="raw_blob", functional_data_type="Other", db_data_type="interval", logical_type=None)]
     with (
         patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
         patch.object(SuiteVersion, "get", return_value=draft),
@@ -401,18 +450,15 @@ def test_a_column_whose_general_type_has_no_odcs_logical_type_carries_none():
     descriptor, = draft.metadata_document["schema"]
     property_, = descriptor["properties"]
     assert property_ == {
-        "name": "raw_blob", "physicalType": "text",
+        "name": "raw_blob", "physicalType": "interval",
         "customProperties": [{"property": "functionalDataType", "value": "Other"}],
     }
 
 
 def test_a_time_column_carries_the_odcs_time_logical_type():
-    """ODCS v3.2.0 lists ``time`` among its logical types, so a profiled Time column has a
-    faithful one and does not have to go without. ``Other`` is the only code that has none.
-    """
     suite = _suite()
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, metadata_document={"schema": []})
-    columns = [MagicMock(column_name="shift_start", general_type="T", functional_data_type=None, column_type="time")]
+    columns = [MagicMock(column_name="shift_start", functional_data_type=None, db_data_type="time without time zone", logical_type="time")]
     with (
         patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
         patch.object(SuiteVersion, "get", return_value=draft),
@@ -424,54 +470,13 @@ def test_a_time_column_carries_the_odcs_time_logical_type():
 
     descriptor, = draft.metadata_document["schema"]
     property_, = descriptor["properties"]
-    assert property_ == {"name": "shift_start", "physicalType": "time", "logicalType": "time"}
-
-
-@pytest.mark.parametrize(
-    ("column_type", "expected"),
-    [
-        # Every spelling a "D" column takes across the flavors, from the functional baselines.
-        ("date", "date"),
-        ("timestamp", "timestamp"),
-        ("timestamp with time zone", "timestamp"),
-        ("timestamp_ntz", "timestamp"),
-        ("timestamp_ltz", "timestamp"),
-        ("timestamp_tz", "timestamp"),
-        ("timestamp_ms", "timestamp"),
-        ("timestamp_ns", "timestamp"),
-        ("timestamp_s", "timestamp"),
-        ("datetime", "timestamp"),
-        ("smalldatetime", "timestamp"),
-        ("datetimeoffset", "timestamp"),
-    ],
-)
-def test_a_datetime_column_is_not_declared_a_date(column_type, expected):
-    """``general_type`` collapses date and datetime into one code, so the descriptor would
-    otherwise declare ``logicalType: date`` on a column it declares ``physicalType:
-    timestamp`` in the same breath, and a downstream consumer reading the logical type would
-    drop the time component the contract is supposed to be about.
-    """
-    suite = _suite()
-    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, metadata_document={"schema": []})
-    columns = [MagicMock(column_name="seen_at", general_type="D", functional_data_type=None, column_type=column_type)]
-    with (
-        patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
-        patch.object(SuiteVersion, "get", return_value=draft),
-        patch.object(contract_service, "_profiled_columns", return_value=columns),
-        patch.object(contract_service, "_generate_for_tables"),
-        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
-    ):
-        contract_service.add_table(suite, "events")
-
-    descriptor, = draft.metadata_document["schema"]
-    property_, = descriptor["properties"]
-    assert property_ == {"name": "seen_at", "physicalType": column_type, "logicalType": expected}
+    assert property_ == {"name": "shift_start", "physicalType": "time without time zone", "logicalType": "time"}
 
 
 def test_a_column_with_no_functional_data_type_carries_no_custom_properties():
     suite = _suite()
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, metadata_document={"schema": []})
-    columns = [MagicMock(column_name="flag", general_type="B", functional_data_type=None, column_type="boolean")]
+    columns = [MagicMock(column_name="flag", functional_data_type=None, db_data_type="boolean", logical_type="boolean")]
     with (
         patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
         patch.object(SuiteVersion, "get", return_value=draft),
@@ -494,7 +499,7 @@ def test_adding_a_table_twice_produces_exactly_one_descriptor_for_it():
             "schema": [{"name": "orders", "properties": [{"name": "id", "physicalType": "text"}]}],
         },
     )
-    columns = [MagicMock(column_name="id", general_type="N", functional_data_type=None, column_type="integer")]
+    columns = [MagicMock(column_name="id", functional_data_type=None, db_data_type="integer", logical_type="integer")]
     with (
         patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
         patch.object(SuiteVersion, "get", return_value=draft),
@@ -506,7 +511,7 @@ def test_adding_a_table_twice_produces_exactly_one_descriptor_for_it():
 
     assert [d["name"] for d in draft.metadata_document["schema"]] == ["orders"]
     descriptor, = draft.metadata_document["schema"]
-    assert descriptor["properties"] == [{"name": "id", "physicalType": "integer", "logicalType": "number"}]
+    assert descriptor["properties"] == [{"name": "id", "physicalType": "integer", "logicalType": "integer"}]
 
 
 def test_readding_a_table_preserves_hand_authored_fields_while_refreshing_profiling_ones():
@@ -525,7 +530,7 @@ def test_readding_a_table_preserves_hand_authored_fields_while_refreshing_profil
             ],
         },
     )
-    columns = [MagicMock(column_name="id", general_type="N", functional_data_type=None, column_type="integer")]
+    columns = [MagicMock(column_name="id", functional_data_type=None, db_data_type="integer", logical_type="integer")]
     with (
         patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
         patch.object(SuiteVersion, "get", return_value=draft),
@@ -540,7 +545,7 @@ def test_readding_a_table_preserves_hand_authored_fields_while_refreshing_profil
     property_, = descriptor["properties"]
     assert property_ == {
         "name": "id", "description": "Primary key", "primaryKey": True,
-        "physicalType": "integer", "logicalType": "number",
+        "physicalType": "integer", "logicalType": "integer",
     }
 
 
@@ -560,7 +565,7 @@ def test_readding_a_table_keeps_a_hand_authored_column_no_longer_profiled():
             ],
         },
     )
-    columns = [MagicMock(column_name="id", general_type="N", functional_data_type=None, column_type="integer")]
+    columns = [MagicMock(column_name="id", functional_data_type=None, db_data_type="integer", logical_type="integer")]
     with (
         patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
         patch.object(SuiteVersion, "get", return_value=draft),
@@ -597,7 +602,7 @@ def test_readding_a_table_preserves_other_custom_properties_while_refreshing_fun
             ],
         },
     )
-    columns = [MagicMock(column_name="id", general_type="N", functional_data_type="ID", column_type="integer")]
+    columns = [MagicMock(column_name="id", functional_data_type="ID", db_data_type="integer", logical_type="integer")]
     with (
         patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
         patch.object(SuiteVersion, "get", return_value=draft),
@@ -623,7 +628,7 @@ def test_readding_a_table_keeps_an_existing_logical_type_when_the_refresh_has_no
             "schema": [{"name": "logs", "properties": [{"name": "payload", "logicalType": "string"}]}],
         },
     )
-    columns = [MagicMock(column_name="payload", general_type="X", functional_data_type=None, column_type="text")]
+    columns = [MagicMock(column_name="payload", functional_data_type=None, db_data_type="interval", logical_type=None)]
     with (
         patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
         patch.object(SuiteVersion, "get", return_value=draft),
@@ -635,7 +640,7 @@ def test_readding_a_table_keeps_an_existing_logical_type_when_the_refresh_has_no
 
     descriptor, = draft.metadata_document["schema"]
     property_, = descriptor["properties"]
-    assert property_ == {"name": "payload", "logicalType": "string", "physicalType": "text"}
+    assert property_ == {"name": "payload", "logicalType": "string", "physicalType": "interval"}
 
 
 def test_adding_a_table_flags_the_metadata_document_modified():
@@ -677,7 +682,9 @@ def test_removing_a_table_takes_its_descriptor_and_its_terms():
         metadata_document={"schema": [{"name": "orders"}, {"name": "customers"}]},
     )
     session = MagicMock()
-    session.execute.return_value.rowcount = 3
+    session.execute.return_value.scalars.return_value.all.return_value = [
+        "Required", "Unique", "Schema_Conformance", "Row_Ct",
+    ]
     with (
         patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
         patch.object(SuiteVersion, "get", return_value=draft),
@@ -730,7 +737,6 @@ def test_removing_a_table_scopes_the_term_delete_to_the_version_and_the_table():
         metadata_document={"schema": [{"name": "orders"}, {"name": "customers"}]},
     )
     session = MagicMock()
-    session.execute.return_value.rowcount = 0
     with (
         patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
         patch.object(SuiteVersion, "get", return_value=draft),
@@ -956,8 +962,8 @@ def test_a_document_built_through_the_real_contract_path_serializes():
     draft = session_for_init.add.call_args.args[0]
 
     columns = [
-        MagicMock(column_name="id", general_type="N", functional_data_type="ID", column_type="integer"),
-        MagicMock(column_name="order_date", general_type="D", functional_data_type=None, column_type="date"),
+        MagicMock(column_name="id", functional_data_type="ID", db_data_type="integer", logical_type="integer"),
+        MagicMock(column_name="order_date", functional_data_type=None, db_data_type="date", logical_type="date"),
     ]
     with (
         patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
@@ -987,11 +993,31 @@ def test_generation_runs_only_after_the_draft_is_committed():
     with (
         patch("testgen.common.contract_service.get_current_session", return_value=session),
         patch("testgen.common.contract_service.run_test_generation", side_effect=lambda *_args, **_kwargs: calls.append("generate")),
+        patch(
+            "testgen.common.contract_service.run_conformance_generation",
+            side_effect=lambda *_args, **_kwargs: calls.append("reconcile"),
+        ),
         patch.object(TestDefinition, "assign_missing_term_ids"),
     ):
         contract_service._generate_for_tables(suite, ["orders"], uuid4())
 
     assert calls.index("commit") < calls.index("generate")
+    assert calls.index("commit") < calls.index("reconcile")
+
+
+def test_generating_for_some_tables_reconciles_conformance_across_the_whole_draft():
+    """A table filter narrows set-based generation, but the reconciliation must also drop the
+    conformance tests of tables the draft no longer declares, so it is never narrowed."""
+    suite = _suite()
+    with (
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+        patch("testgen.common.contract_service.run_test_generation"),
+        patch("testgen.common.contract_service.run_conformance_generation") as reconcile,
+        patch.object(TestDefinition, "assign_missing_term_ids"),
+    ):
+        contract_service._generate_for_tables(suite, ["orders"], uuid4())
+
+    reconcile.assert_called_once_with(suite.id)
 
 
 def test_generated_terms_are_stamped_with_a_term_identity():

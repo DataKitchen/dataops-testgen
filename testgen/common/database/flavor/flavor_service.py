@@ -168,6 +168,10 @@ class FlavorService:
     supports_approx_percentile = False
     approx_percentile_probe: str | None = None
 
+    # Catalog column types (lowercase) of general type X that the engine compares for equality, so
+    # profiling counts their distinct values directly rather than over a text form
+    distinct_countable_x_types: frozenset[str] = frozenset()
+
     def qualifies_table_refs_with_schema(self, sql_flavor_code: str) -> bool:  # noqa: ARG002
         """Whether generated SQL names a table as ``schema.table`` rather than ``table``.
 

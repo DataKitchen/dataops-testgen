@@ -406,6 +406,31 @@ def test_schema_discovery_classifies_every_duckdb_type(typed_database):
     assert not misread, f"classified against the general_type in the column name: {misread}"
 
 
+def _expected_logical_type(name: str) -> str | None:
+    """The ODCS logical type each TYPED_COLUMNS entry must report."""
+    exceptions = {
+        "n_decimal": "number", "n_numeric": "number", "n_float": "number", "n_float4": "number",
+        "n_real": "number", "n_double": "number", "n_float8": "number",
+        "d_date": "date",
+        "x_blob": "string", "x_binary": "string", "x_uuid": "string",
+        "x_json": "object", "x_struct": "object", "x_struct_enum": "object",
+        "x_list_varchar": "array", "x_list_decimal": "array", "x_array_fixed": "array",
+        "x_map": "map",
+    }
+    by_prefix = {"a": "string", "n": "integer", "d": "timestamp", "t": "time", "b": "boolean", "x": None}
+    return exceptions.get(name, by_prefix[name[0]])
+
+
+def test_schema_discovery_reports_the_odcs_logical_type_of_every_duckdb_type(typed_database):
+    rows = read_schema_ddf(typed_database)
+    misread = {
+        name: (rows[("everything", name)]["db_data_type"], rows[("everything", name)]["logical_type"])
+        for name, _ in TYPED_COLUMNS
+        if rows[("everything", name)]["logical_type"] != _expected_logical_type(name)
+    }
+    assert not misread, f"reported a logical type other than expected: {misread}"
+
+
 def test_schema_discovery_reports_only_the_attached_database(typed_database):
     """information_schema spans every attached database, and a temp table shares the default
     schema name, so a same-named table elsewhere would be reported as the customer's."""

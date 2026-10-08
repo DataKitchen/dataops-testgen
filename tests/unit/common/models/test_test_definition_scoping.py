@@ -40,6 +40,10 @@ EXEMPT_METHODS = {
     "assert_version_writable": "a guard — its own predicate is covered by test_contract_write_guard.py",
     "copy": "a write — version stamping is covered by test_test_definition_version_stamping.py",
     "move": "a write — version stamping is covered by test_test_definition_version_stamping.py",
+    "delete_where": (
+        "a write — deletes exactly the rows its caller's clauses select, by ids from a scoped read "
+        "or with version_clause(); its managed-type refusal is covered by test_managed_test_definitions.py"
+    ),
     "save": "a write — version stamping is covered by test_test_definition_version_stamping.py",
     "set_status_attribute": "a write — its version predicate is covered by test_raw_sql_version_scoping.py",
     "editable_fields": "derives a field list from the test type; issues no statement",

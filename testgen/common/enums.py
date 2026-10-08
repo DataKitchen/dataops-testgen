@@ -339,6 +339,21 @@ class OdcsDimension(StrEnum):
     UNIQUENESS = "uniqueness"
 
 
+class OdcsLogicalType(StrEnum):
+    """The ``SchemaBaseProperty.logicalType`` enum from the pinned ODCS JSON schema."""
+    STRING = "string"
+    DATE = "date"
+    TIMESTAMP = "timestamp"
+    TIME = "time"
+    NUMBER = "number"
+    INTEGER = "integer"
+    OBJECT = "object"
+    ARRAY = "array"
+    BOOLEAN = "boolean"
+    MAP = "map"
+    VECTOR = "vector"
+
+
 class SuiteType(StrEnum):
     """``test_suites.suite_type`` values — what kind of suite a test suite is.
 
