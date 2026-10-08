@@ -5,6 +5,7 @@ from uuid import uuid4
 from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
 from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.database.database_service import (
+    cache_target_tables,
     execute_db_queries,
     fetch_dict_from_db,
     fetch_from_db_threaded,
@@ -45,6 +46,9 @@ def run_data_chars_refresh(
     if data_chars:
         distinct_tables = {column.table_name for column in data_chars}
         LOG.info(f"Tables: {len(distinct_tables)}, Columns: {len(data_chars)}")
+        if sql_generator.flavor_service.caches_tables(connection.sql_flavor_code):
+            # Ahead of the row counts, so that they and every later query read the local copies.
+            cache_target_tables(distinct_tables)
         count_queries = sql_generator.get_row_counts(distinct_tables)
 
         LOG.info("Getting row counts for table group")
