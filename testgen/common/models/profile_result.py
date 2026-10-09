@@ -394,6 +394,25 @@ class ProfileResult(Entity):
         return list(cls.select_where(*clauses))
 
     @classmethod
+    def list_column_errors_for_run(
+        cls,
+        profile_run_id: UUID,
+        *clauses,
+        limit: int,
+    ) -> "tuple[list[ColumnErrorRow], int]":
+        """The first ``limit`` columns of a profiling run whose profiling query failed, and how many
+        there are in all, ordered by schema, table and column position.
+
+        Extra ``*clauses`` are AND'd into the WHERE and refer to ``ProfileResult`` columns.
+        """
+        query = (
+            select(cls.schema_name, cls.table_name, cls.column_name, cls.query_error)
+            .where(cls.profile_run_id == profile_run_id, cls.query_error.isnot(None), *clauses)
+            .order_by(asc(cls.schema_name), asc(cls.table_name), asc(cls.position), asc(cls.column_name))
+        )
+        return cls._paginate(query, page=1, limit=limit, data_class=ColumnErrorRow)
+
+    @classmethod
     def list_columns_for_run(
         cls,
         profile_run_id: UUID,
@@ -530,3 +549,13 @@ class ColumnProfileRow:
     high: int
     moderate: int
     dismissed: int
+
+
+@dataclass
+class ColumnErrorRow:
+    """One row from :meth:`ProfileResult.list_column_errors_for_run`."""
+
+    schema_name: str
+    table_name: str
+    column_name: str
+    query_error: str

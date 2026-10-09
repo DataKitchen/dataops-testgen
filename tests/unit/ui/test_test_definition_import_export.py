@@ -191,6 +191,21 @@ def test_preview_resolves_file_rows_to_readable_labels():
     assert row["action"] == "Create"
 
 
+def test_preview_names_a_table_missing_from_the_catalog():
+    item = MagicMock(action=ImportAction.skip, reason=ImportReason.invalid_table)
+    item.tds = [MagicMock(idx=0, target_id=None)]
+    response = MagicMock(summary=_summary(skipped=1), items=[item])
+
+    with (
+        patch("testgen.ui.views.test_definitions.import_definitions", return_value=response),
+        patch("testgen.ui.views.test_definitions.run_test_type_lookup_query") as lookup,
+    ):
+        lookup.return_value.to_dict.return_value = []
+        result = _build_import_preview(_encode(_payload()), _policy(), MagicMock())
+
+    assert result["preview_rows"][0]["reason"] == "Table not in the data catalog"
+
+
 def test_preview_leads_with_the_rows_that_need_attention():
     """A skip is the row that silently will not import. Sorted among many routine updates
     it lands off the bottom of a scrolling table, so ordering is by actionability."""

@@ -181,7 +181,7 @@ def test_connection(
     # No-op for stored connections; keeps the inline-test contract identical to create.
     apply_connection_defaults(connection)
 
-    errors = validate_connection_fields(connection)
+    errors = validate_connection_fields(connection, require_name=False)
     if errors:
         raise_validation_error(errors, "Cannot test connection. Required fields missing or invalid.")
 

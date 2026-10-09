@@ -215,12 +215,8 @@ def test_test_connection_rejected_override_keeps_stored_values(mock_resolve, moc
 
 
 @patch(f"{MODULE}.test_connection_status", return_value=ConnectionStatus(message="The connection was successful.", successful=True))
-@patch(f"{MODULE}.Connection")
-def test_test_connection_inline_only(mock_conn_cls, mock_runner, db_session_mock):
-    """No connection_id supplied → builds an inline Connection from args."""
-    inline_conn = _mock_connection()
-    mock_conn_cls.return_value = inline_conn
-
+def test_test_connection_inline_only(mock_runner, db_session_mock):
+    """Inline settings build an unnamed Connection, which passes validation and reaches the test."""
     from testgen.mcp.tools.connections import test_connection
 
     with _patch_perms():
@@ -240,15 +236,15 @@ def test_test_connection_inline_only(mock_conn_cls, mock_runner, db_session_mock
     assert "**ID:**" not in out
     assert "**Name:**" not in out
     mock_runner.assert_called_once()
+    tested = mock_runner.call_args.args[0]
+    assert isinstance(tested, Connection)
+    assert tested.connection_name is None
+    assert tested.project_host == "localhost"
 
 
 @patch(f"{MODULE}.test_connection_status", return_value=ConnectionStatus(message="OK", successful=True))
-@patch(f"{MODULE}.Connection")
-def test_test_connection_inline_applies_defaults(mock_conn_cls, mock_runner, db_session_mock):
+def test_test_connection_inline_applies_defaults(mock_runner, db_session_mock):
     """Inline tests get the same flavor defaults as create."""
-    inline = _mock_connection(max_query_chars=None)
-    mock_conn_cls.return_value = inline
-
     from testgen.mcp.tools.connections import test_connection
 
     with _patch_perms():
@@ -257,7 +253,7 @@ def test_test_connection_inline_applies_defaults(mock_conn_cls, mock_runner, db_
             connection_params={"Host": "h", "Port": 5432, "Database": "d", "Username": "u", "Password": "p"},
         )
 
-    assert inline.max_query_chars == 20000
+    assert mock_runner.call_args.args[0].max_query_chars == 20000
 
 
 @patch(f"{MODULE}.test_connection_status")
