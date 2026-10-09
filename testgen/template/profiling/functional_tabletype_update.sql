@@ -1,3 +1,7 @@
+-- Every writer of a table group's catalog takes this lock first, so writers queue rather than
+-- deadlock on the order they lock catalog rows in.
+SELECT pg_advisory_xact_lock(hashtextextended(CAST(:TABLE_GROUPS_ID AS VARCHAR), 0));
+
 -- Source and target are both keyed on the run. stg_functional_table_updates carries no table
 -- group, and two table groups of one project over the same schema stage the same
 -- (project_code, schema_name, table_name), so the run id is what selects this run's rows.

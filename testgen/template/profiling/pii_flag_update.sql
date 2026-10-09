@@ -1,3 +1,7 @@
+-- Every writer of a table group's catalog takes this lock first, so writers queue rather than
+-- deadlock on the order they lock catalog rows in.
+SELECT pg_advisory_xact_lock(hashtextextended(CAST(:TABLE_GROUPS_ID AS VARCHAR), 0));
+
 -- Propagate pii_flag from profile_results to data_column_chars
 -- Clears existing flags first, then sets flags from the latest profiling run
 UPDATE data_column_chars

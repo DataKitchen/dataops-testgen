@@ -14,11 +14,13 @@ from sqlalchemy.exc import IntegrityError
 
 from testgen.common.database.table_group_service import (
     SchemaMoveRefused,
-    apply_schema_move,
     apply_table_group_flavor_rules,
+    catalog_membership,
     is_duplicate_name_error,
     move_table_group_schema,
+    update_catalog_for_edit,
     validate_table_group_fields,
+    write_table_group_catalog,
 )
 from testgen.common.database.table_group_service import (
     preview_table_group as preview_table_group_service,
@@ -518,7 +520,8 @@ def create_table_group(
         _maybe_raise_duplicate_name(err)
         raise
 
-    return _render_created_table_group(table_group, connection)
+    catalog_error = write_table_group_catalog(table_group, connection)
+    return _render_created_table_group(table_group, connection, catalog_error)
 
 
 @with_database_session
@@ -685,6 +688,7 @@ def update_table_group(
         raise MCPPermissionDenied(_PII_FLAG_DENIED_MESSAGE)
 
     before = _snapshot(table_group)
+    membership_before = catalog_membership(table_group)
     _apply_args_to_table_group(table_group, **{k: v for k, v in supplied.items() if k != "schema"})
 
     apply_table_group_flavor_rules(table_group, connection)
@@ -717,8 +721,8 @@ def update_table_group(
         _maybe_raise_duplicate_name(err)
         raise
 
+    catalog_error = update_catalog_for_edit(table_group, membership_before, move, connection)
     if move:
-        apply_schema_move(move, table_group.id)
         doc.field("Test definitions updated", str(move.definitions_repointed))
         if move.missing_tables:
             doc.text(
@@ -727,6 +731,11 @@ def update_table_group(
                 "the thresholds they learned: "
                 + ", ".join(f"`{name}`" for name in sorted(move.missing_tables))
             )
+    if catalog_error:
+        doc.text(
+            "The data catalog could not be read from the target, so it keeps the tables it had "
+            f"before this change until the table group is profiled or tested. {catalog_error}"
+        )
 
     return doc.render()
 
@@ -1053,7 +1062,9 @@ def _declaration_summary(declarations: list[dict[str, Any]] | None) -> str | Non
     return "; ".join(lines)
 
 
-def _render_created_table_group(table_group: TableGroup, connection: Connection) -> str:
+def _render_created_table_group(
+    table_group: TableGroup, connection: Connection, catalog_error: str | None
+) -> str:
     doc = MdDoc()
     doc.heading(1, f"Table Group `{table_group.table_groups_name}` created")
     doc.field("ID", str(table_group.id), code=True)
@@ -1101,5 +1112,11 @@ def _render_created_table_group(table_group: TableGroup, connection: Connection)
             value = getattr(table_group, attr, None)
             if value:
                 doc.field(_DIFF_LABELS[attr], value)
+
+    if catalog_error:
+        doc.text(
+            "The data catalog could not be read from the target, so it is empty until the table group "
+            f"is profiled or tested. {catalog_error}"
+        )
 
     return doc.render()

@@ -1,3 +1,7 @@
+-- Every writer of a table group's catalog takes this lock first, so writers queue rather than
+-- deadlock on the order they lock catalog rows in.
+SELECT pg_advisory_xact_lock(hashtextextended(CAST(:TABLE_GROUPS_ID AS VARCHAR), 0));
+
 -- Update table weights from functional_table_type on data_table_chars.
 -- Uses ILIKE so both cumulative-entity and window-entity match %entity.
 UPDATE data_table_chars dtc

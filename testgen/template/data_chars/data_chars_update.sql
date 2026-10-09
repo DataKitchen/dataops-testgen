@@ -1,3 +1,15 @@
+-- Every writer of a table group's catalog takes this lock first, so writers queue rather than
+-- deadlock on the order they lock catalog rows in.
+SELECT pg_advisory_xact_lock(hashtextextended(CAST(:TABLE_GROUPS_ID AS VARCHAR), 0));
+
+-- The statements below run in one transaction, so the catalog rows they insert stay invisible to
+-- autovacuum and the planner keeps estimating the catalog as it was before this refresh. On a first
+-- refresh of a large table group that estimate is near zero, and the anti-joins become nested loops
+-- that rescan staging once per catalog row: hours at 400k columns. ANALYZE would fix the estimate but
+-- needs table ownership, which the runtime user lacks when the schema has a separate admin user.
+-- A refresh that follows a large one before autovacuum has analyzed it sees the same stale estimate.
+SET LOCAL enable_nestloop = off;
+
 -- ==============================================================================
 -- |   Table Characteristics
 -- ==============================================================================
@@ -43,6 +55,7 @@ updated_records AS (
          AND n.table_name = d.table_name
       )
    WHERE data_table_chars.table_id = d.table_id
+      AND data_table_chars.table_groups_id = :TABLE_GROUPS_ID
    RETURNING data_table_chars.*, d.drop_date as old_drop_date
 )
 INSERT INTO data_structure_log (
@@ -145,6 +158,7 @@ deleted_records AS (
          AND d.table_name = n.table_name
       )
    WHERE data_table_chars.table_id = d.table_id
+      AND data_table_chars.table_groups_id = :TABLE_GROUPS_ID
       AND d.table_groups_id = :TABLE_GROUPS_ID
       AND d.drop_date IS NULL
       AND n.table_name IS NULL
@@ -205,8 +219,12 @@ update_chars AS (
          AND n.table_name = d.table_name
          AND n.column_name = d.column_name
       )
-   WHERE data_column_chars.table_id = d.table_id
-      AND data_column_chars.column_name = d.column_name
+   -- The target joins its alias by primary key, not by name columns: joined on names, the planner can
+   -- equate the target with staging on column_name only, and with staging estimated at one row it
+   -- hashes every catalog column against every staged one. The table group bound keeps the target
+   -- from scanning every table group's catalog.
+   WHERE data_column_chars.column_id = d.column_id
+      AND data_column_chars.table_groups_id = :TABLE_GROUPS_ID
    RETURNING data_column_chars.*, d.db_data_type as old_data_type, d.drop_date as old_drop_date, n.run_date as run_date
 )
 INSERT INTO data_structure_log (
@@ -344,8 +362,9 @@ deleted_records AS (
          AND d.table_name = n.table_name
          AND d.column_name = n.column_name
       )
-   WHERE data_column_chars.table_id = d.table_id
-      AND data_column_chars.column_name = d.column_name
+   -- Joined as in the update above.
+   WHERE data_column_chars.column_id = d.column_id
+      AND data_column_chars.table_groups_id = :TABLE_GROUPS_ID
       AND d.table_groups_id = :TABLE_GROUPS_ID
       AND d.drop_date IS NULL
       AND n.column_name IS NULL

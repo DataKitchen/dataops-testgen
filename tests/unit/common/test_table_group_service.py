@@ -13,10 +13,14 @@ from sqlalchemy.exc import IntegrityError
 
 from testgen.common.database.column_chars import ObjectType
 from testgen.common.database.table_group_service import (
+    SchemaMove,
     apply_table_group_flavor_rules,
+    catalog_membership,
     is_duplicate_name_error,
     preview_table_group,
+    update_catalog_for_edit,
     validate_table_group_fields,
+    write_table_group_catalog,
 )
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import SCHEMA_NAME_MAX_LENGTH, TableGroup, table_group_defaults
@@ -707,3 +711,115 @@ def test_each_file_table_reports_the_files_it_reads(mock_session, mock_sql_cls):
     assert preview["tables"]["claims"]["file_ct"] == 3
     # The columns saved from the preview carry it too, so the catalog written from it is complete.
     assert {(column.object_type, column.file_ct) for column in data_chars} == {(ObjectType.FILES, 3)}
+
+
+# --- write_table_group_catalog ---
+
+
+@patch(f"{MODULE}.make_save_data_chars")
+@patch(f"{MODULE}.get_current_session")
+@patch(f"{MODULE}.preview_table_group")
+def test_the_table_group_commits_before_the_target_is_read(mock_preview, mock_session, mock_make_save):
+    steps = MagicMock()
+    steps.attach_mock(mock_session.return_value.commit, "commit")
+    steps.attach_mock(mock_preview, "preview")
+    steps.attach_mock(mock_make_save.return_value, "write")
+    data_chars, sql_generator = [MagicMock()], MagicMock()
+    mock_preview.return_value = ({"success": True, "message": None}, data_chars, sql_generator)
+    table_group = _tg()
+
+    assert write_table_group_catalog(table_group, _conn()) is None
+
+    assert [name for name, *_ in steps.mock_calls] == ["commit", "preview", "write"]
+    mock_make_save.assert_called_once_with(data_chars, sql_generator)
+    mock_make_save.return_value.assert_called_once_with(table_group.id)
+
+
+@patch(f"{MODULE}.make_save_data_chars")
+@patch(f"{MODULE}.get_current_session")
+@patch(f"{MODULE}.preview_table_group")
+def test_an_unreadable_target_writes_nothing_and_says_why(mock_preview, _session, mock_make_save):
+    mock_preview.return_value = ({"success": False, "message": "connection refused"}, None, None)
+
+    assert write_table_group_catalog(_tg(), _conn()) == "connection refused"
+
+    mock_make_save.assert_not_called()
+
+
+@patch(f"{MODULE}.make_save_data_chars")
+@patch(f"{MODULE}.get_current_session")
+@patch(f"{MODULE}.preview_table_group")
+def test_a_scan_that_finds_no_tables_writes_nothing_and_says_why(mock_preview, _session, mock_make_save):
+    mock_preview.return_value = ({"success": False, "message": "No tables found"}, [], MagicMock())
+
+    assert write_table_group_catalog(_tg(), _conn()) == "No tables found"
+
+    mock_make_save.assert_not_called()
+
+
+@patch(f"{MODULE}.make_save_data_chars")
+@patch(f"{MODULE}.get_current_session")
+@patch(f"{MODULE}.preview_table_group")
+def test_a_failed_write_says_why(mock_preview, _session, mock_make_save):
+    mock_preview.return_value = ({"success": True, "message": None}, [MagicMock()], MagicMock())
+    mock_make_save.return_value.side_effect = RuntimeError("deadlock detected")
+
+    assert write_table_group_catalog(_tg(), _conn()) == "deadlock detected"
+
+
+# --- catalog_membership ---
+
+
+def test_an_empty_form_value_matches_the_null_it_replaces():
+    stored = TableGroup(table_group_schema="sales", profiling_table_set=None, file_declarations=None)
+    posted = TableGroup(table_group_schema="sales", profiling_table_set="", file_declarations=[])
+
+    assert catalog_membership(posted) == catalog_membership(stored)
+
+
+def test_a_changed_mask_changes_the_membership():
+    before = TableGroup(table_group_schema="sales", profiling_include_mask="%")
+    after = TableGroup(table_group_schema="sales", profiling_include_mask="order%")
+
+    assert catalog_membership(after) != catalog_membership(before)
+
+
+# --- update_catalog_for_edit ---
+
+
+@patch(f"{MODULE}.write_table_group_catalog")
+@patch(f"{MODULE}.apply_schema_move")
+def test_a_schema_move_writes_the_catalog_through_the_move(mock_apply, mock_write):
+    table_group = TableGroup(table_group_schema="staging", profiling_include_mask="order%")
+    membership_before = catalog_membership(TableGroup(table_group_schema="sales", profiling_include_mask="%"))
+    move = SchemaMove(previous_schema="sales", schema="staging", missing_tables=[], definitions_repointed=0)
+
+    assert update_catalog_for_edit(table_group, membership_before, move) is None
+
+    mock_apply.assert_called_once_with(move, table_group.id)
+    mock_write.assert_not_called()
+
+
+@patch(f"{MODULE}.write_table_group_catalog", return_value="connection refused")
+@patch(f"{MODULE}.apply_schema_move")
+def test_a_membership_change_rewrites_the_catalog_and_says_why_it_failed(mock_apply, mock_write):
+    table_group = TableGroup(table_group_schema="sales", profiling_include_mask="order%")
+    membership_before = catalog_membership(TableGroup(table_group_schema="sales", profiling_include_mask="%"))
+    connection = _conn()
+
+    assert update_catalog_for_edit(table_group, membership_before, None, connection) == "connection refused"
+
+    mock_write.assert_called_once_with(table_group, connection)
+    mock_apply.assert_not_called()
+
+
+@patch(f"{MODULE}.write_table_group_catalog")
+@patch(f"{MODULE}.apply_schema_move")
+def test_an_edit_that_keeps_the_tables_leaves_the_catalog(mock_apply, mock_write):
+    table_group = TableGroup(table_group_schema="sales", profiling_include_mask="%", description="Nightly load")
+    membership_before = catalog_membership(TableGroup(table_group_schema="sales", profiling_include_mask="%"))
+
+    assert update_catalog_for_edit(table_group, membership_before, None) is None
+
+    mock_write.assert_not_called()
+    mock_apply.assert_not_called()

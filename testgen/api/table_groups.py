@@ -15,6 +15,7 @@ from testgen.api.schemas import (
     CatalogTags,
     ErrorResponse,
     TableGroupCreate,
+    TableGroupCreateResponse,
     TableGroupItem,
     TableGroupListResponse,
     TableGroupResponse,
@@ -24,12 +25,14 @@ from testgen.api.schemas import (
 )
 from testgen.common.database.table_group_service import (
     SchemaMoveRefused,
-    apply_schema_move,
     apply_table_group_flavor_rules,
+    catalog_membership,
     is_duplicate_name_error,
     move_table_group_schema,
     schema_label_for_table_group,
+    update_catalog_for_edit,
     validate_table_group_fields,
+    write_table_group_catalog,
 )
 from testgen.common.flavors import declares_files, reports_table_group_schema
 from testgen.common.models import get_current_session
@@ -114,7 +117,7 @@ def get_table_group(table_group: TableGroup = resolve_table_group("view")):  # n
 
 @router.post(
     "/connections/{connection_id}/table-groups",
-    response_model=TableGroupResponse,
+    response_model=TableGroupCreateResponse,
     status_code=201,
     summary="Create a table group",
     responses={
@@ -128,11 +131,14 @@ def get_table_group(table_group: TableGroup = resolve_table_group("view")):  # n
 def create_table_group(
     connection: Connection = resolve_connection("edit"),  # noqa: B008
     body: TableGroupCreate = Body(...),  # noqa: B008
-) -> TableGroupResponse:
+) -> TableGroupCreateResponse:
     """Create a table group on a connection. It belongs to the connection's project.
 
     The response carries the new ``table_group_id``, which profiling, test generation
     and test runs take as input.
+
+    The table group's data catalog is read from the target before the response returns, so tests
+    can be imported into it right away. ``catalog_error`` says why when the target could not be read.
 
     A connection whose tables are files is not supported: its tables are declared
     file by file rather than found in a schema.
@@ -178,8 +184,9 @@ def create_table_group(
             ) from err
         raise
 
+    catalog_error = write_table_group_catalog(table_group, connection)
     get_current_session().refresh(table_group)
-    return _to_response(table_group)
+    return TableGroupCreateResponse(**_to_response(table_group).model_dump(), catalog_error=catalog_error)
 
 
 def _to_response(table_group: TableGroup) -> TableGroupResponse:
@@ -254,6 +261,7 @@ def update_table_group(
             f"{', '.join(nulled)} cannot be null. Omit a field to leave it unchanged.",
         )
 
+    membership_before = catalog_membership(table_group)
     move = None
     if body.schema_name is not None and body.schema_name != table_group.table_group_schema:
         try:
@@ -262,7 +270,9 @@ def update_table_group(
             raise api_error(
                 _REFUSAL_STATUS.get(refusal.reason, 422), refusal.reason, refusal.message
             ) from refusal
-        apply_schema_move(move, table_group.id)
+    # The request takes no table filter fields, so only a schema move can change the tables, and a
+    # move's catalog write logs a failure rather than returning it.
+    update_catalog_for_edit(table_group, membership_before, move)
 
     return TableGroupUpdateResponse(
         **_to_response(table_group).model_dump(),

@@ -1,15 +1,17 @@
 import logging
 import typing
 from collections.abc import Iterable
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
+from testgen.commands.run_catalog_refresh import submit_table_group_setup
 from testgen.common.database.table_group_service import (
     SchemaMoveRefused,
     apply_schema_move,
     apply_table_group_flavor_rules,
+    catalog_membership,
     move_table_group_schema,
     schema_label_for_table_group,
 )
@@ -355,7 +357,6 @@ class TableGroupsPage(Page):
                 setattr(table_group, key, value)
 
         table_group_preview = None
-        save_data_chars = None
 
         if is_table_group_used:
             table_group.table_group_schema = original_table_group_schema
@@ -377,7 +378,7 @@ class TableGroupsPage(Page):
         apply_table_group_flavor_rules(table_group, Connection.get(table_group.connection_id))
 
         if should_preview():
-            table_group_preview, save_data_chars = table_group_queries.get_table_group_preview(
+            table_group_preview = table_group_queries.get_table_group_preview(
                 table_group,
                 verify_table_access=should_verify_access(),
             )
@@ -394,11 +395,6 @@ class TableGroupsPage(Page):
             if is_table_group_verified():
                 try:
                     table_group.save(add_scorecard_definition)
-                    if save_data_chars:
-                        try:
-                            save_data_chars(table_group.id)
-                        except Exception:
-                            LOG.exception("Data characteristics refresh encountered errors")
 
                     standard_test_suite_data = get_standard_test_suite_data() or {}
                     if standard_test_suite_data.get("generate"):
@@ -438,6 +434,7 @@ class TableGroupsPage(Page):
                                 "predict_exclude_weekends": monitor_test_suite_data.get("predict_exclude_weekends"),
                                 "predict_holiday_codes": monitor_test_suite_data.get("predict_holiday_codes"),
                             },
+                            generate_monitors=False,
                         )
 
                     if standard_test_suite or monitor_test_suite:
@@ -445,20 +442,25 @@ class TableGroupsPage(Page):
                         table_group.monitor_test_suite_id = monitor_test_suite.id if monitor_test_suite else None
                         table_group.save()
 
-                    if should_run_profiling():
-                        run_profiling = True
-                        try:
-                            JobExecution.submit(
-                                job_key="run-profile",
-                                kwargs={"table_group_id": str(table_group.id)},
-                                source=JobSource.ui,
-                                project_code=table_group.project_code,
-                            )
+                    run_profiling = should_run_profiling()
+                    try:
+                        submit_table_group_setup(
+                            table_group,
+                            JobSource.ui,
+                            monitor_suite_id=monitor_test_suite.id if monitor_test_suite else None,
+                            run_profiling=run_profiling,
+                        )
+                    except Exception:
+                        success = False
+                        message = (
+                            "Profiling run encountered errors"
+                            if run_profiling
+                            else "Table group setup encountered errors"
+                        )
+                        LOG.exception(message)
+                    else:
+                        if run_profiling:
                             message = f"Profiling run started for table group {table_group.table_groups_name}."
-                        except Exception:
-                            success = False
-                            message = "Profiling run encountered errors"
-                            LOG.exception(message)
 
                 except IntegrityError as error:
                     get_current_session().rollback()
@@ -528,6 +530,7 @@ class TableGroupsPage(Page):
 
         table_group = get_table_group(table_group_id)
         original_schema = table_group.table_group_schema
+        membership_before = catalog_membership(table_group)
 
         edit_tg_data = get_edit_tg()
         can_view_pii = session.auth.user_has_permission("view_pii")
@@ -551,9 +554,8 @@ class TableGroupsPage(Page):
         apply_table_group_flavor_rules(table_group, Connection.get(table_group.connection_id))
 
         table_group_preview = None
-        save_data_chars = None
         if should_preview():
-            table_group_preview, save_data_chars = table_group_queries.get_table_group_preview(
+            table_group_preview = table_group_queries.get_table_group_preview(
                 table_group,
                 verify_table_access=should_verify_access(),
             )
@@ -580,15 +582,12 @@ class TableGroupsPage(Page):
                 except IntegrityError:
                     result = {"success": False, "message": "A Table Group with the same name already exists."}
                 else:
+                    if move or membership_before != catalog_membership(table_group):
+                        submit_table_group_setup(table_group, JobSource.ui)
                     if move:
-                        # The move probed the schema it is moving to, so its catalog write is the
-                        # one that describes where the table group now reads.
-                        apply_schema_move(move, table_group.id)
-                    elif save_data_chars:
-                        try:
-                            save_data_chars(table_group.id)
-                        except Exception:
-                            LOG.exception("Data characteristics refresh encountered errors")
+                        # The job refreshes the catalog after the move commits, reading the schema
+                        # the move set, so the move's own refresh is skipped.
+                        apply_schema_move(replace(move, refresh_catalog=None), table_group.id)
                     st.toast(f"Table group '{table_group.table_groups_name}' saved.", icon=":material/check:")
                     for key in ["tg_wizard_mode", "tg_wizard_table_group_id"]:
                         st.session_state.pop(key, None)

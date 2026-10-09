@@ -132,13 +132,16 @@ def enable_monitoring(
     *,
     suite_attrs: dict[str, Any] | None = None,
     active: bool = True,
+    generate_monitors: bool = True,
 ) -> tuple[TestSuite, int]:
     """Bootstrap monitoring for a table group.
 
     Creates the monitor test suite, generates the initial monitors, creates the
     run-monitors schedule, and links the suite to the table group.
 
-    ``suite_attrs`` overrides the default monitor configuration.
+    ``suite_attrs`` overrides the default monitor configuration. With
+    ``generate_monitors=False`` the suite, schedule and link are created with no
+    monitors, and the returned count is 0.
 
     The initial monitors are generated in the caller's session, so nothing is committed
     here and the whole bootstrap rolls back with it.
@@ -173,6 +176,9 @@ def enable_monitoring(
         update(TableGroup).where(TableGroup.id == table_group.id).values(monitor_test_suite_id=monitor_suite.id)
     )
     table_group.monitor_test_suite_id = monitor_suite.id
+
+    if not generate_monitors:
+        return monitor_suite, 0
 
     run_monitor_generation(monitor_suite.id, INITIAL_MONITOR_TYPES, in_session=True)
 

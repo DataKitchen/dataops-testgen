@@ -385,19 +385,6 @@ def get_columns_by_condition(
         ) AS has_test_runs,
     """ if include_has_test_runs else ""
 
-    active_tests_select = f"""
-        -- Test Definition Count
-        (
-            SELECT COUNT(*)
-            FROM test_definitions
-            WHERE table_groups_id = column_chars.table_groups_id
-                AND table_name = column_chars.table_name
-                AND column_name = column_chars.column_name
-                AND test_active = 'Y'
-                AND version_id = {SuiteVersion.resolved_for_sql("test_definitions.test_suite_id")}
-        ) AS active_test_count,
-    """ if include_active_tests else ""
-
     scores_select = """
         -- Scores
         column_chars.dq_score_profiling,
@@ -428,7 +415,6 @@ def get_columns_by_condition(
         TRUE AS is_latest_profile,
         query_error AS profiling_error,
         {has_test_runs_select}
-        {active_tests_select}
         {scores_select}
         table_chars.approx_record_ct,
         table_groups.project_code,
@@ -449,8 +435,34 @@ def get_columns_by_condition(
     {filter_condition}
     ORDER BY LOWER(column_chars.table_name), ordinal_position;
     """
-    results = fetch_all_from_db(query, filter_params)
-    return [ dict(row) for row in results ]
+    columns = [ dict(row) for row in fetch_all_from_db(query, filter_params) ]
+
+    if include_active_tests:
+        # Counted apart and merged here: joined into the query above, the planner underestimates
+        # the counts and compares every column with every one of them.
+        counts_query = f"""
+        SELECT table_groups_id::VARCHAR AS table_group_id, table_name, column_name, COUNT(*) AS count
+        FROM test_definitions
+        WHERE test_active = 'Y'
+            AND column_name IS NOT NULL
+            AND version_id = {SuiteVersion.resolved_for_sql("test_definitions.test_suite_id")}
+            AND table_groups_id IN (
+                SELECT column_chars.table_groups_id
+                FROM data_column_chars column_chars
+                {filter_condition}
+            )
+        GROUP BY table_groups_id, table_name, column_name
+        """
+        counts = {
+            (row["table_group_id"], row["table_name"], row["column_name"]): row["count"]
+            for row in fetch_all_from_db(counts_query, filter_params)
+        }
+        for column in columns:
+            column["active_test_count"] = counts.get(
+                (column["table_group_id"], column["table_name"], column["column_name"]), 0
+            )
+
+    return columns
 
 
 @st.cache_data(show_spinner=False)

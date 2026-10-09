@@ -6,14 +6,11 @@ This module wraps the service in ``@st.cache_data`` for the Streamlit pages.
 """
 
 import json
-from collections.abc import Callable
-from uuid import UUID
 
 import streamlit as st
 
 from testgen.common.database.table_group_service import (
     TableGroupPreview,
-    make_save_data_chars,
     preview_table_group,
 )
 from testgen.common.models.connection import Connection
@@ -25,12 +22,8 @@ def get_table_group_preview(
     table_group: TableGroup,
     connection: Connection | None = None,
     verify_table_access: bool = False,
-) -> tuple[TableGroupPreview, Callable[[UUID], None] | None]:
+) -> TableGroupPreview:
     """Streamlit-cached wrapper around ``preview_table_group``.
-
-    The service returns ``(preview, data_chars, sql_generator)`` — all picklable —
-    so the cache can store the result. The ``save_data_chars`` closure is built
-    here, outside the cached function, because local closures can't be pickled.
 
     When the caller does not supply a ``Connection`` and the table group has a
     ``connection_id``, the connection is resolved via the Streamlit cache so
@@ -40,18 +33,9 @@ def get_table_group_preview(
         connection = get_connection(table_group.connection_id)
 
     if verify_table_access:
-        preview, data_chars, sql_generator = preview_table_group(
-            table_group, connection=connection, verify_access=True,
-        )
-    else:
-        preview, data_chars, sql_generator = _cached_preview(table_group, connection)
-
-    save = (
-        make_save_data_chars(data_chars, sql_generator)
-        if data_chars is not None and sql_generator is not None
-        else None
-    )
-    return preview, save
+        preview, _, _ = preview_table_group(table_group, connection=connection, verify_access=True)
+        return preview
+    return _cached_preview(table_group, connection)
 
 
 def reset_table_group_preview() -> None:
@@ -80,4 +64,6 @@ def preview_cache_key(table_group: TableGroup) -> tuple:
     },
 )
 def _cached_preview(table_group, connection):
-    return preview_table_group(table_group, connection=connection, verify_access=False)
+    # Only the preview is cached: the column list can run to hundreds of thousands of entries.
+    preview, _, _ = preview_table_group(table_group, connection=connection, verify_access=False)
+    return preview
