@@ -56,6 +56,7 @@ def mcp_user():
     set_mcp_token("test_bearer_token")
     user = MagicMock()
     user.id = uuid4()
+    user.name = None
 
     membership = MagicMock()
     membership.project_code = "demo"
