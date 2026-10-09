@@ -28,6 +28,7 @@ test_types:
   default_severity: Warning
   run_type: CAT
   test_scope: column
+  column_general_types: [N]
   dq_dimension: Accuracy
   impact_dimension: Regularity
   health_dimension: Data Drift
@@ -80,7 +81,7 @@ test_types:
     test_type: Variability_Increase
     sql_flavor: postgresql
     measure: |-
-      100.0*STDDEV({COLUMN_NAME}::FLOAT)/{BASELINE_SD}::FLOAT
+      100.0*STDDEV({COLUMN_NUM}::FLOAT)/{BASELINE_SD}::FLOAT
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -172,7 +173,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT STDDEV(CAST({COLUMN_NUM} AS FLOAT)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
     error_type: Test Results
   - id: '1031'
     test_id: '1040'

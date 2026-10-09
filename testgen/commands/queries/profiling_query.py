@@ -99,6 +99,9 @@ class ProfilingSQL:
                 "COL_VALUE": self.flavor_service.text_value(
                     f"{quote}{column_chars.column_name}{quote}", column_chars.column_type
                 ),
+                "COL_NUM": self.flavor_service.numeric_value(
+                    f"{quote}{column_chars.column_name}{quote}", column_chars.column_type
+                ),
             })
         if table_sampling:
             params.update({
@@ -214,7 +217,13 @@ class ProfilingSQL:
         # samples: approximately where the target has the function, exactly otherwise.
         general_type = column_chars.general_type
         do_sample = bool(table_sampling)
-        x_countable = (column_chars.column_type or "").lower() in self.flavor_service.distinct_countable_x_types
+        column_type = (column_chars.column_type or "").lower()
+        x_countable = column_type in self.flavor_service.distinct_countable_x_types
+        exact_sum = (
+            general_type == "N"
+            and (column_chars.logical_type == "integer" or bool(column_chars.is_decimal))
+            and column_type not in self.flavor_service.exact_sum_excluded_types
+        )
 
         extra_params = {
             "TABLE_HINT": self.flavor_service.table_hint(self.connection.sql_flavor_code),
@@ -233,6 +242,7 @@ class ProfilingSQL:
             "is_A_sampling": general_type == "A" and do_sample,
             "is_A_no_sampling": general_type == "A" and not do_sample,
             "is_N_decimal": general_type == "N" and column_chars.is_decimal,
+            "is_N_exact_sum": exact_sum,
             "is_N_approx_pctile": general_type == "N" and use_approx_percentile,
             "is_N_exact_pctile": general_type == "N" and not use_approx_percentile,
         }

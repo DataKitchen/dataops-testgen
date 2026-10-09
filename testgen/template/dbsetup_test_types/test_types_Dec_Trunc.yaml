@@ -28,6 +28,7 @@ test_types:
   default_severity: Fail
   run_type: CAT
   test_scope: column
+  column_general_types: [N]
   dq_dimension: Validity
   impact_dimension: Conformance
   health_dimension: Schema Drift
@@ -71,7 +72,7 @@ test_types:
     test_type: Dec_Trunc
     sql_flavor: postgresql
     measure: |-
-      SUM(ROUND(ABS(({COLUMN_NAME} % 1)), 5))+1
+      SUM(ROUND(ABS(({COLUMN_NUM} % 1)), 5))+1
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -170,7 +171,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT LENGTH(SPLIT_PART("{COLUMN_NAME}" :: TEXT, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY decimal_scale LIMIT {LIMIT};
+      SELECT DISTINCT LENGTH(SPLIT_PART({COLUMN_NUM} :: TEXT, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY decimal_scale LIMIT {LIMIT};
     error_type: Test Results
   - id: '1006'
     test_id: '1011'

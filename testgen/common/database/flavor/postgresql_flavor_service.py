@@ -21,6 +21,12 @@ class PostgresqlFlavorService(RedshiftFlavorService):
         # TABLESAMPLE applies only to tables and materialized views.
         return frozenset({ObjectType.TABLE, ObjectType.MATERIALIZED_VIEW})
 
+    def numeric_value(self, column_ref: str, column_type: str | None) -> str:
+        # money compares only with money and has no modulo or cast to float
+        if column_type and column_type.lower() == "money":
+            return f"{column_ref}::NUMERIC"
+        return column_ref
+
     def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
         if params.host.startswith("/"):
             # Unix socket path — use query-param format for psycopg2
