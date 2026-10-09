@@ -4,6 +4,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from testgen import settings
+from testgen.common.models.oauth import OAuth2ClientAuthMethod
 
 router = APIRouter(tags=["OAuth"])
 
@@ -28,10 +29,7 @@ def authorization_server_metadata():
             "authorization_code",
             "refresh_token",
         ],
-        "token_endpoint_auth_methods_supported": [
-            "client_secret_basic",
-            "client_secret_post",
-            "none",
-        ],
+        "token_endpoint_auth_methods_supported": [method.value for method in OAuth2ClientAuthMethod],
+        "revocation_endpoint_auth_methods_supported": [method.value for method in OAuth2ClientAuthMethod],
         "code_challenge_methods_supported": ["S256"],
     })

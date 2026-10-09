@@ -803,7 +803,8 @@ CREATE TABLE oauth2_tokens (
     access_token_revoked_at  INTEGER NOT NULL DEFAULT 0,
     refresh_token_revoked_at INTEGER NOT NULL DEFAULT 0,
     expires_in      INTEGER NOT NULL DEFAULT 0,
-    name            VARCHAR(255)
+    name            VARCHAR(255),
+    refresh_token_chain_issued_at INTEGER
 );
 CREATE INDEX idx_oauth2_tokens_refresh_token ON oauth2_tokens(refresh_token);
 

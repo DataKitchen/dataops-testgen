@@ -12,6 +12,8 @@ import time
 from typing import ClassVar
 
 from authlib.oauth2.rfc6749 import AuthorizationServer, JsonRequest, OAuth2Request, grants
+from authlib.oauth2.rfc6749.authenticate_client import authenticate_none
+from authlib.oauth2.rfc6749.errors import InvalidRequestError
 from authlib.oauth2.rfc7009 import RevocationEndpoint
 from authlib.oauth2.rfc7636 import CodeChallenge
 from sqlalchemy import select
@@ -19,12 +21,30 @@ from sqlalchemy import select
 from testgen import settings
 from testgen.common.auth import create_jwt_token
 from testgen.common.models import get_current_session
-from testgen.common.models.oauth import OAuth2AuthorizationCode, OAuth2Client, OAuth2Token
+from testgen.common.models.oauth import OAuth2AuthorizationCode, OAuth2Client, OAuth2ClientAuthMethod, OAuth2Token
 from testgen.common.models.user import User
+
+CLIENT_AUTH_METHODS = [method.value for method in OAuth2ClientAuthMethod]
+
+
+class S256CodeChallenge(CodeChallenge):
+    DEFAULT_CODE_CHALLENGE_METHOD = "S256"
+    SUPPORTED_CODE_CHALLENGE_METHOD: ClassVar[list[str]] = ["S256"]
+
+    def validate_code_challenge(self, grant, redirect_uri):
+        # Authlib makes PKCE optional for confidential clients and lets an empty method through,
+        # which stores a method the token endpoint cannot verify.
+        data = grant.request.payload.data
+        if not data.get("code_challenge"):
+            raise InvalidRequestError("Missing 'code_challenge'")
+        method = data.get("code_challenge_method")
+        if method is not None and method not in self.SUPPORTED_CODE_CHALLENGE_METHOD:
+            raise InvalidRequestError("Unsupported 'code_challenge_method'")
+        super().validate_code_challenge(grant, redirect_uri)
 
 
 class AuthorizationCodeGrant(grants.AuthorizationCodeGrant):
-    TOKEN_ENDPOINT_AUTH_METHODS: ClassVar[list[str]] = ["client_secret_basic", "client_secret_post", "none"]
+    TOKEN_ENDPOINT_AUTH_METHODS: ClassVar[list[str]] = CLIENT_AUTH_METHODS
 
     def save_authorization_code(self, code, request):
         auth_code = OAuth2AuthorizationCode(
@@ -62,7 +82,22 @@ class AuthorizationCodeGrant(grants.AuthorizationCodeGrant):
 
 
 class RefreshTokenGrant(grants.RefreshTokenGrant):
-    INCLUDE_NEW_REFRESH_TOKEN = False
+    """Refresh token grant. Public clients get a rotated refresh token on every refresh;
+    confidential clients keep reusing theirs until it expires.
+    """
+
+    TOKEN_ENDPOINT_AUTH_METHODS: ClassVar[list[str]] = CLIENT_AUTH_METHODS
+
+    def _rotates_refresh_token(self) -> bool:
+        return self.request.client.token_endpoint_auth_method == OAuth2ClientAuthMethod.NONE
+
+    def issue_token(self, user, refresh_token):
+        scope = self.request.payload.scope or refresh_token.get_scope()
+        return self.generate_token(
+            user=user,
+            scope=scope,
+            include_refresh_token=self._rotates_refresh_token(),
+        )
 
     def authenticate_refresh_token(self, refresh_token):
         session = get_current_session()
@@ -78,12 +113,15 @@ class RefreshTokenGrant(grants.RefreshTokenGrant):
         return session.scalars(select(User).where(User.id == credential.user_id)).first()
 
     def revoke_old_credential(self, credential):
-        # Rotation is off (INCLUDE_NEW_REFRESH_TOKEN=False): keep the refresh token
-        # live so clients can reuse it until its independent expiry.
-        credential.access_token_revoked_at = int(time.time())
+        now = int(time.time())
+        credential.access_token_revoked_at = now
+        if self._rotates_refresh_token():
+            credential.refresh_token_revoked_at = now
 
 
 class TestGenRevocationEndpoint(RevocationEndpoint):
+    CLIENT_AUTH_METHODS: ClassVar[list[str]] = CLIENT_AUTH_METHODS
+
     def query_token(self, token_string, token_type_hint):
         session = get_current_session()
         if token_type_hint == "access_token":  # noqa: S105
@@ -119,6 +157,8 @@ class TestGenAuthorizationServer(AuthorizationServer):
             user_id=user_id,
             **token,
         )
+        if token.get("refresh_token") and isinstance(request.refresh_token, OAuth2Token):
+            item.refresh_token_chain_issued_at = request.refresh_token.refresh_chain_issued_at
         session = get_current_session()
         session.add(item)
 
@@ -133,6 +173,17 @@ class TestGenAuthorizationServer(AuthorizationServer):
 
     def send_signal(self, name, *args, **kwargs):
         pass
+
+
+def _authenticate_none(query_client, request):
+    """Authenticate a public client by client_id, unless the request also carries HTTP Basic credentials.
+
+    A client presenting HTTP Basic credentials is authenticating with a secret, and a failed secret
+    must not fall through to client_id-only authentication.
+    """
+    if request.headers.get("Authorization", "").lower().startswith("basic "):
+        return None
+    return authenticate_none(query_client, request)
 
 
 def _generate_bearer_token(
@@ -162,7 +213,8 @@ def _generate_bearer_token(
 def create_authorization_server() -> TestGenAuthorizationServer:
     """Create and configure the authorization server with all grant types."""
     server = TestGenAuthorizationServer()
-    server.register_grant(AuthorizationCodeGrant, [CodeChallenge(required=True)])
+    server.register_client_auth_method(OAuth2ClientAuthMethod.NONE, _authenticate_none)
+    server.register_grant(AuthorizationCodeGrant, [S256CodeChallenge(required=True)])
     server.register_grant(RefreshTokenGrant)
     server.register_endpoint(TestGenRevocationEndpoint)
     server.register_token_generator("default", _generate_bearer_token)

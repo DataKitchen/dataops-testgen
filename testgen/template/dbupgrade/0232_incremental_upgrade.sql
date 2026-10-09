@@ -1,0 +1,3 @@
+SET SEARCH_PATH TO {SCHEMA_NAME};
+
+ALTER TABLE oauth2_tokens ADD COLUMN IF NOT EXISTS refresh_token_chain_issued_at INTEGER;

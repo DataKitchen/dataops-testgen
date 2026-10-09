@@ -24,7 +24,7 @@ from testgen.api.oauth.login import render_login_page
 from testgen.api.oauth.server import TestGenAuthorizationServer
 from testgen.common.auth import create_jwt_token, decode_jwt_token, verify_password
 from testgen.common.models import get_current_session
-from testgen.common.models.oauth import OAuth2Client
+from testgen.common.models.oauth import OAuth2Client, OAuth2ClientAuthMethod
 from testgen.common.models.user import User
 
 LOG = logging.getLogger("testgen")
@@ -249,11 +249,26 @@ def revoke(request: Request, body: dict = Depends(_form_body)):  # noqa: B008
 def register_client(body: dict = Depends(_json_body)):  # noqa: B008
     """Dynamic client registration (RFC 7591).
 
-    Accepts JSON body with optional client_name, redirect_uris, grant_types, scope.
-    Returns client_id and client_secret for the registered client.
+    Accepts JSON body with optional client_name, redirect_uris, grant_types, scope and
+    token_endpoint_auth_method (client_secret_basic, client_secret_post or none; defaults to
+    client_secret_basic). Returns the client_id, plus a client_secret unless the method is none.
     """
+    requested_method = body.get("token_endpoint_auth_method", OAuth2ClientAuthMethod.CLIENT_SECRET_BASIC)
+    try:
+        auth_method = OAuth2ClientAuthMethod(requested_method)
+    except ValueError:
+        supported = ", ".join(OAuth2ClientAuthMethod)
+        return JSONResponse(
+            content={
+                "error": "invalid_client_metadata",
+                "error_description": f"Unsupported token_endpoint_auth_method. Supported methods: {supported}.",
+            },
+            status_code=400,
+        )
+
     client_id = uuid4().hex[:24]
-    client_secret = secrets.token_urlsafe(32)
+    is_public = auth_method == OAuth2ClientAuthMethod.NONE
+    client_secret = None if is_public else secrets.token_urlsafe(32)
 
     metadata = {
         "client_name": body.get("client_name", ""),
@@ -261,7 +276,7 @@ def register_client(body: dict = Depends(_json_body)):  # noqa: B008
         "redirect_uris": body.get("redirect_uris", []),
         "response_types": ["code"],
         "scope": body.get("scope", ""),
-        "token_endpoint_auth_method": "client_secret_basic",
+        "token_endpoint_auth_method": auth_method.value,
     }
 
     client = OAuth2Client(
@@ -274,13 +289,8 @@ def register_client(body: dict = Depends(_json_body)):  # noqa: B008
     session = get_current_session()
     session.add(client)
 
-    return JSONResponse(
-        content={
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "client_id_issued_at": client.client_id_issued_at,
-            "client_secret_expires_at": 0,
-            **client.client_metadata,
-        },
-        status_code=201,
-    )
+    content = {"client_id": client_id, "client_id_issued_at": client.client_id_issued_at}
+    if not is_public:
+        content["client_secret"] = client_secret
+        content["client_secret_expires_at"] = 0
+    return JSONResponse(content={**content, **client.client_metadata}, status_code=201)
