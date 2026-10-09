@@ -78,3 +78,25 @@ def test_count_tables_none_returns_zero(session_mock):
     result = DataTable.count_tables(table_groups_id=uuid4())
 
     assert result == 0
+
+
+def _compiled(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect()))
+
+
+@patch("testgen.common.models.data_table.get_current_session")
+def test_select_table_names_leaves_out_dropped_tables(session_mock):
+    session_mock.return_value.scalars.return_value.all.return_value = []
+
+    DataTable.select_table_names(table_groups_id=uuid4())
+
+    assert "data_table_chars.drop_date IS NULL" in _compiled(session_mock.return_value.scalars.call_args[0][0])
+
+
+@patch("testgen.common.models.data_table.get_current_session")
+def test_count_tables_leaves_out_dropped_tables(session_mock):
+    session_mock.return_value.scalar.return_value = 0
+
+    DataTable.count_tables(table_groups_id=uuid4())
+
+    assert "data_table_chars.drop_date IS NULL" in _compiled(session_mock.return_value.scalar.call_args[0][0])

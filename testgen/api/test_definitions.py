@@ -8,6 +8,7 @@ from testgen.api.schemas import (
     ErrorResponse,
     ImportRequest,
     ImportStrictError,
+    ImportStrictErrorBody,
 )
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.test_definition_export_import_service import (
@@ -70,7 +71,7 @@ def import_test_definitions(
     except ImportStrictViolation as err:
         raise HTTPException(
             status_code=400,
-            detail=ImportStrictError(
+            detail=ImportStrictErrorBody(
                 errors=[ErrorDetail(code="strict_validation_failed", detail=str(err))],
                 import_result=err.result,
             ).model_dump(mode="json"),

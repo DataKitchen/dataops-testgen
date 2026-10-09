@@ -199,6 +199,7 @@ const TestSuites = (/** @type Properties */ props) => {
                         ),
                         actionContent: () => div(
                             { class: 'flex-row' },
+                            CopyIdButton(testSuite.id),
                             userCanEdit
                                 ? [
                                     Button({
@@ -635,6 +636,21 @@ const TestSuites = (/** @type Properties */ props) => {
             onClose: () => emit('NotificationsDialogClosed', {}),
         }),
     );
+};
+
+const CopyIdButton = (/** @type string */ testSuiteId) => {
+    const copied = van.state(false);
+    return Button({
+        type: 'icon',
+        icon: van.derive(() => copied.val ? 'check' : 'content_copy'),
+        tooltip: van.derive(() => copied.val ? 'Copied' : 'Copy test suite ID'),
+        onclick: () => {
+            // scripts.js handles the copy, including the fallback for pages not served over HTTPS
+            window.top.postMessage({ type: 'TestgenCopyToClipboard', text: testSuiteId }, '*');
+            copied.val = true;
+            setTimeout(() => copied.val = false, 1500);
+        },
+    });
 };
 
 const ConditionalEmptyState = (
