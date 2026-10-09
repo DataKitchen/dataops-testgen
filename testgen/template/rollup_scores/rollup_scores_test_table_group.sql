@@ -1,3 +1,7 @@
+-- Every writer of a table group's catalog takes this lock first, so writers queue rather than
+-- deadlock on the order they lock catalog rows in.
+SELECT pg_advisory_xact_lock(hashtextextended(CAST(:TABLE_GROUPS_ID AS VARCHAR), 0));
+
 -- Roll up scores from latest Test Runs per Test Suite to Table Group
 -- One run per suite via DISTINCT ON, tie-broken by id, then summed across the suites. A
 -- timestamp equality join back to test_runs would match every run of a suite sharing that

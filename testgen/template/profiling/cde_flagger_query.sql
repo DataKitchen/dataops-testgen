@@ -1,3 +1,7 @@
+-- Every writer of a table group's catalog takes this lock first, so writers queue rather than
+-- deadlock on the order they lock catalog rows in.
+SELECT pg_advisory_xact_lock(hashtextextended(CAST(:TABLE_GROUPS_ID AS VARCHAR), 0));
+
 UPDATE data_column_chars
    SET critical_data_element = FALSE
  WHERE table_groups_id = :TABLE_GROUPS_ID;
