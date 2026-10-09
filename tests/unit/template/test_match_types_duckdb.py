@@ -130,10 +130,10 @@ def _profile(con, column: str, general_type: str, is_decimal: bool, exact_sum: b
         names = [description[0] for description in cursor.description]
         return [dict(zip(names, row, strict=True)) for row in cursor.fetchall()]
 
-    profile = run("project_profiling_query.sql")[0]
+    profile = run("column_profiling.sql")[0]
     profile["frequent_patterns"] = build_frequent_patterns(profile)
     if general_type == "A":
-        frequency = run("project_secondary_profiling_query.sql")
+        frequency = run("frequency_analysis.sql")
         profile["frequent_values"] = build_frequent_values(frequency)
         profile["distinct_value_hash"] = frequency[0]["distinct_value_hash"]
     return profile

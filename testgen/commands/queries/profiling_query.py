@@ -136,7 +136,7 @@ class ProfilingSQL:
 
     def get_frequency_analysis_columns(self) -> tuple[str, dict]:
         # Runs on App database
-        return self._get_query("secondary_profiling_columns.sql")
+        return self._get_query("frequency_analysis_columns.sql")
 
     def update_profiling_results(self) -> list[tuple[str, dict]]:
         # Runs on App database
@@ -248,7 +248,7 @@ class ProfilingSQL:
         }
 
         return self._get_query(
-            "project_profiling_query.sql",
+            "column_profiling.sql",
             f"flavors/{self.flavor}/profiling",
             extra_params=extra_params,
             column_chars=column_chars,
@@ -299,7 +299,7 @@ class ProfilingSQL:
     def run_frequency_analysis(self, column_chars: ColumnChars, table_sampling: TableSampling | None = None) -> tuple[str, dict]:
         # Runs on Target database
         return self._get_query(
-            "project_secondary_profiling_query.sql",
+            "frequency_analysis.sql",
             f"flavors/{self.flavor}/profiling",
             extra_params={
                 "TABLE_HINT": get_flavor_service(self.flavor).table_hint(self.connection.sql_flavor_code),
