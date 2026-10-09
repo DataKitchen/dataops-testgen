@@ -73,6 +73,13 @@ def _lift(count: Any, whole: Decimal, sampled: Decimal) -> int | None:
     return int((number * whole / sampled).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
+def _lift_frequent(frequent: MutableMapping[str, Any], whole: Decimal, sampled: Decimal) -> None:
+    for entry in frequent["values"]:
+        entry["ct"] = _lift(entry["ct"], whole, sampled)
+    if other := frequent.get("other"):
+        other["ct"] = _lift(other["ct"], whole, sampled)
+
+
 def _lift_partition(counts: list[Decimal], whole: Decimal, sampled: Decimal) -> list[int]:
     """Scale counts that add up to ``sampled`` so that they add up to ``whole``.
 
@@ -298,8 +305,7 @@ class ProfileResult(Entity):
         with localcontext() as context:
             context.prec = 60
             if (patterns := row.get("frequent_patterns")) and pattern_sampled != whole:
-                for entry in patterns["values"]:
-                    entry["ct"] = _lift(entry["ct"], whole, pattern_sampled)
+                _lift_frequent(patterns, whole, pattern_sampled)
             if whole == sampled:
                 return
 
@@ -342,10 +348,7 @@ class ProfileResult(Entity):
 
         with localcontext() as context:
             context.prec = 60
-            for entry in frequent["values"]:
-                entry["ct"] = _lift(entry["ct"], whole_ct, sampled_ct)
-            if other := frequent.get("other"):
-                other["ct"] = _lift(other["ct"], whole_ct, sampled_ct)
+            _lift_frequent(frequent, whole_ct, sampled_ct)
 
     @classmethod
     def delete_for_run(cls, profile_run_id: UUID) -> int:
