@@ -205,12 +205,11 @@ def test_a_catalog_refresh_records_no_file_counts(mock_sql, _fetch, mock_threade
 
 @patch(f"{MODULE}.resolve_connection_params", return_value={})
 @patch(f"{MODULE}.RefreshDataCharsSQL")
-def test_metadata_via_api_flavors_scan_the_builder_s_schema(mock_sql_cls, _mock_params):
+def test_metadata_via_api_flavors_scan_the_table_group_s_schema(mock_sql_cls, _mock_params):
     """Flavors with no information_schema take the schema as an argument rather than through a
-    template, so they read it off the builder."""
+    template, so they read it off the table group."""
     sql_generator = mock_sql_cls.return_value
     sql_generator.flavor_service.metadata_via_api = True
-    sql_generator.schema = "onboard_2026_09_10"
     sql_generator.flavor_service.get_schema_columns.return_value = []
     sql_generator.filter_schema_columns.return_value = []
 
