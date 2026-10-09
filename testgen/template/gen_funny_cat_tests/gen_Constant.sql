@@ -103,6 +103,9 @@ SELECT
   CASE WHEN r.general_type = 'A' THEN fn_quote_literal_escape(r.min_text, :SQL_FLAVOR)::VARCHAR
     WHEN r.general_type = 'D' THEN fn_quote_literal_escape(r.min_date::VARCHAR, :SQL_FLAVOR)::VARCHAR
     WHEN r.general_type = 'N' THEN r.min_value::VARCHAR
+    -- PostgreSQL has no operator comparing bit with boolean
+    WHEN r.general_type = 'B' AND r.column_type = 'bit' AND :SQL_FLAVOR = 'postgresql'
+      THEN CASE WHEN r.boolean_true_ct = 0 THEN '''0''' ELSE '''1''' END
     WHEN r.general_type = 'B' AND r.boolean_true_ct = 0 THEN 'FALSE'::VARCHAR
     WHEN r.general_type = 'B' AND r.boolean_true_ct > 0 THEN 'TRUE'::VARCHAR
     ELSE ''

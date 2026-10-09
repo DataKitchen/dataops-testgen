@@ -29,6 +29,7 @@ test_types:
   default_severity: Warning
   run_type: CAT
   test_scope: column
+  column_general_types: [A]
   dq_dimension: Validity
   impact_dimension: Usability
   health_dimension: Schema Drift

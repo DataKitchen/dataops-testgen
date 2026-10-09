@@ -44,6 +44,7 @@ def _mock_test_suite(**overrides) -> MagicMock:
     suite.severity = overrides.get("severity", None)
     suite.export_to_observability = overrides.get("export_to_observability", False)
     suite.dq_score_exclude = overrides.get("dq_score_exclude", False)
+    suite.deactivate_invalid_tests = overrides.get("deactivate_invalid_tests", False)
     suite.component_key = overrides.get("component_key", None)
     suite.component_type = overrides.get("component_type", None)
     suite.component_name = overrides.get("component_name", None)
@@ -104,6 +105,7 @@ def test_create_test_suite_default_export_matches_ui(mock_resolve, mock_suite_cl
     # S3 review feedback: component_type defaults to "dataset" on create
     assert kwargs["component_type"] == "dataset"
     assert kwargs["dq_score_exclude"] is False
+    assert kwargs["deactivate_invalid_tests"] is False
 
 
 @patch(f"{MODULE}.TestSuite")
@@ -128,6 +130,7 @@ def test_create_test_suite_passes_all_new_args_to_model(mock_resolve, mock_suite
             component_type="dataset",
             component_name="cn",
             dq_score_exclude=True,
+            deactivate_invalid_tests=True,
         )
 
     _, kwargs = mock_suite_cls.call_args
@@ -138,6 +141,7 @@ def test_create_test_suite_passes_all_new_args_to_model(mock_resolve, mock_suite
     assert kwargs["component_type"] == "dataset"
     assert kwargs["component_name"] == "cn"
     assert kwargs["dq_score_exclude"] is True
+    assert kwargs["deactivate_invalid_tests"] is True
 
 
 @patch(f"{MODULE}.TestSuite")
@@ -552,6 +556,7 @@ def test_update_test_suite_multi_field_diff(mock_resolve, db_session_mock):
             severity_default="Warning",
             export_to_observability=False,
             dq_score_exclude=True,
+            deactivate_invalid_tests=True,
         )
 
     suite.save.assert_called_once()
@@ -560,6 +565,8 @@ def test_update_test_suite_multi_field_diff(mock_resolve, db_session_mock):
     # S13/S15: column header capitalises "Observability" (product name).
     assert "Export to Observability" in out
     assert "Exclude from quality scoring" in out
+    assert "Automatically deactivate tests that fail validation" in out
+    assert suite.deactivate_invalid_tests is True
 
 
 @patch(f"{MODULE}.resolve_test_suite")

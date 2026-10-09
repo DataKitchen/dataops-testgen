@@ -82,6 +82,13 @@ def create_test_suite(
         bool,
         Field(description="Whether to exclude this suite's results from data quality scoring. Defaults to False."),
     ] = False,
+    deactivate_invalid_tests: Annotated[
+        bool,
+        Field(
+            description="Whether tests that fail validation at the start of a run (a missing table or column, or a "
+            "column type the test does not apply to) are deactivated automatically. Defaults to False.",
+        ),
+    ] = False,
     export_to_observability: Annotated[
         bool,
         Field(
@@ -118,6 +125,7 @@ def create_test_suite(
         severity=parsed_severity.value if parsed_severity is not None else None,
         suite_type=parsed_suite_type.value,
         dq_score_exclude=dq_score_exclude,
+        deactivate_invalid_tests=deactivate_invalid_tests,
         export_to_observability=export_to_observability,
         component_key=_empty_to_none(component_key),
         component_type=_empty_to_none(component_type),
@@ -169,6 +177,13 @@ def update_test_suite(
         bool | None,
         Field(description="Whether this suite's results are excluded from data quality scoring."),
     ] = None,
+    deactivate_invalid_tests: Annotated[
+        bool | None,
+        Field(
+            description="Whether tests that fail validation at the start of a run (a missing table or column, or a "
+            "column type the test does not apply to) are deactivated automatically.",
+        ),
+    ] = None,
     export_to_observability: Annotated[
         bool | None,
         Field(description="Whether test results are exported to the configured DataOps Observability API."),
@@ -194,6 +209,7 @@ def update_test_suite(
         "description": description,
         "severity_default": severity_default,
         "dq_score_exclude": dq_score_exclude,
+        "deactivate_invalid_tests": deactivate_invalid_tests,
         "export_to_observability": export_to_observability,
         "component_key": component_key,
         "component_type": component_type,
@@ -221,6 +237,8 @@ def update_test_suite(
 
     if dq_score_exclude is not None:
         updates["dq_score_exclude"] = dq_score_exclude
+    if deactivate_invalid_tests is not None:
+        updates["deactivate_invalid_tests"] = deactivate_invalid_tests
     if export_to_observability is not None:
         updates["export_to_observability"] = export_to_observability
     if component_key is not None:
@@ -287,6 +305,7 @@ def _render_created_suite(suite: TestSuite, *, table_group_name: str) -> str:
     if suite.severity:
         doc.field("Default severity", suite.severity)
     doc.field("Exclude from quality scoring", suite.dq_score_exclude)
+    doc.field("Automatically deactivate tests that fail validation", suite.deactivate_invalid_tests)
     doc.field("Export to Observability", suite.export_to_observability)
     if suite.component_key:
         doc.field("Component key", suite.component_key)
@@ -304,6 +323,7 @@ _DIFF_ORDER: tuple[str, ...] = (
     "test_suite_description",
     "severity",
     "dq_score_exclude",
+    "deactivate_invalid_tests",
     "export_to_observability",
     "component_key",
     "component_type",
@@ -315,6 +335,7 @@ _DIFF_LABELS: dict[str, str] = {
     "test_suite_description": "Description",
     "severity": "Default severity",
     "dq_score_exclude": "Exclude from quality scoring",
+    "deactivate_invalid_tests": "Automatically deactivate tests that fail validation",
     "export_to_observability": "Export to Observability",
     "component_key": "Component key",
     "component_type": "Component type",

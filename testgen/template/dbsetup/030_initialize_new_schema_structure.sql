@@ -171,6 +171,7 @@ CREATE TABLE test_suites (
    component_name          VARCHAR(100),
    last_complete_test_run_id UUID,
    dq_score_exclude        BOOLEAN DEFAULT FALSE,
+   deactivate_invalid_tests BOOLEAN NOT NULL DEFAULT FALSE,
    suite_type              VARCHAR(20) NOT NULL DEFAULT 'regular',
    monitor_lookback        INTEGER DEFAULT NULL,
    monitor_regenerate_freshness BOOLEAN DEFAULT TRUE,
@@ -348,6 +349,7 @@ CREATE TABLE profile_results (
    percentile_75         DOUBLE PRECISION,
    percentile_method     VARCHAR(20),
    fractional_sum        NUMERIC(38, 6),
+   sum_value             NUMERIC(38, 8),
    min_date              TIMESTAMP,
    max_date              TIMESTAMP,
    before_1yr_date_ct    BIGINT,
@@ -612,7 +614,8 @@ CREATE TABLE test_types (
    overrides                     VARCHAR,
    uploaded_version              VARCHAR(20),
    ai_redact_values              BOOLEAN NOT NULL DEFAULT FALSE,
-   null_measure_fails            BOOLEAN NOT NULL DEFAULT FALSE
+   null_measure_fails            BOOLEAN NOT NULL DEFAULT FALSE,
+   column_general_types          VARCHAR[]
 );
 
 CREATE TABLE test_templates (

@@ -173,6 +173,7 @@ class ProfileResult(Entity):
     percentile_75: float | None = Column(Float)
     percentile_method: PercentileMethod | None = Column(String)
     fractional_sum: float | None = Column(Numeric(38, 6))
+    sum_value: Decimal | None = Column(Numeric(38, 8))
 
     # Date-specific
     min_date: datetime | None = Column(postgresql.TIMESTAMP)
@@ -240,6 +241,7 @@ class ProfileResult(Entity):
         "avg_value": MeasureAcquisition.WHOLE_TABLE,
         "stdev_value": MeasureAcquisition.WHOLE_TABLE,
         "fractional_sum": MeasureAcquisition.WHOLE_TABLE,
+        "sum_value": MeasureAcquisition.WHOLE_TABLE,
         "min_date": MeasureAcquisition.WHOLE_TABLE,
         "max_date": MeasureAcquisition.WHOLE_TABLE,
         "before_1yr_date_ct": MeasureAcquisition.WHOLE_TABLE,

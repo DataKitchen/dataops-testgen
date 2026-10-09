@@ -124,3 +124,36 @@ def test_table_comparison_baselines_from_sampled_measures_skip_sampled_profiles(
             assert "sample_ratio IS NULL" in tt["selection_criteria"], (
                 f"{filename}: baseline reads {sorted(reads)}, which a sampled profile measures on the sample"
             )
+
+
+DECLARABLE_GENERAL_TYPES = {"A", "N", "D", "B", "T"}
+
+
+@pytest.mark.unit
+def test_column_general_types_are_valid_codes():
+    # X is a catch-all whose columns validation never checks, so declaring it would mean nothing.
+    for filename, tt in _test_type_docs():
+        codes = tt.get("column_general_types")
+        if codes is None:
+            continue
+        assert isinstance(codes, list) and codes, f"{filename}: column_general_types must be a non-empty list"
+        assert set(codes) <= DECLARABLE_GENERAL_TYPES, f"{filename}: {codes}"
+        assert len(codes) == len(set(codes)), f"{filename}: duplicate codes in {codes}"
+
+
+@pytest.mark.unit
+def test_only_column_scope_types_declare_column_general_types():
+    for filename, tt in _test_type_docs():
+        if tt.get("column_general_types") is not None:
+            assert tt["test_scope"] == "column", filename
+
+
+@pytest.mark.unit
+def test_column_general_types_include_every_general_type_generation_selects():
+    # A generated test must never fail its own type check.
+    for filename, tt in _test_type_docs():
+        codes = tt.get("column_general_types")
+        if codes is None or not tt.get("selection_criteria"):
+            continue
+        for selected in re.findall(r"general_type\s*=\s*'([A-Z])'", tt["selection_criteria"]):
+            assert selected in codes, f"{filename}: selects general_type {selected} but declares {codes}"

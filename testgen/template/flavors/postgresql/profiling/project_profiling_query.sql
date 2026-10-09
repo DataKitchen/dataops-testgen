@@ -161,9 +161,9 @@ SELECT
 -- TG-ENDIF
 -- TG-IF is_type_N
   SUM( 1 - ABS(SIGN("{COL_NAME}"::NUMERIC)) )::BIGINT AS zero_value_ct,
-  MIN("{COL_NAME}") AS min_value,
-  MIN(CASE WHEN "{COL_NAME}"::NUMERIC > 0 THEN "{COL_NAME}" ELSE NULL END) AS min_value_over_0,
-  MAX("{COL_NAME}") AS max_value,
+  MIN({COL_NUM}) AS min_value,
+  MIN(CASE WHEN {COL_NUM} > 0 THEN {COL_NUM} ELSE NULL END) AS min_value_over_0,
+  MAX({COL_NUM}) AS max_value,
   AVG(CAST("{COL_NAME}"::NUMERIC AS FLOAT)) AS avg_value,
   STDDEV(CAST("{COL_NAME}"::NUMERIC AS FLOAT)) AS stdev_value,
   MIN(pct_25) AS percentile_25,
@@ -171,7 +171,12 @@ SELECT
   MIN(pct_75) AS percentile_75,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
-  SUM(ROUND(CAST(ABS(MOD("{COL_NAME}", 1)) AS NUMERIC(38,8)), 5)) AS fractional_sum,
+  SUM(ROUND(CAST(ABS(MOD({COL_NUM}, 1)) AS NUMERIC(38,8)), 5)) AS fractional_sum,
+-- TG-ENDIF
+-- TG-IF is_N_exact_sum
+  CASE WHEN MAX(ABS(CAST({COL_NUM} AS DOUBLE PRECISION))) < 1e20 AND COUNT({COL_NUM}) < 1e10
+       THEN SUM(CASE WHEN ABS(CAST({COL_NUM} AS DOUBLE PRECISION)) < 1e20 THEN CAST({COL_NUM} AS NUMERIC(38,8)) END)
+  END AS sum_value,
 -- TG-ENDIF
 -- TG-IF is_type_D
   CASE

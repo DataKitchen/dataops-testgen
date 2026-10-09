@@ -5,7 +5,13 @@ import pytest
 
 from testgen.commands import run_test_validation as run_test_validation_module
 from testgen.commands.queries.execute_tests_query import TestExecutionDef
-from testgen.commands.run_test_validation import check_identifiers, collect_test_identifiers, run_test_validation
+from testgen.commands.run_test_validation import (
+    check_column_types,
+    check_identifiers,
+    collect_test_identifiers,
+    run_test_validation,
+)
+from testgen.common.database.column_chars import ColumnChars
 
 pytestmark = pytest.mark.unit
 
@@ -200,10 +206,10 @@ def test_collect_target_schemas_populated():
     assert "schema_b" in schemas
 
 
-def test_collect_error_format_starts_with_deactivated():
+def test_collect_errors_carry_no_outcome_prefix():
     td = _make_td(schema_name="", table_name="")
     identifiers, schemas, errors = collect_test_identifiers([td], '"')
-    assert errors[td.id][0] == "Deactivated"
+    assert errors[td.id] == ["Invalid test: schema, table, or column not defined"]
 
 
 # --- check_identifiers ---
@@ -258,32 +264,127 @@ def test_check_multiple_tests_share_identifier():
     assert id2 in errors
 
 
-def test_check_error_format_starts_with_deactivated():
+def test_check_errors_carry_no_outcome_prefix():
     test_id = uuid4()
     identifiers = {("public", "orders", "bad_col"): {test_id}}
     tables = {("public", "orders")}
     columns = set()
     errors = check_identifiers(identifiers, tables, columns)
-    assert errors[test_id][0] == "Deactivated"
+    assert errors[test_id] == ["Missing column: public.orders.bad_col"]
+
+
+# --- check_column_types ---
+
+
+def _column(general_type: str | None, db_data_type: str = "text", column_name: str = "amount") -> ColumnChars:
+    return ColumnChars(
+        schema_name="public",
+        table_name="orders",
+        column_name=column_name,
+        general_type=general_type,
+        column_type=db_data_type,
+        db_data_type=db_data_type,
+    )
+
+
+def test_check_types_reports_a_column_whose_general_type_changed():
+    td = _make_td(test_type="Match_True_Ct", column_general_types=["B"])
+    errors = check_column_types([td], [_column("A")], '"')
+    assert errors == {
+        td.id: ["Column type changed: public.orders.amount is now text. This test applies to Boolean columns."]
+    }
+
+
+@pytest.mark.parametrize(
+    ("codes", "label"),
+    [
+        (["A", "N"], "Alpha or Numeric columns"),
+        (["A", "N", "D"], "Alpha, Numeric or Datetime columns"),
+    ],
+)
+def test_check_types_lists_every_general_type_the_test_applies_to(codes, label):
+    td = _make_td(column_general_types=codes)
+    errors = check_column_types([td], [_column("B", "boolean")], '"')
+    assert errors[td.id][0].endswith(f"This test applies to {label}.")
+
+
+def test_check_types_names_the_type_as_the_target_reports_it():
+    td = _make_td(column_general_types=["N"])
+    column = _column("A", db_data_type="text")
+    column.column_type = "varchar(65535)"
+    errors = check_column_types([td], [column], '"')
+    assert "is now text." in errors[td.id][0]
+
+
+def test_check_types_passes_a_declared_general_type():
+    td = _make_td(column_general_types=["B", "N"])
+    assert check_column_types([td], [_column("N", "integer")], '"') == {}
+
+
+@pytest.mark.parametrize("general_type", [None, "X"])
+def test_check_types_skips_a_column_of_unknown_or_other_type(general_type):
+    td = _make_td(column_general_types=["N"])
+    assert check_column_types([td], [_column(general_type)], '"') == {}
+
+
+def test_check_types_skips_a_test_type_that_declares_nothing():
+    td = _make_td(column_general_types=None)
+    assert check_column_types([td], [_column("A")], '"') == {}
+
+
+def test_check_types_skips_a_column_absent_from_the_catalog():
+    td = _make_td(column_general_types=["N"])
+    assert check_column_types([td], [_column("A", column_name="other")], '"') == {}
+
+
+@pytest.mark.parametrize("test_scope", ["table", "referential", "custom"])
+def test_check_types_checks_only_column_scope_tests(test_scope):
+    td = _make_td(test_scope=test_scope, column_general_types=["N"])
+    assert check_column_types([td], [_column("A")], '"') == {}
+
+
+def test_check_types_skips_a_test_that_already_failed_validation():
+    td = _make_td(column_general_types=["N"])
+    td.errors = ["Missing column: public.orders.amount"]
+    assert check_column_types([td], [_column("A")], '"') == {}
+
+
+def test_check_types_matches_names_without_case_or_quotes():
+    td = _make_td(schema_name="PUBLIC", table_name="Orders", column_name='"Amount"', column_general_types=["N"])
+    errors = check_column_types([td], [_column("A")], '"')
+    assert td.id in errors
+
+
+def test_check_types_prefers_the_column_whose_name_matches_exactly():
+    td = _make_td(column_name="Amount", column_general_types=["N"])
+    catalog = [_column("A", column_name="AMOUNT"), _column("N", db_data_type="numeric", column_name="Amount")]
+    assert check_column_types([td], catalog, '"') == {}
+
+
+def test_check_types_skips_a_name_that_matches_several_columns_only_without_case():
+    """Columns whose names differ only by case cannot be told apart, so neither is checked."""
+    td = _make_td(column_name="amount", column_general_types=["N"])
+    catalog = [_column("A", column_name="AMOUNT"), _column("A", column_name="Amount")]
+    assert check_column_types([td], catalog, '"') == {}
 
 
 # --- run_test_validation persistence ---
 
 
-def _validation_harness(monkeypatch, **kwargs):
-    """Run validation over one test def whose table is absent from the target, capturing writes."""
+def _validation_harness(monkeypatch, column_chars=None, td=None, target=(set(), set()), **kwargs):
+    """Run validation over one test def (by default, one whose table is absent from the target), capturing writes."""
     sql_generator = MagicMock()
     sql_generator.flavor_service.quote_character = '"'
     sql_generator.get_test_errors.side_effect = lambda tds: [[". ".join(td.errors)] for td in tds if td.errors]
 
-    monkeypatch.setattr(run_test_validation_module, "get_target_identifiers", lambda *_: (set(), set()))
+    monkeypatch.setattr(run_test_validation_module, "get_target_identifiers", lambda *_: target)
     written = MagicMock()
     executed = MagicMock()
     monkeypatch.setattr(run_test_validation_module, "write_to_app_db", written)
     monkeypatch.setattr(run_test_validation_module, "execute_db_queries", executed)
 
-    td = _make_td()
-    valid = run_test_validation(sql_generator, [td], **kwargs)
+    td = td or _make_td()
+    valid = run_test_validation(sql_generator, [td], column_chars, **kwargs)
     return td, valid, written, executed
 
 
@@ -293,22 +394,51 @@ def test_validation_deactivates_failing_definitions_by_default(monkeypatch):
     assert valid == []
     assert written.called
     assert executed.called
-    assert td.errors[0] == "Deactivated"
+    assert td.errors == ["Deactivated", "Missing table: public.orders"]
 
 
-def test_validation_records_errors_without_deactivating_when_asked(monkeypatch):
-    """A failure under a caller-supplied match schema says nothing about whether the stored
-    definition is still valid, so it is reported and ``test_active`` is left alone."""
+def test_validation_keeps_failing_definitions_active_when_asked(monkeypatch):
     td, valid, written, executed = _validation_harness(monkeypatch, deactivate_invalid=False)
 
     assert valid == []
     assert written.called
     assert not executed.called
-    assert td.errors[0] == "Not run"
+    assert td.errors == ["Missing table: public.orders"]
 
 
 def test_validation_defers_every_side_effect_when_deferring_persistence(monkeypatch):
-    _, _, written, executed = _validation_harness(monkeypatch, defer_persistence=True)
+    td, _, written, executed = _validation_harness(monkeypatch, defer_persistence=True)
 
     assert not written.called
     assert not executed.called
+    assert td.errors == ["Missing table: public.orders"]
+
+
+def test_validation_reports_a_column_type_change(monkeypatch):
+    present = ({("public", "orders")}, {("public", "orders", "amount")})
+    td, valid, written, executed = _validation_harness(
+        monkeypatch,
+        column_chars=[_column("A")],
+        td=_make_td(column_general_types=["N"]),
+        target=present,
+        deactivate_invalid=False,
+    )
+
+    assert valid == []
+    assert td.errors == [
+        "Column type changed: public.orders.amount is now text. This test applies to Numeric columns."
+    ]
+    assert not executed.called
+
+
+def test_validation_passes_a_test_whose_column_fits(monkeypatch):
+    present = ({("public", "orders")}, {("public", "orders", "amount")})
+    td, valid, written, executed = _validation_harness(
+        monkeypatch,
+        column_chars=[_column("N", "integer")],
+        td=_make_td(column_general_types=["N"]),
+        target=present,
+    )
+
+    assert valid == [td]
+    assert not written.called

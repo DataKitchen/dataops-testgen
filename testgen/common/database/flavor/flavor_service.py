@@ -173,6 +173,10 @@ class FlavorService:
     # profiling counts their distinct values directly rather than over a text form
     distinct_countable_x_types: frozenset[str] = frozenset()
 
+    # Catalog column types (lowercase) of integer or decimal columns that profiling computes no
+    # exact sum for: floating-point types the catalog marks decimal, or types with no cast to decimal
+    exact_sum_excluded_types: frozenset[str] = frozenset()
+
     def qualifies_table_refs_with_schema(self, sql_flavor_code: str) -> bool:  # noqa: ARG002
         """Whether generated SQL names a table as ``schema.table`` rather than ``table``.
 
@@ -205,6 +209,19 @@ class FlavorService:
         Returns:
             ``column_ref``, or an expression over it that strips padding the flavor adds to
             fixed-length text values.
+        """
+        return column_ref
+
+    def numeric_value(self, column_ref: str, column_type: str | None) -> str:  # noqa: ARG002
+        """Return the SQL expression that reads a numeric column's value as a number.
+
+        Args:
+            column_ref: The quoted column reference.
+            column_type: The column's type as recorded in the data catalog.
+
+        Returns:
+            ``column_ref``, or a cast of it for a numeric type the flavor cannot compare with
+            plain numbers or apply arithmetic functions to.
         """
         return column_ref
 

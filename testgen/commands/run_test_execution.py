@@ -17,6 +17,7 @@ from testgen.common import (
     set_target_db_params,
     write_to_app_db,
 )
+from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import ThreadedProgress
 from testgen.common.enums import SuiteType
 from testgen.common.job_context import job_context
@@ -107,7 +108,7 @@ def run_test_execution(
         sql_generator = TestExecutionSQL(connection, table_group, test_suite, test_run)
 
         if test_suite.suite_type == SuiteType.MONITOR:
-            _sync_monitor_definitions(sql_generator)
+            _sync_monitor_definitions(sql_generator, data_chars)
 
         if writes_definitions:
             # Update the thresholds before retrieving the test definitions in the next steps
@@ -127,7 +128,13 @@ def run_test_execution(
             test_run.save()
             session.commit()
 
-            valid_test_defs = run_test_validation(sql_generator, test_defs, deactivate_invalid=not match_schema_name)
+            valid_test_defs = run_test_validation(
+                sql_generator,
+                test_defs,
+                data_chars,
+                # A failure against a caller-supplied match schema says nothing about the stored definition.
+                deactivate_invalid=test_suite.deactivates_invalid_tests and not match_schema_name,
+            )
             invalid_count = len(test_defs) - len(valid_test_defs)
             test_run.set_progress(
                 "validation",
@@ -201,7 +208,7 @@ def run_test_execution(
     return test_run.id
 
 
-def _sync_monitor_definitions(sql_generator: TestExecutionSQL) -> None:
+def _sync_monitor_definitions(sql_generator: TestExecutionSQL, data_chars: list[ColumnChars]) -> None:
     test_suite_id = sql_generator.test_run.test_suite_id
 
     schema_changes = fetch_dict_from_db(*sql_generator.has_schema_changes())[0]
@@ -227,7 +234,7 @@ def _sync_monitor_definitions(sql_generator: TestExecutionSQL) -> None:
 
     active_defs = [TestExecutionDef(**item) for item in fetch_dict_from_db(*sql_generator.get_active_test_definitions())]
     if active_defs:
-        run_test_validation(sql_generator, active_defs, defer_persistence=True)
+        run_test_validation(sql_generator, active_defs, data_chars, defer_persistence=True)
         for td in active_defs:
             if td.errors and td.test_type in ("Freshness_Trend", "Volume_Trend") and td.lock_refresh != "Y":
                 regen_tables_by_type[td.test_type].add(td.table_name)
