@@ -291,6 +291,14 @@ class DataColumnChars(Entity):
     # valid_test_issue_ct
 
     @classmethod
+    def select_column_names(cls, table_groups_id: UUID) -> set[tuple[str, str]]:
+        """Return ``(table_name, column_name)`` for every column in the table group's catalog that is not dropped."""
+        query = select(cls.table_name, cls.column_name).where(
+            cls.table_groups_id == table_groups_id, cls.drop_date.is_(None)
+        )
+        return {(row.table_name, row.column_name) for row in get_current_session().execute(query)}
+
+    @classmethod
     def list_for_create_script(
         cls, table_groups_id: UUID, table_name: str,
     ) -> tuple[str | None, list[CreateScriptColumn]]:

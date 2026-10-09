@@ -772,6 +772,15 @@ def test_api_exports_maps_and_previews_the_import(tmp_path, api, capsys):
     assert TOKEN not in report + out
 
 
+def test_api_preview_lists_a_column_skip_by_table_and_column(tmp_path, api):
+    export = _document(_test("Match_Null_Ct", "a", "x"), _test("Match_Distinct_Ct", "a", "x"))
+    api(export, _import_result(skipped=[("invalid_column", [0, 1])]))
+
+    assert script.main(_api_args(tmp_path)) == 0
+
+    assert "column not found in the destination table group:\n    b.y: 2 tests" in (tmp_path / "report.txt").read_text()
+
+
 def test_api_apply_imports_with_all_or_nothing_semantics(tmp_path, api, capsys):
     fake = api(_document(_test("Match_Null_Ct", "a", "x")), _import_result(created=1))
 
