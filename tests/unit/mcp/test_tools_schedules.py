@@ -309,6 +309,20 @@ def test_update_schedule_happy_path_diff(mock_resolve, db_session_mock):
     sched.save.assert_called_once()
 
 
+@patch("testgen.mcp.tools.schedules.resolve_schedule")
+def test_update_schedule_no_op(mock_resolve, db_session_mock):
+    sched = _make_sched(key=JobKey.run_profile.value, active=True)
+    mock_resolve.return_value = sched
+
+    from testgen.mcp.tools.schedules import update_schedule
+
+    result = update_schedule(schedule_id=str(sched.id), active=True)
+
+    assert "No fields changed" in result
+    sched.save.assert_not_called()
+    db_session_mock.rollback.assert_called_once()
+
+
 def test_update_schedule_empty_payload_rejected(db_session_mock):
     from testgen.mcp.tools.schedules import update_schedule
 

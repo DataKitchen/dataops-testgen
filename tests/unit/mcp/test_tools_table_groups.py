@@ -455,6 +455,7 @@ def test_update_table_group_no_op(mock_resolve, mock_tg_cls, db_session_mock):
 
     tg.save.assert_not_called()
     assert "No fields changed" in out
+    db_session_mock.rollback.assert_called_once()
 
 
 @patch(f"{MODULE}.move_table_group_schema")
@@ -517,6 +518,7 @@ def test_update_table_group_same_schema_is_noop(mock_resolve, mock_tg_cls, db_se
 
     tg.save.assert_not_called()
     assert "No fields changed" in out
+    db_session_mock.rollback.assert_called_once()
 
 
 @patch(f"{MODULE}.TableGroup")

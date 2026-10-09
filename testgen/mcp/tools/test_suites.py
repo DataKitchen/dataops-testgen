@@ -31,6 +31,7 @@ from testgen.mcp.tools.common import (
     parse_suite_type,
     raise_validation_error,
     render_diff_table,
+    report_no_change,
     resolve_table_group,
     resolve_test_suite,
 )
@@ -264,8 +265,7 @@ def update_test_suite(
 
     rendered = render_diff_table(doc, before, after, attrs=_DIFF_ORDER, labels=_DIFF_LABELS)
     if not rendered:
-        doc.text("No fields changed — supplied values matched the current state.")
-        return doc.render()
+        return report_no_change(doc)
 
     suite.save()
     return doc.render()
