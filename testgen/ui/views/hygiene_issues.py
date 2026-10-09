@@ -5,12 +5,13 @@ import pandas as pd
 import streamlit as st
 
 import testgen.ui.queries.profiling_queries as profiling_queries
-from testgen.commands.run_rollup_scores import run_profile_rollup_scoring_queries
 from testgen.common import date_service
 from testgen.common.database.table_group_service import schema_label_for_table_group
+from testgen.common.enums import JobKey, JobSource
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssue
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.pii_masking import get_pii_columns, mask_hygiene_detail, mask_profiling_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
@@ -327,12 +328,19 @@ class HygieneIssuesPage(Page):
 
         @with_database_session
         def on_refresh_score(*_) -> None:
-            run_profile_rollup_scoring_queries(
-                run.project_code,
-                run_id,
-                run.table_groups_id if run.is_latest_run else None,
+            table_group_id = run.table_groups_id if run.is_latest_run else None
+            JobExecution.submit(
+                job_key=JobKey.refresh_run_scores,
+                kwargs={
+                    "run_job_key": JobKey.run_profile,
+                    "project_code": run.project_code,
+                    "run_id": str(run_id),
+                    "table_group_id": str(table_group_id) if table_group_id else None,
+                },
+                source=JobSource.ui,
+                project_code=run.project_code,
             )
-            st.cache_data.clear()
+            st.toast("Scores will be refreshed in the background.", icon=":material/task_alt:")
 
         @with_database_session
         def on_download_report(payload: dict) -> None:

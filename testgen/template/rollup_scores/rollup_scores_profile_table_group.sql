@@ -1,3 +1,7 @@
+-- Every writer of a table group's catalog takes this lock first, so writers queue rather than
+-- deadlock on the order they lock catalog rows in.
+SELECT pg_advisory_xact_lock(hashtextextended(CAST(:TABLE_GROUPS_ID AS VARCHAR), 0));
+
 -- Roll up latest scores to Table Group
 -- DISTINCT ON picks one completed run per table group, tie-broken by id. A timestamp equality
 -- join back to profiling_runs would match every run sharing that timestamp, leaving

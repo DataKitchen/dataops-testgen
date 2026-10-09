@@ -14,6 +14,17 @@ from testgen.mcp.permissions import ProjectPermissions
 pytestmark = pytest.mark.unit
 
 MODULE = "testgen.mcp.tools.table_groups"
+SERVICE_MODULE = "testgen.common.database.table_group_service"
+
+
+@pytest.fixture(autouse=True)
+def catalog_write():
+    """Stand in for the catalog write, which would otherwise probe the target."""
+    with (
+        patch(f"{MODULE}.write_table_group_catalog", return_value=None) as mock_write,
+        patch(f"{SERVICE_MODULE}.write_table_group_catalog", new=mock_write),
+    ):
+        yield mock_write
 
 
 # ---------------------------------------------------------------------------
@@ -1572,3 +1583,128 @@ def test_create_table_group_reports_the_declared_tables_not_a_schema(
     assert "orders" in output
     assert "header=Yes" in output
     assert "main" not in output
+
+
+# ---------------------------------------------------------------------------
+# data catalog
+# ---------------------------------------------------------------------------
+
+
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_connection")
+def test_create_table_group_writes_the_catalog(mock_resolve, mock_tg_cls, catalog_write, db_session_mock):
+    connection = _mock_connection()
+    mock_resolve.return_value = connection
+    instance = _mock_table_group()
+    mock_tg_cls.return_value = instance
+
+    from testgen.mcp.tools.table_groups import create_table_group
+
+    with _patch_perms():
+        out = create_table_group(connection_id=42, table_group_name="Sample TG", schema="public")
+
+    catalog_write.assert_called_once_with(instance, connection)
+    assert "data catalog" not in out
+
+
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_connection")
+def test_create_table_group_reports_a_catalog_it_could_not_read(
+    mock_resolve, mock_tg_cls, catalog_write, db_session_mock,
+):
+    mock_resolve.return_value = _mock_connection()
+    mock_tg_cls.return_value = _mock_table_group()
+    catalog_write.return_value = 'schema "public" does not exist'
+
+    from testgen.mcp.tools.table_groups import create_table_group
+
+    with _patch_perms():
+        out = create_table_group(connection_id=42, table_group_name="Sample TG", schema="public")
+
+    assert "Table Group `Sample TG` created" in out
+    assert (
+        "The data catalog could not be read from the target, so it is empty until the table group is "
+        'profiled or tested. schema "public" does not exist'
+    ) in out
+
+
+@pytest.mark.parametrize(
+    ("argument", "value"),
+    [("include_mask", "fact_%"), ("exclude_mask", "tmp_%"), ("table_set", ["orders", "customers"])],
+)
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_refreshes_the_catalog_when_its_tables_change(
+    mock_resolve, mock_tg_cls, catalog_write, db_session_mock, argument, value,
+):
+    tg = _mock_table_group()
+    mock_resolve.return_value = tg
+
+    from testgen.mcp.tools.table_groups import update_table_group
+
+    with _patch_perms():
+        update_table_group(table_group_id=str(tg.id), **{argument: value})
+
+    catalog_write.assert_called_once()
+    assert catalog_write.call_args.args[0] is tg
+
+
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_leaves_the_catalog_when_its_tables_stay(
+    mock_resolve, mock_tg_cls, catalog_write, db_session_mock,
+):
+    tg = _mock_table_group(description=None)
+    mock_resolve.return_value = tg
+
+    from testgen.mcp.tools.table_groups import update_table_group
+
+    with _patch_perms():
+        update_table_group(table_group_id=str(tg.id), description="Nightly load")
+
+    catalog_write.assert_not_called()
+
+
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_reports_a_catalog_it_could_not_read(
+    mock_resolve, mock_tg_cls, catalog_write, db_session_mock,
+):
+    tg = _mock_table_group()
+    mock_resolve.return_value = tg
+    catalog_write.return_value = "connection refused"
+
+    from testgen.mcp.tools.table_groups import update_table_group
+
+    with _patch_perms():
+        out = update_table_group(table_group_id=str(tg.id), include_mask="fact_%")
+
+    assert (
+        "The data catalog could not be read from the target, so it keeps the tables it had before this "
+        "change until the table group is profiled or tested. connection refused"
+    ) in out
+
+
+@patch(f"{SERVICE_MODULE}.apply_schema_move")
+@patch(f"{MODULE}.move_table_group_schema")
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_leaves_the_catalog_to_a_schema_move(
+    mock_resolve, mock_tg_cls, mock_move, mock_apply, catalog_write, db_session_mock,
+):
+    tg = _mock_table_group(table_group_schema="public")
+    mock_resolve.return_value = tg
+
+    def move(table_group, schema, **_kwargs):
+        table_group.table_group_schema = schema
+        return SchemaMove(previous_schema="public", schema=schema, missing_tables=[], definitions_repointed=0)
+
+    mock_move.side_effect = move
+
+    from testgen.mcp.tools.table_groups import update_table_group
+
+    with _patch_perms():
+        update_table_group(table_group_id=str(tg.id), schema="staging", include_mask="fact_%")
+
+    mock_apply.assert_called_once()
+    catalog_write.assert_not_called()

@@ -6,7 +6,6 @@ from operator import attrgetter
 import pandas as pd
 import streamlit as st
 
-from testgen.commands.run_rollup_scores import run_test_rollup_scoring_queries
 from testgen.common import date_service
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.table_group_service import (
@@ -14,10 +13,11 @@ from testgen.common.database.table_group_service import (
     schema_label_for_table_group,
     table_group_qualifies_table_refs,
 )
-from testgen.common.enums import SuiteType
+from testgen.common.enums import JobKey, JobSource, SuiteType
 from testgen.common.flavors import table_group_schema_label
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.test_definition import (
     MISSING_TEST_DEFINITION_MESSAGE,
     TestDefinition,
@@ -480,12 +480,19 @@ class TestResultsPage(Page):
 
         @with_database_session
         def on_score_refresh(*_) -> None:
-            run_test_rollup_scoring_queries(
-                run.project_code,
-                run_id,
-                run.table_groups_id if run.is_latest_run else None,
+            table_group_id = run.table_groups_id if run.is_latest_run else None
+            JobExecution.submit(
+                job_key=JobKey.refresh_run_scores,
+                kwargs={
+                    "run_job_key": JobKey.run_tests,
+                    "project_code": run.project_code,
+                    "run_id": str(run_id),
+                    "table_group_id": str(table_group_id) if table_group_id else None,
+                },
+                source=JobSource.ui,
+                project_code=run.project_code,
             )
-            st.cache_data.clear()
+            st.toast("Scores will be refreshed in the background.", icon=":material/task_alt:")
 
         def on_export_all(*_) -> None:
             st.session_state[EXPORT_FILTERS_KEY] = {"type": "all"}

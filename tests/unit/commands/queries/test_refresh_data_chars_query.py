@@ -335,3 +335,28 @@ def test_every_read_of_the_scanned_schema_agrees():
 
     access_query, _ = sql_generator.verify_access("orders")
     assert '"onboard_2026_09_10"."orders"' in access_query
+
+
+def test_the_catalog_merge_disables_nested_loops_before_its_first_write():
+    sql_generator = RefreshDataCharsSQL(Connection(sql_flavor="postgresql"), TableGroup(table_group_schema="public"))
+
+    merge_sql, _ = sql_generator.update_data_chars(datetime.now(UTC), uuid4())[0]
+    statements = [
+        "\n".join(line for line in statement.splitlines() if not line.strip().startswith("--")).strip()
+        for statement in merge_sql.split(";")
+    ]
+    first_write = next(index for index, statement in enumerate(statements) if statement.startswith("WITH"))
+
+    assert "SET LOCAL enable_nestloop = off" in statements[:first_write]
+
+
+def test_the_catalog_merge_joins_each_updated_column_to_its_alias_by_primary_key():
+    sql_generator = RefreshDataCharsSQL(Connection(sql_flavor="postgresql"), TableGroup(table_group_schema="public"))
+
+    merge_sql, _ = sql_generator.update_data_chars(datetime.now(UTC), uuid4())[0]
+    column_updates = [statement for statement in merge_sql.split(";") if "UPDATE data_column_chars" in statement]
+
+    assert len(column_updates) == 2
+    for statement in column_updates:
+        assert "WHERE data_column_chars.column_id = d.column_id" in statement
+        assert "data_column_chars.column_name" not in statement

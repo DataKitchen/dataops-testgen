@@ -59,7 +59,7 @@ def _save_via_wizard(monitor_suite: dict) -> MagicMock:
             patch(f"{MODULE}.table_group_queries") as mock_queries,
             patch(f"{MODULE}.session"),
         ):
-            mock_queries.get_table_group_preview.return_value = (None, None)
+            mock_queries.get_table_group_preview.return_value = None
 
             from testgen.ui.views.connections import ConnectionsPage
 

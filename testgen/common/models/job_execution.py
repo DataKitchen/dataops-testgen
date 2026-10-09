@@ -183,11 +183,11 @@ class JobExecution(Base):
     def _reads_in_process_target(cls, job_key: str, kwargs: dict[str, Any]) -> bool:
         """Whether the job's handler opens a target connection whose engine runs in-process.
 
-        Only profiling, test runs and monitor runs open a target connection. A run whose table
+        Only profiling, catalog refreshes, test runs and monitor runs open a target connection. A run whose table
         group or suite id is missing, is not a UUID, or matches no row resolves to False.
         """
         match job_key:
-            case JobKey.run_profile:
+            case JobKey.run_profile | JobKey.refresh_data_catalog:
                 id_key = "table_group_id"
             case JobKey.run_tests | JobKey.run_monitors:
                 id_key = "test_suite_id"

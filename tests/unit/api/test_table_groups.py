@@ -25,6 +25,16 @@ TG_ID = uuid4()
 
 
 @pytest.fixture(autouse=True)
+def catalog_write():
+    """Stand in for the catalog write, which would otherwise probe the target."""
+    with (
+        patch(f"{MODULE}.write_table_group_catalog", return_value=None) as mock_write,
+        patch(f"{RULES_MODULE}.write_table_group_catalog", new=mock_write),
+    ):
+        yield mock_write
+
+
+@pytest.fixture(autouse=True)
 def target_connection():
     """The connection the detail response reads to name the schema.
 
@@ -515,6 +525,24 @@ def test_create_table_group_returns_201_with_the_server_assigned_id():
     assert body["connection_id"] == 3
 
 
+def test_create_table_group_writes_the_catalog_before_responding(catalog_write):
+    resp, mock_save, _ = _post({"table_group_name": "client_42", "schema_name": "client_42"})
+
+    assert resp.status_code == 201
+    assert resp.json()["catalog_error"] is None
+    catalog_write.assert_called_once()
+    assert catalog_write.call_args.args[0] is _saved(mock_save)
+
+
+def test_create_table_group_reports_a_catalog_it_could_not_read(catalog_write):
+    catalog_write.return_value = 'schema "client_42" does not exist'
+
+    resp, _, _ = _post({"table_group_name": "client_42", "schema_name": "client_42"})
+
+    assert resp.status_code == 201
+    assert resp.json()["catalog_error"] == 'schema "client_42" does not exist'
+
+
 def test_create_table_group_applies_model_defaults_to_omitted_fields():
     resp, mock_save, _ = _post({"table_group_name": "client_42", "schema_name": "client_42"})
 
@@ -796,7 +824,7 @@ def _move(previous="public", schema="onboard_2026_09_16", missing=None, repointe
     )
 
 
-@patch(f"{MODULE}.apply_schema_move")
+@patch(f"{RULES_MODULE}.apply_schema_move")
 @patch(f"{MODULE}.move_table_group_schema")
 @patch("testgen.api.deps.has_project_permission", return_value=True)
 @patch("testgen.api.deps.TableGroup")
@@ -819,7 +847,7 @@ def test_update_table_group_moves_the_schema_and_reports_what_moved(
     mock_apply.assert_called_once()
 
 
-@patch(f"{MODULE}.apply_schema_move")
+@patch(f"{RULES_MODULE}.apply_schema_move")
 @patch(f"{MODULE}.move_table_group_schema")
 @patch("testgen.api.deps.has_project_permission", return_value=True)
 @patch("testgen.api.deps.TableGroup")

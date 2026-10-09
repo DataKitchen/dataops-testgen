@@ -376,7 +376,15 @@ def test_list_jobs_accepts_valid_status(mock_je_cls, _mock_perm):
 def test_public_job_key_excludes_internal_kinds():
     public = {member.value for member in PublicJobKey}
     assert public == {"run-profile", "run-tests", "run-test-generation"}
-    internal = {"run-monitors", "run-score-update", "recalculate-project-scores", "run-data-cleanup"}
+    internal = {
+        "run-monitors",
+        "refresh-data-catalog",
+        "run-score-update",
+        "recalculate-project-scores",
+        "refresh-run-scores",
+        "recalculate-score-card",
+        "run-data-cleanup",
+    }
     assert public.isdisjoint(internal)
     # Every public value must be a real JobKey.
     assert public <= {member.value for member in JobKey}
@@ -391,7 +399,15 @@ def test_list_jobs_filters_to_public_job_kinds(_mock_list):
     assert "run-profile" in sql
     assert "run-tests" in sql
     assert "run-test-generation" in sql
-    for internal in ("run-monitors", "run-score-update", "recalculate-project-scores", "run-data-cleanup"):
+    for internal in (
+        "run-monitors",
+        "refresh-data-catalog",
+        "run-score-update",
+        "recalculate-project-scores",
+        "refresh-run-scores",
+        "recalculate-score-card",
+        "run-data-cleanup",
+    ):
         assert internal not in sql
 
 

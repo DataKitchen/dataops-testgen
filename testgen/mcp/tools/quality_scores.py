@@ -4,6 +4,7 @@ from typing import Annotated
 from pydantic import Field
 
 from testgen.commands.run_refresh_score_cards_results import save_and_refresh_score_definition
+from testgen.common.enums import JobSource
 from testgen.common.models import with_database_session
 from testgen.common.models.scores import (
     ScoreCategory,
@@ -571,7 +572,7 @@ def create_scorecard(
         group_by_field=group_by_field,
     )
 
-    save_and_refresh_score_definition(definition, is_new=True)
+    save_and_refresh_score_definition(definition, is_new=True, source=JobSource.mcp)
 
     doc = MdDoc()
     doc.heading(1, f"Scorecard `{definition.name}` created")
@@ -653,7 +654,7 @@ def update_scorecard(
         setattr(definition, attr, value)
     after = _snapshot_for_diff(definition, pending)
 
-    save_and_refresh_score_definition(definition, is_new=False)
+    save_and_refresh_score_definition(definition, is_new=False, source=JobSource.mcp)
 
     doc = MdDoc()
     doc.heading(1, f"Scorecard `{definition.name}` updated")

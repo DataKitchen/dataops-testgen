@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 import streamlit as st
 
 from testgen import settings
+from testgen.commands.run_catalog_refresh import submit_table_group_setup
 from testgen.common.connection_schema import connection_location
 from testgen.common.database.connection_service import (
     CLEAR_SENTINEL,
@@ -29,7 +30,6 @@ from testgen.common.flavors import (
 )
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection, ConnectionMinimal
-from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
@@ -369,9 +369,8 @@ class ConnectionsPage(Page):
         apply_table_group_flavor_rules(table_group, setup_connection)
 
         table_group_preview = None
-        save_data_chars = None
         if should_preview():
-            table_group_preview, save_data_chars = table_group_queries.get_table_group_preview(
+            table_group_preview = table_group_queries.get_table_group_preview(
                 table_group,
                 verify_table_access=should_verify_access(),
             )
@@ -388,12 +387,6 @@ class ConnectionsPage(Page):
             if is_table_group_verified():
                 try:
                     table_group.save(add_scorecard_definition)
-
-                    if save_data_chars:
-                        try:
-                            save_data_chars(table_group.id)
-                        except Exception:
-                            LOG.exception("Data characteristics refresh encountered errors")
 
                     standard_test_suite_data = get_standard_test_suite_data() or {}
                     if standard_test_suite_data.get("generate"):
@@ -435,6 +428,7 @@ class ConnectionsPage(Page):
                                 "predict_exclude_weekends": monitor_test_suite_data.get("predict_exclude_weekends"),
                                 "predict_holiday_codes": monitor_test_suite_data.get("predict_holiday_codes"),
                             },
+                            generate_monitors=False,
                         )
 
                     if standard_test_suite or monitor_test_suite:
@@ -442,21 +436,25 @@ class ConnectionsPage(Page):
                         table_group.monitor_test_suite_id = monitor_test_suite.id if monitor_test_suite else None
                         table_group.save()
 
-                    if should_run_profiling:
-                        try:
-                            run_profiling = True
-                            JobExecution.submit(
-                                job_key="run-profile",
-                                kwargs={"table_group_id": str(table_group.id)},
-                                source=JobSource.ui,
-                                project_code=table_group.project_code,
-                            )
-                            message = f"Profiling run started for table group {table_group.table_groups_name}."
-                        except Exception as error:
-                            message = "Profiling run encountered errors"
-                            success = False
-                            LOG.exception(message)
+                    run_profiling = should_run_profiling
+                    try:
+                        submit_table_group_setup(
+                            table_group,
+                            JobSource.ui,
+                            monitor_suite_id=monitor_test_suite.id if monitor_test_suite else None,
+                            run_profiling=run_profiling,
+                        )
+                    except Exception:
+                        message = (
+                            "Profiling run encountered errors"
+                            if run_profiling
+                            else "Table group setup encountered errors"
+                        )
+                        success = False
+                        LOG.exception(message)
                     else:
+                        if run_profiling:
+                            message = f"Profiling run started for table group {table_group.table_groups_name}."
                         LOG.info("Table group %s created", table_group.id)
                 except Exception as error:
                     get_current_session().rollback()

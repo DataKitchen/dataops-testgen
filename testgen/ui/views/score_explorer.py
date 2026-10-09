@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from testgen.commands.run_refresh_score_cards_results import save_and_refresh_score_definition
+from testgen.common.enums import JobSource
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.scores import (
@@ -387,7 +388,7 @@ def save_score_definition(_) -> None:
         ],
         group_by_field=not filter_by_columns,
     )
-    save_and_refresh_score_definition(score_definition, is_new=is_new)
+    save_and_refresh_score_definition(score_definition, is_new=is_new, source=JobSource.ui)
     get_all_score_cards.clear()
 
     Router().set_query_params({
@@ -400,4 +401,7 @@ def save_score_definition(_) -> None:
         "definition_id": str(score_definition.id) if score_definition.id else None,
     })
 
-    st.toast("Scorecard saved", icon=":material/task_alt:")
+    if is_new:
+        st.toast("Scorecard saved", icon=":material/task_alt:")
+    else:
+        st.toast("Scorecard saved. Its trend will be recalculated in the background.", icon=":material/task_alt:")

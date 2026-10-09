@@ -17,9 +17,12 @@ from dataclasses import dataclass
 
 from sqlalchemy import select
 
+from testgen.commands.run_catalog_refresh import run_catalog_refresh
 from testgen.commands.run_data_cleanup import run_data_cleanup
 from testgen.commands.run_profiling import report_profiling_run, run_profiling
 from testgen.commands.run_recalculate_project_scores import run_recalculate_project_scores
+from testgen.commands.run_refresh_score_cards_results import run_recalculate_score_card
+from testgen.commands.run_rollup_scores import run_refresh_run_scores
 from testgen.commands.run_score_update import run_score_update
 from testgen.commands.run_test_execution import run_test_execution
 from testgen.commands.test_generation import run_monitor_generation, run_test_generation
@@ -56,6 +59,7 @@ class JobConfig:
 
 JOB_DISPATCH: dict[JobKey, JobConfig] = {
     JobKey.run_profile:                JobConfig(handler=run_profiling),
+    JobKey.refresh_data_catalog:       JobConfig(handler=run_catalog_refresh),
     JobKey.run_tests:                  JobConfig(handler=run_test_execution),
     JobKey.run_monitors:               JobConfig(handler=run_test_execution),
     JobKey.run_test_generation:        JobConfig(handler=run_test_generation),
@@ -63,6 +67,8 @@ JOB_DISPATCH: dict[JobKey, JobConfig] = {
     JobKey.run_score_update:           JobConfig(handler=run_score_update, scheduler_source=JobSource.system),
     JobKey.recalculate_project_scores: JobConfig(handler=run_recalculate_project_scores, scheduler_source=JobSource.system),
     JobKey.run_data_cleanup:           JobConfig(handler=run_data_cleanup, scheduler_source=JobSource.system),
+    JobKey.refresh_run_scores:         JobConfig(handler=run_refresh_run_scores, scheduler_source=JobSource.system),
+    JobKey.recalculate_score_card:     JobConfig(handler=run_recalculate_score_card, scheduler_source=JobSource.system),
 }
 
 
