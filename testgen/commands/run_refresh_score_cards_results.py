@@ -2,7 +2,9 @@ import datetime
 import logging
 import time
 
+from testgen.common.enums import JobKey, JobSource
 from testgen.common.models import get_current_session, with_database_session
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scores import (
     SCORE_CATEGORIES,
@@ -79,7 +81,11 @@ def run_refresh_score_cards_results(
                 if last_added_entry:
                     last_added_entry.add_as_cutoff()
             definition.save()
+            # Each scorecard commits on its own, so a refresh of many holds a scorecard's rows only
+            # while writing them, and a save of one scorecard does not wait for the whole refresh.
+            db_session.commit()
         except Exception:
+            db_session.rollback()
             LOG.exception(
                 "Error refreshing scorecard %s in project %s",
                 definition.name,
@@ -156,13 +162,11 @@ def run_recalculate_score_card(*, project_code: str, definition_id: str):
     LOG.info("Recalculating history for scorecard %s in project %s", definition_id, project_code)
     start_time = time.time()
 
-    try:
-        definition = ScoreDefinition.get(str(definition_id))
-        definition.recalculate_scores_history()
-        definition.save()
-    except Exception:
-        LOG.exception("CurrentStep: Stopping history recalculation after unexpected error")
-        return
+    definition = ScoreDefinition.get(str(definition_id))
+    if definition is None:
+        raise ValueError(f"Scorecard {definition_id} not found")
+    definition.recalculate_scores_history()
+    definition.save()
 
     end_time = time.time()
     LOG.info(
@@ -178,6 +182,7 @@ def save_and_refresh_score_definition(
     score_definition: ScoreDefinition,
     *,
     is_new: bool,
+    source: JobSource,
 ) -> ScoreDefinition:
     """Save a scorecard and refresh / recalculate its cached scores.
 
@@ -188,8 +193,8 @@ def save_and_refresh_score_definition(
     For new scorecards (``is_new=True``), seeds the first refresh with a
     history entry timestamped at the latest profiling or test run for the
     project, so the trend chart has an anchor point. For existing scorecards,
-    also runs ``run_recalculate_score_card`` to update history entries whose
-    scores might have shifted under the new filters.
+    also queues a ``recalculate-score-card`` job to update history entries whose
+    scores might have shifted under the new filters; ``source`` is recorded on it.
     """
     refresh_kwargs: dict = {}
     if is_new:
@@ -209,10 +214,14 @@ def save_and_refresh_score_definition(
         }
 
     score_definition.save()
+    # The refresh rolls back a scorecard it fails on, which must not take the save with it.
+    get_current_session().commit()
     run_refresh_score_cards_results(definition_id=score_definition.id, **refresh_kwargs)
     if not is_new:
-        run_recalculate_score_card(
+        JobExecution.submit(
+            job_key=JobKey.recalculate_score_card,
+            kwargs={"project_code": score_definition.project_code, "definition_id": str(score_definition.id)},
+            source=source,
             project_code=score_definition.project_code,
-            definition_id=score_definition.id,
         )
     return score_definition

@@ -7,9 +7,10 @@ from typing import Any, ClassVar, Literal, cast
 import streamlit as st
 
 from testgen.common.cron_service import get_cron_sample
-from testgen.common.enums import MonitorCalculation, MonitorType, SuiteType
+from testgen.common.enums import JobKey, JobSource, MonitorCalculation, MonitorType, SuiteType
 from testgen.common.models import with_database_session
 from testgen.common.models.data_structure_log import DataStructureLog
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import (
     MonitorNotificationSettings,
     MonitorNotificationTrigger,
@@ -23,7 +24,12 @@ from testgen.common.monitor_forecast import (
     gated_forecast_prediction,
     next_update_window,
 )
-from testgen.common.monitor_service import disable_monitoring, enable_monitoring, update_monitoring
+from testgen.common.monitor_service import (
+    INITIAL_MONITOR_TYPES,
+    disable_monitoring,
+    enable_monitoring,
+    update_monitoring,
+)
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
@@ -459,12 +465,19 @@ def build_edit_monitor_settings_data(
                 active=schedule_config["active"],
             )
         else:
-            enable_monitoring(
+            new_monitor_suite, _ = enable_monitoring(
                 get_table_group(table_group.id),
                 schedule_config["cron_expr"],
                 schedule_config["cron_tz"],
                 suite_attrs=get_monitor_suite(),
                 active=schedule_config["active"],
+                generate_monitors=False,
+            )
+            JobExecution.submit(
+                job_key=JobKey.run_monitor_generation,
+                kwargs={"monitor_suite_id": str(new_monitor_suite.id), "monitors": INITIAL_MONITOR_TYPES},
+                source=JobSource.ui,
+                project_code=table_group.project_code,
             )
 
         st.session_state.pop(EDIT_MONITOR_SETTINGS_DIALOG_KEY, None)

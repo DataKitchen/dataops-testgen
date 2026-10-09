@@ -52,12 +52,15 @@ class HealthDimension(StrEnum):
 class JobKey(StrEnum):
     """``job_key`` column values for ``job_executions`` and ``job_schedules``."""
     run_profile = "run-profile"
+    refresh_data_catalog = "refresh-data-catalog"
     run_tests = "run-tests"
     run_monitors = "run-monitors"
     run_test_generation = "run-test-generation"
     run_monitor_generation = "run-monitor-generation"
     run_score_update = "run-score-update"
     recalculate_project_scores = "recalculate-project-scores"
+    refresh_run_scores = "refresh-run-scores"
+    recalculate_score_card = "recalculate-score-card"
     run_data_cleanup = "run-data-cleanup"
 
 

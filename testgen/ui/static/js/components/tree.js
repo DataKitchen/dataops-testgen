@@ -33,6 +33,8 @@
  * @property {string?} multiSelectToggleLabel
  * @property {function(SelectedNode[] | null)?} onMultiSelect
  * @property {(function(TreeNode, string): boolean) | null} isNodeHidden
+ * @property {(string | { val: string })?} searchValue
+ * @property {function(string)?} onSearch Replaces filtering the loaded nodes; the caller supplies the matching nodes.
  * @property {function()?} onApplySearchOptions
  * @property {(function(): boolean) | null} hasActiveFilters
  * @property {function()?} onApplyFilters
@@ -122,7 +124,7 @@ const Toolbar = (
 
     const filterDomId = `tree-filters-${getRandomId()}`;
     const filtersOpened = van.state(false);
-    const filtersActive = van.state(false);
+    const filtersActive = van.derive(() => !!props.hasActiveFilters?.());
     const isNodeHidden = (/** @type TreeNode */ node) => props.isNodeHidden
         ? props.isNodeHidden?.(node, search.val)
         : !caseInsensitiveIncludes(node.label, search.val);
@@ -135,7 +137,12 @@ const Toolbar = (
                 icon: 'search',
                 clearable: true,
                 height: 32,
+                value: props.searchValue ?? '',
                 onChange: (/** @type string */ value) => {
+                    if (props.onSearch) {
+                        props.onSearch(value);
+                        return;
+                    }
                     search.val = value;
                     filterTree(nodes.val, isNodeHidden);
                     if (value) {
@@ -249,7 +256,6 @@ const Toolbar = (
                                 onclick: () => {
                                     props.onApplyFilters?.();
                                     filterTree(nodes.val, isNodeHidden);
-                                    filtersActive.val = props.hasActiveFilters();
                                     filtersOpened.val = false;
                                 },
                             }),
@@ -340,8 +346,7 @@ const initTreeState = (
     let treeExpanded = false;
     nodes.forEach(node => {
         node.level = level;
-        // Expand node if it is initial selection
-        let expanded = node.id === selected;
+        let expanded = node.id === selected || node.expanded === true;
         if (node.children) {
             // Expand node if initial selection is a descendent
             expanded = initTreeState(node.children, selected, level + 1) || expanded;

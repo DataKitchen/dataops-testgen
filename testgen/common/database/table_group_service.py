@@ -47,6 +47,7 @@ from testgen.common.models.table_group import TableGroup, TableGroupMinimal, val
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
 from testgen.ui.services.database_service import target_db_session
+from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
 
@@ -664,6 +665,75 @@ def move_table_group_schema(
             make_save_data_chars(data_chars, sql_generator) if data_chars and sql_generator else None
         ),
     )
+
+
+# Membership fields: the ones that decide which tables of the schema belong to a table group.
+CATALOG_MEMBERSHIP_FIELDS = (
+    "table_group_schema",
+    "profiling_table_set",
+    "profiling_include_mask",
+    "profiling_exclude_mask",
+    "file_declarations",
+)
+
+
+def catalog_membership(table_group: TableGroup) -> tuple:
+    """The table group's membership fields, with every empty value read as ``None``.
+
+    Forms post an empty string for a field the database holds as NULL, and both select the same tables.
+    """
+    return tuple(getattr(table_group, name) or None for name in CATALOG_MEMBERSHIP_FIELDS)
+
+
+def write_table_group_catalog(table_group: TableGroup, connection: Connection | None = None) -> str | None:
+    """Commit a saved table group, then write its data catalog from the tables the target holds now.
+
+    The table group is committed before the target is read, so no app-database transaction stays open
+    while the target lists its schema. The catalog is written on its own connection and commits there,
+    which also needs the table group committed first.
+
+    :param table_group: Saved table group.
+    :param connection: The table group's connection, when the caller already has it.
+    :returns: Why the catalog could not be read or written, or ``None`` when it was written.
+    """
+    get_current_session().commit()
+    preview, data_chars, sql_generator = preview_table_group(table_group, connection=connection, verify_access=False)
+    if not preview["success"] or not data_chars or sql_generator is None:
+        return preview["message"] or "The target could not be read."
+
+    try:
+        make_save_data_chars(data_chars, sql_generator)(table_group.id)
+    except Exception as error:
+        LOG.exception("Data catalog write for table group %s encountered errors", table_group.id)
+        return get_exception_message(error)
+    return None
+
+
+def update_catalog_for_edit(
+    table_group: TableGroup,
+    membership_before: tuple,
+    move: SchemaMove | None,
+    connection: Connection | None = None,
+) -> str | None:
+    """Bring a saved table group's data catalog in line with an edit to it.
+
+    A schema move rewrites the catalog against the schema it names. Its probe ran with the edited
+    filters applied, so that write also covers a filter change made in the same edit. Without a move,
+    the catalog is rewritten when the edit changed which tables belong to the table group.
+
+    :param table_group: Saved table group, with the edit applied.
+    :param membership_before: ``catalog_membership`` of the table group before the edit.
+    :param move: The schema move the edit made, if any.
+    :param connection: The table group's connection, when the caller already has it.
+    :returns: Why the catalog could not be read or written, or ``None`` when it was written or
+        needed no change. A failed write after a schema move is logged rather than returned.
+    """
+    if move:
+        apply_schema_move(move, table_group.id)
+        return None
+    if membership_before != catalog_membership(table_group):
+        return write_table_group_catalog(table_group, connection)
+    return None
 
 
 def apply_schema_move(move: SchemaMove, table_group_id: UUID) -> None:

@@ -386,7 +386,7 @@ def _run_metadata_import(*args, **kwargs):
 
 
 CLEARABLE_CACHES = (
-    "get_table_group_columns", "get_table_by_id", "get_column_by_id",
+    "get_catalog_page", "get_table_by_id", "get_column_by_id",
     "get_tag_values", "select_table_groups_minimal_where",
 )
 

@@ -45,6 +45,12 @@ from testgen.ui.components.widgets.download_dialog import (
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
+from testgen.ui.queries.data_catalog_queries import (
+    CatalogFilters,
+    get_catalog_page,
+    get_catalog_page_of_item,
+    get_catalog_visible_items,
+)
 from testgen.ui.queries.profiling_queries import (
     COLUMN_PROFILING_FIELDS,
     TAG_FIELDS,
@@ -87,6 +93,7 @@ DC_HISTORY_DIALOG_KEY = "dc:history_dialog"
 DC_IMPORT_DIALOG_KEY = "dc:import_dialog"
 DC_IMPORT_PREVIEW_KEY = "dc:import_preview"
 DC_IMPORT_RESULT_KEY = "dc:import_result"
+DC_CATALOG_VIEW_KEY = "dc:catalog_view"
 
 
 class DataCatalogPage(Page):
@@ -122,10 +129,16 @@ class DataCatalogPage(Page):
                     table_group_id = str(table_groups[0].id) if table_groups else None
                     on_table_group_selected(table_group_id)
 
-                columns, selected_item, selected_table_group = [], None, None
+                catalog, catalog_filters, selected_item, selected_table_group = None, CatalogFilters(), None, None
                 if table_group_id:
                     selected_table_group = next(item for item in table_groups if str(item.id) == table_group_id)
-                    columns = get_table_group_columns(table_group_id)
+                    catalog_filters, catalog_page = get_catalog_view(table_group_id, selected)
+                    catalog = get_catalog_page(table_group_id, catalog_filters, catalog_page)
+                    if not catalog["tables"] and catalog_page > 0:
+                        # Edits since the page was chosen can leave it past the last page.
+                        catalog_page = max(0, (catalog["visible_count"] - 1) // catalog["page_size"])
+                        set_catalog_view(table_group_id, catalog_filters, catalog_page)
+                        catalog = get_catalog_page(table_group_id, catalog_filters, catalog_page)
                     selected_item = get_selected_item(selected, table_group_id)
 
         if selected_item:
@@ -183,8 +196,20 @@ class DataCatalogPage(Page):
             st.session_state.pop(DC_RUN_PROFILING_DIALOG_KEY, None)
             st.session_state.pop(DC_RUN_PROFILING_RESULT_KEY, None)
 
+        @with_database_session
         def on_export_clicked(items) -> None:
+            if items == "filtered":
+                items = get_catalog_visible_items(table_group_id, catalog_filters)
+                if not items:
+                    st.toast("No tables or columns match the search and filters.", icon=":material/info:")
+                    return
             st.session_state[DC_EXPORT_DIALOG_KEY] = items
+
+        def on_catalog_filters_changed(filters: dict) -> None:
+            set_catalog_view(table_group_id, CatalogFilters.from_dict(filters), 0)
+
+        def on_catalog_page_changed(page: int) -> None:
+            set_catalog_view(table_group_id, catalog_filters, page)
 
         def on_export_csv_clicked(_) -> None:
             if selected_table_group:
@@ -312,7 +337,8 @@ class DataCatalogPage(Page):
                         "selected": table_group_id == str(table_group.id),
                     } for table_group in table_groups
                 ],
-                "columns": json.dumps(make_json_safe(columns)) if columns else None,
+                "catalog": json.dumps(make_json_safe(catalog)) if catalog else None,
+                "catalog_filters": catalog_filters.to_dict(),
                 "selected_item": json.dumps(make_json_safe(selected_item)) if selected_item else None,
                 "tag_values": get_tag_values(),
                 "last_saved_timestamp": st.session_state.get("data_catalog:last_saved_timestamp"),
@@ -335,6 +361,8 @@ class DataCatalogPage(Page):
             on_TableGroupSelected_change=on_table_group_selected,
             on_ItemSelected_change=on_item_selected,
             on_ExportClicked_change=on_export_clicked,
+            on_CatalogFiltersChanged_change=on_catalog_filters_changed,
+            on_CatalogPageChanged_change=on_catalog_page_changed,
             on_ExportCsvClicked_change=on_export_csv_clicked,
             on_ImportClicked_change=on_import_clicked,
             on_RemoveTableConfirmed_change=remove_table_dialog,
@@ -441,16 +469,18 @@ class ExportItem(typing.TypedDict):
 
 def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: TableGroupMinimal, items: list[ExportItem] | None) -> None:
     if items:
+        table_ids = [ item["id"] for item in items if item["type"] == "table" ]
+        column_ids = [ item["id"] for item in items if item["type"] == "column" ]
         table_data = get_tables_by_id(
-            table_ids=[ item["id"] for item in items if item["type"] == "table" ],
+            table_ids=table_ids,
             include_tags=True,
             include_active_tests=True,
-        )
+        ) if table_ids else []
         column_data = get_columns_by_id(
-            column_ids=[ item["id"] for item in items if item["type"] == "column" ],
+            column_ids=column_ids,
             include_tags=True,
             include_active_tests=True,
-        )
+        ) if column_ids else []
     else:
         table_data = get_tables_by_table_group(
             table_group.id,
@@ -463,41 +493,6 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
             include_active_tests=True,
         )
 
-
-    data = pd.DataFrame(table_data + column_data)
-
-    if not session.auth.user_has_permission("view_pii"):
-        pii_columns = get_pii_columns(str(table_group.id))
-        mask_profiling_pii(data, pii_columns)
-
-    data = data.sort_values(by=["table_name", "ordinal_position"], na_position="first", key=lambda x: x.str.lower() if x.dtype == "object" else x)
-
-    for key in ["datatype_suggestion"]:
-        data[key] = data[key].apply(lambda val: val.lower() if not pd.isna(val) else None)
-
-    for key in ["avg_embedded_spaces", "avg_length", "avg_value", "stdev_value"]:
-        data[key] = data[key].apply(lambda val: round(val, 2) if not pd.isna(val) else None)
-
-    for key in ["min_date", "max_date", "add_date", "last_mod_date", "drop_date"]:
-        data[key] = data[key].apply(
-            lambda val: date_service.format_friendly_datetime(val, "%b %-d %Y, %-I:%M %p") if not pd.isna(val) and not isinstance(val, str) else val
-        )
-
-    for key in ["data_source", "source_system", "source_process", "business_domain", "stakeholder_group", "transform_level", "aggregation_level", "data_product", "data_classification"]:
-        data[key] = data.apply(
-            lambda row: row[key] or row[f"table_{key}"] or row.get(f"table_group_{key}"),
-            axis=1,
-        )
-
-    type_map = {"A": "Alpha", "B": "Boolean", "D": "Datetime", "N": "Numeric"}
-    data["general_type"] = data["general_type"].apply(lambda val: type_map.get(val))
-
-    data["critical_data_element"] = data.apply(
-        lambda row: "Yes" if row["critical_data_element"] == True or row["table_critical_data_element"] == True else None,
-        axis=1,
-    )
-    data["frequent_values"] = data["frequent_values"].apply(format_frequent)
-    data["frequent_patterns"] = data["frequent_patterns"].apply(format_frequent)
 
     schema_label = schema_label_for_table_group(table_group.id)
     file_columns = {
@@ -569,6 +564,47 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
         "data_product": {},
         "data_classification": {},
     }
+    # An export of tables alone has no column rows to bring the column-only fields into the frame.
+    data = pd.DataFrame(table_data + column_data)
+    data = data.reindex(columns=data.columns.union([
+        *file_columns,
+        "table_critical_data_element",
+        *(f"table_{tag}" for tag in TAG_FIELDS),
+    ], sort=False))
+
+    if not session.auth.user_has_permission("view_pii"):
+        pii_columns = get_pii_columns(str(table_group.id))
+        mask_profiling_pii(data, pii_columns)
+
+    data = data.sort_values(by=["table_name", "ordinal_position"], na_position="first", key=lambda x: x.str.lower() if x.dtype == "object" else x)
+
+    for key in ["datatype_suggestion"]:
+        data[key] = data[key].apply(lambda val: val.lower() if not pd.isna(val) else None)
+
+    for key in ["avg_embedded_spaces", "avg_length", "avg_value", "stdev_value"]:
+        data[key] = data[key].apply(lambda val: round(val, 2) if not pd.isna(val) else None)
+
+    for key in ["min_date", "max_date", "add_date", "last_mod_date", "drop_date"]:
+        data[key] = data[key].apply(
+            lambda val: date_service.format_friendly_datetime(val, "%b %-d %Y, %-I:%M %p") if not pd.isna(val) and not isinstance(val, str) else val
+        )
+
+    for key in ["data_source", "source_system", "source_process", "business_domain", "stakeholder_group", "transform_level", "aggregation_level", "data_product", "data_classification"]:
+        data[key] = data.apply(
+            lambda row: row[key] or row[f"table_{key}"] or row.get(f"table_group_{key}"),
+            axis=1,
+        )
+
+    type_map = {"A": "Alpha", "B": "Boolean", "D": "Datetime", "N": "Numeric"}
+    data["general_type"] = data["general_type"].apply(lambda val: type_map.get(val))
+
+    data["critical_data_element"] = data.apply(
+        lambda row: "Yes" if row["critical_data_element"] == True or row["table_critical_data_element"] == True else None,
+        axis=1,
+    )
+    data["frequent_values"] = data["frequent_values"].apply(format_frequent)
+    data["frequent_patterns"] = data["frequent_patterns"].apply(format_frequent)
+
     return get_excel_file_data(
         data,
         "Data Catalog Columns",
@@ -588,7 +624,7 @@ def remove_table_dialog(item: dict) -> None:
         "DELETE FROM data_table_chars WHERE table_id = :table_id;",
         {"table_id": item["id"]},
     )
-    for func in [get_table_group_columns, get_tag_values]:
+    for func in [get_catalog_page, get_tag_values]:
         func.clear()
     st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
 
@@ -636,7 +672,7 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> None:
                     if disabled:
                         table_group.save()
 
-    for func in [ get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values, select_table_groups_minimal_where ]:
+    for func in [ get_catalog_page, get_table_by_id, get_column_by_id, get_tag_values, select_table_groups_minimal_where ]:
         func.clear()
     st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
 
@@ -653,7 +689,7 @@ def _run_metadata_import(preview: dict, table_group_id: str) -> dict:
         LOG.exception("Metadata import failed")
         return {"success": False, "message": "Something went wrong while importing the metadata."}
 
-    for func in [get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values,
+    for func in [get_catalog_page, get_table_by_id, get_column_by_id, get_tag_values,
                  select_table_groups_minimal_where]:
         func.clear()
     st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
@@ -667,53 +703,25 @@ def _run_metadata_import(preview: dict, table_group_id: str) -> dict:
     return {"success": True, "message": summary}
 
 
-@st.cache_data(show_spinner=False)
-def get_table_group_columns(table_group_id: str) -> list[dict]:
-    if not is_uuid4(table_group_id):
-        return []
+def get_catalog_view(table_group_id: str, selected: str | None) -> tuple[CatalogFilters, int]:
+    """Return the filters and page the user is viewing the table group's catalog with.
 
-    query = f"""
-    SELECT CONCAT('column_', column_chars.column_id) AS column_id,
-        CONCAT('table_', table_chars.table_id) AS table_id,
-        column_chars.column_name,
-        table_chars.table_name,
-        column_chars.schema_name,
-        column_chars.general_type,
-        column_chars.db_data_type,
-        column_chars.functional_data_type,
-        profile_results.datatype_suggestion,
-        table_chars.record_ct,
-        profile_results.value_ct,
-        column_chars.add_date,
-        column_chars.drop_date,
-        table_chars.add_date AS table_add_date,
-        table_chars.drop_date AS table_drop_date,
-        column_chars.critical_data_element,
-        table_chars.critical_data_element AS table_critical_data_element,
-        column_chars.pii_flag,
-        column_chars.excluded_data_element,
-        {", ".join([ f"column_chars.{tag}" for tag in TAG_FIELDS ])},
-        {", ".join([ f"table_chars.{tag} AS table_{tag}" for tag in TAG_FIELDS ])},
-        {", ".join([ f"table_groups.{tag} AS table_group_{tag}" for tag in TAG_FIELDS if tag != "aggregation_level" ])}
-    FROM data_column_chars column_chars
-        LEFT JOIN data_table_chars table_chars ON (
-            column_chars.table_id = table_chars.table_id
-        )
-        LEFT JOIN profile_results ON (
-            column_chars.last_complete_profile_run_id = profile_results.profile_run_id
-            AND column_chars.table_name = profile_results.table_name
-            AND column_chars.column_name = profile_results.column_name
-        )
-        LEFT JOIN table_groups ON (
-            column_chars.table_groups_id = table_groups.id
-        )
-    WHERE column_chars.table_groups_id = :table_group_id
-    ORDER BY LOWER(table_chars.table_name), ordinal_position;
+    Opening a table group with an item already selected starts on the page that shows the item.
     """
-    params = {"table_group_id": table_group_id}
+    view = st.session_state.get(DC_CATALOG_VIEW_KEY)
+    if view and view["table_group_id"] == table_group_id:
+        return view["filters"], view["page"]
 
-    results = fetch_all_from_db(query, params)
-    return [ dict(row) for row in results ]
+    filters, page = CatalogFilters(), 0
+    if selected and "_" in selected:
+        item_type, item_id = selected.split("_", 1)
+        page = get_catalog_page_of_item(table_group_id, filters, item_type, item_id) or 0
+    set_catalog_view(table_group_id, filters, page)
+    return filters, page
+
+
+def set_catalog_view(table_group_id: str, filters: CatalogFilters, page: int) -> None:
+    st.session_state[DC_CATALOG_VIEW_KEY] = {"table_group_id": table_group_id, "filters": filters, "page": page}
 
 
 def get_selected_item(selected: str, table_group_id: str) -> dict | None:
