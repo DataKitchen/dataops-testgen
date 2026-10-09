@@ -27,6 +27,7 @@ test_types:
   default_severity: Warning
   run_type: CAT
   test_scope: column
+  column_general_types: [N]
   dq_dimension: Accuracy
   impact_dimension: Regularity
   health_dimension: Statistical Drift
@@ -76,7 +77,7 @@ test_types:
     test_type: Outlier_Pct_Above
     sql_flavor: postgresql
     measure: |-
-      SUM(CASE WHEN {COLUMN_NAME}::FLOAT > {BASELINE_AVG}+(2.0*{BASELINE_SD}) THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT
+      SUM(CASE WHEN {COLUMN_NUM}::FLOAT > {BASELINE_AVG}+(2.0*{BASELINE_SD}) THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -171,7 +172,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_NUM} :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
     error_type: Test Results
   - id: '1019'
     test_id: '1024'

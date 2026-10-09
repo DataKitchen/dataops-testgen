@@ -25,6 +25,7 @@ test_types:
   default_severity: Fail
   run_type: CAT
   test_scope: column
+  column_general_types: [N]
   dq_dimension: Validity
   impact_dimension: Conformance
   health_dimension: Schema Drift
@@ -66,7 +67,7 @@ test_types:
     test_type: Max_Val
     sql_flavor: postgresql
     measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} > {BASELINE_VALUE} + 1e-6 THEN 1 ELSE 0 END)
+      SUM(CASE WHEN {COLUMN_NUM} > {BASELINE_VALUE} + 1e-6 THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -157,7 +158,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > {BASELINE_VALUE} LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", (ABS({COLUMN_NUM}) - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_NUM} > {BASELINE_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   - id: '1514'
     test_id: '1517'

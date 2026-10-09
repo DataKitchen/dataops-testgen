@@ -11,7 +11,7 @@ test_types:
   measure_uom_description: null
   selection_criteria: |-
     general_type = 'N' AND value_ct > 0 AND GREATEST(ABS(min_value), ABS(max_value)) * value_ct < 1e30
-    AND ABS(avg_value) >= 1e-5 * GREATEST(ABS(min_value), ABS(max_value))
+    AND (sum_value IS NOT NULL OR ABS(avg_value) >= 1e-5 * GREATEST(ABS(min_value), ABS(max_value)))
   generation_template: null
   dq_score_prevalence_formula: |-
     1
@@ -20,7 +20,7 @@ test_types:
   column_name_help: null
   default_parm_columns: baseline_sum,upper_tolerance
   default_parm_values: |-
-    avg_value * value_ct,0.000000001
+    COALESCE(RTRIM(RTRIM(sum_value::VARCHAR, '0'), '.'), (avg_value * value_ct)::VARCHAR),CASE WHEN sum_value IS NULL THEN '0.000000001' ELSE '0' END
   default_parm_prompts: |-
     Sum at Baseline,Relative Tolerance
   default_parm_help: |-
@@ -29,6 +29,7 @@ test_types:
   default_severity: Fail
   run_type: CAT
   test_scope: column
+  column_general_types: [N]
   dq_dimension: Consistency
   impact_dimension: Conformance
   health_dimension: Data Drift
@@ -37,7 +38,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    Match Sum tests that the column total is within a relative tolerance of the baseline total. The default tolerance is close to an exact match; widen it per test when small numeric differences are expected.
+    Match Sum tests that the column total is within a relative tolerance of the baseline total. The default tolerance is 0 for integer and exact-decimal columns, whose sum is profiled exactly, and close to an exact match for floating-point columns. Widen it per test when small numeric differences are expected.
   active: Y
   ai_redact_values: false
   null_measure_fails: true
@@ -49,10 +50,10 @@ test_types:
     test_type: Match_Sum
     sql_flavor: bigquery
     measure: |-
-      SUM(CAST({COLUMN_NAME} AS BIGNUMERIC))
+      SUM(ROUND(CAST({COLUMN_NAME} AS BIGNUMERIC), 8))
     test_operator: NOT BETWEEN
     test_condition: |-
-      CAST({BASELINE_SUM} AS FLOAT64) - ABS(CAST({BASELINE_SUM} AS FLOAT64) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS FLOAT64) + ABS(CAST({BASELINE_SUM} AS FLOAT64) * {UPPER_TOLERANCE})
+      CAST(NULLIF('{BASELINE_SUM}', 'NULL') AS BIGNUMERIC) - CAST(ABS(CAST(NULLIF('{BASELINE_SUM}', 'NULL') AS BIGNUMERIC) * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS BIGNUMERIC) AND CAST(NULLIF('{BASELINE_SUM}', 'NULL') AS BIGNUMERIC) + CAST(ABS(CAST(NULLIF('{BASELINE_SUM}', 'NULL') AS BIGNUMERIC) * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS BIGNUMERIC)
   - id: '6047'
     test_type: Match_Sum
     sql_flavor: databricks
@@ -60,7 +61,7 @@ test_types:
       SUM(CAST({COLUMN_NAME} AS DECIMAL(38,8)))
     test_operator: NOT BETWEEN
     test_condition: |-
-      CAST({BASELINE_SUM} AS DOUBLE) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS DOUBLE) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS DOUBLE) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS DOUBLE) * {UPPER_TOLERANCE})
+      CAST({BASELINE_SUM} AS DECIMAL(38,8)) - CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS DECIMAL(38,8)) AND CAST({BASELINE_SUM} AS DECIMAL(38,8)) + CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS DECIMAL(38,8))
   - id: '3047'
     test_type: Match_Sum
     sql_flavor: mssql
@@ -68,7 +69,7 @@ test_types:
       SUM(CAST({COLUMN_NAME} AS DECIMAL(38,8)))
     test_operator: NOT BETWEEN
     test_condition: |-
-      CAST({BASELINE_SUM} AS FLOAT) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS FLOAT) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS FLOAT) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS FLOAT) * {UPPER_TOLERANCE})
+      CAST({BASELINE_SUM} AS DECIMAL(38,8)) - CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS DECIMAL(38,8)) AND CAST({BASELINE_SUM} AS DECIMAL(38,8)) + CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS DECIMAL(38,8))
   - id: '4047'
     test_type: Match_Sum
     sql_flavor: postgresql
@@ -76,7 +77,7 @@ test_types:
       SUM(CAST({COLUMN_NAME} AS NUMERIC(38,8)))
     test_operator: NOT BETWEEN
     test_condition: |-
-      CAST({BASELINE_SUM} AS DOUBLE PRECISION) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS DOUBLE PRECISION) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS DOUBLE PRECISION) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS DOUBLE PRECISION) * {UPPER_TOLERANCE})
+      CAST({BASELINE_SUM} AS NUMERIC(38,8)) - CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS NUMERIC(38,8)) AND CAST({BASELINE_SUM} AS NUMERIC(38,8)) + CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS NUMERIC(38,8))
   - id: '2027'
     test_type: Match_Sum
     sql_flavor: redshift
@@ -84,7 +85,7 @@ test_types:
       SUM(CAST({COLUMN_NAME} AS DECIMAL(38,8)))
     test_operator: NOT BETWEEN
     test_condition: |-
-      CAST({BASELINE_SUM} AS FLOAT8) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS FLOAT8) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS FLOAT8) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS FLOAT8) * {UPPER_TOLERANCE})
+      CAST({BASELINE_SUM} AS DECIMAL(38,8)) - CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS DECIMAL(38,8)) AND CAST({BASELINE_SUM} AS DECIMAL(38,8)) + CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS DECIMAL(38,8))
   - id: '7047'
     test_type: Match_Sum
     sql_flavor: redshift_spectrum
@@ -92,7 +93,7 @@ test_types:
       SUM(CAST({COLUMN_NAME} AS DECIMAL(38,8)))
     test_operator: NOT BETWEEN
     test_condition: |-
-      CAST({BASELINE_SUM} AS FLOAT8) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS FLOAT8) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS FLOAT8) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS FLOAT8) * {UPPER_TOLERANCE})
+      CAST({BASELINE_SUM} AS DECIMAL(38,8)) - CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS DECIMAL(38,8)) AND CAST({BASELINE_SUM} AS DECIMAL(38,8)) + CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS DECIMAL(38,8))
   - id: '2127'
     test_type: Match_Sum
     sql_flavor: snowflake
@@ -100,7 +101,7 @@ test_types:
       SUM(CAST({COLUMN_NAME} AS NUMBER(38,8)))
     test_operator: NOT BETWEEN
     test_condition: |-
-      CAST({BASELINE_SUM} AS FLOAT) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS FLOAT) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS FLOAT) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS FLOAT) * {UPPER_TOLERANCE})
+      CAST({BASELINE_SUM} AS NUMBER(38,8)) - CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS NUMBER(38,8)) AND CAST({BASELINE_SUM} AS NUMBER(38,8)) + CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS NUMBER(38,8))
   - id: '8047'
     test_type: Match_Sum
     sql_flavor: oracle
@@ -108,7 +109,7 @@ test_types:
       SUM(CAST({COLUMN_NAME} AS NUMBER(38,8)))
     test_operator: NOT BETWEEN
     test_condition: |-
-      CAST({BASELINE_SUM} AS BINARY_DOUBLE) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS BINARY_DOUBLE) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS BINARY_DOUBLE) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS BINARY_DOUBLE) * {UPPER_TOLERANCE})
+      CAST({BASELINE_SUM} AS NUMBER(38,8)) - CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS NUMBER(38,8)) AND CAST({BASELINE_SUM} AS NUMBER(38,8)) + CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS NUMBER(38,8))
   - id: '8047'
     test_type: Match_Sum
     sql_flavor: sap_hana
@@ -116,7 +117,7 @@ test_types:
       SUM(CAST({COLUMN_NAME} AS DECIMAL(38,8)))
     test_operator: NOT BETWEEN
     test_condition: |-
-      CAST({BASELINE_SUM} AS DOUBLE) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS DOUBLE) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS DOUBLE) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS DOUBLE) * {UPPER_TOLERANCE})
+      CAST({BASELINE_SUM} AS DECIMAL(38,8)) - CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS DECIMAL(38,8)) AND CAST({BASELINE_SUM} AS DECIMAL(38,8)) + CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS DECIMAL(38,8))
   - id: '10058'
     test_type: Match_Sum
     sql_flavor: salesforce_data360
@@ -124,7 +125,7 @@ test_types:
       SUM(CAST({COLUMN_NAME} AS NUMERIC(38,8)))
     test_operator: NOT BETWEEN
     test_condition: |-
-      CAST({BASELINE_SUM} AS DOUBLE PRECISION) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS DOUBLE PRECISION) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS DOUBLE PRECISION) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS DOUBLE PRECISION) * {UPPER_TOLERANCE})
+      CAST({BASELINE_SUM} AS NUMERIC(38,8)) - CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS NUMERIC(38,8)) AND CAST({BASELINE_SUM} AS NUMERIC(38,8)) + CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS NUMERIC(38,8))
   - id: '11122'
     test_type: Match_Sum
     sql_flavor: duckdb
@@ -132,7 +133,7 @@ test_types:
       SUM(CAST({COLUMN_NAME} AS DECIMAL(38,8)))
     test_operator: NOT BETWEEN
     test_condition: |-
-      CAST({BASELINE_SUM} AS DOUBLE) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS DOUBLE) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS DOUBLE) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS DOUBLE) * {UPPER_TOLERANCE})
+      CAST({BASELINE_SUM} AS DECIMAL(38,8)) - CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS DECIMAL(38,8)) AND CAST({BASELINE_SUM} AS DECIMAL(38,8)) + CAST(ABS({BASELINE_SUM} * {UPPER_TOLERANCE}) + SIGN(ABS({UPPER_TOLERANCE})) * COUNT({COLUMN_NAME}) * 0.000000005 AS DECIMAL(38,8))
   target_data_lookups:
   - id: '1532'
     test_id: '1529'
@@ -140,7 +141,7 @@ test_types:
     sql_flavor: bigquery
     lookup_type: null
     lookup_query: |-
-      SELECT SUM(CAST(`{COLUMN_NAME}` AS BIGNUMERIC)) AS current_sum, {BASELINE_SUM} AS baseline_sum FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+      SELECT SUM(ROUND(CAST(`{COLUMN_NAME}` AS BIGNUMERIC), 8)) AS current_sum, CAST(NULLIF('{BASELINE_SUM}', 'NULL') AS BIGNUMERIC) AS baseline_sum FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
     error_type: Test Results
   - id: '1554'
     test_id: '1529'

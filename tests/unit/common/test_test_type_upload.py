@@ -330,3 +330,26 @@ def test_ai_redact_values_rejects_yn_string() -> None:
     result = validate_test_type_yaml(_valid_parent_yaml("  ai_redact_values: 'Y'\n"))
     assert not result.ok
     assert "ai_redact_values: must be true or false." in result.errors
+
+
+# -- column_general_types ---------------------------------------------------
+
+
+def test_column_general_types_accepts_a_list_of_codes() -> None:
+    result = validate_test_type_yaml(_valid_parent_yaml("  column_general_types: [A, N]\n"))
+    assert result.ok, result.errors
+    assert result.parsed.parent["column_general_types"] == ["A", "N"]
+
+
+@pytest.mark.parametrize("value", ["A", "[]", "[Q]", "[Alpha]", "[1]"])
+def test_column_general_types_rejects_anything_but_a_list_of_codes(value: str) -> None:
+    result = validate_test_type_yaml(_valid_parent_yaml(f"  column_general_types: {value}\n"))
+    assert not result.ok
+    assert "column_general_types: must be a list of general type codes (A, N, D, B, T, X)." in result.errors
+
+
+def test_column_general_types_applies_only_to_column_scope() -> None:
+    yaml = _valid_parent_yaml("  column_general_types: [N]\n").replace("test_scope: column", "test_scope: table")
+    result = validate_test_type_yaml(yaml)
+    assert not result.ok
+    assert "column_general_types: applies only to test_scope column." in result.errors
