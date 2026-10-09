@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 
+from testgen.common.enums import JobSource
 from testgen.common.models.scores import (
     ScoreCategory,
     ScoreDefinition,
@@ -1783,7 +1784,7 @@ def test_update_scorecard_calls_save_and_refresh_with_is_new_false(db_session_mo
     mock_orch.assert_called_once()
     args, kwargs = mock_orch.call_args
     assert args[0] is sd
-    assert kwargs == {"is_new": False}
+    assert kwargs == {"is_new": False, "source": JobSource.mcp}
 
 
 def test_update_scorecard_does_not_call_orchestrator_on_filter_validation_failure(db_session_mock):
@@ -1973,7 +1974,7 @@ def test_create_scorecard_persists_with_defaults(db_session_mock):
     assert saved.criteria.group_by_field is True
     assert saved.criteria.filters[0].field == "table_groups_name"
     assert saved.criteria.filters[0].value == "tg1"
-    assert mock_orch.call_args.kwargs == {"is_new": True}
+    assert mock_orch.call_args.kwargs == {"is_new": True, "source": JobSource.mcp}
 
 
 def test_create_scorecard_persists_with_overrides(db_session_mock):
@@ -2024,7 +2025,7 @@ def test_create_scorecard_returns_markdown_summary(db_session_mock):
 
     new_id = uuid4()
 
-    def _set_id(definition, *, is_new):
+    def _set_id(definition, *, is_new, source):
         definition.id = new_id
         return definition
 

@@ -1,16 +1,21 @@
 from datetime import UTC, datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
 from testgen.commands.run_refresh_score_cards_results import (
     _score_card_to_results,
+    run_recalculate_score_card,
+    run_refresh_score_cards_results,
     save_and_refresh_score_definition,
 )
+from testgen.common.enums import JobKey, JobSource
 from testgen.common.models.scores import ScoreDefinition, ScoreDefinitionCriteria
 
 pytestmark = pytest.mark.unit
+
+REFRESH_MODULE = "testgen.commands.run_refresh_score_cards_results"
 
 
 def _make_score_card(**overrides):
@@ -106,8 +111,11 @@ def _fake_definition(project_code: str = "demo") -> ScoreDefinition:
     return sd
 
 
-def test_save_and_refresh_score_definition_for_existing_card_calls_save_refresh_and_recalculate():
-    """is_new=False path: save → refresh → recalculate, all in that order."""
+def test_save_and_refresh_score_definition_for_existing_card_queues_the_history_recalculation():
+    """is_new=False path: save → commit → refresh → queue the history recalculation, in that order.
+
+    The save commits before the refresh, which rolls back a scorecard it fails on.
+    """
     sd = _fake_definition()
     call_order: list[str] = []
 
@@ -117,19 +125,27 @@ def test_save_and_refresh_score_definition_for_existing_card_calls_save_refresh_
         return _called
 
     with (
+        patch(f"{REFRESH_MODULE}.get_current_session") as mock_session,
         patch.object(ScoreDefinition, "save", autospec=True, side_effect=record("save")),
         patch(
             "testgen.commands.run_refresh_score_cards_results.run_refresh_score_cards_results",
             side_effect=record("refresh"),
         ),
         patch(
-            "testgen.commands.run_refresh_score_cards_results.run_recalculate_score_card",
-            side_effect=record("recalculate"),
-        ),
+            "testgen.commands.run_refresh_score_cards_results.JobExecution.submit",
+            side_effect=record("submit"),
+        ) as mock_submit,
     ):
-        save_and_refresh_score_definition(sd, is_new=False)
+        mock_session.return_value.commit.side_effect = record("commit")
+        save_and_refresh_score_definition(sd, is_new=False, source=JobSource.ui)
 
-    assert call_order == ["save", "refresh", "recalculate"]
+    assert call_order == ["save", "commit", "refresh", "submit"]
+    mock_submit.assert_called_once_with(
+        job_key=JobKey.recalculate_score_card,
+        kwargs={"project_code": "demo", "definition_id": str(sd.id)},
+        source=JobSource.ui,
+        project_code="demo",
+    )
 
 
 def test_save_and_refresh_score_definition_for_existing_card_passes_refresh_kwargs_for_update():
@@ -141,17 +157,15 @@ def test_save_and_refresh_score_definition_for_existing_card_passes_refresh_kwar
         patch(
             "testgen.commands.run_refresh_score_cards_results.run_refresh_score_cards_results",
         ) as mock_refresh,
-        patch(
-            "testgen.commands.run_refresh_score_cards_results.run_recalculate_score_card",
-        ),
+        patch("testgen.commands.run_refresh_score_cards_results.JobExecution.submit"),
     ):
-        save_and_refresh_score_definition(sd, is_new=False)
+        save_and_refresh_score_definition(sd, is_new=False, source=JobSource.ui)
 
     mock_refresh.assert_called_once_with(definition_id=sd.id)
 
 
 def test_save_and_refresh_score_definition_for_new_card_skips_recalculate():
-    """is_new=True path: save → refresh with history kwargs; no recalculate."""
+    """is_new=True path: save → refresh with history kwargs; no recalculation queued."""
     sd = _fake_definition()
 
     fake_latest = type("Run", (), {"run_time": datetime(2026, 5, 1, tzinfo=UTC)})()
@@ -169,18 +183,16 @@ def test_save_and_refresh_score_definition_for_new_card_skips_recalculate():
         patch(
             "testgen.commands.run_refresh_score_cards_results.run_refresh_score_cards_results",
         ) as mock_refresh,
-        patch(
-            "testgen.commands.run_refresh_score_cards_results.run_recalculate_score_card",
-        ) as mock_recalc,
+        patch("testgen.commands.run_refresh_score_cards_results.JobExecution.submit") as mock_submit,
     ):
-        save_and_refresh_score_definition(sd, is_new=True)
+        save_and_refresh_score_definition(sd, is_new=True, source=JobSource.ui)
 
     mock_refresh.assert_called_once_with(
         definition_id=sd.id,
         add_history_entry=True,
         refresh_date=fake_latest.run_time,
     )
-    mock_recalc.assert_not_called()
+    mock_submit.assert_not_called()
 
 
 def test_save_and_refresh_score_definition_for_new_card_handles_no_runs():
@@ -200,14 +212,56 @@ def test_save_and_refresh_score_definition_for_new_card_handles_no_runs():
         patch(
             "testgen.commands.run_refresh_score_cards_results.run_refresh_score_cards_results",
         ) as mock_refresh,
-        patch(
-            "testgen.commands.run_refresh_score_cards_results.run_recalculate_score_card",
-        ),
+        patch("testgen.commands.run_refresh_score_cards_results.JobExecution.submit"),
     ):
-        save_and_refresh_score_definition(sd, is_new=True)
+        save_and_refresh_score_definition(sd, is_new=True, source=JobSource.ui)
 
     mock_refresh.assert_called_once_with(
         definition_id=sd.id,
         add_history_entry=True,
         refresh_date=None,
     )
+
+
+
+def _refresh_project(definitions: list) -> None:
+    with (
+        patch(f"{REFRESH_MODULE}.ScoreDefinition.all", return_value=definitions),
+        patch(f"{REFRESH_MODULE}._score_card_to_results", return_value=[]),
+        patch(f"{REFRESH_MODULE}._score_definition_to_results_breakdown", return_value=[]),
+        patch(f"{REFRESH_MODULE}.collect_score_notification_data"),
+        patch(f"{REFRESH_MODULE}.send_score_drop_notifications"),
+    ):
+        run_refresh_score_cards_results(project_code="test_project")
+
+
+def test_each_refreshed_scorecard_commits_on_its_own(db_session_mock):
+    steps = MagicMock()
+    first, second = MagicMock(name="first"), MagicMock(name="second")
+    steps.attach_mock(first.save, "save_first")
+    steps.attach_mock(second.save, "save_second")
+    steps.attach_mock(db_session_mock.commit, "commit")
+
+    _refresh_project([first, second])
+
+    # The session the refresh opened commits once more on its way out.
+    assert [name for name, *_ in steps.mock_calls][:4] == ["save_first", "commit", "save_second", "commit"]
+
+
+def test_a_failed_scorecard_is_rolled_back_and_the_next_still_commits(db_session_mock):
+    failing, healthy = MagicMock(name="failing"), MagicMock(name="healthy")
+    failing.as_score_card.side_effect = RuntimeError("boom")
+
+    _refresh_project([failing, healthy])
+
+    db_session_mock.rollback.assert_called_once()
+    healthy.save.assert_called_once()
+    assert db_session_mock.commit.call_count >= 1
+
+
+def test_recalculating_a_missing_scorecard_raises(db_session_mock):
+    with (
+        patch(f"{REFRESH_MODULE}.ScoreDefinition.get", return_value=None),
+        pytest.raises(ValueError, match="Scorecard missing-id not found"),
+    ):
+        run_recalculate_score_card(project_code="demo", definition_id="missing-id")

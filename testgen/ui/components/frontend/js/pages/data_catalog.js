@@ -3,50 +3,49 @@
  * @import { TreeNode, SelectedNode } from '/app/static/js/components/tree.js';
  * @import { FilterOption, ProjectSummary } from '../types.js';
  * 
- * @typedef ColumnPath
+ * @typedef CatalogTable
+ * @type {object}
+ * @property {string} table_id
+ * @property {string} table_name
+ * @property {number} record_ct
+ * @property {string} add_date
+ * @property {string} drop_date
+ * @property {boolean} critical_data_element
+ *
+ * @typedef CatalogColumn
  * @type {object}
  * @property {string} column_id
  * @property {string} table_id
  * @property {string} column_name
- * @property {string} table_name
  * @property {'A' | 'B' | 'D' | 'N' | 'T' | 'X'} general_type
  * @property {string} functional_data_type
- * @property {number} record_ct
  * @property {number} value_ct
  * @property {string} add_date
  * @property {string} drop_date
- * @property {string} table_add_date
- * @property {string} table_drop_date
  * @property {boolean} critical_data_element
- * @property {boolean} table_critical_data_element
  * @property {boolean} excluded_data_element
+ * @property {string} pii_flag
+ *
+ * Both carry each tag in TAG_KEYS, already resolved from the table and table group when unset.
+ *
+ * @typedef Catalog
+ * @type {object}
+ * @property {CatalogTable[]} tables
+ * @property {CatalogColumn[]} columns
+ * @property {number} page
+ * @property {number} page_size
+ * @property {number} visible_count
+ * @property {number} total_count
+ *
+ * @typedef CatalogFilters
+ * @type {object}
+ * @property {string} search
+ * @property {boolean} search_tables
+ * @property {boolean} search_columns
+ * @property {boolean} critical_data_element
  * @property {boolean} pii_flag
- * @property {string} data_source
- * @property {string} source_system
- * @property {string} source_process
- * @property {string} business_domain
- * @property {string} stakeholder_group
- * @property {string} transform_level
- * @property {string} aggregation_level
- * @property {string} data_product
- * @property {string} data_classification
- * @property {string} table_data_source
- * @property {string} table_source_system
- * @property {string} table_source_process
- * @property {string} table_business_domain
- * @property {string} table_stakeholder_group
- * @property {string} table_transform_level
- * @property {string} table_aggregation_level
- * @property {string} table_data_product
- * @property {string} table_data_classification
- * @property {string} table_group_data_source
- * @property {string} table_group_source_system
- * @property {string} table_group_source_process
- * @property {string} table_group_business_domain
- * @property {string} table_group_stakeholder_group
- * @property {string} table_group_transform_level
- * @property {string} table_group_data_product
- * @property {string} table_group_data_classification
+ * @property {boolean} show_excluded
+ * @property {Object.<string, string>} tags
  *
  * @typedef Permissions
  * @type {object}
@@ -63,7 +62,8 @@
  * @type {object}
  * @property {ProjectSummary} project_summary
  * @property {FilterOption[]} table_group_filter_options
- * @property {ColumnPath[]} columns
+ * @property {string} catalog
+ * @property {CatalogFilters} catalog_filters
  * @property {Table | Column} selected_item
  * @property {Object.<string, string[]>} tag_values
  * @property {string} last_saved_timestamp
@@ -75,6 +75,7 @@
  */
 import van from '/app/static/js/van.min.js';
 import { Tree } from '/app/static/js/components/tree.js';
+import { Paginator } from '/app/static/js/components/paginator.js';
 import { EditableCard } from '/app/static/js/components/editable_card.js';
 import { Attribute } from '/app/static/js/components/attribute.js';
 import { Input } from '/app/static/js/components/input.js';
@@ -88,7 +89,7 @@ import { getColumnIcon, TABLE_ICON, LatestProfilingTime } from '../data_profilin
 import { RadioGroup } from '/app/static/js/components/radio_group.js';
 import { Checkbox } from '/app/static/js/components/checkbox.js';
 import { Select } from '/app/static/js/components/select.js';
-import { capitalize, caseInsensitiveIncludes, DISABLED_ACTION_TEXT } from '/app/static/js/display_utils.js';
+import { capitalize, DISABLED_ACTION_TEXT } from '/app/static/js/display_utils.js';
 import { TableSizeCard } from '../data_profiling/table_size.js';
 import { Card } from '/app/static/js/components/card.js';
 import { Button } from '/app/static/js/components/button.js';
@@ -132,39 +133,49 @@ const DataCatalog = (/** @type Properties */ props) => {
         }
     };
 
+    /** @type {{ val: Catalog | null }} */
+    const catalog = van.derive(() => {
+        try {
+            return JSON.parse(getValue(props.catalog));
+        } catch {
+            return null;
+        }
+    });
+
+    const searchValue = van.state(getValue(props.catalog_filters)?.search ?? '');
+
     /** @type TreeNode[] */
     const treeNodes = van.derive(() => {
-        let columns = [];
-        try {
-            columns = JSON.parse(getValue(props.columns) ?? []);
-        } catch { }
+        const { tables = [], columns = [] } = catalog.val ?? {};
+        const isRecent = (date) => date && (Date.now() - new Date(date * 1000).getTime()) < 7 * 86400000;
 
-        const tables = {};
+        const tableNodes = {};
+        tables.forEach((table) => {
+            tableNodes[table.table_id] = {
+                id: table.table_id,
+                label: table.table_name,
+                classes: table.drop_date ? 'text-disabled' : isRecent(table.add_date) ? 'text-bold' : '',
+                ...TABLE_ICON,
+                iconClass: table.record_ct === 0 ? 'text-error' : null,
+                iconTooltip: table.record_ct === 0 ? 'No records detected' : null,
+                criticalDataElement: !!table.critical_data_element,
+                expanded: !!searchValue.rawVal,
+                children: [],
+            };
+            TAG_KEYS.forEach(key => tableNodes[table.table_id][key] = table[key]);
+        });
+
         columns.forEach((item) => {
-            const { column_id, table_id, column_name, table_name, record_ct, value_ct, add_date, drop_date, table_add_date, table_drop_date } = item;
-            if (!tables[table_id]) {
-                tables[table_id] = {
-                    id: table_id,
-                    label: table_name,
-                    classes: table_drop_date ? 'text-disabled' : (table_add_date && (Date.now() - new Date(table_add_date * 1000).getTime()) < 7 * 86400000) ? 'text-bold' : '',
-                    ...TABLE_ICON,
-                    iconClass: record_ct === 0 ? 'text-error' : null,
-                    iconTooltip: record_ct === 0 ? 'No records detected' : null,
-                    criticalDataElement: !!item.table_critical_data_element,
-                    children: [],
-                };
-                TAG_KEYS.forEach(key => tables[table_id][key] = item[`table_${key}`] ?? item[`table_group_${key}`]);
-            }
             const columnNode = {
-                id: column_id,
-                label: column_name,
-                classes: `column ${drop_date ? 'text-disabled' : (add_date && (Date.now() - new Date(add_date * 1000).getTime()) < 7 * 86400000) ? 'text-bold' : ''}`,
+                id: item.column_id,
+                label: item.column_name,
+                classes: `column ${item.drop_date ? 'text-disabled' : isRecent(item.add_date) ? 'text-bold' : ''}`,
                 ...getColumnIcon(item),
-                iconClass: value_ct === 0 ? 'text-error' : null,
-                iconTooltip: value_ct === 0 ? 'No non-null values detected' : null,
+                iconClass: item.value_ct === 0 ? 'text-error' : null,
+                iconTooltip: item.value_ct === 0 ? 'No non-null values detected' : null,
                 prefix: () => {
                     const icons = [];
-                    if (item.critical_data_element ?? item.table_critical_data_element) {
+                    if (item.critical_data_element) {
                         icons.push(withTooltip(Icon({ size: 15, classes: 'text-purple' }, 'star'), { text: 'Critical data element', position: 'right' }));
                     }
                     if (item.excluded_data_element) {
@@ -175,15 +186,16 @@ const DataCatalog = (/** @type Properties */ props) => {
                     }
                     return span({ class: 'tg-dh--column-prefix' }, ...icons);
                 },
-                criticalDataElement: !!(item.critical_data_element ?? item.table_critical_data_element),
+                criticalDataElement: !!item.critical_data_element,
                 excludedDataElement: !!item.excluded_data_element,
                 piiFlag: !!item.pii_flag,
             };
-            TAG_KEYS.forEach(key => columnNode[key] = item[key] ?? item[`table_${key}`] ?? item[`table_group_${key}`]);
-            tables[table_id].children.push(columnNode);
+            TAG_KEYS.forEach(key => columnNode[key] = item[key]);
+            tableNodes[item.table_id]?.children.push(columnNode);
         });
-        return Object.values(tables);
+        return Object.values(tableNodes);
     });
+    const hasCatalog = van.derive(() => (catalog.val?.total_count ?? 0) > 0);
 
     const selectedItem = van.derive(() => {
         try {
@@ -214,8 +226,52 @@ const DataCatalog = (/** @type Properties */ props) => {
         tableName: van.state(true),
         columnName: van.state(true),
     };
-    const filters = { criticalDataElement: van.state(false), piiFlag: van.state(false), showExcluded: van.state(false) };
+    const filters = {
+        criticalDataElement: van.state(false),
+        piiFlag: van.state(false),
+        showExcluded: van.state(false),
+    };
     TAG_KEYS.forEach(key => filters[key] = van.state(null));
+
+    // The table group picker lives inside this component, so a table group change arrives as new
+    // props rather than a remount. Within one table group the local states lead: the server echoes
+    // them back a round trip late, and syncing that echo would overwrite a search still being typed.
+    // Starting undefined makes the first run seed the states, so a remount restores the saved filters.
+    const selectedTableGroupId = () => getValue(props.table_group_filter_options)
+        ?.find((op) => op.selected)?.value ?? null;
+    let filtersTableGroupId;
+    van.derive(() => {
+        const tableGroupId = selectedTableGroupId();
+        if (tableGroupId === filtersTableGroupId) {
+            return;
+        }
+        filtersTableGroupId = tableGroupId;
+        /** @type CatalogFilters */
+        const catalogFilters = props.catalog_filters?.rawVal ?? {};
+        searchValue.val = catalogFilters.search ?? '';
+        searchOptions.tableName.val = catalogFilters.search_tables ?? true;
+        searchOptions.columnName.val = catalogFilters.search_columns ?? true;
+        filters.criticalDataElement.val = !!catalogFilters.critical_data_element;
+        filters.piiFlag.val = !!catalogFilters.pii_flag;
+        filters.showExcluded.val = !!catalogFilters.show_excluded;
+        TAG_KEYS.forEach(key => filters[key].val = catalogFilters.tags?.[key] ?? null);
+    });
+
+    const emitFilters = () => {
+        const tags = {};
+        TAG_KEYS.forEach(key => tags[key] = filters[key].val);
+        emit('CatalogFiltersChanged', {
+            payload: {
+                search: searchValue.val,
+                search_tables: searchOptions.tableName.val,
+                search_columns: searchOptions.columnName.val,
+                critical_data_element: filters.criticalDataElement.val,
+                pii_flag: filters.piiFlag.val,
+                show_excluded: filters.showExcluded.val,
+                tags,
+            },
+        });
+    };
 
     // To hold temporary state within the portals, which might be discarded by clicking outside
     const tempSearchOptions = {};
@@ -264,112 +320,134 @@ const DataCatalog = (/** @type Properties */ props) => {
                             },
                         })
                         : null,
-                    ExportOptions(treeNodes, multiSelectedItems, userCanEdit, emit),
+                    ExportOptions(multiSelectedItems, emit),
                 ),
             ),
-            () => treeNodes.val.length
+            () => hasCatalog.val
                 ? div(
                     {
                         class: 'flex-row tg-dh--content',
                         ondragover: (event) => event.preventDefault(),
                     },
-                    Tree(
-                        {
-                            emit,
-                            id: treeDomId,
-                            classes: 'tg-dh--tree',
-                            nodes: treeNodes,
-                            // Use .rawVal, so only initial value from query params is passed to tree
-                            selected: selectedItem.rawVal ? `${selectedItem.rawVal.type}_${selectedItem.rawVal.id}` : null,
-                            onSelect: (/** @type string */ selected) => emit('ItemSelected', { payload: selected }),
-                            multiSelect: multiEditMode,
-                            multiSelectToggle: userCanEdit,
-                            multiSelectToggleLabel: 'Edit multiple',
-                            onMultiSelect: (/** @type string[] | null */ selected) => multiSelectedItems.val = selected,
-                            isNodeHidden: (/** @type TreeNode */ node, /** string */ search) => search 
-                                && (!caseInsensitiveIncludes(node.label, search)
-                                    || (!!node.children && !searchOptions.tableName.val)
-                                    || (!node.children && !searchOptions.columnName.val))
-                                || ![ node.criticalDataElement, false ].includes(filters.criticalDataElement.val)
-                                || ![ node.piiFlag, false ].includes(filters.piiFlag.val)
-                                || (node.excludedDataElement && !filters.showExcluded.val)
-                                || TAG_KEYS.some(key => ![ node[key], null ].includes(filters[key].val)),
-                            onApplySearchOptions: () => {
-                                copyState(tempSearchOptions, searchOptions);
-                                // If both were unselected, reset their values
-                                // Otherwise, nothing will be matched and the user might not realize why 
-                                if (!searchOptions.tableName.val && !searchOptions.columnName.val) {
-                                    searchOptions.tableName.val = true;
-                                    searchOptions.columnName.val = true;
-                                }
+                    div(
+                        { id: treeDomId, class: 'tg-dh--tree flex-column' },
+                        Tree(
+                            {
+                                emit,
+                                classes: 'fx-flex tg-dh--tree-nodes',
+                                nodes: treeNodes,
+                                // Use .rawVal, so only initial value from query params is passed to tree
+                                selected: selectedItem.rawVal ? `${selectedItem.rawVal.type}_${selectedItem.rawVal.id}` : null,
+                                onSelect: (/** @type string */ selected) => emit('ItemSelected', { payload: selected }),
+                                multiSelect: multiEditMode,
+                                multiSelectToggle: userCanEdit,
+                                multiSelectToggleLabel: 'Edit multiple',
+                                onMultiSelect: (/** @type string[] | null */ selected) => multiSelectedItems.val = selected,
+                                // The server sends only the nodes that match the search and filters.
+                                isNodeHidden: () => false,
+                                searchValue,
+                                onSearch: (/** @type string */ value) => {
+                                    if (value !== searchValue.rawVal) {
+                                        searchValue.val = value;
+                                        emitFilters();
+                                    }
+                                },
+                                onApplySearchOptions: () => {
+                                    copyState(tempSearchOptions, searchOptions);
+                                    // If both were unselected, reset their values
+                                    // Otherwise, nothing will be matched and the user might not realize why 
+                                    if (!searchOptions.tableName.val && !searchOptions.columnName.val) {
+                                        searchOptions.tableName.val = true;
+                                        searchOptions.columnName.val = true;
+                                    }
+                                    emitFilters();
+                                },
+                                hasActiveFilters: () => filters.criticalDataElement.val || filters.piiFlag.val || filters.showExcluded.val || TAG_KEYS.some(key => !!filters[key].val),
+                                onApplyFilters: () => {
+                                    copyState(tempFilters, filters);
+                                    emitFilters();
+                                },
+                                onResetFilters: () => {
+                                    tempFilters.criticalDataElement.val = false;
+                                    tempFilters.piiFlag.val = false;
+                                    tempFilters.showExcluded.val = false;
+                                    TAG_KEYS.forEach(key => tempFilters[key].val = null);
+                                },
                             },
-                            hasActiveFilters: () => filters.criticalDataElement.val || filters.piiFlag.val || filters.showExcluded.val || TAG_KEYS.some(key => !!filters[key].val),
-                            onApplyFilters: () => copyState(tempFilters, filters),
-                            onResetFilters: () => {
-                                tempFilters.criticalDataElement.val = false;
-                                tempFilters.piiFlag.val = false;
-                                tempFilters.showExcluded.val = false;
-                                TAG_KEYS.forEach(key => tempFilters[key].val = null);
+                            () => {
+                                copyState(searchOptions, tempSearchOptions);
+                                return div(
+                                    { class: 'flex-column fx-gap-2' },
+                                    span({ class: 'text-caption' }, 'Search by'),
+                                    Checkbox({
+                                        label: 'Table name',
+                                        checked: tempSearchOptions.tableName,
+                                        onChange: (checked) => tempSearchOptions.tableName.val = checked,
+                                    }),
+                                    Checkbox({
+                                        label: 'Column name',
+                                        checked: tempSearchOptions.columnName,
+                                        onChange: (checked) => tempSearchOptions.columnName.val = checked,
+                                    }),
+                                );
                             },
-                        },
+                            // Pass as a function that will be called when the filter portal is opened
+                            // Otherwise state bindings get garbage collected and Select dropdowns won't open
+                            // https://vanjs.org/advanced#gc
+                            () => {
+                                copyState(filters, tempFilters);
+                                return div(
+                                    div(
+                                        { class: 'flex-column fx-gap-3' },
+                                        Checkbox({
+                                            label: span({ class: 'flex-row fx-gap-1' }, 'Only critical data elements (CDEs)', Icon({ size: 18, classes: 'text-purple' }, 'star')),
+                                            checked: tempFilters.criticalDataElement,
+                                            onChange: (checked) => tempFilters.criticalDataElement.val = checked,
+                                        }),
+                                        Checkbox({
+                                            label: span({ class: 'flex-row fx-gap-1' }, 'Only PII data', Icon({ size: 18, classes: 'text-orange' }, 'shield_person')),
+                                            checked: tempFilters.piiFlag,
+                                            onChange: (checked) => tempFilters.piiFlag.val = checked,
+                                        }),
+                                        Checkbox({
+                                            label: span({ class: 'flex-row fx-gap-1' }, 'Show excluded data elements (XDEs)', Icon({ size: 18, classes: 'text-brown' }, 'visibility_off')),
+                                            checked: tempFilters.showExcluded,
+                                            onChange: (checked) => tempFilters.showExcluded.val = checked,
+                                        }),
+                                    ),
+                                    div(
+                                        {
+                                            class: 'flex-row fx-flex-wrap fx-gap-4 fx-justify-space-between mt-4',
+                                            style: 'max-width: 420px;',
+                                        },
+                                        TAG_KEYS.map(key => Select({
+                                            id: `data-catalog-${key}`,
+                                            label: capitalize(key.replaceAll('_', ' ')),
+                                            height: 32,
+                                            value: tempFilters[key],
+                                            options: getValue(props.tag_values)?.[key]?.map(key => ({ label: key, value: key })),
+                                            allowNull: true,
+                                            disabled: !getValue(props.tag_values)?.[key]?.length,
+                                            onChange: (value) => tempFilters[key].val = value,
+                                        })),
+                                    ),
+                                );
+                            },
+                        ),
                         () => {
-                            copyState(searchOptions, tempSearchOptions);
-                            return div(
-                                { class: 'flex-column fx-gap-2' },
-                                span({ class: 'text-caption' }, 'Search by'),
-                                Checkbox({
-                                    label: 'Table name',
-                                    checked: tempSearchOptions.tableName,
-                                    onChange: (checked) => tempSearchOptions.tableName.val = checked,
-                                }),
-                                Checkbox({
-                                    label: 'Column name',
-                                    checked: tempSearchOptions.columnName,
-                                    onChange: (checked) => tempSearchOptions.columnName.val = checked,
-                                }),
-                            );
-                        },
-                        // Pass as a function that will be called when the filter portal is opened
-                        // Otherwise state bindings get garbage collected and Select dropdowns won't open
-                        // https://vanjs.org/advanced#gc
-                        () => {
-                            copyState(filters, tempFilters);
-                            return div(
-                                div(
-                                    { class: 'flex-column fx-gap-3' },
-                                    Checkbox({
-                                        label: span({ class: 'flex-row fx-gap-1' }, 'Only critical data elements (CDEs)', Icon({ size: 18, classes: 'text-purple' }, 'star')),
-                                        checked: tempFilters.criticalDataElement,
-                                        onChange: (checked) => tempFilters.criticalDataElement.val = checked,
-                                    }),
-                                    Checkbox({
-                                        label: span({ class: 'flex-row fx-gap-1' }, 'Only PII data', Icon({ size: 18, classes: 'text-orange' }, 'shield_person')),
-                                        checked: tempFilters.piiFlag,
-                                        onChange: (checked) => tempFilters.piiFlag.val = checked,
-                                    }),
-                                    Checkbox({
-                                        label: span({ class: 'flex-row fx-gap-1' }, 'Show excluded data elements (XDEs)', Icon({ size: 18, classes: 'text-brown' }, 'visibility_off')),
-                                        checked: tempFilters.showExcluded,
-                                        onChange: (checked) => tempFilters.showExcluded.val = checked,
-                                    }),
-                                ),
-                                div(
-                                    {
-                                        class: 'flex-row fx-flex-wrap fx-gap-4 fx-justify-space-between mt-4',
-                                        style: 'max-width: 420px;',
+                            const { page = 0, page_size: pageSize = 0, visible_count: visibleCount = 0 } = catalog.val ?? {};
+                            return visibleCount > pageSize
+                                ? Paginator({
+                                    pageIndex: van.state(page),
+                                    count: visibleCount,
+                                    pageSize,
+                                    onChange: (newIndex) => {
+                                        if (newIndex !== page) {
+                                            emit('CatalogPageChanged', { payload: newIndex });
+                                        }
                                     },
-                                    TAG_KEYS.map(key => Select({
-                                        id: `data-catalog-${key}`,
-                                        label: capitalize(key.replaceAll('_', ' ')),
-                                        height: 32,
-                                        value: tempFilters[key],
-                                        options: getValue(props.tag_values)?.[key]?.map(key => ({ label: key, value: key })),
-                                        allowNull: true,
-                                        disabled: !getValue(props.tag_values)?.[key]?.length,
-                                        onChange: (value) => tempFilters[key].val = value,
-                                    })),
-                                ),
-                            );
+                                })
+                                : '';
                         },
                     ),
                     div(
@@ -478,7 +556,7 @@ const DataCatalog = (/** @type Properties */ props) => {
 };
 
 
-const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode[] */ selectedNodes, _userCanEdit, emit) => {
+const ExportOptions = (/** @type SelectedNode[] */ selectedNodes, emit) => {
     return DropdownButton({
         icon: 'download',
         label: 'Export',
@@ -491,23 +569,7 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
                 },
                 {
                     label: 'Filtered columns',
-                    onclick: () => {
-                        const payload = treeNodes.val.reduce((array, table) => {
-                            if (!table.hidden.val) {
-                                const [ type, id ] = table.id.split('_');
-                                array.push({ type, id, selected: table.selected.val });
-
-                                table.children.forEach(column => {
-                                    if (!column.hidden.val) {
-                                        const [ type, id ] = column.id.split('_');
-                                        array.push({ type, id, selected: column.selected.val });
-                                    }
-                                });
-                            }
-                            return array;
-                        }, []);
-                        emit('ExportClicked', { payload });
-                    },
+                    onclick: () => emit('ExportClicked', { payload: 'filtered' }),
                 },
             ];
             if (selectedNodes.val?.length) {
@@ -834,6 +896,10 @@ stylesheet.replace(`
     border-radius: 8px;
     border: 1px solid var(--border-color);
     background-color: var(--sidebar-background-color);
+}
+
+.tg-dh--tree-nodes {
+    min-height: 0;
 }
 
 .tg-dh--tree .tg-tree:not(.multi-select) .tg-tree--row.column {

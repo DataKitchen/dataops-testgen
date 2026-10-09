@@ -865,7 +865,12 @@ def _compiled(statement) -> str:
 
 @pytest.mark.parametrize(
     ("job_key", "kwarg"),
-    [("run-profile", "table_group_id"), ("run-tests", "test_suite_id"), ("run-monitors", "test_suite_id")],
+    [
+        ("run-profile", "table_group_id"),
+        ("refresh-data-catalog", "table_group_id"),
+        ("run-tests", "test_suite_id"),
+        ("run-monitors", "test_suite_id"),
+    ],
 )
 @pytest.mark.parametrize(("flavor_code", "expected"), [("duckdb", True), ("s3", True), ("postgresql", False)])
 def test_submit_stamps_a_target_reading_job_by_its_connection_type(
@@ -910,6 +915,8 @@ def test_submit_resolves_a_suite_through_its_table_group(mock_session):
         ("run-monitor-generation", {"monitor_suite_id": str(uuid4()), "monitors": []}),
         ("run-score-update", {"parent_job_id": str(uuid4()), "parent_job_key": "run-profile"}),
         ("recalculate-project-scores", {"project_code": "DEFAULT"}),
+        ("refresh-run-scores", {"run_job_key": "run-tests", "project_code": "DEFAULT", "run_id": str(uuid4())}),
+        ("recalculate-score-card", {"project_code": "DEFAULT", "definition_id": str(uuid4())}),
         ("run-data-cleanup", {"project_code": "DEFAULT", "retention_days": 30}),
     ],
 )

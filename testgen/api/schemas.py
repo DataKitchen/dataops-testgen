@@ -1020,6 +1020,18 @@ class TableGroupUpdateResponse(TableGroupResponse):
     schema_change: TableGroupSchemaChange | None = None
 
 
+class TableGroupCreateResponse(TableGroupResponse):
+    """The created table group, plus whether its data catalog could be read from the target."""
+
+    catalog_error: str | None = Field(
+        default=None,
+        description=(
+            "Set when the data catalog could not be read from the target. The table group is created, "
+            "and its catalog stays empty until the table group is profiled or tested."
+        ),
+    )
+
+
 _TABLE_GROUP_DEFAULTS = table_group_defaults()
 
 

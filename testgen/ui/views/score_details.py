@@ -7,9 +7,10 @@ from typing import Any, ClassVar
 import pandas as pd
 import streamlit as st
 
-from testgen.commands.run_refresh_score_cards_results import run_recalculate_score_card
+from testgen.common.enums import JobKey, JobSource
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import (
     NotificationEvent,
     NotificationSettings,
@@ -250,8 +251,13 @@ def delete_score_card(definition_id: str) -> None:
 def recalculate_score_history(definition_id: str) -> None:
     try:
         score_definition = ScoreDefinition.get(definition_id)
-        run_recalculate_score_card(project_code=score_definition.project_code, definition_id=score_definition.id)
-        st.toast("Scorecard trend recalculated", icon=":material/task_alt:")
+        JobExecution.submit(
+            job_key=JobKey.recalculate_score_card,
+            kwargs={"project_code": score_definition.project_code, "definition_id": str(score_definition.id)},
+            source=JobSource.ui,
+            project_code=score_definition.project_code,
+        )
+        st.toast("The scorecard trend will be recalculated in the background.", icon=":material/task_alt:")
     except:
         LOG.exception(f"Failure recalculating history for scorecard id={definition_id}")
         st.toast("Recalculating the trend failed. Try again", icon=":material/error:")

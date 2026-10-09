@@ -153,6 +153,29 @@ def test_enable_monitoring_honors_regenerate_freshness(
     assert mock_ts.call_args.kwargs["monitor_regenerate_freshness"] is expected
 
 
+@patch(f"{MODULE}.run_monitor_generation")
+@patch(f"{MODULE}.get_current_session")
+@patch(f"{MODULE}.JobSchedule")
+@patch(f"{MODULE}.TestSuite")
+def test_enable_monitoring_without_generation_links_the_suite_and_generates_nothing(
+    mock_ts, mock_js, mock_session, mock_gen
+):
+    tg = _table_group()
+    suite = mock_ts.return_value
+    suite.id = uuid4()
+    mock_session.return_value.scalar.side_effect = [None]  # the locked link
+
+    from testgen.common.monitor_service import enable_monitoring
+
+    returned_suite, count = enable_monitoring(tg, "0 6 * * *", "UTC", generate_monitors=False)
+
+    assert (returned_suite, count) == (suite, 0)
+    assert tg.monitor_test_suite_id == suite.id
+    mock_js.return_value.save.assert_called_once()
+    mock_gen.assert_not_called()
+    mock_session.return_value.commit.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # update_monitoring
 # ---------------------------------------------------------------------------
