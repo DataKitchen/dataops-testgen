@@ -34,6 +34,7 @@ SELECT
            WHEN c.data_type ILIKE '%char%' OR c.data_type IN ('text', 'uuid', 'bytea', 'xml')
                THEN 'string'
            WHEN c.data_type ILIKE 'boolean'
+               OR (c.data_type = 'bit' AND c.character_maximum_length = 1)
                THEN 'boolean'
            WHEN c.data_type ILIKE 'date'
                THEN 'date'
@@ -51,6 +52,7 @@ SELECT
            WHEN c.data_type ILIKE '%char%' or c.data_type = 'text'
                THEN 'A'
            WHEN c.data_type ILIKE 'boolean'
+               OR (c.data_type = 'bit' AND c.character_maximum_length = 1)
                THEN 'B'
            WHEN c.data_type ILIKE 'date'
                OR c.data_type ILIKE 'timestamp%'
@@ -64,6 +66,7 @@ SELECT
        END AS general_type,
        CASE
          WHEN c.data_type = 'numeric' THEN COALESCE(numeric_scale, 1) > 0
+         WHEN c.data_type = 'money' THEN TRUE
          ELSE numeric_scale > 0
        END as is_decimal,
        CASE p.relkind

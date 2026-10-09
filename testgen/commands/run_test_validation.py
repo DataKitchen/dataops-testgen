@@ -1,5 +1,6 @@
 import logging
 import re
+from collections import defaultdict
 from uuid import UUID
 
 from testgen.commands.queries.execute_tests_query import TestExecutionDef, TestExecutionSQL
@@ -7,9 +8,13 @@ from testgen.common import execute_db_queries, fetch_dict_from_db
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import write_to_app_db
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
+from testgen.common.models.data_column import GENERAL_TYPE_CODE_TO_LABEL
 from testgen.common.models.test_definition import MANAGED_TEST_TYPES
 
 LOG = logging.getLogger("testgen")
+
+# General types too broad to say anything about which test types fit a column
+_UNCHECKED_GENERAL_TYPES = {None, "X"}
 
 
 def collect_test_identifiers(
@@ -45,9 +50,7 @@ def collect_test_identifiers(
             identifiers_to_check[key].add(test_id)
 
     def add_error(test_id: UUID, error: str) -> None:
-        if test_id not in errors:
-            errors[test_id] = ["Deactivated"]
-        errors[test_id].append(error)
+        errors.setdefault(test_id, []).append(error)
 
     for td in test_defs:
         # No validation needed for custom query, table group, or managed tests (managed tests read
@@ -145,9 +148,55 @@ def check_identifiers(
             continue
 
         for test_id in test_ids:
-            if test_id not in errors:
-                errors[test_id] = ["Deactivated"]
-            errors[test_id].append(error)
+            errors.setdefault(test_id, []).append(error)
+
+    return errors
+
+
+def _general_types_label(codes: list[str]) -> str:
+    labels = [GENERAL_TYPE_CODE_TO_LABEL.get(code, code) for code in codes]
+    if len(labels) == 1:
+        return labels[0]
+    return f"{', '.join(labels[:-1])} or {labels[-1]}"
+
+
+def check_column_types(
+    test_defs: list[TestExecutionDef],
+    column_chars: list[ColumnChars],
+    quote_char: str,
+) -> dict[UUID, list[str]]:
+    """Check each column-scope test's column against the general types its test type declares.
+
+    A test's column is matched by exact name, else by case-insensitive name when only one catalog
+    column has it. Tests that already have errors, and columns not matched or whose general type
+    is unknown or Other, are not checked.
+
+    Returns {test_id: [error_messages]} for columns whose general type the test type does not apply to.
+    """
+    exact_columns = {(col.schema_name, col.table_name, col.column_name): col for col in column_chars}
+    columns_by_lower_name: dict[tuple[str, str, str], list[ColumnChars]] = defaultdict(list)
+    for col in column_chars:
+        columns_by_lower_name[(col.schema_name.lower(), col.table_name.lower(), col.column_name.lower())].append(col)
+    errors: dict[UUID, list[str]] = {}
+
+    for td in test_defs:
+        if td.errors or td.test_scope != "column" or not td.column_general_types or not td.column_name:
+            continue
+
+        column_name = td.column_name.strip(f" {quote_char}")
+        key = (td.schema_name.lower(), td.table_name.lower(), column_name.lower())
+        column = exact_columns.get((td.schema_name, td.table_name, column_name))
+        if not column:
+            matches = columns_by_lower_name.get(key, [])
+            column = matches[0] if len(matches) == 1 else None
+        if not column or column.general_type in _UNCHECKED_GENERAL_TYPES:
+            continue
+
+        if column.general_type not in td.column_general_types:
+            errors[td.id] = [
+                f"Column type changed: {'.'.join(key)} is now {column.db_data_type or column.column_type}. "
+                f"This test applies to {_general_types_label(td.column_general_types)} columns."
+            ]
 
     return errors
 
@@ -155,20 +204,21 @@ def check_identifiers(
 def run_test_validation(
     sql_generator: TestExecutionSQL,
     test_defs: list[TestExecutionDef],
+    column_chars: list[ColumnChars] | None = None,
     defer_persistence: bool = False,
     deactivate_invalid: bool = True,
 ) -> list[TestExecutionDef]:
     """Validate test definitions against the current target schema.
 
-    Populates ``td.errors`` on test_defs that reference missing tables or columns.
+    Populates ``td.errors`` on test_defs that reference missing tables or columns, or whose
+    column's general type, per ``column_chars``, does not fit the test type.
     By default, also writes Error results and deactivates the failing tests; pass
     ``defer_persistence=True`` to skip those side effects (e.g. when the caller
     will attempt a regeneration first and let a later validation pass persist
     whatever is still broken).
 
-    ``deactivate_invalid=False`` keeps the Error results but leaves ``test_active``
-    alone, for a run comparing against a caller-supplied match schema: a failure there
-    says nothing about whether the stored definition is still valid.
+    ``deactivate_invalid=False`` keeps the Error results but leaves ``test_active`` alone.
+    Error messages start with ``Deactivated`` only when the tests are deactivated.
     """
     quote = sql_generator.flavor_service.quote_character
 
@@ -183,18 +233,17 @@ def run_test_validation(
         target_tables, target_columns = get_target_identifiers(sql_generator, target_schemas)
         check_errors = check_identifiers(identifiers_to_check, target_tables, target_columns)
         for test_id, error_list in check_errors.items():
-            if not test_defs_by_id[test_id].errors:
-                test_defs_by_id[test_id].errors = error_list
-            else:
-                # Skip "Deactivated" prefix since it's already there from collection_errors or we add it
-                test_defs_by_id[test_id].errors.extend(error_list[1:] if test_defs_by_id[test_id].errors else error_list)
+            test_defs_by_id[test_id].errors.extend(error_list)
+
+    if column_chars:
+        for test_id, error_list in check_column_types(test_defs, column_chars, quote).items():
+            test_defs_by_id[test_id].errors.extend(error_list)
 
     if not defer_persistence:
-        if not deactivate_invalid:
-            # The collectors above prefix every failure with the outcome they assume follows.
+        if deactivate_invalid:
             for td in test_defs_by_id.values():
-                if td.errors and td.errors[0] == "Deactivated":
-                    td.errors[0] = "Not run"
+                if td.errors:
+                    td.errors.insert(0, "Deactivated")
 
         error_results = sql_generator.get_test_errors(test_defs_by_id.values())
         if error_results:

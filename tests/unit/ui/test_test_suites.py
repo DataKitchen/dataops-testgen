@@ -34,6 +34,7 @@ def _form(**overrides) -> dict:
         "severity": None,
         "export_to_observability": False,
         "dq_score_exclude": False,
+        "deactivate_invalid_tests": False,
         "component_key": "",
         "component_type": "dataset",
         "component_name": "",
@@ -54,7 +55,20 @@ def test_add_saves_a_valid_suite(session_state):
     saved = mock_save.call_args.args[0]
     assert (saved.test_suite, saved.project_code, saved.table_groups_id) == ("Orders", "demo", table_group.id)
     assert saved.severity == "Fail"
+    assert saved.deactivate_invalid_tests is False
     assert RESULT_KEY not in session_state
+
+
+@pytest.mark.usefixtures("db_session_mock")
+def test_add_saves_the_deactivation_setting(session_state):
+    table_group = MagicMock(project_code="demo", connection_id=3, id=uuid4())
+    with (
+        patch.object(view, "get_table_group", return_value=table_group),
+        patch.object(TestSuite, "save", autospec=True) as mock_save,
+    ):
+        view.save_test_suite_form(_form(deactivate_invalid_tests=True))
+
+    assert mock_save.call_args.args[0].deactivate_invalid_tests is True
 
 
 @pytest.mark.usefixtures("db_session_mock")

@@ -28,6 +28,7 @@ test_types:
   default_severity: Warning
   run_type: CAT
   test_scope: column
+  column_general_types: [N]
   dq_dimension: Consistency
   impact_dimension: Regularity
   health_dimension: Data Drift
@@ -72,7 +73,7 @@ test_types:
     test_type: Avg_Shift
     sql_flavor: postgresql
     measure: |-
-      ABS( (AVG({COLUMN_NAME}::FLOAT) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})::FLOAT-1)*STDDEV({COLUMN_NAME}::FLOAT)^2 + ({BASELINE_VALUE_CT}::FLOAT-1) * {BASELINE_SD}::FLOAT^2) /NULLIF(COUNT({COLUMN_NAME})::FLOAT + {BASELINE_VALUE_CT}::FLOAT, 0) ))
+      ABS( (AVG({COLUMN_NUM}::FLOAT) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})::FLOAT-1)*STDDEV({COLUMN_NUM}::FLOAT)^2 + ({BASELINE_VALUE_CT}::FLOAT-1) * {BASELINE_SD}::FLOAT^2) /NULLIF(COUNT({COLUMN_NAME})::FLOAT + {BASELINE_VALUE_CT}::FLOAT, 0) ))
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -164,7 +165,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT AVG({COLUMN_NUM} :: FLOAT) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
     error_type: Test Results
   - id: '1002'
     test_id: '1005'

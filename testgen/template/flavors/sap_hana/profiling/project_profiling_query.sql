@@ -167,6 +167,11 @@ SELECT
 -- TG-IF is_N_decimal
   SUM(ROUND(CAST(ABS(MOD("{COL_NAME}", 1)) AS DECIMAL(38,8)), 5)) AS fractional_sum,
 -- TG-ENDIF
+-- TG-IF is_N_exact_sum
+  CASE WHEN MAX(ABS(CAST("{COL_NAME}" AS DOUBLE))) < 1e20 AND COUNT("{COL_NAME}") < 1e10
+       THEN SUM(CASE WHEN ABS(CAST("{COL_NAME}" AS DOUBLE)) < 1e20 THEN CAST("{COL_NAME}" AS DECIMAL(38,8)) END)
+  END AS sum_value,
+-- TG-ENDIF
 -- TG-IF is_type_D
   CASE
          WHEN MIN("{COL_NAME}") IS NULL THEN NULL

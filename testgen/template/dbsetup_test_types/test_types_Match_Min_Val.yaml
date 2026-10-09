@@ -28,6 +28,7 @@ test_types:
   default_severity: Fail
   run_type: CAT
   test_scope: column
+  column_general_types: [N]
   dq_dimension: Consistency
   impact_dimension: Conformance
   health_dimension: Data Drift
@@ -72,7 +73,7 @@ test_types:
     test_type: Match_Min_Val
     sql_flavor: postgresql
     measure: |-
-      CAST(CAST(MIN({COLUMN_NAME}) AS VARCHAR) AS DOUBLE PRECISION)
+      CAST(CAST(MIN({COLUMN_NUM}) AS VARCHAR) AS DOUBLE PRECISION)
     test_operator: '<>'
     test_condition: |-
       CAST({BASELINE_VALUE} AS DOUBLE PRECISION)
@@ -163,7 +164,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT CAST(CAST(MIN("{COLUMN_NAME}") AS VARCHAR) AS DOUBLE PRECISION) AS current_min_val, CAST({BASELINE_VALUE} AS DOUBLE PRECISION) AS baseline_min_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT CAST(CAST(MIN({COLUMN_NUM}) AS VARCHAR) AS DOUBLE PRECISION) AS current_min_val, CAST({BASELINE_VALUE} AS DOUBLE PRECISION) AS baseline_min_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
     error_type: Test Results
   - id: '1617'
     test_id: '1526'

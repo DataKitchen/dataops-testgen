@@ -10,6 +10,9 @@ class SapHanaFlavorService(FlavorService):
     test_query = "SELECT 1 FROM DUMMY"
     url_scheme = "hana+hdbcli"
 
+    # The catalog records DOUBLE, REAL and SMALLDECIMAL as this type
+    exact_sum_excluded_types = frozenset({"numeric"})
+
     def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
         url = f"{self.url_scheme}://{params.username}:{quote_plus(params.password)}@{params.host}:{params.port}/"
         if params.dbname:

@@ -68,6 +68,7 @@ def _suite(**overrides):
         "test_suite_description": None,
         "severity": None,
         "dq_score_exclude": False,
+        "deactivate_invalid_tests": False,
         "export_to_observability": False,
         "component_key": None,
         "component_type": "dataset",
@@ -200,6 +201,7 @@ def test_get_test_suite_returns_its_configuration():
         test_suite_description="Order checks",
         severity="Warning",
         dq_score_exclude=True,
+        deactivate_invalid_tests=True,
         export_to_observability=True,
         component_key="orders",
         component_name="Orders",
@@ -218,6 +220,7 @@ def test_get_test_suite_returns_its_configuration():
         "description": "Order checks",
         "default_severity": "warning",
         "exclude_from_quality_score": True,
+        "deactivate_invalid_tests": True,
         "export_to_observability": True,
         "component_key": "orders",
         "component_type": "dataset",
@@ -323,6 +326,7 @@ def test_create_test_suite_applies_defaults_to_omitted_fields():
     assert saved.suite_type == SuiteType.REGULAR
     assert saved.export_to_observability is False
     assert saved.dq_score_exclude is False
+    assert saved.deactivate_invalid_tests is False
     assert saved.severity is None
     assert saved.component_type == "dataset"
     assert saved.generation_sets is None
@@ -351,6 +355,7 @@ def test_create_test_suite_treats_null_as_omitted():
         "component_type": None,
         "export_to_observability": None,
         "exclude_from_quality_score": None,
+        "deactivate_invalid_tests": None,
         "set_as_default": None,
     })
 
@@ -359,6 +364,7 @@ def test_create_test_suite_treats_null_as_omitted():
     assert saved.component_type == "dataset"
     assert saved.export_to_observability is False
     assert saved.dq_score_exclude is False
+    assert saved.deactivate_invalid_tests is False
     table_group.save.assert_not_called()
 
 
@@ -368,6 +374,7 @@ def test_create_test_suite_applies_every_supplied_field():
         "description": "Order checks",
         "default_severity": "fail",
         "exclude_from_quality_score": True,
+        "deactivate_invalid_tests": True,
         "export_to_observability": True,
         "component_key": "orders",
         "component_type": "table",
@@ -380,6 +387,7 @@ def test_create_test_suite_applies_every_supplied_field():
     assert saved.test_suite_description == "Order checks"
     assert saved.severity == "Fail"
     assert saved.dq_score_exclude is True
+    assert saved.deactivate_invalid_tests is True
     assert saved.export_to_observability is True
     assert (saved.component_key, saved.component_type, saved.component_name) == ("orders", "table", "Orders")
     assert saved.generation_sets == ["Standard", "Quick"]
@@ -387,6 +395,7 @@ def test_create_test_suite_applies_every_supplied_field():
     body = resp.json()
     assert body["default_severity"] == "fail"
     assert body["exclude_from_quality_score"] is True
+    assert body["deactivate_invalid_tests"] is True
     assert body["generation_sets"] == ["Standard", "Quick"]
 
 

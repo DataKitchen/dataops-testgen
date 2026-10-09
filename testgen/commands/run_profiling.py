@@ -43,7 +43,7 @@ LOG = logging.getLogger("testgen")
 # measures, or a different meaning for an existing one. A parked run resuming under a build that
 # measures differently would file both readings under one profiling run; a bump discards its
 # checkpoint so the run starts over and is measured one way.
-PROFILE_RESULT_SHAPE_VERSION = 3
+PROFILE_RESULT_SHAPE_VERSION = 4
 
 
 @with_database_session

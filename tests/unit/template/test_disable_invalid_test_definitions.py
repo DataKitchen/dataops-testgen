@@ -29,3 +29,15 @@ def test_the_contract_exclusion_is_and_joined_into_the_update_statement():
     # Anchoring it as the final AND-ed condition, terminating the statement, rules both out.
     sql = _template()
     assert re.search(r"AND\s+ts\.suite_type\s*<>\s*'contract'\s*;\s*$", sql) is not None
+
+
+def test_only_results_marked_deactivated_are_deactivated():
+    # Validation errors in a suite that keeps failing tests active carry no prefix, and must
+    # leave the definition active.
+    assert "tr.result_message LIKE 'Deactivated.%'" in _template()
+
+
+def test_the_status_strips_the_prefix_by_pattern_not_position():
+    sql = _template()
+    assert "SUBSTRING" not in sql
+    assert r"REGEXP_REPLACE(tr.result_message, '^Deactivated\.\s*', '')" in sql

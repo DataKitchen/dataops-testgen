@@ -28,6 +28,7 @@ test_types:
   default_severity: Warning
   run_type: CAT
   test_scope: column
+  column_general_types: [N]
   dq_dimension: Accuracy
   impact_dimension: Regularity
   health_dimension: Data Drift
@@ -72,7 +73,7 @@ test_types:
     test_type: Incr_Avg_Shift
     sql_flavor: postgresql
     measure: |-
-      COALESCE(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME})::FLOAT - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
+      COALESCE(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NUM}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME})::FLOAT - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -166,7 +167,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT AVG({COLUMN_NUM} :: FLOAT) AS current_average, SUM({COLUMN_NUM} ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
     error_type: Test Results
   - id: '1012'
     test_id: '1017'

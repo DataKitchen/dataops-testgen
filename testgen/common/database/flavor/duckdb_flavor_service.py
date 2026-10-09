@@ -348,6 +348,9 @@ class DuckdbFlavorService(FlavorService):
     # The engine ships inside the package, so the pinned version decides and nothing needs probing.
     supports_approx_percentile = True
 
+    # BIGNUM, also spelled VARINT, has no cast to DECIMAL
+    exact_sum_excluded_types = frozenset({"bignum", "varint"})
+
     def parameters_schema(self, sql_flavor_code: str) -> tuple[ConnectionField, ...]:
         if (store := object_storage.store_for(sql_flavor_code)) is not None:
             return store.parameters_schema
