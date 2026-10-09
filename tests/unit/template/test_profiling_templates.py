@@ -169,6 +169,42 @@ def test_a_type_emits_only_its_own_measures(flavor):
     assert {"numeric_ct", "min_value", "min_date", "min_length"}.isdisjoint(boolean)
 
 
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_only_an_integer_or_exact_decimal_column_profiles_its_sum(flavor):
+    def renders_sum(general_type: str, logical_type: str | None, is_decimal: bool, column_type: str = "x") -> bool:
+        column = replace(_column(general_type, is_decimal), logical_type=logical_type, column_type=column_type)
+        query, _ = _profiling_sql(flavor).run_column_profiling(column)
+        return "sum_value" in _aliases(query)
+
+    assert renders_sum("N", "integer", False)
+    assert renders_sum("N", "number", True, "numeric(18,2)")
+    assert not renders_sum("N", "number", False)
+    assert not renders_sum("A", "integer", False)
+    assert not renders_sum("B", None, False)
+
+
+def test_a_floating_point_type_the_catalog_marks_decimal_profiles_no_sum():
+    column = replace(_column("N", is_decimal=True), logical_type="number", column_type="numeric")
+    query, _ = _profiling_sql("sap_hana").run_column_profiling(column)
+    assert "sum_value" not in _aliases(query)
+
+
+def test_a_data360_number_profiles_its_sum():
+    column = replace(_column("N", is_decimal=True), logical_type="number", column_type="numeric")
+    query, _ = _profiling_sql("salesforce_data360").run_column_profiling(column)
+    assert "sum_value" in _aliases(query)
+
+
+def test_a_postgresql_money_column_is_read_as_a_number():
+    column = replace(_column("N", is_decimal=True), column_type="money", logical_type="number")
+    query, _ = _profiling_sql("postgresql").run_column_profiling(column)
+    for alias in ("min_value", "min_value_over_0", "max_value", "fractional_sum"):
+        line = next(line for line in query.splitlines() if f"AS {alias}" in line)
+        assert '"c"::NUMERIC' in line, line
+    assert 'CAST("c"::NUMERIC AS NUMERIC(38,8))' in query
+    assert 'MIN("c")' not in query and 'MAX("c")' not in query
+
+
 @pytest.mark.parametrize("sampled", [False, True])
 @pytest.mark.parametrize("flavor", FLAVORS)
 def test_a_text_column_reports_the_value_count_of_each_sample_read(flavor, sampled):

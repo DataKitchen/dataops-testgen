@@ -81,6 +81,7 @@ class TestExecutionDef(InputParameters):
     test_operator: str
     test_condition: str
     null_measure_fails: bool = False
+    column_general_types: list[str] | None = None
     # Runtime attributes
     column_type: str = None
     measure_expression: str = None
@@ -448,6 +449,9 @@ class TestExecutionSQL:
                 "MATCH_HAVING_CONDITION": f"HAVING {test_def.match_having_condition}" if test_def.match_having_condition else "",
                 "COLUMN_TYPE": test_def.column_type,
                 "COLUMN_VALUE": self.flavor_service.text_value(
+                    f"{quote}{test_def.column_name or ''}{quote}", test_def.column_type
+                ),
+                "COLUMN_NUM": self.flavor_service.numeric_value(
                     f"{quote}{test_def.column_name or ''}{quote}", test_def.column_type
                 ),
                 "INPUT_PARAMETERS": self._get_input_parameters(test_def),

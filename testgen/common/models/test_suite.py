@@ -167,6 +167,7 @@ class TestSuite(Entity):
     component_name: str = Column(NullIfEmptyString)
     last_complete_test_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
     dq_score_exclude: bool = Column(Boolean, default=False)
+    deactivate_invalid_tests: bool = Column(Boolean, default=False, nullable=False)
     suite_type: SuiteType = Column(
         String(20), nullable=False, default=SuiteType.REGULAR, server_default=text("'regular'")
     )
@@ -181,6 +182,16 @@ class TestSuite(Entity):
     @property
     def holiday_codes_list(self) -> list[str] | None:
         return self.predict_holiday_codes or None
+
+    @property
+    def deactivates_invalid_tests(self) -> bool:
+        """Whether tests that fail validation are deactivated: always for a monitor suite,
+        never for a contract, and per ``deactivate_invalid_tests`` otherwise."""
+        if self.suite_type == SuiteType.MONITOR:
+            return True
+        if self.suite_type == SuiteType.CONTRACT:
+            return False
+        return bool(self.deactivate_invalid_tests)
 
     _default_order_by = (asc(func.lower(test_suite)),)
     _minimal_columns = TestSuiteMinimal.__annotations__.keys()

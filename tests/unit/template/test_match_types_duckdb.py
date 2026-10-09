@@ -25,14 +25,21 @@ RUN_DATE = "2024-06-01 12:00:00"
 CODES = ["AB-1", "AB-2", "ab-3", "XY-10", "AB-1", "AB-2", "AB-1", " lead", "ZZ\u00a0Z", "", None, "QQ", "QQ", "Rr"]
 # An apostrophe, a colon and a placeholder-shaped value exercise the quoting of the baseline literal
 NOTES = ["alpha", "Beta", "GAMMA", "alpha", "beta", "Gamma", "delta", "ALPHA", "o'brien", "a :b", "{BASELINE_CT}", None]
-COLUMNS = [  # name, general type, is_decimal
-    ("id", "N", False), ("amount", "N", True), ("price", "N", False), ("flag", "B", False),
-    ("code", "A", False), ("note", "A", False), ("ts", "D", False), ("d", "D", False),
+COLUMNS = [  # name, general type, is_decimal, exact sum
+    ("id", "N", False, True), ("amount", "N", True, True), ("price", "N", False, False), ("flag", "B", False, False),
+    ("code", "A", False, False), ("note", "A", False, False), ("ts", "D", False, False), ("d", "D", False, False),
 ]
 
 
 def _canonical(frequent: dict | None) -> str | None:
     return ", ".join(f"{entry['value']} ({entry['ct']})" for entry in frequent["values"]) if frequent else None
+
+
+def _sum_baseline(p: dict) -> dict:
+    if p.get("sum_value") is None:
+        return {"baseline_sum": repr(p["avg_value"] * p["value_ct"]), "upper_tolerance": "0.000000001"}
+    # Trim trailing zeros from the stored NUMERIC(38,8), as Match_Sum's generation SQL does
+    return {"baseline_sum": f"{p['sum_value']:.8f}".rstrip("0").rstrip("."), "upper_tolerance": "0"}
 
 
 # Test type -> (default_parm_columns values read from the profile row)
@@ -42,7 +49,7 @@ BASELINES = {
     "Match_Min_Val": lambda p: {"baseline_value": repr(float(p["min_value"]))},
     "Match_Max_Val": lambda p: {"baseline_value": repr(float(p["max_value"]))},
     "Match_Zero_Ct": lambda p: {"baseline_ct": p["zero_value_ct"]},
-    "Match_Sum": lambda p: {"baseline_sum": repr(p["avg_value"] * p["value_ct"]), "upper_tolerance": "0.000000001"},
+    "Match_Sum": _sum_baseline,
     "Match_Stdev": lambda p: {"baseline_sd": repr(p["stdev_value"]), "upper_tolerance": "0.000000001"},
     "Match_Fractional_Sum": lambda p: {
         "baseline_sum": None if p.get("fractional_sum") is None else f"{p['fractional_sum']:.6f}",
@@ -99,18 +106,19 @@ def con():
     return con
 
 
-def _profile(con, column: str, general_type: str, is_decimal: bool) -> dict:
+def _profile(con, column: str, general_type: str, is_decimal: bool, exact_sum: bool = False) -> dict:
     flags = {
         "do_sample": False, "do_sample_bool": False, "is_type_A": general_type == "A", "is_type_N": general_type == "N",
         "is_type_D": general_type == "D", "is_type_B": general_type == "B", "is_type_ADN": general_type in "ADN",
         "is_type_DN": general_type in "DN", "is_type_X": False, "is_not_A": general_type != "A",
         "is_not_A_or_X": general_type != "A", "is_A_sampling": False, "is_A_no_sampling": general_type == "A",
-        "is_N_decimal": general_type == "N" and is_decimal, "is_N_approx_pctile": False,
+        "is_N_decimal": general_type == "N" and is_decimal, "is_N_exact_sum": general_type == "N" and exact_sum,
+        "is_N_approx_pctile": False,
         "is_N_exact_pctile": general_type == "N",
     }
     params = {
         "CONNECTION_ID": 1, "PROJECT_CODE": "P", "TABLE_GROUPS_ID": "tg", "DATA_SCHEMA": "s", "RUN_DATE": RUN_DATE,
-        "DATA_TABLE": "src", "COL_POS": 1, "COL_NAME": column, "COL_NAME_SANITIZED": column, "COL_TYPE": "",
+        "DATA_TABLE": "src", "COL_POS": 1, "COL_NAME": column, "COL_NUM": f'"{column}"', "COL_NAME_SANITIZED": column, "COL_TYPE": "",
         "DB_DATA_TYPE": "", "COL_GEN_TYPE": general_type, "PROFILE_RUN_ID": "pr", "MAX_PATTERN_LENGTH": 25,
         "PERCENTILE_METHOD": "exact", "TABLE_HINT": "",
     }
@@ -169,8 +177,8 @@ def _passes(con, test_type: str, table: str, column: str | None, baseline: dict)
 @pytest.fixture(scope="module")
 def generated(con) -> list[tuple[str, str | None, dict]]:
     tests = [("Match_Row_Ct", None, {"threshold_value": "40"})]
-    for column, general_type, is_decimal in COLUMNS:
-        profile = _profile(con, column, general_type, is_decimal)
+    for column, general_type, is_decimal, exact_sum in COLUMNS:
+        profile = _profile(con, column, general_type, is_decimal, exact_sum)
         for test_type, read in BASELINES.items():
             if general_type in SELECTED[test_type]:
                 baseline = read(profile)
@@ -293,3 +301,59 @@ def test_every_match_cat_type_fails_on_a_null_measure():
     ]
     assert cat_types
     assert [doc["test_type"] for doc in cat_types if doc.get("null_measure_fails") is not True] == []
+
+
+def test_an_exact_sum_catches_a_small_change_in_a_large_integer_total():
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA s")
+    con.execute("CREATE TABLE s.src AS SELECT 12000000000 + i AS v FROM range(0, 100) t(i)")
+    con.execute("CREATE TABLE s.copy AS SELECT * FROM s.src")
+    con.execute("CREATE TABLE s.changed AS SELECT CASE WHEN v = 12000000050 THEN v + 2 ELSE v END AS v FROM s.src")
+
+    profile = _profile(con, "v", "N", False, exact_sum=True)
+    baseline = _sum_baseline(profile)
+
+    assert baseline == {"baseline_sum": "1200000004950", "upper_tolerance": "0"}
+    assert _passes(con, "Match_Sum", "copy", "v", baseline)
+    assert not _passes(con, "Match_Sum", "changed", "v", baseline)
+
+
+def test_an_exact_sum_catches_a_change_of_one_past_double_precision():
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA s")
+    con.execute("CREATE TABLE s.src AS SELECT 900000000000000 + i AS v FROM range(0, 20) t(i)")
+    con.execute("CREATE TABLE s.changed AS SELECT CASE WHEN v = 900000000000000 THEN v + 1 ELSE v END AS v FROM s.src")
+
+    baseline = _sum_baseline(_profile(con, "v", "N", False, exact_sum=True))
+
+    assert int(baseline["baseline_sum"]) > 2**53
+    assert _passes(con, "Match_Sum", "src", "v", baseline)
+    assert not _passes(con, "Match_Sum", "changed", "v", baseline)
+
+
+def test_an_exact_decimal_sum_catches_one_cent_on_a_large_table():
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA s")
+    con.execute("CREATE TABLE s.src AS SELECT (i % 100000 + 0.25)::DECIMAL(18,2) AS v FROM range(0, 3000000) t(i)")
+    con.execute("CREATE TABLE s.changed AS SELECT CASE WHEN rowid = 7 THEN v + 0.01 ELSE v END AS v FROM s.src")
+
+    baseline = _sum_baseline(_profile(con, "v", "N", True, exact_sum=True))
+
+    assert _passes(con, "Match_Sum", "src", "v", baseline)
+    assert not _passes(con, "Match_Sum", "changed", "v", baseline)
+
+
+def test_a_floating_point_column_profiles_no_exact_sum_and_keeps_the_tolerance(con):
+    profile = _profile(con, "price", "N", False)
+
+    assert "sum_value" not in profile
+    assert _sum_baseline(profile)["upper_tolerance"] == "0.000000001"
+    assert _passes(con, "Match_Sum", "copy", "price", _sum_baseline(profile))
+
+
+def test_an_exact_sum_is_left_unset_past_the_values_it_can_hold():
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA s")
+    con.execute("CREATE TABLE s.src AS SELECT 1e25::HUGEINT + i AS v FROM range(0, 5) t(i)")
+
+    assert _profile(con, "v", "N", False, exact_sum=True)["sum_value"] is None

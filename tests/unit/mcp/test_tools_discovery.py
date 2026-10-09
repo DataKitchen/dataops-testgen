@@ -322,6 +322,7 @@ def _mock_test_suite(**overrides):
     suite.test_suite_description = overrides.get("test_suite_description", "Daily QA")
     suite.severity = overrides.get("severity", "Warning")
     suite.export_to_observability = overrides.get("export_to_observability", True)
+    suite.deactivate_invalid_tests = overrides.get("deactivate_invalid_tests", False)
     suite.suite_type = overrides.get("suite_type", SuiteType.REGULAR)
     return suite
 
@@ -368,6 +369,7 @@ def test_get_test_suite_returns_full_config(
     assert "curated_payments" in out
     assert "**Default severity:** Warning" in out
     assert "**Export to observability:** Yes" in out
+    assert "**Automatically deactivate tests that fail validation:** No" in out
     assert "**Total tests:** 47" in out
     assert "**Locked tests:** 3" in out
     assert "Tests by type" in out

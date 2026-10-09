@@ -70,7 +70,7 @@ test_types:
     test_type: Constant
     sql_flavor: postgresql
     measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} <> {BASELINE_VALUE} THEN 1 ELSE 0 END)
+      SUM(CASE WHEN {COLUMN_NUM} <> {BASELINE_VALUE} THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -165,7 +165,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_NUM} <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1004'
     test_id: '1007'

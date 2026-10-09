@@ -28,6 +28,7 @@ test_types:
   default_severity: Fail
   run_type: CAT
   test_scope: column
+  column_general_types: [D, A]
   dq_dimension: Completeness
   impact_dimension: Reliability
   health_dimension: Volume

@@ -100,7 +100,8 @@ class TableGroupSchemaChange(BaseModel):
         default_factory=list,
         description=(
             "Tables in the table group that the new schema does not have. The change still applies. "
-            "The next test run deactivates their tests, and the next monitor run deletes their "
+            "Their tests report an error on each test run, or are deactivated if the test suite "
+            "deactivates tests that fail validation, and the next monitor run deletes their "
             "monitors along with the thresholds they learned."
         ),
     )
@@ -1146,6 +1147,10 @@ class TestSuiteResponse(BaseModel):
         "its test type's severity.",
     )
     exclude_from_quality_score: bool = Field(description="Whether the suite's results are left out of scoring.")
+    deactivate_invalid_tests: bool = Field(
+        description="Whether tests that fail validation at the start of a run (a missing table or column, or a "
+        "column type the test does not apply to) are deactivated automatically.",
+    )
     export_to_observability: bool
     component_key: str | None = None
     component_type: str | None = None
@@ -1180,6 +1185,11 @@ class TestSuiteCreate(BaseModel):
     exclude_from_quality_score: StrictBool = Field(
         default=False, description="Leave the suite's results out of the Quality Score."
     )
+    deactivate_invalid_tests: StrictBool = Field(
+        default=False,
+        description="Whether tests that fail validation at the start of a run (a missing table or column, or a "
+        "column type the test does not apply to) are deactivated automatically. Defaults to False.",
+    )
     export_to_observability: StrictBool = Field(
         default=False, description="Export the suite's test results to DataOps Observability."
     )
@@ -1199,7 +1209,12 @@ class TestSuiteCreate(BaseModel):
     )
 
     @field_validator(
-        "component_type", "exclude_from_quality_score", "export_to_observability", "set_as_default", mode="before"
+        "component_type",
+        "exclude_from_quality_score",
+        "deactivate_invalid_tests",
+        "export_to_observability",
+        "set_as_default",
+        mode="before",
     )
     @classmethod
     def _null_takes_the_default(cls, value: Any, info: ValidationInfo) -> Any:

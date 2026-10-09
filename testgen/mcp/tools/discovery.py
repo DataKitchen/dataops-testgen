@@ -196,6 +196,7 @@ def get_test_suite(
         doc.field("Description", suite.test_suite_description)
     doc.field("Default severity", suite.severity or "Inherit from test type")
     doc.field("Export to observability", suite.export_to_observability)
+    doc.field("Automatically deactivate tests that fail validation", suite.deactivate_invalid_tests)
     doc.field("Generation sets", ", ".join(suite.generation_sets or []) or "Not set, defaults to Standard")
     doc.field("Available generation sets", ", ".join(list_generation_sets()))
 

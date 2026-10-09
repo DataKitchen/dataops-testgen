@@ -32,6 +32,7 @@ test_types:
   default_severity: Fail
   run_type: QUERY
   test_scope: column
+  column_general_types: [A]
   dq_dimension: Consistency
   impact_dimension: Conformance
   health_dimension: Data Drift

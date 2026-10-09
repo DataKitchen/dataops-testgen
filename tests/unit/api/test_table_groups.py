@@ -803,7 +803,7 @@ def _move(previous="public", schema="onboard_2026_09_16", missing=None, repointe
 def test_update_table_group_moves_the_schema_and_reports_what_moved(
     mock_cls, _perm, mock_move, mock_apply,
 ):
-    """The caller needs the tables the new schema lacks: the next test run deactivates their tests."""
+    """The caller needs the tables the new schema lacks: their tests fail validation on the next test run."""
     mock_cls.get.return_value = _table_group()
     mock_move.return_value = _move(missing=["archive"])
 

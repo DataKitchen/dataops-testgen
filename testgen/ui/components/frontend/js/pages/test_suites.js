@@ -79,6 +79,7 @@ const TestSuites = (/** @type Properties */ props) => {
         severity: van.state(null),
         exportToObservability: van.state(false),
         dqScoreExclude: van.state(false),
+        deactivateInvalidTests: van.state(false),
         componentKey: van.state(''),
         componentType: van.state('dataset'),
         componentName: van.state(''),
@@ -100,6 +101,7 @@ const TestSuites = (/** @type Properties */ props) => {
         formState.severity.val = v.severity ?? null;
         formState.exportToObservability.val = v.export_to_observability ?? false;
         formState.dqScoreExclude.val = v.dq_score_exclude ?? false;
+        formState.deactivateInvalidTests.val = v.deactivate_invalid_tests ?? false;
         formState.componentKey.val = v.component_key ?? '';
         formState.componentType.val = v.component_type ?? 'dataset';
         formState.componentName.val = v.component_name ?? '';
@@ -420,7 +422,7 @@ const TestSuites = (/** @type Properties */ props) => {
                         }),
                     ),
                     div(
-                        { class: 'flex-row fx-gap-4' },
+                        { class: 'flex-row fx-flex-wrap fx-gap-4' },
                         Checkbox({
                             name: 'export-to-observability',
                             label: 'Export to Observability',
@@ -432,6 +434,13 @@ const TestSuites = (/** @type Properties */ props) => {
                             label: 'Exclude from quality scoring',
                             checked: formState.dqScoreExclude,
                             onChange: (value) => { formState.dqScoreExclude.val = value; },
+                        }),
+                        Checkbox({
+                            name: 'deactivate-invalid-tests',
+                            label: 'Automatically deactivate tests that fail validation',
+                            help: 'At the start of each run, tests whose table or column is missing, or whose column type changed, are deactivated. Otherwise, these tests report an error on each run until the problem is fixed.',
+                            checked: formState.deactivateInvalidTests,
+                            onChange: (value) => { formState.deactivateInvalidTests.val = value; },
                         }),
                     ),
                     ExpanderToggle({
@@ -488,6 +497,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                     severity: formState.severity.val,
                                     export_to_observability: formState.exportToObservability.val,
                                     dq_score_exclude: formState.dqScoreExclude.val,
+                                    deactivate_invalid_tests: formState.deactivateInvalidTests.val,
                                     component_key: formState.componentKey.val,
                                     component_type: formState.componentType.val,
                                     component_name: formState.componentName.val,

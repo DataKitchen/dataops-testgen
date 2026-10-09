@@ -196,6 +196,11 @@ SELECT
 -- TG-IF is_N_decimal
   SUM(COALESCE(ROUND(ROUND(CAST(ABS(MOD(`{COL_NAME}`, 1)) AS NUMERIC), 8), 5), 0)) AS fractional_sum,
 -- TG-ENDIF
+-- TG-IF is_N_exact_sum
+  CASE WHEN MAX(ABS(CAST(`{COL_NAME}` AS FLOAT64))) < 1e20 AND COUNT(`{COL_NAME}`) < 1e10
+       THEN SUM(CASE WHEN ABS(CAST(`{COL_NAME}` AS FLOAT64)) < 1e20 THEN ROUND(CAST(`{COL_NAME}` AS BIGNUMERIC), 8) END)
+  END AS sum_value,
+-- TG-ENDIF
 -- TG-IF is_type_D
   MIN(`{COL_NAME}`) AS min_date, -- Other flavors have a minimum threshold of 0001-01-01, but BigQuery doesn't make it easy to to the same
   MAX(`{COL_NAME}`) AS max_date,

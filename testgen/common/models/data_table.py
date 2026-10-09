@@ -124,6 +124,7 @@ class DataTable(Entity):
                 DataColumnChars.general_type,
                 DataColumnChars.column_type,
                 DataColumnChars.db_data_type,
+                DataColumnChars.logical_type,
                 DataColumnChars.is_decimal,
                 cls.object_type,
                 cls.approx_record_ct,

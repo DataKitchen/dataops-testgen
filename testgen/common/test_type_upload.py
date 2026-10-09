@@ -20,6 +20,7 @@ from testgen import settings
 from testgen.common.enums import HealthDimension, ImpactDimension, QualityDimension, TestScope
 from testgen.common.flavors import FLAVOR_FAMILIES
 from testgen.common.models import database_session
+from testgen.common.models.data_column import GENERAL_TYPE_CODE_TO_LABEL
 from testgen.common.models.test_definition import (
     Severity,
     StatisticalTechnique,
@@ -48,6 +49,7 @@ _PARENT_FIELDS: frozenset[str] = frozenset({
     "health_dimension", "algorithm", "statistical_technique",
     "threshold_description", "result_visualization", "result_visualization_params",
     "usage_notes", "active", "overrides", "ai_redact_values", "null_measure_fails",
+    "column_general_types",
 })
 
 # Parent fields stored as a real boolean rather than a string.
@@ -178,6 +180,7 @@ def validate_test_type_yaml(content: str | bytes) -> ValidationResult:
     _check_parent_field_names(parent, errors)
     _check_required_parent_fields(parent, errors)
     _check_parent_boolean_fields(parent, errors)
+    _check_column_general_types(parent, errors)
     _check_parent_enum_values(parent, errors)
     _check_parent_specials(parent, errors)
     _check_parent_lengths(parent, errors)
@@ -236,6 +239,21 @@ def _check_parent_boolean_fields(parent: dict[str, Any], errors: list[str]) -> N
             continue
         if not isinstance(parent[field_name], bool):
             errors.append(f"{field_name}: must be true or false.")
+
+
+def _check_column_general_types(parent: dict[str, Any], errors: list[str]) -> None:
+    value = parent.get("column_general_types")
+    if value is None:
+        return
+    if (
+        not isinstance(value, list)
+        or not value
+        or not all(isinstance(code, str) and code in GENERAL_TYPE_CODE_TO_LABEL for code in value)
+    ):
+        valid_codes = ", ".join(GENERAL_TYPE_CODE_TO_LABEL)
+        errors.append(f"column_general_types: must be a list of general type codes ({valid_codes}).")
+    elif parent.get("test_scope") != "column":
+        errors.append("column_general_types: applies only to test_scope column.")
 
 
 def _check_required_parent_fields(parent: dict[str, Any], errors: list[str]) -> None:
@@ -450,6 +468,7 @@ def _emit_apply_statements(session, parsed: ParsedTestType, current_version: str
     parent = {
         "ai_redact_values": True,
         "null_measure_fails": False,
+        "column_general_types": None,
         **parsed.parent,
         "uploaded_version": current_version,
     }
