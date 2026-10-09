@@ -97,7 +97,7 @@ class DataTable(Entity):
     def select_table_names(
         cls, table_groups_id: UUID, project_codes: list[str] | None = None, limit: int | None = 100, offset: int = 0,
     ) -> list[str]:
-        query = select(cls.table_name).where(cls.table_groups_id == table_groups_id)
+        query = select(cls.table_name).where(cls.table_groups_id == table_groups_id, cls.drop_date.is_(None))
         if project_codes is not None:
             query = query.join(TableGroup, cls.table_groups_id == TableGroup.id).where(
                 TableGroup.project_code.in_(project_codes)
@@ -143,7 +143,9 @@ class DataTable(Entity):
 
     @classmethod
     def count_tables(cls, table_groups_id: UUID, project_codes: list[str] | None = None) -> int:
-        query = select(func.count()).select_from(cls).where(cls.table_groups_id == table_groups_id)
+        query = select(func.count()).select_from(cls).where(
+            cls.table_groups_id == table_groups_id, cls.drop_date.is_(None)
+        )
         if project_codes is not None:
             query = query.join(TableGroup, cls.table_groups_id == TableGroup.id).where(
                 TableGroup.project_code.in_(project_codes)

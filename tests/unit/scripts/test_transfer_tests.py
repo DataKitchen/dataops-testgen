@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from textwrap import dedent
 from typing import Any
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -14,8 +15,8 @@ from testgen.common.test_definition_export_import_service import ImportPayload
 
 pytestmark = pytest.mark.unit
 
-SCRIPT_PATH = Path(__file__).parents[3] / "scripts" / "map_test_definitions.py"
-_spec = importlib.util.spec_from_file_location("map_test_definitions", SCRIPT_PATH)
+SCRIPT_PATH = Path(__file__).parents[3] / "scripts" / "transfer_tests.py"
+_spec = importlib.util.spec_from_file_location("transfer_tests", SCRIPT_PATH)
 script = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = script
 _spec.loader.exec_module(script)
@@ -669,3 +670,275 @@ def test_main_writes_files_with_the_mode_a_plain_open_gives(tmp_path):
 
     assert (tmp_path / "out.json").stat().st_mode & 0o777 == 0o644
     assert (tmp_path / "report.txt").stat().st_mode & 0o777 == 0o640
+
+
+SOURCE_SUITE = "11111111-1111-1111-1111-111111111111"
+DEST_SUITE = "22222222-2222-2222-2222-222222222222"
+API_URL = "https://testgen.example.com"
+TOKEN = "secret-token-value"  # noqa: S105
+
+
+class FakeApi:
+    """Stands in for urlopen: records each request and answers from a queue of responses."""
+
+    def __init__(self, *responses: Any) -> None:
+        self.responses = list(responses)
+        self.requests: list[dict[str, Any]] = []
+
+    def __call__(self, request: Any, timeout: float) -> Any:
+        self.requests.append({
+            "method": request.get_method(),
+            "url": request.full_url,
+            "headers": dict(request.header_items()),
+            "body": json.loads(request.data) if request.data else None,
+            "timeout": timeout,
+        })
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return _Response(response if isinstance(response, bytes) else json.dumps(response).encode())
+
+
+class _Response(io.BytesIO):
+    def __enter__(self) -> "_Response":
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        self.close()
+
+
+def _http_error(status: int, body: Any) -> HTTPError:
+    return HTTPError(API_URL, status, "error", {}, io.BytesIO(json.dumps(body).encode()))  # type: ignore[arg-type]
+
+
+def _import_result(
+    created: int = 0, updated: int = 0, skipped: list[tuple[str, list[int]]] = (), deleted: int = 0
+) -> dict[str, Any]:
+    items = [
+        {"action": "skip", "reason": reason, "tds": [{"idx": idx} for idx in indexes]} for reason, indexes in skipped
+    ]
+    return {
+        "summary": {
+            "created": created, "updated": updated, "skipped": sum(len(i) for _, i in skipped), "deleted": deleted,
+        },
+        "items": items,
+    }
+
+
+def _api_args(tmp_path: Path, *extra: str) -> list[str]:
+    (tmp_path / "mapping.csv").write_text("source_table,source_column,target_table,target_column\na,x,b,y\n")
+    return ["--mapping", str(tmp_path / "mapping.csv"), "--api-url", API_URL, "--export-from", SOURCE_SUITE,
+            "--import-to", DEST_SUITE, "--output", str(tmp_path / "out.json"), "--report", str(tmp_path / "report.txt"),
+            *extra]
+
+
+@pytest.fixture
+def api(monkeypatch):
+    def install(*responses: Any) -> FakeApi:
+        fake = FakeApi(*responses)
+        monkeypatch.setattr(script, "_open", fake)
+        return fake
+    monkeypatch.setenv(script.API_TOKEN_VARIABLE, TOKEN)
+    return install
+
+
+def test_api_exports_maps_and_previews_the_import(tmp_path, api, capsys):
+    export = _document(_test("Match_Null_Ct", "a", "x"), _test("Match_Row_Ct", "c"))
+    fake = api(export, _import_result(created=1, skipped=[("invalid_table", [1])]))
+
+    assert script.main(_api_args(tmp_path)) == 0
+
+    export_request, import_request = fake.requests
+    assert export_request["method"] == "GET"
+    assert export_request["url"] == f"{API_URL}/api/v1/test-suites/{SOURCE_SUITE}/test-definition-export"
+    assert export_request["headers"]["Authorization"] == f"Bearer {TOKEN}"
+    assert export_request["timeout"] == script.API_TIMEOUT_SECONDS
+    assert import_request["method"] == "POST"
+    assert import_request["url"] == f"{API_URL}/api/v1/test-suites/{DEST_SUITE}/test-definition-import"
+    assert import_request["body"]["config"] == {
+        "mode": "preview", "on_match": "overwrite_all", "on_new": "create_and_lock", "on_absence": "do_nothing",
+    }
+    output = json.loads((tmp_path / "out.json").read_text())
+    assert import_request["body"]["payload"] == output
+    assert _names(output) == [("Match_Null_Ct", "b", "y"), ("Match_Row_Ct", "c", None)]
+
+    report = (tmp_path / "report.txt").read_text()
+    assert f"Input:   test suite {SOURCE_SUITE} at {API_URL}" in report
+    assert f"Import preview into test suite {DEST_SUITE} (nothing imported)" in report
+    assert "1 test would be created, 1 test would be skipped" in report
+    assert "table not found in the destination table group:\n    c: 1 test" in report
+    out = capsys.readouterr().out
+    assert "run the same command with --apply" in out
+    assert TOKEN not in report + out
+
+
+def test_api_apply_imports_with_all_or_nothing_semantics(tmp_path, api, capsys):
+    fake = api(_document(_test("Match_Null_Ct", "a", "x")), _import_result(created=1))
+
+    assert script.main(_api_args(tmp_path, "--apply")) == 0
+
+    assert [request["method"] for request in fake.requests] == ["GET", "POST"]
+    assert fake.requests[1]["body"]["config"]["mode"] == "apply_strict"
+    assert f"Import into test suite {DEST_SUITE}\n  1 test created" in (tmp_path / "report.txt").read_text()
+    assert f"Imported into test suite {DEST_SUITE}: 1 test created." in capsys.readouterr().out
+
+
+def test_api_delete_absent_deletes_destination_tests_missing_from_the_document(tmp_path, api, capsys):
+    fake = api(
+        _document(_test("Match_Null_Ct", "a", "x")), _import_result(updated=1, deleted=2),
+        _document(_test("Match_Null_Ct", "a", "x")), _import_result(updated=1, deleted=2),
+    )
+
+    assert script.main(_api_args(tmp_path, "--delete-absent")) == 0
+    assert "1 test would be updated, 2 tests would be deleted" in (tmp_path / "report.txt").read_text()
+    assert script.main(_api_args(tmp_path, "--delete-absent", "--apply")) == 0
+
+    preview, applied = fake.requests[1]["body"]["config"], fake.requests[3]["body"]["config"]
+    assert (preview["mode"], preview["on_absence"]) == ("preview", "delete_all")
+    assert (applied["mode"], applied["on_absence"]) == ("apply_strict", "delete_all")
+    assert "1 test updated, 2 tests deleted." in capsys.readouterr().out
+
+
+def test_api_apply_refused_when_tests_would_be_skipped(tmp_path, api, capsys):
+    result = _import_result(created=1, skipped=[("missing_required_field", [0])])
+    api(
+        _document(_test("Match_Null_Ct", "a", "x"), _test("Match_Row_Ct", "a")),
+        _http_error(400, {"detail": {"errors": [{"code": "strict_validation_failed", "detail": "1 skipped"}],
+                                     "import_result": result}}),
+    )
+
+    assert script.main(_api_args(tmp_path, "--apply")) == 1
+
+    report = (tmp_path / "report.txt").read_text()
+    assert "refused: tests would be skipped, so nothing was imported" in report
+    assert "required field left blank:\n    Match_Null_Ct on b.y: 1 test" in report
+    assert (tmp_path / "out.json").exists()
+    assert "would skip tests, so nothing was imported" in capsys.readouterr().err
+
+
+def test_api_imports_a_file_input(tmp_path, api):
+    args = _cli_args(tmp_path)
+    fake = api(_import_result(created=1))
+
+    assert script.main([*args, "--api-url", API_URL, "--import-to", DEST_SUITE]) == 0
+
+    assert [request["method"] for request in fake.requests] == ["POST"]
+    assert f"Input:   {tmp_path / 'in.json'}" in (tmp_path / "report.txt").read_text()
+
+
+def test_api_export_not_found_writes_nothing(tmp_path, api, capsys):
+    api(_http_error(404, {"detail": {"errors": [{"code": "not_found", "detail": "Not found"}]}}))
+
+    assert script.main(_api_args(tmp_path)) == 1
+
+    assert not (tmp_path / "out.json").exists()
+    assert not (tmp_path / "report.txt").exists()
+    assert f"Test suite {SOURCE_SUITE} was not found, or the token's user cannot view it" in capsys.readouterr().err
+
+
+def test_api_preview_failure_writes_nothing(tmp_path, api, capsys):
+    api(_document(_test("Match_Null_Ct", "a", "x")), _http_error(401, {"detail": "Invalid or expired token"}))
+
+    assert script.main(_api_args(tmp_path)) == 1
+
+    assert not (tmp_path / "out.json").exists()
+    assert "returned HTTP 401: Invalid or expired token" in capsys.readouterr().err
+
+
+def test_api_apply_connection_failure_says_the_import_may_have_run(tmp_path, api, capsys):
+    api(_document(_test("Match_Null_Ct", "a", "x")), URLError("timed out"))
+
+    assert script.main(_api_args(tmp_path, "--apply")) == 1
+
+    error = capsys.readouterr().err
+    assert "Could not reach" in error
+    assert "The import may have run" in error
+    assert (tmp_path / "report.txt").exists()
+
+
+def test_api_apply_gateway_error_says_the_import_may_have_run(tmp_path, api, capsys):
+    api(_document(_test("Match_Null_Ct", "a", "x")), _http_error(504, {"detail": "Gateway Timeout"}))
+
+    assert script.main(_api_args(tmp_path, "--apply")) == 1
+
+    assert "The import may have run" in capsys.readouterr().err
+
+
+def test_api_apply_client_error_says_nothing_was_imported(tmp_path, api, capsys):
+    api(_document(_test("Match_Null_Ct", "a", "x")), _http_error(401, {"detail": "Invalid or expired token"}))
+
+    assert script.main(_api_args(tmp_path, "--apply")) == 1
+
+    assert "Nothing was imported" in capsys.readouterr().err
+
+
+def test_api_refuses_a_redirect_instead_of_following_it():
+    request = script.Request(f"{API_URL}/api/v1/test-suites/x/test-definition-import", data=b"{}", method="POST")
+
+    with pytest.raises(script.ApiFailed, match="redirected to https://other.example.com/"):
+        script._RefuseRedirects().redirect_request(request, None, 301, "Moved", {}, "https://other.example.com/")
+    assert any(isinstance(handler, script._RefuseRedirects) for handler in script._opener.handlers)
+
+
+def test_api_404_from_an_unknown_path_is_not_blamed_on_the_suite(tmp_path, api, capsys):
+    api(HTTPError(API_URL, 404, "Not Found", {}, io.BytesIO(b"Not Found")))  # type: ignore[arg-type]
+
+    assert script.main(_api_args(tmp_path)) == 1
+
+    error = capsys.readouterr().err
+    assert "returned HTTP 404. Check that --api-url is the TestGen API URL" in error
+    assert "was not found, or the token's user" not in error
+
+
+def test_api_response_that_is_not_json_points_at_the_api_url(tmp_path, api, capsys):
+    api(b"<html>TestGen</html>")
+
+    assert script.main(_api_args(tmp_path)) == 1
+    assert "not the UI URL" in capsys.readouterr().err
+
+
+def test_api_url_with_the_api_prefix_is_accepted(tmp_path, api):
+    args = _api_args(tmp_path)
+    args[args.index(API_URL)] = f"{API_URL}/api/v1/"
+    fake = api(_document(_test("Match_Null_Ct", "a", "x")), _import_result(created=1))
+
+    assert script.main(args) == 0
+    assert fake.requests[0]["url"].startswith(f"{API_URL}/api/v1/test-suites/")
+
+
+@pytest.mark.parametrize(("change", "message"), [
+    (lambda args: [*(a for a in args if a not in ("--import-to", DEST_SUITE)), "--apply"],
+     "--apply requires --import-to"),
+    (lambda args: [*(a for a in args if a not in ("--import-to", DEST_SUITE)), "--delete-absent"],
+     "--delete-absent requires --import-to"),
+    (lambda args: [a for a in args if a not in ("--api-url", API_URL)], "require --api-url"),
+    (lambda args: [*args[:args.index(SOURCE_SUITE)], "suite-name", *args[args.index(SOURCE_SUITE) + 1:]],
+     "--export-from takes a test suite ID"),
+    (lambda args: [SOURCE_SUITE if a == DEST_SUITE else a for a in args], "must be different test suites"),
+    (lambda args: ["ftp://host" if a == API_URL else a for a in args], "must start with http:// or https://"),
+])
+def test_api_argument_errors(tmp_path, api, capsys, change, message):
+    fake = api()
+
+    with pytest.raises(SystemExit):
+        script.main(change(_api_args(tmp_path)))
+
+    assert message in capsys.readouterr().err
+    assert not fake.requests
+
+
+def test_api_url_without_an_api_option_is_an_error(tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        script.main([*_cli_args(tmp_path), "--api-url", API_URL])
+    assert "--api-url is used only with" in capsys.readouterr().err
+
+
+def test_api_requires_the_token_variable(tmp_path, api, monkeypatch, capsys):
+    fake = api()
+    monkeypatch.delenv(script.API_TOKEN_VARIABLE)
+
+    with pytest.raises(SystemExit):
+        script.main(_api_args(tmp_path))
+
+    assert script.API_TOKEN_VARIABLE in capsys.readouterr().err
+    assert not fake.requests
