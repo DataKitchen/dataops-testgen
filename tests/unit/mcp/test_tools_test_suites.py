@@ -585,6 +585,7 @@ def test_update_test_suite_no_op(mock_resolve, db_session_mock):
 
     suite.save.assert_not_called()
     assert "No fields changed" in out
+    db_session_mock.rollback.assert_called_once()
 
 
 @patch(f"{MODULE}.resolve_test_suite")
@@ -612,6 +613,7 @@ def test_update_test_suite_empty_text_arg_on_null_field_is_noop(mock_resolve, db
 
     suite.save.assert_not_called()
     assert "No fields changed" in out
+    db_session_mock.rollback.assert_called_once()
 
 
 @patch(f"{MODULE}.resolve_test_suite")

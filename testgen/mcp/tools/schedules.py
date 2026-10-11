@@ -22,6 +22,7 @@ from testgen.mcp.tools.common import (
     format_page_info,
     format_run_duration,
     parse_enum,
+    report_no_change,
     resolve_schedule,
     resolve_table_group,
     resolve_test_suite,
@@ -288,14 +289,13 @@ def update_schedule(
         changes.append(("Status", before, after))
         sched.active = active
 
-    sched.save()
-
     doc = MdDoc()
     doc.heading(1, "Schedule updated")
     doc.field("Schedule ID", sched.id, code=True)
     if not changes:
-        doc.text("No fields changed — supplied values matched the current state.")
-        return doc.render()
+        return report_no_change(doc)
+
+    sched.save()
     doc.table(["Field", "Before", "After"], [list(c) for c in changes])
     return doc.render()
 

@@ -743,6 +743,16 @@ def test_validate_connection_name_too_long():
     assert "`connection_name` must be between 3 and 40 characters." in validate_connection_fields(_conn(connection_name="a" * 41))
 
 
+@pytest.mark.parametrize("name", [None, "", "ab"])
+def test_validate_skips_name_when_not_required(name):
+    assert validate_connection_fields(_conn(connection_name=name), require_name=False) == []
+
+
+def test_validate_checks_other_fields_when_name_not_required():
+    errors = validate_connection_fields(_conn(connection_name=None, project_host=None), require_name=False)
+    assert errors == ["`Host` is required for PostgreSQL."]
+
+
 @pytest.mark.parametrize("bad", [0, -1, 9, 100])
 def test_validate_max_threads_out_of_range(bad):
     assert "`max_threads` must be between 1 and 8." in validate_connection_fields(_conn(max_threads=bad))

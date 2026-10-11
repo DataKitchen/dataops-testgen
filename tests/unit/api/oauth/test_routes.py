@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("AUTHLIB_INSECURE_TRANSPORT", "1")
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -16,6 +17,7 @@ from testgen.api.oauth.routes import (
     _security_headers,
     router,
 )
+from testgen.common.models.oauth import OAuth2ClientAuthMethod
 
 
 def _noop_db_session():
@@ -475,3 +477,68 @@ def test_register_client_uses_defaults_for_missing_fields(mock_get_session):
     assert data["client_name"] == ""
     assert "authorization_code" in data["grant_types"]
     assert data["redirect_uris"] == []
+
+
+@pytest.mark.parametrize("auth_method", ["client_secret_basic", "client_secret_post"])
+@patch("testgen.api.oauth.routes.get_current_session")
+def test_register_confidential_client_returns_secret(mock_get_session, auth_method):
+    mock_session = MagicMock()
+    mock_get_session.return_value = mock_session
+
+    resp = _make_client().post("/oauth/register", json={"token_endpoint_auth_method": auth_method})
+
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["token_endpoint_auth_method"] == auth_method
+    assert data["client_secret"]
+    assert data["client_secret_expires_at"] == 0
+    saved = mock_session.add.call_args[0][0]
+    assert saved.client_secret == data["client_secret"]
+    assert saved.token_endpoint_auth_method == auth_method
+
+
+@patch("testgen.api.oauth.routes.get_current_session")
+def test_register_defaults_to_client_secret_basic(mock_get_session):
+    mock_session = MagicMock()
+    mock_get_session.return_value = mock_session
+
+    resp = _make_client().post("/oauth/register", json={"client_name": "My Tool"})
+
+    assert resp.status_code == 201
+    assert resp.json()["token_endpoint_auth_method"] == OAuth2ClientAuthMethod.CLIENT_SECRET_BASIC
+    assert mock_session.add.call_args[0][0].token_endpoint_auth_method == OAuth2ClientAuthMethod.CLIENT_SECRET_BASIC
+
+
+@patch("testgen.api.oauth.routes.get_current_session")
+def test_register_public_client_gets_no_secret(mock_get_session):
+    mock_session = MagicMock()
+    mock_get_session.return_value = mock_session
+
+    resp = _make_client().post(
+        "/oauth/register",
+        json={"client_name": "MCP App", "redirect_uris": ["http://localhost/cb"], "token_endpoint_auth_method": "none"},
+    )
+
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["token_endpoint_auth_method"] == OAuth2ClientAuthMethod.NONE
+    assert "client_secret" not in data
+    assert "client_secret_expires_at" not in data
+    saved = mock_session.add.call_args[0][0]
+    assert saved.client_secret is None
+    assert saved.token_endpoint_auth_method == OAuth2ClientAuthMethod.NONE
+
+
+@pytest.mark.parametrize("auth_method", ["private_key_jwt", "client_secret_jwt", "", None, ["none"]])
+@patch("testgen.api.oauth.routes.get_current_session")
+def test_register_rejects_unsupported_auth_method(mock_get_session, auth_method):
+    mock_session = MagicMock()
+    mock_get_session.return_value = mock_session
+
+    resp = _make_client().post("/oauth/register", json={"token_endpoint_auth_method": auth_method})
+
+    assert resp.status_code == 400
+    data = resp.json()
+    assert data["error"] == "invalid_client_metadata"
+    assert "token_endpoint_auth_method" in data["error_description"]
+    mock_session.add.assert_not_called()

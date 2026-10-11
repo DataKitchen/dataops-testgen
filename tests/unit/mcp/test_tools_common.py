@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -1666,3 +1667,36 @@ def test_resolve_contract_rejects_a_suite_that_keeps_no_versions(
 def test_resolve_contract_invalid_uuid():
     with pytest.raises(MCPUserError, match="Invalid test_suite_id"):
         resolve_contract("not-a-uuid")
+
+
+# --- report_no_change ---
+
+
+def test_report_no_change_rolls_back_and_renders_message(db_session_mock):
+    from testgen.common.models import database_session
+    from testgen.mcp.tools.common import report_no_change
+    from testgen.mcp.tools.markdown import MdDoc
+
+    doc = MdDoc()
+    doc.heading(1, "Thing updated")
+
+    with database_session():
+        out = report_no_change(doc)
+
+    db_session_mock.rollback.assert_called_once()
+    assert "# Thing updated" in out
+    assert "No fields changed — supplied values matched the current state." in out
+
+
+def test_no_change_message_is_only_written_by_report_no_change():
+    """A tool that writes the message itself would skip the rollback and commit unreported changes."""
+    import testgen.mcp.tools as tools_pkg
+
+    tools_dir = Path(tools_pkg.__file__).parent
+    offenders = [
+        path.name
+        for path in tools_dir.glob("*.py")
+        if path.name != "common.py" and "No fields changed" in path.read_text()
+    ]
+
+    assert offenders == []

@@ -388,6 +388,43 @@ def test_get_inventory_identity_header_marks_global_admin(mock_select, session_m
     assert "Authenticated as alice · system admin" in result
 
 
+@patch("testgen.mcp.services.inventory_service.select")
+def test_get_inventory_identity_header_shows_name_before_username(mock_select, session_mock):
+    session_mock.execute.return_value.all.return_value = [_make_row()]
+
+    result = _get_inventory(
+        project_codes=["demo"], view_project_codes=["demo"],
+        username="ny8d7-Z4SEyB9GA5", name="Alice Smith", roles_by_code={"demo": "admin"},
+    )
+
+    assert "Authenticated as Alice Smith (ny8d7-Z4SEyB9GA5)\n" in result
+
+
+@patch("testgen.mcp.services.inventory_service.select")
+def test_get_inventory_identity_header_shows_name_with_global_admin(mock_select, session_mock):
+    session_mock.execute.return_value.all.return_value = [_make_row()]
+
+    result = _get_inventory(
+        project_codes=["demo"], view_project_codes=["demo"],
+        username="alice", name="Alice Smith", is_global_admin=True, roles_by_code={"demo": "admin"},
+    )
+
+    assert "Authenticated as Alice Smith (alice) · system admin" in result
+
+
+@pytest.mark.parametrize("name", [None, "alice"])
+@patch("testgen.mcp.services.inventory_service.select")
+def test_get_inventory_identity_header_shows_username_alone(mock_select, name, session_mock):
+    session_mock.execute.return_value.all.return_value = [_make_row()]
+
+    result = _get_inventory(
+        project_codes=["demo"], view_project_codes=["demo"],
+        username="alice", name=name, roles_by_code={"demo": "admin"},
+    )
+
+    assert "Authenticated as alice\n" in result
+
+
 @patch("testgen.mcp.services.inventory_service.PluginHook")
 @patch("testgen.mcp.services.inventory_service.select")
 def test_get_inventory_role_suffix_uses_rbac_label(mock_select, mock_hook, session_mock):

@@ -2,7 +2,7 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-from testgen.common.models.profile_result import MeasureAcquisition, ProfileResult
+from testgen.common.models.profile_result import ColumnErrorRow, MeasureAcquisition, ProfileResult
 
 
 @patch("testgen.common.models.profile_result.ProfileResult.select_where")
@@ -302,3 +302,18 @@ def test_a_row_without_a_sample_value_count_is_left_as_it_is():
     row = {"value_ct": 1000, "numeric_ct": 300}
     ProfileResult.calibrate_sampled_counts(row)
     assert row == {"value_ct": 1000, "numeric_ct": 300}
+
+
+@patch("testgen.common.models.profile_result.ProfileResult._paginate", return_value=([], 0))
+def test_list_column_errors_for_run_reads_one_run_with_errors(mock_paginate):
+    run_id = uuid4()
+
+    ProfileResult.list_column_errors_for_run(run_id, ProfileResult.table_name == "orders", limit=20)
+
+    query = mock_paginate.call_args.args[0]
+    where = str(query.whereclause)
+    assert "profile_results.profile_run_id = :profile_run_id_1" in where
+    assert "profile_results.query_error IS NOT NULL" in where
+    assert "profile_results.table_name = :table_name_1" in where
+    assert query._order_by_clauses
+    assert mock_paginate.call_args.kwargs == {"page": 1, "limit": 20, "data_class": ColumnErrorRow}

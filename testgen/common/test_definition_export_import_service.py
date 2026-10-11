@@ -82,6 +82,27 @@ class ImportReason(StrEnum):
     absent = "absent"
 
 
+IMPORT_ACTION_LABELS: dict[ImportAction, str] = {
+    ImportAction.create: "Create",
+    ImportAction.update: "Update",
+    ImportAction.skip: "Skip",
+    ImportAction.delete: "Delete",
+}
+
+IMPORT_REASON_LABELS: dict[ImportReason, str] = {
+    ImportReason.matched: "Matches an existing test",
+    ImportReason.no_match: "No matching test",
+    ImportReason.policy: "Excluded by the selected policy",
+    ImportReason.locked: "Existing test is locked",
+    ImportReason.invalid_test_type: "Unknown test type",
+    ImportReason.non_public_test_type: "Test type cannot be imported",
+    ImportReason.invalid_table: "Table not in the data catalog",
+    ImportReason.missing_external_id: "Missing external ID",
+    ImportReason.missing_required_field: "Missing a required field",
+    ImportReason.absent: "Not in the file",
+}
+
+
 # Non-None defaults must match the ORM column defaults in TestDefinition:
 #   test_active=True (YNString default="Y"), lock_refresh=False (YNString default="N"),
 #   skip_errors=0 (ZeroIfEmptyInteger), window_days=0 (ZeroIfEmptyInteger),

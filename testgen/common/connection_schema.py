@@ -561,24 +561,27 @@ def _required_fields_for(connection: Connection) -> list[ConnField]:
     return required
 
 
-def validate_connection_fields(connection: Connection) -> list[str]:
+def validate_connection_fields(connection: Connection, require_name: bool = True) -> list[str]:
     """Return every validation error (empty list = valid).
 
     Mirrors the per-flavor JS form validators in
     ``ui/static/js/components/connection_form.js``. The connection tools call this
     and raise their user-facing error containing the bullets. Field errors use the
     UI label (e.g. ``Host``) so the LLM sees the same wording as a UI user.
+
+    :param require_name: When ``False``, the connection name is not checked.
     """
     errors: list[str] = []
     flavor_label = FLAVOR_CODE_TO_LABEL.get(connection.sql_flavor_code, connection.sql_flavor_code)
 
-    name = connection.connection_name
-    if _missing(name):
-        errors.append("`connection_name` is required.")
-    elif not (_CONNECTION_NAME_MIN <= len(name.strip()) <= _CONNECTION_NAME_MAX):
-        errors.append(
-            f"`connection_name` must be between {_CONNECTION_NAME_MIN} and {_CONNECTION_NAME_MAX} characters."
-        )
+    if require_name:
+        name = connection.connection_name
+        if _missing(name):
+            errors.append("`connection_name` is required.")
+        elif not (_CONNECTION_NAME_MIN <= len(name.strip()) <= _CONNECTION_NAME_MAX):
+            errors.append(
+                f"`connection_name` must be between {_CONNECTION_NAME_MIN} and {_CONNECTION_NAME_MAX} characters."
+            )
 
     for fld in _required_fields_for(connection):
         if _missing(read_conn_field(connection, fld)):

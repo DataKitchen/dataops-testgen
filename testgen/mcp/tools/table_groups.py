@@ -38,6 +38,7 @@ from testgen.mcp.tools.common import (
     format_page_footer,
     format_page_info,
     render_diff_table,
+    report_no_change,
     resolve_connection,
     resolve_table_group,
     target_db_error_text,
@@ -712,8 +713,7 @@ def update_table_group(
     diff_attrs, diff_labels = _diff_shape(schema_label)
     rendered = render_diff_table(doc, before, after, attrs=diff_attrs, labels=diff_labels)
     if not rendered:
-        doc.text("No fields changed — supplied values matched the current state.")
-        return doc.render()
+        return report_no_change(doc)
 
     try:
         table_group.save()

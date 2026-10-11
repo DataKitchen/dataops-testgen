@@ -1915,6 +1915,7 @@ def test_update_notification_no_op_enabled_returns_unchanged(db_session_mock):
         out = update_notification(notification_id=str(notif.id), enabled=True)
 
     assert "No fields changed" in out
+    db_session_mock.rollback.assert_called_once()
     notif.save.assert_not_called()
 
 
@@ -1931,6 +1932,7 @@ def test_update_notification_no_op_recipients(db_session_mock):
         )
 
     assert "No fields changed" in out
+    db_session_mock.rollback.assert_called_once()
     notif.save.assert_not_called()
 
 
@@ -1943,6 +1945,7 @@ def test_update_notification_no_op_trigger(db_session_mock):
         out = update_notification(notification_id=str(notif.id), trigger_on="On test failures")
 
     assert "No fields changed" in out
+    db_session_mock.rollback.assert_called_once()
     notif.save.assert_not_called()
 
 

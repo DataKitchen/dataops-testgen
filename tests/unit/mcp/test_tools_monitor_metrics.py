@@ -357,6 +357,7 @@ def test_update_metric_monitor_no_op_when_same_values(mock_resolve, db_session_m
         )
 
     assert "No fields changed" in out
+    db_session_mock.rollback.assert_called_once()
     monitor.save.assert_not_called()
     assert monitor.lock_refresh is False
     assert monitor.last_manual_update is None
