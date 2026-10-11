@@ -1,6 +1,8 @@
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
+
+from sqlalchemy.dialects import postgresql
 
 from testgen.common.models.data_column import ColumnProfileDetail, DataColumnChars
 
@@ -325,3 +327,25 @@ def test_summarize_matches_by_project_groups_and_orders_by_project(session_mock)
     assert "GROUP BY" in sql_str
     assert "ORDER BY" in sql_str
     assert "project_code" in sql_str.lower()
+
+
+@patch("testgen.common.models.data_column.get_current_session")
+def test_select_column_names_returns_table_and_column_pairs(session_mock):
+    session_mock.return_value.execute.return_value = [
+        MagicMock(table_name="orders", column_name="id"),
+        MagicMock(table_name="orders", column_name="Total"),
+    ]
+
+    result = DataColumnChars.select_column_names(uuid4())
+
+    assert result == {("orders", "id"), ("orders", "Total")}
+
+
+@patch("testgen.common.models.data_column.get_current_session")
+def test_select_column_names_leaves_out_dropped_columns(session_mock):
+    session_mock.return_value.execute.return_value = []
+
+    DataColumnChars.select_column_names(uuid4())
+
+    statement = session_mock.return_value.execute.call_args[0][0]
+    assert "data_column_chars.drop_date IS NULL" in str(statement.compile(dialect=postgresql.dialect()))

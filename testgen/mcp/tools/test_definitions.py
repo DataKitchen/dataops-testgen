@@ -1051,10 +1051,11 @@ def delete_tests(
 # ---------------------------------------------------------------------------
 
 
-_INVALID_TABLE_HINT = (
-    "The data catalog lists the tables TestGen found in the table group's schema. Check the table names "
-    "in the import file, or profile the table group to refresh the catalog."
+_NOT_IN_CATALOG_HINT = (
+    "The data catalog lists the tables and columns TestGen found in the table group's schema. Check the table "
+    "and column names in the import file, or profile the table group to refresh the catalog."
 )
+_NOT_IN_CATALOG_REASONS = (ImportReason.invalid_table, ImportReason.invalid_column)
 
 
 def _parse_import_payload(payload: str) -> ImportPayload:
@@ -1090,10 +1091,10 @@ def _append_import_result(doc: MdDoc, result: ImportResponse, preview: bool) -> 
         doc.table(["Reason", "Index", "Test Definition ID"], rows, code=[2])
 
     if any(
-        item.action is ImportAction.skip and item.reason is ImportReason.invalid_table and item.tds
+        item.action is ImportAction.skip and item.reason in _NOT_IN_CATALOG_REASONS and item.tds
         for item in result.items
     ):
-        doc.text(_INVALID_TABLE_HINT)
+        doc.text(_NOT_IN_CATALOG_HINT)
 
 
 @with_database_session

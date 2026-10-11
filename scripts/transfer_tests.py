@@ -108,6 +108,7 @@ API_TIMEOUT_SECONDS = 600
 IMPORT_POLICY = {"on_match": "overwrite_all", "on_new": "create_and_lock", "on_absence": "do_nothing"}
 SKIP_REASONS = {
     "invalid_table": "table not found in the destination table group",
+    "invalid_column": "column not found in the destination table group",
     "invalid_test_type": "test type does not exist",
     "non_public_test_type": "monitor test type",
     "missing_external_id": "manual test without an external_id",
@@ -720,11 +721,13 @@ def format_import(
             index = test.get("idx")
             definition = definitions[index] if isinstance(index, int) and 0 <= index < len(definitions) else {}
             table = definition.get("table_name") or "no table"
+            column = definition.get("column_name")
+            location = f"{table}.{column}" if column else table
             if reason == "invalid_table":
                 skipped[reason][table] += 1
+            elif reason == "invalid_column":
+                skipped[reason][location] += 1
             else:
-                column = definition.get("column_name")
-                location = f"{table}.{column}" if column else table
                 skipped[reason][f"{definition.get('test_type', 'test')} on {location}"] += 1
     if skipped:
         lines.extend(["", f"Tests skipped by the import ({sum(sum(tests.values()) for tests in skipped.values())})"])
