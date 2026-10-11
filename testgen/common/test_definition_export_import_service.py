@@ -15,7 +15,9 @@ from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
     table_group_qualifies_table_refs,
 )
+from testgen.common.enums import TestScope
 from testgen.common.models import get_current_session
+from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
@@ -77,6 +79,7 @@ class ImportReason(StrEnum):
     invalid_test_type = "invalid_test_type"
     non_public_test_type = "non_public_test_type"
     invalid_table = "invalid_table"
+    invalid_column = "invalid_column"
     missing_external_id = "missing_external_id"
     missing_required_field = "missing_required_field"
     absent = "absent"
@@ -97,6 +100,7 @@ IMPORT_REASON_LABELS: dict[ImportReason, str] = {
     ImportReason.invalid_test_type: "Unknown test type",
     ImportReason.non_public_test_type: "Test type cannot be imported",
     ImportReason.invalid_table: "Table not in the data catalog",
+    ImportReason.invalid_column: "Column not in the data catalog",
     ImportReason.missing_external_id: "Missing external ID",
     ImportReason.missing_required_field: "Missing a required field",
     ImportReason.absent: "Not in the file",
@@ -339,6 +343,7 @@ def import_definitions(
     test_types = _load_test_types()
     table_group = TableGroup.get(test_suite.table_groups_id)
     profiled_tables = set(DataTable.select_table_names(test_suite.table_groups_id, limit=None))
+    profiled_columns = DataColumnChars.select_column_names(test_suite.table_groups_id)
 
     # --- Phase 1: Upfront validation ---
     if payload.version != EXPORT_FORMAT_VERSION:
@@ -403,6 +408,10 @@ def import_definitions(
             actions.append(_PlannedAction(ImportAction.skip, ImportReason.invalid_table, idx, td_import, target))
             continue
 
+        if not _is_column_profiled(td_import, test_types[td_import.test_type], profiled_columns):
+            actions.append(_PlannedAction(ImportAction.skip, ImportReason.invalid_column, idx, td_import, target))
+            continue
+
         if missing_required_fields(test_types[td_import.test_type], lambda field: getattr(td_import, field, None)):
             actions.append(
                 _PlannedAction(ImportAction.skip, ImportReason.missing_required_field, idx, td_import, target)
@@ -458,11 +467,20 @@ def _load_test_types() -> dict[str, TestType]:
 
 
 def _is_profiled(td_import: TestDefinitionExport, profiled_tables: set[str]) -> bool:
-    """Check that the TD's table exists in profiled data. Column is not validated
-    because some test types use expressions (e.g. SUM(col)) rather than physical column names."""
+    """Check that the TD's table exists in profiled data."""
     if td_import.table_name is None:
         return True
     return td_import.table_name in profiled_tables
+
+
+def _is_column_profiled(
+    td_import: TestDefinitionExport, test_type: TestType, profiled_columns: set[tuple[str, str]]
+) -> bool:
+    """Check that the TD's column exists in profiled data. Only column-scope test types are validated:
+    the other scopes can hold an expression (e.g. SUM(col)) rather than a physical column name."""
+    if test_type.test_scope != TestScope.COLUMN or not td_import.table_name or not td_import.column_name:
+        return True
+    return (td_import.table_name, td_import.column_name) in profiled_columns
 
 
 def _check_duplicate_keys(incoming: list[TestDefinitionExport]) -> None:
