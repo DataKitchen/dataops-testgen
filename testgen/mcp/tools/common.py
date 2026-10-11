@@ -790,6 +790,19 @@ def render_diff_table(
     return True
 
 
+def report_no_change(doc: MdDoc) -> str:
+    """Roll back the current session and render ``doc`` with a "No fields changed" line.
+
+    The rollback discards every pending change in the session, not only the compared fields,
+    so the record is left exactly as it was.
+
+    Returns the rendered document.
+    """
+    get_current_session().rollback()
+    doc.text("No fields changed — supplied values matched the current state.")
+    return doc.render()
+
+
 # Entity resolution helpers — see mcp-roadmap.md "Entity Resolution Helpers" guideline.
 # Extract a new resolve_<entity> here when a second caller needs the same parse-uuid +
 # perm-scoped lookup + collapsed-error pattern.

@@ -129,6 +129,7 @@ def test_update_project_no_op_when_value_unchanged(mock_resolve, mock_schedule_c
 
     project.save.assert_not_called()
     assert "No fields changed" in out
+    db_session_mock.rollback.assert_called_once()
 
 
 @patch(f"{MODULE}.JobSchedule")

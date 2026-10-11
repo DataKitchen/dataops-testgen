@@ -19,6 +19,7 @@ from testgen.mcp.tools.common import (
     DocGroup,
     raise_validation_error,
     render_diff_table,
+    report_no_change,
     resolve_monitor,
     resolve_monitored_table_group,
 )
@@ -144,8 +145,7 @@ def update_metric_monitor(
 
     rendered = render_diff_table(doc, before, after, attrs=_DIFF_ORDER, labels=_DIFF_LABELS)
     if not rendered:
-        doc.text("No fields changed — supplied values matched the current state.")
-        return doc.render()
+        return report_no_change(doc)
 
     monitor.lock_refresh = True
     monitor.last_manual_update = datetime.now(UTC)

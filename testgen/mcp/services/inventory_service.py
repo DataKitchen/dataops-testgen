@@ -19,6 +19,7 @@ def get_inventory(
     view_project_codes: list[str],
     *,
     username: str,
+    name: str | None = None,
     is_global_admin: bool,
     roles_by_code: dict[str, str],
 ) -> str:
@@ -30,6 +31,8 @@ def get_inventory(
             Connection names and test suites are only shown for these projects.
             Table groups are always shown so catalog users can browse tables.
         username: The authenticated user, rendered in the identity header.
+        name: The user's display name. When set and different from the username, the header
+            shows `<name> (<username>)`.
         is_global_admin: When true, the identity header is annotated ` · system admin`.
         roles_by_code: Maps project_code -> role code; renders each project's
             ` — <Role> access` suffix. Projects absent from the map get no suffix.
@@ -118,7 +121,8 @@ def get_inventory(
 
     # Format as Markdown
     lines = ["# Data Inventory\n"]
-    identity = f"Authenticated as {username}"
+    display_name = f"{name} ({username})" if name and name != username else username
+    identity = f"Authenticated as {display_name}"
     if is_global_admin:
         identity += " · system admin"
     lines.append(identity + "\n")

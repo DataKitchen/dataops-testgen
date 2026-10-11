@@ -28,6 +28,7 @@ class ProjectPermissions:
     permission: str
     username: str
     is_global_admin: bool = False
+    name: str | None = None
 
     def codes_allowed_to(self, permission: str) -> list[str]:
         """Project codes where the user's role includes the given permission."""
@@ -118,6 +119,7 @@ def _compute_project_permissions(user: User, permission: str) -> ProjectPermissi
         permission=permission,
         username=user.username,
         is_global_admin=user.is_global_admin,
+        name=user.name,
     )
 
 
@@ -166,6 +168,7 @@ def mcp_permission(permission: str) -> Callable:
                     permission=permission,
                     username=user.username,
                     is_global_admin=user.is_global_admin,
+                    name=user.name,
                 )
             else:
                 perms = _compute_project_permissions(user, permission)
