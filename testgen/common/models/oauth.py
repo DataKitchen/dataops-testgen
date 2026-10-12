@@ -6,7 +6,7 @@ from authlib.integrations.sqla_oauth2 import (
     OAuth2ClientMixin,
     OAuth2TokenMixin,
 )
-from sqlalchemy import Column, ForeignKey, String, case, func
+from sqlalchemy import Column, ForeignKey, Integer, String, case, func
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.hybrid import hybrid_property
 
@@ -25,6 +25,17 @@ class OAuth2ClientType(StrEnum):
     EXTERNAL = "external"
 
 
+class OAuth2ClientAuthMethod(StrEnum):
+    """Client authentication method at the token and revocation endpoints (RFC 7591 token_endpoint_auth_method).
+
+    NONE is a public client: it holds no secret and identifies itself by client_id alone.
+    """
+
+    CLIENT_SECRET_BASIC = "client_secret_basic"  # noqa: S105
+    CLIENT_SECRET_POST = "client_secret_post"  # noqa: S105
+    NONE = "none"
+
+
 class PersonalAccessTokenStatus(StrEnum):
     """Display status of a personal access token. Revoked takes precedence over expired."""
 
@@ -41,6 +52,19 @@ class OAuth2Client(Base, OAuth2ClientMixin):
 
     # Override to widen — JWTs can exceed 255 chars
     # (the mixin defines client_id as VARCHAR(48) which is fine)
+
+    def check_client_secret(self, client_secret: str) -> bool:
+        if not self.client_secret:
+            return False
+        return super().check_client_secret(client_secret)
+
+    def check_endpoint_auth_method(self, method: str, endpoint: str) -> bool:  # noqa: ARG002
+        """Whether the client may authenticate with ``method``.
+
+        The registered method applies to every endpoint, so a confidential client cannot
+        authenticate by client_id alone at the revocation endpoint.
+        """
+        return self.token_endpoint_auth_method == method
 
 
 class OAuth2AuthorizationCode(Base, OAuth2AuthorizationCodeMixin):
@@ -62,10 +86,23 @@ class OAuth2Token(Base, OAuth2TokenMixin):
     # Set only for personal access tokens; NULL for tokens from the auth-code / MCP flows
     name = Column(String(255), nullable=True)
 
+    # Set on a rotated refresh token: when the first refresh token of its chain was issued, so
+    # rotation does not extend the chain's lifetime. With client_id and user_id, it also
+    # identifies the chain.
+    refresh_token_chain_issued_at = Column(Integer, nullable=True)
+
+    @hybrid_property
+    def refresh_chain_issued_at(self) -> int:
+        return self.refresh_token_chain_issued_at or self.issued_at
+
+    @refresh_chain_issued_at.expression  # type: ignore[no-redef]
+    def refresh_chain_issued_at(cls):
+        return func.coalesce(cls.refresh_token_chain_issued_at, cls.issued_at)
+
     def is_refresh_token_active(self) -> bool:
         if self.refresh_token_revoked_at:
             return False
-        expires_at = self.issued_at + settings.REFRESH_TOKEN_EXPIRES_IN
+        expires_at = self.refresh_chain_issued_at + settings.REFRESH_TOKEN_EXPIRES_IN
         return expires_at >= time.time()
 
     @hybrid_property

@@ -39,6 +39,7 @@ from testgen.mcp.tools.common import (
     format_page_footer,
     format_page_info,
     match_enum,
+    report_no_change,
     resolve_destination,
     resolve_notification,
     resolve_scorecard,
@@ -651,8 +652,7 @@ def update_notification(
     doc.field("Notification ID", notif.id, code=True)
 
     if not pending:
-        doc.text("No fields changed — supplied values matched the current state.")
-        return doc.render()
+        return report_no_change(doc)
 
     before = {attr: _snapshot_attr(notif, attr) for attr in pending}
     for attr, value in pending.items():

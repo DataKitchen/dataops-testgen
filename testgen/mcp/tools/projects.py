@@ -26,6 +26,7 @@ from testgen.mcp.tools.common import (
     DocGroup,
     raise_validation_error,
     render_diff_table,
+    report_no_change,
     resolve_project,
 )
 from testgen.mcp.tools.markdown import MdDoc
@@ -191,8 +192,7 @@ def update_project(
         attrs=_DIFF_ORDER, labels=_DIFF_LABELS, secret_attrs=_SECRET_ATTRS,
     )
     if not rendered:
-        doc.text("No fields changed — supplied values matched the current state.")
-        return doc.render()
+        return report_no_change(doc)
 
     project.save()
 

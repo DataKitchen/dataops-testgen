@@ -84,6 +84,22 @@ def target_qualifies_table_refs():
         yield resolved
 
 
+class _EveryColumn:
+    def __contains__(self, _: object) -> bool:
+        return True
+
+
+@pytest.fixture(autouse=True)
+def column_catalog():
+    """Catalog every column a payload names, so tests about other rules pass the column check.
+
+    Tests about the column check set ``select_column_names.return_value`` themselves.
+    """
+    with patch(f"{SERVICE_MODULE}.DataColumnChars") as column_chars:
+        column_chars.select_column_names.return_value = _EveryColumn()
+        yield column_chars
+
+
 def _make_test_suite(**overrides):
     defaults = {
         "id": uuid4(),
@@ -742,6 +758,53 @@ class Test_import_validation:
 
         assert result.summary.skipped == 1
         assert ImportReason.invalid_table in _reasons(result, ImportAction.skip)
+
+    @pytest.mark.parametrize(
+        ("td_overrides", "test_scope", "catalog", "reason"),
+        [
+            pytest.param({}, "column", {("t1", "other")}, ImportReason.invalid_column, id="unknown_column"),
+            pytest.param({}, "column", {("t1", "C1")}, ImportReason.invalid_column, id="case_sensitive"),
+            pytest.param({}, "column", {("t2", "c1")}, ImportReason.invalid_column, id="column_on_other_table"),
+            pytest.param({"table_name": "t9"}, "column", set(), ImportReason.invalid_table, id="table_reason_first"),
+            pytest.param({}, "column", {("t1", "c1")}, None, id="known_column"),
+            pytest.param(
+                {"column_name": None}, "column", set(), ImportReason.missing_required_field, id="no_column_name",
+            ),
+            pytest.param(
+                {"table_name": None}, "column", set(), ImportReason.missing_required_field, id="no_table_name",
+            ),
+            pytest.param({"column_name": "SUM(c1)"}, "referential", set(), None, id="referential_expression"),
+            pytest.param({"column_name": "c1 > 0"}, "custom", set(), None, id="custom_expression"),
+            pytest.param({}, "table", set(), None, id="table_scope"),
+        ],
+    )
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_column_checked_against_the_catalog(
+        self, mock_session_fn, mock_tg_cls, mock_dt_cls, column_catalog, td_overrides, test_scope, catalog, reason,
+    ):
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1", "t2"]
+        column_catalog.select_column_names.return_value = catalog
+        session.execute.return_value.all.return_value = []
+
+        td = _make_import_td(test_type="Alpha", **td_overrides)
+        test_types = {"Alpha": TestType(test_type="Alpha", test_scope=test_scope)}
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=test_types):
+            result = import_definitions(_make_test_suite(), _make_config(), _make_payload(td))
+
+        if reason is None:
+            assert result.summary.skipped == 0
+            assert result.summary.created == 1
+        else:
+            assert result.summary.skipped == 1
+            assert _reasons(result, ImportAction.skip) == {reason}
 
     @pytest.mark.parametrize(
         ("fields", "skipped"),

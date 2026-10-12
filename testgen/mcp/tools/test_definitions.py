@@ -29,10 +29,13 @@ from testgen.common.models.test_definition import (
 )
 from testgen.common.models.test_result import TestResult
 from testgen.common.test_definition_export_import_service import (
+    IMPORT_ACTION_LABELS,
+    IMPORT_REASON_LABELS,
     ImportAction,
     ImportConfig,
     ImportMode,
     ImportPayload,
+    ImportReason,
     ImportResponse,
     ImportStrictViolation,
     InvalidImportPayload,
@@ -1048,6 +1051,13 @@ def delete_tests(
 # ---------------------------------------------------------------------------
 
 
+_NOT_IN_CATALOG_HINT = (
+    "The data catalog lists the tables and columns TestGen found in the table group's schema. Check the table "
+    "and column names in the import file, or profile the table group to refresh the catalog."
+)
+_NOT_IN_CATALOG_REASONS = (ImportReason.invalid_table, ImportReason.invalid_column)
+
+
 def _parse_import_payload(payload: str) -> ImportPayload:
     try:
         return ImportPayload.model_validate_json(payload)
@@ -1070,15 +1080,21 @@ def _append_import_result(doc: MdDoc, result: ImportResponse, preview: bool) -> 
     for item in result.items:
         for td in item.tds:
             rows_by_action.setdefault(item.action, []).append(
-                [item.reason.value, td.idx, td.target_id]
+                [IMPORT_REASON_LABELS.get(item.reason, item.reason.value), td.idx, td.target_id]
             )
 
     for action in ImportAction:
         rows = rows_by_action.get(action)
         if not rows:
             continue
-        doc.heading(2, f"{action.value.capitalize()} ({len(rows)})")
+        doc.heading(2, f"{IMPORT_ACTION_LABELS.get(action, action.value)} ({len(rows)})")
         doc.table(["Reason", "Index", "Test Definition ID"], rows, code=[2])
+
+    if any(
+        item.action is ImportAction.skip and item.reason in _NOT_IN_CATALOG_REASONS and item.tds
+        for item in result.items
+    ):
+        doc.text(_NOT_IN_CATALOG_HINT)
 
 
 @with_database_session

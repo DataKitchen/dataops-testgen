@@ -1614,6 +1614,98 @@ def test_import_tests_preview(mock_resolve_suite, mock_import, db_session_mock):
     assert "Update (1)" in result
 
 
+_NOT_IN_CATALOG_HINT = (
+    "The data catalog lists the tables and columns TestGen found in the table group's schema. Check the table "
+    "and column names in the import file, or profile the table group to refresh the catalog."
+)
+
+
+@patch("testgen.mcp.tools.test_definitions.import_definitions")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_import_tests_names_reasons_and_explains_names_missing_from_the_catalog(
+    mock_resolve_suite, mock_import, db_session_mock,
+):
+    from testgen.common.test_definition_export_import_service import (
+        ImportAction,
+        ImportItem,
+        ImportItemTD,
+        ImportReason,
+    )
+
+    mock_resolve_suite.return_value = _make_suite()
+    mock_import.return_value = _make_import_response(
+        created=1,
+        skipped=3,
+        items=[
+            ImportItem(action=ImportAction.create, reason=ImportReason.no_match, tds=[ImportItemTD(idx=0)]),
+            ImportItem(
+                action=ImportAction.skip,
+                reason=ImportReason.invalid_table,
+                tds=[ImportItemTD(idx=1), ImportItemTD(idx=2)],
+            ),
+            ImportItem(action=ImportAction.skip, reason=ImportReason.invalid_column, tds=[ImportItemTD(idx=3)]),
+        ],
+    )
+
+    from testgen.mcp.tools.test_definitions import import_tests
+
+    result = import_tests(test_suite_id=str(uuid4()), payload='{"definitions": []}')
+
+    assert "| No matching test | 0 |" in result
+    assert "| Table not in the data catalog | 1 |" in result
+    assert "| Column not in the data catalog | 3 |" in result
+    assert "invalid_table" not in result
+    assert "invalid_column" not in result
+    assert result.count(_NOT_IN_CATALOG_HINT) == 1
+
+
+@patch("testgen.mcp.tools.test_definitions.import_definitions")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_import_tests_explains_a_column_missing_from_the_catalog(mock_resolve_suite, mock_import, db_session_mock):
+    from testgen.common.test_definition_export_import_service import (
+        ImportAction,
+        ImportItem,
+        ImportItemTD,
+        ImportReason,
+    )
+
+    mock_resolve_suite.return_value = _make_suite()
+    mock_import.return_value = _make_import_response(
+        skipped=1,
+        items=[ImportItem(action=ImportAction.skip, reason=ImportReason.invalid_column, tds=[ImportItemTD(idx=0)])],
+    )
+
+    from testgen.mcp.tools.test_definitions import import_tests
+
+    result = import_tests(test_suite_id=str(uuid4()), payload='{"definitions": []}')
+
+    assert _NOT_IN_CATALOG_HINT in result
+
+
+@patch("testgen.mcp.tools.test_definitions.import_definitions")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_import_tests_without_missing_tables_has_no_catalog_hint(mock_resolve_suite, mock_import, db_session_mock):
+    from testgen.common.test_definition_export_import_service import (
+        ImportAction,
+        ImportItem,
+        ImportItemTD,
+        ImportReason,
+    )
+
+    mock_resolve_suite.return_value = _make_suite()
+    mock_import.return_value = _make_import_response(
+        skipped=1,
+        items=[ImportItem(action=ImportAction.skip, reason=ImportReason.locked, tds=[ImportItemTD(idx=0)])],
+    )
+
+    from testgen.mcp.tools.test_definitions import import_tests
+
+    result = import_tests(test_suite_id=str(uuid4()), payload='{"definitions": []}')
+
+    assert "Existing test is locked" in result
+    assert "data catalog" not in result
+
+
 @patch("testgen.mcp.tools.test_definitions.import_definitions")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
 def test_import_tests_apply(mock_resolve_suite, mock_import, db_session_mock):
@@ -1700,7 +1792,8 @@ def test_import_tests_strict_violation_embeds_breakdown(mock_resolve_suite, mock
     assert "Nothing was applied" in msg
     # the projected breakdown is embedded
     assert "Skip (1)" in msg
-    assert "invalid_test_type" in msg
+    assert "Unknown test type" in msg
+    assert "invalid_test_type" not in msg
 
 
 # --- Schema exclusion from the regular-test surfaces ---

@@ -32,11 +32,12 @@ from testgen.common.models.test_definition import (
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.pii_masking import get_pii_columns, mask_profiling_pii
 from testgen.common.test_definition_export_import_service import (
+    IMPORT_ACTION_LABELS,
+    IMPORT_REASON_LABELS,
     ImportAction,
     ImportConfig,
     ImportMode,
     ImportPayload,
-    ImportReason,
     ImportResponse,
     ImportSummary,
     InvalidImportPayload,
@@ -937,26 +938,6 @@ IMPORT_POLICY_DEFAULTS: dict[str, StrEnum] = {
     "on_new": OnNew.create,
     "on_match": OnMatch.overwrite_unlocked,
     "on_absence": OnAbsence.do_nothing,
-}
-
-IMPORT_REASON_LABELS = {
-    ImportReason.matched: "Matches an existing test",
-    ImportReason.no_match: "No matching test",
-    ImportReason.policy: "Excluded by the selected policy",
-    ImportReason.locked: "Existing test is locked",
-    ImportReason.invalid_test_type: "Unknown test type",
-    ImportReason.non_public_test_type: "Test type cannot be imported",
-    ImportReason.invalid_table: "Table has not been profiled",
-    ImportReason.missing_external_id: "Missing external ID",
-    ImportReason.missing_required_field: "Missing a required field",
-    ImportReason.absent: "Not in the file",
-}
-
-IMPORT_ACTION_LABELS = {
-    ImportAction.create: "Create",
-    ImportAction.update: "Update",
-    ImportAction.skip: "Skip",
-    ImportAction.delete: "Delete",
 }
 
 IMPORT_PREVIEW_ROW_LIMIT = 500

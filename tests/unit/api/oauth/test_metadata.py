@@ -53,3 +53,10 @@ def test_metadata_lists_auth_methods():
 
     assert "client_secret_basic" in data["token_endpoint_auth_methods_supported"]
     assert "none" in data["token_endpoint_auth_methods_supported"]
+
+
+def test_metadata_lists_revocation_auth_methods():
+    data = _make_client().get("/.well-known/oauth-authorization-server").json()
+
+    assert data["revocation_endpoint_auth_methods_supported"] == data["token_endpoint_auth_methods_supported"]
+    assert set(data["token_endpoint_auth_methods_supported"]) == {"client_secret_basic", "client_secret_post", "none"}

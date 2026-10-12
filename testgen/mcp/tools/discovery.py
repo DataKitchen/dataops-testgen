@@ -38,6 +38,7 @@ def get_data_inventory() -> str:
         project_codes=perms.allowed_codes,
         view_project_codes=perms.codes_allowed_to("view"),
         username=perms.username,
+        name=perms.name,
         is_global_admin=perms.is_global_admin,
         roles_by_code=perms.memberships,
     )

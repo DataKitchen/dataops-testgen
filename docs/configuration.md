@@ -47,25 +47,21 @@ Secret passcode used in combination with `TG_DECRYPT_SALT` to encrypt and decryp
 
 #### `TESTGEN_USERNAME`
 
-Username to log into the web application.
+Username to log into the web application. Not used to connect to the database: set `TG_METADATA_DB_USER` for that.
 
 #### `TESTGEN_PASSWORD`
 
-Password to log into the web application.
+Password to log into the web application. Not used to connect to the database: set `TG_METADATA_DB_PASSWORD` for that.
 
 #### `TG_METADATA_DB_USER`
 
-User to connect to the testgen application postgres database.
-
-default: `os.environ["TESTGEN_USERNAME"]`
+User to connect to the testgen application postgres database. Required outside standalone mode.
 
 #### `TG_METADATA_DB_PASSWORD`
 
-Password to connect to the testgen application postgres database.
+Password to connect to the testgen application postgres database. Required outside standalone mode.
 
-default: `os.environ["TESTGEN_PASSWORD"]`
-
-#### `DATABASE_ADMIN_USER`
+#### `TG_METADATA_DB_ADMIN_USER`
 
 User with admin privileges in the testgen application postgres database used to create the database and schema and to apply upgrades. Required if the user in `TG_METADATA_DB_USER` does not have the required privileges.
 
@@ -73,7 +69,7 @@ When this is a different user, setup grants `TG_METADATA_DB_USER` read and write
 
 default: `os.environ["TG_METADATA_DB_USER"]`
 
-#### `DATABASE_ADMIN_PASSWORD`
+#### `TG_METADATA_DB_ADMIN_PASSWORD`
 
 Password for the admin user to connect to the testgen application postgres database.
 

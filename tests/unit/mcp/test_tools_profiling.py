@@ -7,6 +7,7 @@ import pytest
 from testgen.common.models.data_column import ColumnProfileDetail, ColumnProfileSummary, DataColumnChars
 from testgen.common.models.hygiene_issue import HygieneIssueCounts, IssueCounts, PotentialPiiCounts
 from testgen.common.models.job_execution import QUEUED_MESSAGE
+from testgen.common.models.profile_result import ColumnErrorRow
 from testgen.common.pii_masking import PII_REDACTED
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
@@ -545,9 +546,17 @@ def _mock_profiling_run(**overrides):
         "anomalies_definite_ct": 1, "anomalies_likely_ct": 1,
         "anomalies_possible_ct": 2, "anomalies_dismissed_ct": 0,
         "dq_score_profiling": 95.5,
+        "progress": [],
     }
     defaults.update(overrides)
     return MagicMock(**defaults)
+
+
+def _column_progress_warning(error="25 columns had errors. See details in results.", detail=""):
+    return [
+        {"key": "data_chars", "status": "Completed", "label": "Refreshing data catalog", "detail": "", "error": ""},
+        {"key": "col_profiling", "status": "Warning", "label": "Profiling columns", "detail": detail, "error": error},
+    ]
 
 
 @patch("testgen.mcp.tools.profiling.JobExecution")
@@ -725,6 +734,155 @@ def test_get_profiling_run_pending_no_breakdown(mock_run_cls, db_session_mock):
     assert "Pending" in result
     assert "In progress" in result
     assert "Per-table breakdown" not in result
+
+
+@patch("testgen.mcp.tools.profiling.JobExecution")
+@patch("testgen.mcp.tools.profiling.next_scheduled_run", return_value=None)
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_list_profiling_runs_marks_a_completed_run_with_step_errors(
+    mock_tg_cls, mock_run_cls, mock_next, mock_je, db_session_mock,
+):
+    mock_je.select_active_by_kwargs.return_value = []
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_run_cls.select_summary.return_value = (
+        [
+            _mock_profiling_run(table_groups_name="warned", progress=_column_progress_warning()),
+            _mock_profiling_run(table_groups_name="clean"),
+        ],
+        2,
+    )
+
+    from testgen.mcp.tools.profiling import list_profiling_runs
+    result = list_profiling_runs(table_group_id=str(uuid4()))
+
+    assert "## warned — Completed (with warnings)" in result
+    assert "## clean — Completed\n" in result
+
+
+@patch("testgen.mcp.tools.profiling.JobExecution")
+@patch("testgen.mcp.tools.profiling.next_scheduled_run", return_value=None)
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_list_profiling_runs_does_not_mark_a_running_run(mock_tg_cls, mock_run_cls, mock_next, mock_je, db_session_mock):
+    mock_je.select_active_by_kwargs.return_value = []
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_run_cls.select_summary.return_value = (
+        [_mock_profiling_run(status=JobStatus.RUNNING, status_label="Running", progress=_column_progress_warning())],
+        1,
+    )
+
+    from testgen.mcp.tools.profiling import list_profiling_runs
+    result = list_profiling_runs(table_group_id=str(uuid4()))
+
+    assert "with warnings" not in result
+
+
+def _completed_run_with_column_errors(mock_run_cls, mock_hygiene_cls, **overrides):
+    summary = _mock_profiling_run(progress=_column_progress_warning(), **overrides)
+    mock_run_cls.select_summary.return_value = ([summary], 1)
+    mock_run_cls.select_table_breakdown.return_value = []
+    mock_hygiene_cls.count_for_run.return_value = IssueCounts(
+        hygiene_issues=HygieneIssueCounts(definite=0, likely=0, possible=0),
+        potential_pii=PotentialPiiCounts(high=0, moderate=0),
+        dismissed=0,
+    )
+    return summary
+
+
+def _column_error_rows(count):
+    return [
+        ColumnErrorRow(schema_name="demo", table_name="orders", column_name=f"col_{i}", query_error="division by zero")
+        for i in range(count)
+    ]
+
+
+@patch("testgen.mcp.tools.profiling.ProfileResult")
+@patch("testgen.mcp.tools.profiling.HygieneIssue")
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+def test_get_profiling_run_lists_step_warnings_and_failed_columns(
+    mock_run_cls, mock_hygiene_cls, mock_pr_cls, db_session_mock,
+):
+    summary = _completed_run_with_column_errors(mock_run_cls, mock_hygiene_cls)
+    mock_pr_cls.list_column_errors_for_run.return_value = (_column_error_rows(2), 2)
+
+    result = _run_get_profiling_run(summary.job_execution_id)
+
+    assert "## Warnings\n\n- Profiling columns: 25 columns had errors. See details in results." in result
+    assert "| Table | Column | Error |" in result
+    assert "| `orders` | `col_0` | division by zero |" in result
+    assert "Showing" not in result
+    mock_pr_cls.list_column_errors_for_run.assert_called_once_with(summary.profiling_run_id, limit=20)
+
+
+@patch("testgen.mcp.tools.profiling.ProfileResult")
+@patch("testgen.mcp.tools.profiling.HygieneIssue")
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+def test_get_profiling_run_caps_failed_columns(mock_run_cls, mock_hygiene_cls, mock_pr_cls, db_session_mock):
+    summary = _completed_run_with_column_errors(mock_run_cls, mock_hygiene_cls)
+    mock_pr_cls.list_column_errors_for_run.return_value = (_column_error_rows(20), 25)
+
+    result = _run_get_profiling_run(summary.job_execution_id)
+
+    assert "Showing 20 of 25 columns with errors." in result
+
+
+@patch("testgen.mcp.tools.profiling.ProfileResult")
+@patch("testgen.mcp.tools.profiling.HygieneIssue")
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+def test_get_profiling_run_withholds_column_errors_under_source_data_protection(
+    mock_run_cls, mock_hygiene_cls, mock_pr_cls, db_session_mock,
+):
+    summary = _completed_run_with_column_errors(mock_run_cls, mock_hygiene_cls)
+    mock_pr_cls.list_column_errors_for_run.return_value = (
+        [ColumnErrorRow("demo", "orders", "email", 'invalid input syntax for type integer: "alice@example.com"')],
+        1,
+    )
+
+    with patch("testgen.mcp.tools.common.mcp_source_data_protected", return_value=True):
+        result = _run_get_profiling_run(summary.job_execution_id)
+
+    assert "alice@example.com" not in result
+    assert "withheld by the source-data protection policy" in result
+
+
+@patch("testgen.mcp.tools.profiling.ProfileResult")
+@patch("testgen.mcp.tools.profiling.HygieneIssue")
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+def test_get_profiling_run_withholds_step_warnings_under_source_data_protection(
+    mock_run_cls, mock_hygiene_cls, mock_pr_cls, db_session_mock,
+):
+    summary = _completed_run_with_column_errors(mock_run_cls, mock_hygiene_cls)
+    summary.progress = [{
+        "key": "freq_analysis",
+        "status": "Warning",
+        "label": "Running frequency analysis",
+        "detail": None,
+        "error": 'Error encountered. invalid input syntax for type integer: "alice@example.com"',
+    }]
+    mock_pr_cls.list_column_errors_for_run.return_value = ([], 0)
+
+    with patch("testgen.mcp.tools.common.mcp_source_data_protected", return_value=True):
+        result = _run_get_profiling_run(summary.job_execution_id)
+
+    assert "alice@example.com" not in result
+    assert "- Running frequency analysis: " in result
+    assert "withheld by the source-data protection policy" in result
+
+
+@patch("testgen.mcp.tools.profiling.ProfileResult")
+@patch("testgen.mcp.tools.profiling.HygieneIssue")
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+def test_get_profiling_run_without_step_errors_has_no_warnings(
+    mock_run_cls, mock_hygiene_cls, mock_pr_cls, db_session_mock,
+):
+    summary = _completed_run_with_column_errors(mock_run_cls, mock_hygiene_cls)
+    summary.progress = _column_progress_warning(error="")
+
+    result = _run_get_profiling_run(summary.job_execution_id)
+
+    assert "Warnings" not in result
+    mock_pr_cls.list_column_errors_for_run.assert_not_called()
 
 
 def _run_get_profiling_run(job_execution_id):

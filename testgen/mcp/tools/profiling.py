@@ -59,6 +59,7 @@ from testgen.mcp.tools.markdown import MdDoc
 from testgen.utils import friendly_score
 
 _DOC_GROUP = DocGroup.BROWSE_PROFILING
+_COLUMN_ERRORS_LIMIT = 20
 
 
 def _qualified_table_name(schema_name: str | None, table_name: str, qualifies: bool) -> str:
@@ -649,11 +650,44 @@ def get_profiling_run(
                     row.insert(0, r.schema_name)
             doc.table(headers, rows, code=[0, 1] if schema_label else [0])
 
+    warnings = _progress_warnings(summary)
+    if warnings:
+        doc.heading(2, "Warnings")
+        doc.bullets(warnings)
+        if summary.profiling_run_id:
+            _render_column_errors(doc, summary.profiling_run_id)
+
     if summary.error_message:
         doc.heading(2, "Error")
         doc.text(target_db_error_text(summary.error_message))
 
     return doc.render()
+
+
+def _progress_warnings(run: ProfilingRunSummary) -> list[str]:
+    """The run's step warnings, each as ``<step label>: <error>``."""
+    return [
+        f"{step['label']}: {target_db_error_text(step['error'])}" for step in run.progress or [] if step.get("error")
+    ]
+
+
+def _run_status_label(run: ProfilingRunSummary) -> str:
+    if run.status == JobStatus.COMPLETED and _progress_warnings(run):
+        return f"{run.status_label} (with warnings)"
+    return run.status_label
+
+
+def _render_column_errors(doc: MdDoc, profiling_run_id: UUID) -> None:
+    rows, total = ProfileResult.list_column_errors_for_run(profiling_run_id, limit=_COLUMN_ERRORS_LIMIT)
+    if not rows:
+        return
+    doc.table(
+        ["Table", "Column", "Error"],
+        [[r.table_name, r.column_name, target_db_error_text(r.query_error)] for r in rows],
+        code=[0, 1],
+    )
+    if total > len(rows):
+        doc.text(f"Showing {len(rows)} of {total} columns with errors.")
 
 
 def _render_pending_profiling_je(doc: MdDoc, je: JobExecution, label: str) -> None:
@@ -671,7 +705,7 @@ def _render_pending_profiling_je(doc: MdDoc, je: JobExecution, label: str) -> No
 
 def _render_profiling_run_section(doc: MdDoc, run: ProfilingRunSummary) -> None:
     title = run.table_groups_name or run.profiling_run_id or run.job_execution_id
-    doc.heading(2, f"{title} — {run.status_label}")
+    doc.heading(2, f"{title} — {_run_status_label(run)}")
     doc.field("Profiling Run", run.job_execution_id, code=True)
     if run.job_schedule_id is not None:
         doc.field("Schedule", run.job_schedule_id, code=True)

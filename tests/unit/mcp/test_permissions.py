@@ -334,6 +334,23 @@ def test_mcp_permission_preserves_function_metadata():
     assert my_tool.__doc__ == "Tool docstring."
 
 
+@pytest.mark.parametrize("permission", ["view", "global_admin"])
+def test_mcp_permission_carries_user_name(mcp_user, permission):
+    set_mcp_username("test")
+    mcp_user.is_global_admin = True
+    mcp_user.name = "Alice Smith"
+
+    captured = {}
+
+    @mcp_permission(permission)
+    def tool_fn():
+        captured["perms"] = get_project_permissions()
+
+    tool_fn()
+
+    assert captured["perms"].name == "Alice Smith"
+
+
 # --- mcp_permission("global_admin") ---
 
 
