@@ -370,16 +370,25 @@ def create_table_group(
     description: Annotated[str | None, Field(description="Optional free-text description.")] = None,
     table_set: Annotated[
         list[str] | None,
-        Field(description="Explicit list of table names. Combined with masks if also set."),
+        Field(description="Explicit list of table names. The include and exclude masks still apply to them."),
     ] = None,
     include_mask: Annotated[
         str | None,
-        Field(description="Comma-separated SQL LIKE patterns to include (e.g. ``fact_%,dim_%``)."),
+        Field(
+            description="Comma-separated SQL LIKE patterns to include (e.g. ``fact_%,dim_%``)."
+            " Omit for the default include mask."
+        ),
     ] = None,
-    exclude_mask: Annotated[str | None, Field(description="Comma-separated SQL LIKE patterns to exclude.")] = None,
+    exclude_mask: Annotated[
+        str | None,
+        Field(
+            description="Comma-separated SQL LIKE patterns to exclude. Omit for the default exclude mask;"
+            " pass an empty string to exclude nothing."
+        ),
+    ] = None,
     profile_id_column_mask: Annotated[
         str | None,
-        Field(description="SQL LIKE pattern marking ID columns. Default ``%id``."),
+        Field(description="SQL LIKE pattern marking ID columns. Default ``%_id``."),
     ] = None,
     profile_sk_column_mask: Annotated[
         str | None,
@@ -824,9 +833,9 @@ def preview_table_group(
     }:
         doc.heading(2, "Tables that could not be read")
         for table_name, reason in sorted(failures.items()):
-            doc.field(table_name, reason)
+            doc.field(table_name, target_db_error_text(reason))
     elif preview.get("message"):
-        doc.text(preview["message"])
+        doc.text(target_db_error_text(preview["message"]))
 
     if include_columns:
         doc.heading(2, "Columns")

@@ -23,6 +23,7 @@ from sqlalchemy.pool import NullPool, QueuePool
 from testgen import settings
 from testgen.common.database.file_declarations import (
     BASE_PATH_PARAMETER,
+    NO_FILES_MATCHED,
     FileDeclaration,
     FileFormat,
     create_view_statement,
@@ -47,6 +48,8 @@ DATABASE_FILE_PARAMETER = "database_file"
 # Where view-creation failures are left for the caller. The connection is the only thing shared
 # between building the views and running the queries that then cannot find them.
 _DECLARATION_FAILURES_KEY = "file_declaration_failures"
+# DuckDB's wording when a declaration's path or pattern matches no file, on any storage.
+_NO_FILES_MATCHED_ERROR = "no files found that match the pattern"
 
 # How many files Test Connection counts before it stops walking and reports a floor instead. A
 # mounted data directory can hold far more than anyone wants counted to answer "is the mount wired
@@ -333,6 +336,8 @@ class DuckdbFlavorService(FlavorService):
     quote_character = '"'
     escaped_single_quote = "''"
     escaped_underscore = "\\_"
+    # DuckDB's LIKE has no default escape character.
+    escape_clause = "ESCAPE '\\'"
     varchar_type = "VARCHAR"
     row_limiting_clause = "limit"
     default_uppercase = False
@@ -377,8 +382,8 @@ class DuckdbFlavorService(FlavorService):
         # and the object storage codes bind their credentials.
         return {"hide_parameters": True, **self._pool_args(params)}
 
-    def create_engine(self, connection_params: ConnectionParams) -> Engine:
-        engine = super().create_engine(connection_params)
+    def create_engine(self, connection_params: ConnectionParams, table_group_schema: str | None = None) -> Engine:
+        engine = super().create_engine(connection_params, table_group_schema)
         event.listen(engine, "close", _remove_run_cache)
         return engine
 
@@ -526,6 +531,8 @@ class DuckdbFlavorService(FlavorService):
         # connection drops the catalog and every subsequent query fails on a name that no longer
         # resolves rather than on whatever actually went wrong.
         connection.commit()
+        # The attached file stays readable once attached, so nothing on the host needs to be.
+        self._confine_reads(connection, [])
 
     def _set_spill_directory(self, connection: Connection) -> None:
         """Point this connection's spill at a directory no other connection writes to.
@@ -577,9 +584,17 @@ class DuckdbFlavorService(FlavorService):
 
     @staticmethod
     def _error_message_for(params: ResolvedConnectionParams) -> Callable[[Exception], str]:
-        if (store := object_storage.store_for(params.sql_flavor_code)) is not None:
-            return lambda error: store.storage_error_message(params.parameters, error)
-        return _first_line
+        store = object_storage.store_for(params.sql_flavor_code)
+
+        def message(error: Exception) -> str:
+            # The driver's text quotes the full path, which for local files is a path on the server.
+            if _NO_FILES_MATCHED_ERROR in str(error).lower():
+                return NO_FILES_MATCHED
+            if store is not None:
+                return store.storage_error_message(params.parameters, error)
+            return _first_line(error)
+
+        return message
 
     def _register_storage_secret(
         self, connection: Connection, store: object_storage.ObjectStore, params: ResolvedConnectionParams
@@ -725,8 +740,7 @@ class DuckdbFlavorService(FlavorService):
         if not declares_files(params.sql_flavor_code):
             return []
         base_path = self.get_base_path(params)
-        # The counts are unioned, and one unreadable declaration would fail every count in its query,
-        # so a declaration that cannot be read stays out.
+        # A declaration that breaks a path rule would fail its count, so it stays out.
         return [
             file_count_query(base_path, declaration)
             for declaration in declarations

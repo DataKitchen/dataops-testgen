@@ -29,7 +29,7 @@ _ALL_MONITOR_TYPES = [m.value for m in DbMonitorType]
 
 _error_responses = {404: {"model": ErrorResponse, "description": "Not found"}}
 
-router = APIRouter(tags=["Monitors"], dependencies=[Depends(db_session)], responses=_error_responses)
+router = APIRouter(tags=["Monitors"], dependencies=[Depends(db_session, scope="function")], responses=_error_responses)
 
 
 def _to_row(s: MonitorTableSummary) -> MonitorTableRow:

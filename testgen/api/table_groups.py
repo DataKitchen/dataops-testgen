@@ -7,6 +7,7 @@ from testgen.api.deps import (
     api_error,
     api_errors,
     db_session,
+    fields_to_change,
     resolve_connection,
     resolve_project_code,
     resolve_table_group,
@@ -41,7 +42,7 @@ from testgen.common.models.table_group import TableGroup, split_criteria, table_
 
 _error_responses = {404: {"model": ErrorResponse, "description": "Not found"}}
 
-router = APIRouter(tags=["Table Groups"], dependencies=[Depends(db_session)], responses=_error_responses)
+router = APIRouter(tags=["Table Groups"], dependencies=[Depends(db_session, scope="function")], responses=_error_responses)
 
 _LIST_COLUMNS = {
     "table_set": "profiling_table_set",
@@ -249,17 +250,7 @@ def update_table_group(
     The change is refused when the schema cannot be read or no table in it matches the table group's
     table filters. Tables the new schema does not have are listed under `schema_change.missing_tables`.
     """
-    supplied = body.model_dump(exclude_unset=True)
-    if not supplied:
-        raise api_error(422, "no_fields", "No fields supplied to update.")
-    # A field sent as null reads as "clear it", which no field here supports. Omit it instead,
-    # rather than have the request look applied when it was skipped.
-    if nulled := sorted(name for name, value in supplied.items() if value is None):
-        raise api_error(
-            422,
-            "null_field",
-            f"{', '.join(nulled)} cannot be null. Omit a field to leave it unchanged.",
-        )
+    fields_to_change(body)
 
     membership_before = catalog_membership(table_group)
     move = None

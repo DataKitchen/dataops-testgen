@@ -1129,3 +1129,96 @@ def test_claim_actionable_claims_one_project_refresh_per_project_per_poll(mock_s
 
     assert result == [first, other_project, other_key]
     assert second.status == "pending"
+
+
+def _refreshes(mock_session, *statuses, claimed=(JobStatus.CLAIMED, JobStatus.RUNNING)):
+    rows = [(uuid4(), status, datetime.now(UTC) if status in claimed else None) for status in statuses]
+    mock_session.execute.return_value.all.return_value = rows
+    return [job_id for job_id, _, _ in rows]
+
+
+def _rendered_refresh_query(mock_session) -> str:
+    statement = mock_session.execute.call_args[0][0]
+    return str(statement.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+
+
+@pytest.mark.parametrize("status", [JobStatus.PENDING, JobStatus.QUEUED])
+def test_a_refresh_that_has_not_started_is_canceled(mock_session, status):
+    from testgen.common.models.table_group import TableGroup
+
+    queued = _refreshes(mock_session, status)
+    with patch.object(JobExecution, "_transition_bulk_where", return_value=set(queued)) as transition:
+        assert JobExecution.cancel_queued_catalog_refreshes(TableGroup, str(uuid4())) is True
+
+    target, clause = transition.call_args[0]
+    assert target == JobStatus.CANCEL_REQUESTED
+    assert clause.right.value == queued
+
+
+@pytest.mark.parametrize("started", [JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED])
+def test_a_refresh_that_has_started_blocks_and_cancels_nothing(mock_session, started):
+    from testgen.common.models.table_group import TableGroup
+
+    _refreshes(mock_session, JobStatus.PENDING, started, claimed=(started,))
+    with patch.object(JobExecution, "_transition_bulk_where") as transition:
+        assert JobExecution.cancel_queued_catalog_refreshes(TableGroup, str(uuid4())) is False
+
+    transition.assert_not_called()
+
+
+def test_a_refresh_canceled_before_it_was_claimed_does_not_block(mock_session):
+    from testgen.common.models.table_group import TableGroup
+
+    queued, _ = _refreshes(mock_session, JobStatus.PENDING, JobStatus.CANCEL_REQUESTED, claimed=())
+    with patch.object(JobExecution, "_transition_bulk_where", return_value={queued}) as transition:
+        assert JobExecution.cancel_queued_catalog_refreshes(TableGroup, str(uuid4())) is True
+
+    assert transition.call_args[0][1].right.value == [queued]
+
+
+def test_no_refreshes_means_nothing_to_cancel(mock_session):
+    from testgen.common.models.table_group import TableGroup
+
+    _refreshes(mock_session)
+    with patch.object(JobExecution, "_transition_bulk_where") as transition:
+        assert JobExecution.cancel_queued_catalog_refreshes(TableGroup, str(uuid4())) is True
+
+    transition.assert_not_called()
+
+
+def test_the_refreshes_are_locked_before_they_are_read(mock_session):
+    from testgen.common.models.table_group import TableGroup
+
+    _refreshes(mock_session)
+    JobExecution.cancel_queued_catalog_refreshes(TableGroup, str(uuid4()))
+
+    rendered = _rendered_refresh_query(mock_session)
+    assert rendered.endswith("FOR UPDATE")
+    assert "SKIP LOCKED" not in rendered
+    assert "job_executions.job_key = 'refresh-data-catalog'" in rendered
+
+
+@pytest.mark.parametrize(
+    ("entity", "scope"),
+    [
+        ("Connection", "table_groups.connection_id IN (7)"),
+        ("Project", "table_groups.project_code IN ('DEFAULT')"),
+    ],
+)
+def test_a_connection_or_project_covers_the_refreshes_of_its_table_groups(mock_session, entity, scope):
+    from testgen.common.models import connection, project
+
+    entity_cls = {"Connection": connection.Connection, "Project": project.Project}[entity]
+    _refreshes(mock_session)
+    JobExecution.cancel_queued_catalog_refreshes(entity_cls, 7 if entity == "Connection" else "DEFAULT")
+
+    rendered = _rendered_refresh_query(mock_session)
+    assert "(job_executions.kwargs ->> 'table_group_id') IN (SELECT CAST(table_groups.id AS VARCHAR)" in rendered
+    assert scope in rendered
+
+
+def test_an_unsupported_entity_is_rejected(mock_session):
+    from testgen.common.models.test_suite import TestSuite
+
+    with pytest.raises(ValueError, match="Unsupported entity: TestSuite"):
+        JobExecution.cancel_queued_catalog_refreshes(TestSuite, str(uuid4()))

@@ -158,12 +158,15 @@ def _make_existing_row(
     match_table_name=None,
     match_schema_name=None,
     id_=None,
+    **columns,
 ):
     """A row shaped like the import's select of existing definitions.
 
     A real ``Row`` rather than a mock, so reading a column the select leaves out fails the test.
+    ``columns`` sets any other selected column, which is None otherwise.
     """
-    stored = {
+    keys = [column.key for column in _EXISTING_TD_COLUMNS]
+    stored = dict.fromkeys(keys) | columns | {
         "id": id_ or uuid4(),
         "test_type": test_type,
         "table_name": table_name,
@@ -174,7 +177,7 @@ def _make_existing_row(
         "match_table_name": match_table_name,
         "match_schema_name": match_schema_name,
     }
-    keys = [column.key for column in _EXISTING_TD_COLUMNS]
+    assert stored.keys() == set(keys), f"not selected: {stored.keys() - set(keys)}"
     return result_tuple(keys)(tuple(stored[key] for key in keys))
 
 
@@ -649,7 +652,7 @@ class Test_import_validation:
     @patch(f"{SERVICE_MODULE}.DataTable")
     @patch(f"{SERVICE_MODULE}.TableGroup")
     @patch(f"{SERVICE_MODULE}.get_current_session")
-    def test_non_public_test_type_skipped(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
+    def test_managed_test_type_skipped(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
         """A non-public type is a real row in ``test_types``, so it clears the
         ``invalid_test_type`` check and needs its own skip \u2014 otherwise import is a side
         door around the ``create_test`` guard."""
@@ -674,12 +677,12 @@ class Test_import_validation:
 
         assert result.summary.created == 0
         assert result.summary.skipped == 1
-        assert ImportReason.non_public_test_type in _reasons(result, ImportAction.skip)
+        assert ImportReason.managed_test_type in _reasons(result, ImportAction.skip)
 
     @patch(f"{SERVICE_MODULE}.DataTable")
     @patch(f"{SERVICE_MODULE}.TableGroup")
     @patch(f"{SERVICE_MODULE}.get_current_session")
-    def test_non_public_test_type_matching_existing_definition_updates(
+    def test_managed_test_type_matching_existing_definition_updates(
         self, mock_session_fn, mock_tg_cls, mock_dt_cls,
     ):
         """Re-importing a suite's export keeps a Volume Trend test already in that suite."""
@@ -711,7 +714,7 @@ class Test_import_validation:
     @patch(f"{SERVICE_MODULE}.DataTable")
     @patch(f"{SERVICE_MODULE}.TableGroup")
     @patch(f"{SERVICE_MODULE}.get_current_session")
-    def test_non_public_test_type_aborts_strict_import(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
+    def test_managed_test_type_aborts_strict_import(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
         """apply_strict refuses the whole payload rather than silently dropping the row."""
         from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES
         from testgen.common.test_definition_export_import_service import (
@@ -735,7 +738,7 @@ class Test_import_validation:
             with pytest.raises(ImportStrictViolation) as exc_info:
                 import_definitions(ts, config, _make_payload(td))
 
-        assert ImportReason.non_public_test_type in _reasons(exc_info.value.result, ImportAction.skip)
+        assert ImportReason.managed_test_type in _reasons(exc_info.value.result, ImportAction.skip)
 
     @patch(f"{SERVICE_MODULE}.DataTable")
     @patch(f"{SERVICE_MODULE}.TableGroup")
@@ -966,6 +969,76 @@ class Test_import_validation:
 
 
 # --- Import: apply_strict mode ---
+
+
+class Test_import_partial_update_validation:
+    """A matched definition is validated as it would be saved: the file's fields over its stored values."""
+
+    THRESHOLDED = TestType(
+        test_type="Thresholded", test_scope="column", default_parm_columns="threshold_value", default_parm_required="Y"
+    )
+    BOUNDED = TestType(
+        test_type="Bounded",
+        test_scope="column",
+        default_parm_columns="lower_tolerance,upper_tolerance",
+        default_parm_required="A,A",
+    )
+
+    def _import(self, mock_session_fn, mock_tg_cls, mock_dt_cls, existing, td, test_type):
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+        session.execute.return_value.all.return_value = [existing]
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value={test_type.test_type: test_type}):
+            return import_definitions(_make_test_suite(), _make_config(), _make_payload(td))
+
+    @pytest.mark.parametrize(
+        ("fields", "skipped"),
+        [({}, False), ({"threshold_value": ""}, True), ({"threshold_value": "7"}, False)],
+    )
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_an_omitted_required_parameter_keeps_its_stored_value(
+        self, mock_session_fn, mock_tg_cls, mock_dt_cls, fields, skipped
+    ):
+        existing = _make_existing_row(test_type="Thresholded", threshold_value="5")
+        td = _make_import_td(test_type="Thresholded", **fields)
+
+        result = self._import(mock_session_fn, mock_tg_cls, mock_dt_cls, existing, td, self.THRESHOLDED)
+
+        assert (ImportReason.missing_required_field in _reasons(result, ImportAction.skip)) is skipped
+
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_an_omitted_group_is_satisfied_by_a_stored_member(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
+        existing = _make_existing_row(test_type="Bounded", upper_tolerance="10")
+        td = _make_import_td(test_type="Bounded")
+
+        result = self._import(mock_session_fn, mock_tg_cls, mock_dt_cls, existing, td, self.BOUNDED)
+
+        assert ImportReason.missing_required_field not in _reasons(result, ImportAction.skip)
+
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_an_omitted_table_keeps_the_stored_one_on_a_manual_definition(
+        self, mock_session_fn, mock_tg_cls, mock_dt_cls
+    ):
+        external_id = uuid4()
+        existing = _make_existing_row(
+            test_type="Thresholded", last_auto_gen_date=None, external_id=external_id, threshold_value="5"
+        )
+        td = TestDefinitionExport(test_type="Thresholded", external_id=external_id, column_name="c1")
+
+        result = self._import(mock_session_fn, mock_tg_cls, mock_dt_cls, existing, td, self.THRESHOLDED)
+
+        assert _reasons(result, ImportAction.skip) == set()
 
 
 class Test_import_strict_mode:

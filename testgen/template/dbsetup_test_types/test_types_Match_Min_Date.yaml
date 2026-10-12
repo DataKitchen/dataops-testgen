@@ -39,7 +39,7 @@ test_types:
   usage_notes: |-
     Match Minimum Date tests that the earliest date in the column is exactly the baseline date. Dates are compared to the second, and fractional seconds are ignored. For a floor that dates may stay above, use Minimum Date.
   active: Y
-  ai_redact_values: false
+  ai_redact_values: true
   null_measure_fails: true
   algorithm: Aggregate reconciliation
   generation_sets:

@@ -547,7 +547,7 @@ def test_create_table_group_applies_model_defaults_to_omitted_fields():
     resp, mock_save, _ = _post({"table_group_name": "client_42", "schema_name": "client_42"})
 
     body = resp.json()
-    assert body["profile_id_column_mask"] == "%id"
+    assert body["profile_id_column_mask"] == "%_id"
     assert body["profile_sk_column_mask"] == "%_sk"
     assert body["profile_use_sampling"] is False
     assert body["profile_sample_percent"] == 30
@@ -557,8 +557,22 @@ def test_create_table_group_applies_model_defaults_to_omitted_fields():
     assert body["profile_flag_pii"] is True
     assert body["profile_exclude_xde"] is True
     assert body["include_in_dashboard"] is True
-    assert body["include_masks"] == []
+    assert body["include_masks"] == ["%"]
+    assert body["exclude_masks"] == ["tmp%"]
     assert mock_save.call_args.kwargs == {"add_scorecard_definition": True}
+
+
+def test_create_table_group_keeps_masks_sent_empty():
+    resp, _, _ = _post({
+        "table_group_name": "client_42",
+        "schema_name": "client_42",
+        "include_masks": [],
+        "exclude_masks": [],
+    })
+
+    assert resp.status_code == 201
+    assert resp.json()["include_masks"] == []
+    assert resp.json()["exclude_masks"] == []
 
 
 def test_create_table_group_treats_null_as_omitted():
@@ -572,6 +586,18 @@ def test_create_table_group_treats_null_as_omitted():
     assert resp.status_code == 201
     assert resp.json()["profile_sample_percent"] == 30
     assert resp.json()["profile_flag_pii"] is True
+
+
+def test_create_table_group_rejects_an_unknown_catalog_tag():
+    """A misspelled tag would otherwise be dropped and the table group created untagged."""
+    resp, mock_save, _ = _post({
+        "table_group_name": "client_42",
+        "schema_name": "client_42",
+        "catalog_tags": {"data_sourc": "Snowflake"},
+    })
+
+    assert resp.status_code == 422
+    mock_save.assert_not_called()
 
 
 def test_create_table_group_applies_every_supplied_field():

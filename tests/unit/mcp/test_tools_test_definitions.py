@@ -6,7 +6,7 @@ import pytest
 from testgen.common.custom_test_validation import CustomQueryResult
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY
 from testgen.common.models.test_definition import ManagedTestDefinitionError, TestDefinition, TestDefinitionNote
-from testgen.mcp.exceptions import MCPUserError
+from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.tools.test_definitions import _DELETED_LISTING_LIMIT
 from tests.unit.sql_assertions import emitted_statements, scopes_to_a_version
 
@@ -49,6 +49,19 @@ def test_list_tests_basic(mock_td, mock_notes, db_session_mock):
     assert call_kwargs.kwargs["test_suite_id"] is not None
     assert call_kwargs.kwargs["page"] == 1
     assert call_kwargs.kwargs["limit"] == 50
+
+
+@patch("testgen.mcp.tools.test_definitions.TestDefinition")
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_list_tests_suite_not_found_or_inaccessible(mock_suite_cls, mock_td, db_session_mock):
+    """A suite that cannot be resolved is reported as not found, rather than read as a suite with no tests."""
+    mock_suite_cls.get.return_value = None
+
+    from testgen.mcp.tools.test_definitions import list_tests
+
+    with pytest.raises(MCPResourceNotAccessible, match="Test suite .* not found or not accessible"):
+        list_tests(str(uuid4()))
+    mock_td.list_for_suite.assert_not_called()
 
 
 @patch("testgen.mcp.tools.test_definitions.TestDefinition")

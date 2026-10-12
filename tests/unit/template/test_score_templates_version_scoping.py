@@ -80,3 +80,12 @@ def test_no_unresolved_placeholder_reaches_postgres(sql):
     # These templates carry {...} placeholders resolved by replace_params before execution; one
     # left behind is a syntax error at runtime that no assertion on a rendered CTE would catch.
     assert not re.search(r"\{[A-Z_]+\}", sql())
+
+
+def test_prevalence_formulas_treat_a_blank_threshold_as_zero():
+    """Execution runs a blank threshold as 0; an empty substitution would leave invalid SQL like (1127-)."""
+    text = read_template_sql_file("calc_prevalence_test_results.sql", "rollup_scores")
+    substitutions = re.findall(r"'\{THRESHOLD_VALUE\}',\s*(.+)\),$", text, flags=re.MULTILINE)
+
+    assert len(substitutions) == 2
+    assert set(substitutions) == {"COALESCE(NULLIF(TRIM(r.threshold_value), ''), '0')"}

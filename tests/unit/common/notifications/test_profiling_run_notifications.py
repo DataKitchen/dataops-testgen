@@ -3,6 +3,8 @@ from unittest.mock import ANY, Mock, call, patch
 from urllib.parse import quote
 
 import pytest
+from sqlalchemy import Select
+from sqlalchemy.dialects import postgresql
 
 from testgen.common.enums import JOB_STATUS_LABEL, JobStatus
 from testgen.common.models.hygiene_issue import IssueCount
@@ -279,6 +281,29 @@ def test_context_names_the_schema_the_way_the_database_type_does(
     context = send_mock.call_args.args[1]
     assert context["schema_label"] == expected_label
     assert context["table_group_schema"] == "main"
+
+
+def test_the_labels_come_from_the_table_groups_own_connection(
+    db_session_mock, ns_select_patched, get_prev_mock, hi_select_mock, hi_count_mock, send_mock
+):
+    """A project with several connections must still yield one row for the table group."""
+    profiling_run = ProfilingRun(id="pr-id", table_groups_id="tg-id", project_code="proj")
+    profiling_run.job_execution = make_job_execution(JobStatus.COMPLETED)
+    get_prev_mock.return_value = ProfilingRun(id="pr-prev-id")
+    hi_select_mock.return_value = []
+    hi_count_mock.return_value = {
+        priority: IssueCount() for priority in ("Definite", "Likely", "Possible", "High", "Moderate")
+    }
+
+    send_profiling_run_notifications(profiling_run)
+
+    labels_sql = next(
+        str(statement.compile(dialect=postgresql.dialect()))
+        for statement in (call.args[0] for call in db_session_mock.execute.call_args_list if call.args)
+        if isinstance(statement, Select) and "connections" in str(statement)
+    )
+    assert "JOIN connections ON connections.connection_id = table_groups.connection_id" in labels_sql
+    assert "connections.project_code" not in labels_sql
 
 
 def test_email_omits_the_schema_row_when_the_database_type_names_none():

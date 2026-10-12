@@ -196,8 +196,8 @@ const TableGroupForm = (props) => {
     const tableGroup = getValue(props.tableGroup);
     const tableGroupConnectionId = van.state(tableGroup.connection_id);
     const tableGroupsName = van.state(tableGroup.table_groups_name);
-    const profilingIncludeMask = van.state(tableGroup.profiling_include_mask ?? '%');
-    const profilingExcludeMask = van.state(tableGroup.profiling_exclude_mask ?? 'tmp%');
+    const profilingIncludeMask = van.state(tableGroup.profiling_include_mask ?? '');
+    const profilingExcludeMask = van.state(tableGroup.profiling_exclude_mask ?? '');
     const profilingTableSet = van.state(normalizeTableSet(tableGroup.profiling_table_set));
     const declarationRows = van.state((tableGroup.file_declarations ?? []).map(declarationRow));
     const tableGroupSchema = van.state(tableGroup.table_group_schema);

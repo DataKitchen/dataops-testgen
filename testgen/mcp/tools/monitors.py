@@ -61,6 +61,7 @@ from testgen.mcp.tools.common import (
     parse_uuid,
     resolve_monitor,
     resolve_monitored_table_group,
+    target_db_error_text,
     validate_limit,
     validate_page,
 )
@@ -781,9 +782,10 @@ def list_monitor_events(
     # Schema, freshness, and volume events carry no source-data values: schema
     # changes are structural, freshness lateness is derived from TestGen's own
     # monitor-run timestamps by fingerprint comparison, and a volume row count is
-    # a pure aggregate. Only a metric event's signal can be an actual cell value —
-    # the expression may be MAX(column), and storage cannot distinguish that from
-    # COUNT(*).
+    # a pure aggregate. Two exceptions: a metric event's signal can be an actual
+    # cell value — the expression may be MAX(column), and storage cannot
+    # distinguish that from COUNT(*) — and an error event's message is the driver's
+    # text, which can quote the value that caused it.
     if parsed_type == MonitorType.SCHEMA:
         doc.table(
             ["Time", "Status", "Table change", "Columns added", "Columns dropped", "Columns modified"],
@@ -803,7 +805,11 @@ def list_monitor_events(
         doc.table(
             ["Time", "Status", "Update detected", "Detail"],
             [
-                [event.test_time, _event_status(event), *_format_freshness_message(event.message)]
+                [
+                    event.test_time,
+                    _event_status(event),
+                    *_format_freshness_message(target_db_error_text(event.message) if event.is_error else event.message),
+                ]
                 for event in events
             ],
         )

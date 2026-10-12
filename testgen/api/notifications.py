@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from testgen.api.deps import (
     api_error,
     db_session,
+    fields_to_change,
     resolve_notification_destination,
     resolve_notification_rule,
     resolve_project_code,
@@ -80,7 +81,7 @@ _error_responses: dict[int | str, dict] = {
 
 router = APIRouter(
     tags=["Notifications"],
-    dependencies=[Depends(db_session)],
+    dependencies=[Depends(db_session, scope="function")],
     responses=_error_responses,
 )
 
@@ -97,6 +98,7 @@ _EnabledQuery = Query(default=None)
 _PageQuery = Query(default=1, ge=1)
 _LimitQuery = Query(default=20, ge=1, le=100)
 _BodyRequired = Body(...)
+_CLEARABLE_RULE_FIELDS = ("total_threshold", "cde_threshold", "table_name")
 
 
 # =====================================================================
@@ -189,6 +191,7 @@ def update_destination(
 ) -> DestinationResponse:
     """Update fields on a destination. Passing an empty string as ``auth_header_value`` clears it."""
     payload = body.root
+    fields_to_change(payload, ignore=("type",))
     try:
         if isinstance(destination, EmailDestination):
             if not isinstance(payload, EmailDestinationUpdate):
@@ -356,9 +359,17 @@ def update_rule(
     """Update a rule's addressing, trigger, thresholds, or table filter.
 
     Event and scope entity are immutable; pass only the fields to change. Clear an
-    optional field with the matching ``clear_*`` flag rather than a null value --
-    ``null`` cannot be distinguished from "field omitted" in JSON.
+    optional field with the matching ``clear_*`` flag.
     """
+    # A clear flag sent as false asks for nothing.
+    unset_flags = [f"clear_{field}" for field in _CLEARABLE_RULE_FIELDS if not getattr(body, f"clear_{field}")]
+    sent = fields_to_change(body, ignore=unset_flags)
+    if conflicting := sorted(field for field in _CLEARABLE_RULE_FIELDS if field in sent and sent.get(f"clear_{field}")):
+        raise api_error(
+            422,
+            "conflicting_fields",
+            f"{', '.join(conflicting)} cannot be sent together with its clear flag.",
+        )
     if body.enabled is not None:
         rule.enabled = body.enabled
     if body.addressing is not None:

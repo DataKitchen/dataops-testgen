@@ -15,7 +15,6 @@ from pydantic import (
     Tag,
     ValidationInfo,
     field_validator,
-    model_validator,
 )
 
 from testgen.api.enums import (
@@ -71,8 +70,8 @@ class JobSubmittedResponse(BaseModel):
 
 
 class TableGroupUpdateRequest(BaseModel):
-    """Fields to change on a table group. Omitted fields are left unchanged, and unknown fields are
-    rejected."""
+    """Fields to change on a table group. Omitted fields are left unchanged. A field sent as `null`,
+    a body with nothing to change, and unknown fields are rejected."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -109,6 +108,8 @@ class TableGroupSchemaChange(BaseModel):
 
 class TestRunRequest(BaseModel):
     """Optional body for a test run submission."""
+
+    model_config = ConfigDict(extra="forbid")
 
     match_schema_name: str | None = Field(
         default=None,
@@ -456,6 +457,8 @@ class ErrorResponse(BaseModel):
 
 
 class ImportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     config: ImportConfig
     payload: ImportPayload
 
@@ -476,6 +479,8 @@ class ImportStrictError(BaseModel):
 
 
 class TestGenerationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     generation_sets: list[str] | None = None
 
 
@@ -586,6 +591,8 @@ MonitorRunTrigger = Literal["on_anomalies"]
 
 
 class _NamedDestination(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(description="Display name for the destination (unique per project, case-insensitive).")
 
 
@@ -624,12 +631,16 @@ class DestinationCreate(RootModel[_DestinationCreatePayload]):
 
 
 class EmailDestinationUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["email"] = Field(description="Must match the stored destination type.")
     name: str | None = None
     recipients: list[str] | None = Field(default=None, min_length=1)
 
 
 class WebhookDestinationUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["webhook"] = Field(description="Must match the stored destination type.")
     name: str | None = None
     webhook_type: WebhookTypeLiteral | None = None
@@ -650,7 +661,11 @@ _DestinationUpdatePayload = Annotated[
 
 # Same RootModel wrapper rationale as DestinationCreate.
 class DestinationUpdate(RootModel[_DestinationUpdatePayload]):
-    """Fields to change on a destination; `type` must match the stored destination type."""
+    """Fields to change on a destination; `type` must match the stored destination type.
+
+    A field sent as `null`, a body with nothing to change besides `type`, and unknown fields are
+    rejected.
+    """
 
 
 class EmailDestinationResponse(BaseModel):
@@ -701,11 +716,15 @@ class DestinationDeleteResponse(BaseModel):
 
 
 class InlineAddressing(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     kind: Literal["inline"]
     recipients: list[str] = Field(min_length=1)
 
 
 class DestinationAddressing(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     kind: Literal["destination"]
     destination_id: UUID
 
@@ -737,6 +756,8 @@ AddressingOut = Annotated[
 
 
 class TestRunRuleCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     event: Literal["test_run"]
     addressing: AddressingIn
     test_suite_id: UUID | None = Field(default=None, description="Scope to a specific test suite; omit for project-wide.")
@@ -744,6 +765,8 @@ class TestRunRuleCreate(BaseModel):
 
 
 class ProfilingRunRuleCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     event: Literal["profiling_run"]
     addressing: AddressingIn
     table_group_id: UUID | None = Field(default=None, description="Scope to a specific table group; omit for project-wide.")
@@ -756,6 +779,8 @@ class ProfilingRunRuleCreate(BaseModel):
 class MonitorRunRuleCreate(BaseModel):
     """A monitor rule is scoped by its monitor suite; the table group is derived from it."""
 
+    model_config = ConfigDict(extra="forbid")
+
     event: Literal["monitor_run"]
     addressing: AddressingIn
     test_suite_id: UUID
@@ -763,6 +788,8 @@ class MonitorRunRuleCreate(BaseModel):
 
 
 class ScoreDropRuleCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     event: Literal["score_drop"]
     addressing: AddressingIn
     score_definition_id: UUID
@@ -784,14 +811,15 @@ class RuleCreate(RootModel[_RuleCreatePayload]):
     """A notification rule; `event` selects which scope and trigger fields apply."""
 
 
-# JSON cannot distinguish an explicit null from an omitted field, hence the clear_* flags
-# rather than accepting null to mean "clear".
 class RuleUpdate(BaseModel):
     """Change the fields you want to change. Event and scope entity are immutable.
 
-    Optional fields on score-drop and monitor-run rules are cleared with their
-    `clear_*` flag rather than by sending `null`.
+    Optional fields on score-drop and monitor-run rules are cleared with their `clear_*` flag.
+    A field sent as `null`, a field sent together with its `clear_*` flag, a body with nothing to
+    change, and unknown fields are rejected.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     enabled: bool | None = None
     addressing: AddressingIn | None = None
@@ -965,6 +993,8 @@ class CatalogTags(BaseModel):
     test execution.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     data_source: str | None = None
     source_system: str | None = None
     source_process: str | None = None
@@ -1053,10 +1083,15 @@ class TableGroupCreate(BaseModel):
         description="Table names to restrict the group to. Omit to define the group by masks alone.",
     )
     include_masks: list[str] | None = Field(
-        default=None, description="SQL LIKE patterns a table must match to be included."
+        default=None,
+        description="SQL LIKE patterns a table must match to be included. Omit for the default include mask.",
     )
     exclude_masks: list[str] | None = Field(
-        default=None, description="SQL LIKE patterns that exclude a matching table."
+        default=None,
+        description=(
+            "SQL LIKE patterns that exclude a matching table, including one named in ``table_set``."
+            " Omit for the default exclude mask; send an empty list to exclude nothing."
+        ),
     )
     profile_id_column_mask: str | None = Field(
         default=_TABLE_GROUP_DEFAULTS["profile_id_column_mask"], description="SQL LIKE pattern marking ID columns."
@@ -1337,7 +1372,8 @@ class MonitoringConfig(BaseModel):
 class MonitoringUpdate(BaseModel):
     """Changes to a table group's monitoring configuration. Only the fields sent are changed.
 
-    Send an empty `holiday_codes` list to clear the holiday calendars. Unknown fields are rejected.
+    Send an empty `holiday_codes` list to clear the holiday calendars. A field sent as `null`, a body
+    with nothing to change, and unknown fields are rejected.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -1353,12 +1389,6 @@ class MonitoringUpdate(BaseModel):
     active: StrictBool | None = Field(
         default=None, description="`false` pauses the monitor schedule, `true` resumes it."
     )
-
-    @model_validator(mode="after")
-    def _sent_fields_are_not_null(self) -> "MonitoringUpdate":
-        if nulls := sorted(name for name in self.model_fields_set if getattr(self, name) is None):
-            raise ValueError(f"Omit a field to leave it unchanged rather than sending null: {', '.join(nulls)}.")
-        return self
 
 
 class MonitoringResponse(BaseModel):

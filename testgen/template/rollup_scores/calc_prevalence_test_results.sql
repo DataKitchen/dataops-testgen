@@ -27,8 +27,8 @@ WITH result_calc
                 REPLACE( REPLACE( REPLACE( REPLACE( REPLACE( REPLACE(
                  tt.dq_score_prevalence_formula,
                  '{RESULT_MEASURE}',      COALESCE(r.result_measure::VARCHAR, '')),
-                 '{THRESHOLD_VALUE}',     COALESCE(r.threshold_value::VARCHAR, '')),
-         
+                 '{THRESHOLD_VALUE}',     COALESCE(NULLIF(TRIM(r.threshold_value), ''), '0')),
+
                  '{PRO_RECORD_CT}',       COALESCE(p.record_ct::VARCHAR, '')),
                  '{DATE_DAYS_PRESENT}',   COALESCE(p.date_days_present::VARCHAR, '')),
                  '{DATE_MONTHS_PRESENT}', COALESCE(p.date_months_present::VARCHAR, '')),
@@ -39,7 +39,7 @@ WITH result_calc
                  '{VALUE_CT}',            COALESCE(p.value_ct::VARCHAR, '')),
                  '{MAX_LENGTH}',          COALESCE(p.max_length::VARCHAR, '')),
                  '{AVG_LENGTH}',          COALESCE(p.avg_length::VARCHAR, '')),
-                 
+
                  '{RECORD_CT}',           COALESCE(r.dq_record_ct::VARCHAR, tc.record_ct::VARCHAR, ''))
                  as built_score_prevalance_formula,
                COALESCE(r.dq_record_ct, tc.record_ct) as dq_record_ct
@@ -72,7 +72,7 @@ WITH result_calc
                REPLACE( REPLACE( REPLACE(
                  tt.dq_score_prevalence_formula,
                  '{RESULT_MEASURE}',      COALESCE(r.result_measure::VARCHAR, '')),
-                 '{THRESHOLD_VALUE}',     COALESCE(r.threshold_value::VARCHAR, '')),
+                 '{THRESHOLD_VALUE}',     COALESCE(NULLIF(TRIM(r.threshold_value), ''), '0')),
                  '{RECORD_CT}',           COALESCE(r.dq_record_ct::VARCHAR, tc.record_ct::VARCHAR, ''))
                  as built_score_prevalance_formula,
                COALESCE(r.dq_record_ct, tc.record_ct) as dq_record_ct

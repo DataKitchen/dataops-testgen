@@ -97,20 +97,44 @@ def test_monitor_rule_create_does_not_accept_table_group_id():
     assert not hasattr(body.root, "table_group_id")
 
 
-def test_monitor_rule_create_ignores_a_supplied_table_group_id():
-    """A caller sending the field gets it dropped, not honoured.
+def test_monitor_rule_create_rejects_a_supplied_table_group_id():
+    """The table group is derived from the suite, so a supplied one is refused rather than dropped."""
+    with pytest.raises(ValidationError):
+        RuleCreate.model_validate({
+            "event": "monitor_run",
+            "addressing": {"kind": "inline", "recipients": ["a@x.co"]},
+            "test_suite_id": "00000000-0000-0000-0000-000000000001",
+            "table_group_id": "00000000-0000-0000-0000-000000000002",
+        })
 
-    No schema in this API sets ``extra="forbid"``, so unknown keys are ignored
-    rather than rejected. What matters here is that a supplied value cannot
-    reach the model and override the suite-derived table group.
-    """
-    body = RuleCreate.model_validate({
-        "event": "monitor_run",
-        "addressing": {"kind": "inline", "recipients": ["a@x.co"]},
-        "test_suite_id": "00000000-0000-0000-0000-000000000001",
-        "table_group_id": "00000000-0000-0000-0000-000000000002",
-    })
-    assert not hasattr(body.root, "table_group_id")
+
+def test_a_misspelled_scope_key_is_rejected_rather_than_creating_a_project_wide_rule():
+    """Omitting ``test_suite_id`` scopes a rule to the whole project, so a typo in its name must not
+    read as an omission."""
+    with pytest.raises(ValidationError):
+        RuleCreate.model_validate({
+            "event": "test_run",
+            "addressing": {"kind": "inline", "recipients": ["a@x.co"]},
+            "test_suite": "00000000-0000-0000-0000-000000000001",
+        })
+
+
+@pytest.mark.parametrize("addressing", [
+    {"kind": "inline", "recipients": ["a@x.co"], "extra": 1},
+    {"kind": "destination", "destination_id": "00000000-0000-0000-0000-000000000001", "extra": 1},
+])
+def test_addressing_rejects_unknown_keys(addressing):
+    with pytest.raises(ValidationError):
+        RuleCreate.model_validate({"event": "test_run", "addressing": addressing})
+
+
+@pytest.mark.parametrize("payload", [
+    {"type": "email", "name": "Team", "recipients": ["a@x.co"], "extra": 1},
+    {"type": "webhook", "name": "Hook", "webhook_type": "generic", "url": "https://x.example/h", "extra": 1},
+])
+def test_destination_create_rejects_unknown_keys(payload):
+    with pytest.raises(ValidationError):
+        DestinationCreate.model_validate(payload)
 
 
 # ─── Discriminator survives FastAPI body binding + OpenAPI schema ────

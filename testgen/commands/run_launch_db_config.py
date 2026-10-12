@@ -84,7 +84,7 @@ def _quote_identifier(name: str) -> str:
     return f'"{escaped}"'
 
 
-def _get_app_user_grants(schema: str, admin_user: str | None, app_user: str | None) -> list[str]:
+def get_app_user_grants(schema: str, admin_user: str | None, app_user: str | None) -> list[str]:
     """Return the statements that let the application user work on objects the admin user owns.
 
     Args:
@@ -130,7 +130,7 @@ def _ensure_app_user_exists(app_user: str, params_mapping: dict) -> None:
 @with_database_session
 def run_launch_db_config(delete_db: bool) -> None:
     params_mapping = _get_params_mapping()
-    app_user_grants = _get_app_user_grants(
+    app_user_grants = get_app_user_grants(
         params_mapping["SCHEMA_NAME"], params_mapping["TESTGEN_ADMIN_USER"], settings.DATABASE_USER
     )
     if app_user_grants:

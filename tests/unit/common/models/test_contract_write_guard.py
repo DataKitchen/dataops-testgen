@@ -7,7 +7,7 @@ from sqlalchemy.sql.elements import BinaryExpression
 
 from testgen.common.models import test_definition as test_definition_module
 from testgen.common.models.suite_version import FrozenVersionError, SuiteVersion
-from testgen.common.models.test_definition import TestDefinition
+from testgen.common.models.test_definition import MissingTestDefinitionError, TestDefinition
 from tests.unit.sql_assertions import conjuncts, is_not_null_conjunct, scopes_to_a_version
 
 pytestmark = pytest.mark.unit
@@ -330,7 +330,7 @@ def test_an_update_of_a_row_that_no_longer_exists_is_refused():
 
     session = _session_routing_version_lookups(persisted_version=None)
     with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
-        with pytest.raises(ValueError, match="no longer exists"):
+        with pytest.raises(MissingTestDefinitionError):
             definition.save()
 
     session.execute.assert_not_called()

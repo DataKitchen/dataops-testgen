@@ -62,6 +62,7 @@ class EngineCache:
 class TargetDbParams:
     connection: ConnectionParams
     declarations: list[FileDeclaration]
+    table_group_schema: str | None
 
 
 # Initialize variables global to this script
@@ -103,6 +104,7 @@ def set_target_db_params(connection_params: ConnectionParams, table_group: "Tabl
     target_db_params = TargetDbParams(
         connection_params.copy(),
         parse_file_declarations(table_group.file_declarations) if table_group else [],
+        table_group.table_group_schema if table_group else None,
     )
     # The cache holds one unkeyed slot, so a cached engine built for the previous parameters
     # would otherwise be handed out for these.
@@ -612,13 +614,14 @@ def _init_target_db_connection() -> Connection:
         raise ValueError("Target database connection parameters were not set")
 
     connection_params = target_db_params.connection
+    table_group_schema = target_db_params.table_group_schema
     flavor_service = get_flavor_service(connection_params["sql_flavor"])
-    params = resolve_connection_params(connection_params)
+    params = resolve_connection_params(connection_params, table_group_schema)
 
     engine = engine_cache.target_db
     if not engine:
         try:
-            engine: Engine = flavor_service.create_engine(connection_params)
+            engine: Engine = flavor_service.create_engine(connection_params, table_group_schema)
         except SQLAlchemyError as e:
             raise ValueError(f"Failed to create engine for Target database '{params.dbname}' (User type = normal)") from e
         else:

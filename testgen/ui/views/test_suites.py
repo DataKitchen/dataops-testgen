@@ -46,7 +46,6 @@ GENERATE_TESTS_RESULT_KEY = "ts:generate_tests_result"
 GENERATE_TESTS_LOCK_RESULT_KEY = "ts:generate_tests_lock_result"
 RUN_SCHEDULES_DIALOG_KEY = "ts:run_schedules_dialog"
 RUN_NOTIFICATIONS_DIALOG_KEY = "ts:run_notifications_dialog"
-PAGE_RESULT_KEY = "ts:page_result"
 
 class TestSuitesPage(Page):
     path = "test-suites"
@@ -72,7 +71,6 @@ class TestSuitesPage(Page):
         test_suites = get_test_suite_summaries(project_code, table_group_id, test_suite_name)
         project_summary = get_project_summary(project_code)
         delete_dialog = st.session_state.get("ts_delete_dialog")
-        page_result = st.session_state.pop(PAGE_RESULT_KEY, None)
 
         # Build form_dialog prop from session state
         table_group_options = [{"value": str(tg.id), "label": tg.table_groups_name} for tg in table_groups]
@@ -262,7 +260,6 @@ class TestSuitesPage(Page):
                 "generate_tests_dialog": generate_tests_data,
                 "schedule_dialog": schedule_data,
                 "notifications_dialog": notifications_data,
-                "page_result": page_result,
             },
             on_FilterApplied_change=on_test_suites_filtered,
             on_RunSchedulesClicked_change=on_run_schedules_clicked,
@@ -348,7 +345,7 @@ def save_test_suite_form(data: dict) -> None:
         st.session_state.pop("ts_form_dialog:result", None)
         st.session_state.pop(EDIT_DIALOG_KEY, None)
         get_test_suite_summaries.clear()
-        st.session_state[PAGE_RESULT_KEY] = {"success": True, "message": "Changes have been saved successfully."}
+        st.toast("Changes have been saved successfully.", icon=":material/check:")
     else:
         table_group = get_table_group(data.get("table_groups_id"))
         test_suite = TestSuite(
@@ -362,7 +359,7 @@ def save_test_suite_form(data: dict) -> None:
         st.session_state.pop("ts_form_dialog:result", None)
         st.session_state.pop(ADD_DIALOG_KEY, None)
         get_test_suite_summaries.clear()
-        st.session_state[PAGE_RESULT_KEY] = {"success": True, "message": "New test suite added successfully."}
+        st.toast("New test suite added successfully.", icon=":material/check:")
 
 
 @with_database_session
@@ -381,10 +378,10 @@ def prepare_ts_delete_dialog(test_suite_id: str) -> None:
 def execute_ts_delete(test_suite_id: str) -> None:
     test_suite_name = st.session_state.get("ts_delete_dialog", {}).get("test_suite_name", "")
     if TestRun.has_active_job_for(TestSuite, test_suite_id):
-        st.session_state[PAGE_RESULT_KEY] = {"success": False, "message": "This Test Suite is in use by a running process and cannot be deleted."}
+        st.toast("This Test Suite is in use by a running process and cannot be deleted.", icon=":material/error:")
     else:
         TestSuite.cascade_delete([test_suite_id])
-        st.session_state[PAGE_RESULT_KEY] = {"success": True, "message": f"Test Suite {test_suite_name} has been deleted."}
+        st.toast(f"Test Suite {test_suite_name} has been deleted.", icon=":material/check:")
     st.session_state.pop("ts_delete_dialog", None)
     get_test_suite_summaries.clear()
 
@@ -394,6 +391,6 @@ def observability_export_action(test_suite_id: str) -> None:
     selected_test_suite = get_test_suite_minimal(test_suite_id)
     try:
         qty_of_exported_events = export_test_results(selected_test_suite.id)
-        st.session_state[PAGE_RESULT_KEY] = {"success": True, "message": f"Export finished: {qty_of_exported_events} events exported."}
+        st.toast(f"Export finished: {qty_of_exported_events} events exported.", icon=":material/check:")
     except Exception as e:
-        st.session_state[PAGE_RESULT_KEY] = {"success": False, "message": f"Export failed: {e!s}"}
+        st.toast(f"Export failed: {e!s}", icon=":material/error:")

@@ -1,6 +1,7 @@
 import logging
 
 from testgen import settings
+from testgen.commands.run_launch_db_config import get_app_user_grants
 from testgen.common import execute_db_queries, fetch_dict_from_db, read_template_sql_file
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import replace_params
@@ -108,6 +109,19 @@ def _refresh_static_metadata(params_mapping):
         password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
         user_type="schema_admin",
     )
+
+    # Last, so they reach every object the upgrade scripts and the steps above created. Default
+    # privileges cover only objects created after setup granted them, which not every install's setup did.
+    app_user_grants = get_app_user_grants(
+        params_mapping["SCHEMA_NAME"], params_mapping["TESTGEN_ADMIN_USER"], settings.DATABASE_USER
+    )
+    if app_user_grants:
+        execute_db_queries(
+            [(query, None) for query in app_user_grants],
+            user_override=params_mapping["TESTGEN_ADMIN_USER"],
+            password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
+            user_type="schema_admin",
+        )
 
 
 def _update_revision_number(params_mapping, latest_prefix_applied):

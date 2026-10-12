@@ -1,4 +1,5 @@
 import functools
+import html
 import inspect
 import logging
 import operator
@@ -187,8 +188,7 @@ class BaseEmailTemplate:
         Reuses the compiled subject template so a receiver sees the same wording
         the matching email would carry, without prefix.
         """
-        subject = self.compiled_subject(context or {}) or ""
-        return subject.removeprefix("[TestGen] ")
+        return self.render_subject(context).removeprefix("[TestGen] ")
 
     def webhook_data(self, context: Mapping | None) -> dict:  # noqa: ARG002
         """Plain-value event data for the webhook envelope's ``data`` field.
@@ -215,8 +215,16 @@ class BaseEmailTemplate:
         """
         return None
 
+    def render_subject(self, context: Mapping | None) -> str:
+        """Rendered subject line as plain text.
+
+        Handlebars HTML-escapes every value it inserts, which suits the HTML body but
+        not a subject line, where the entities would show literally.
+        """
+        return html.unescape(self.compiled_subject(context or {}) or "")
+
     def get_message(self, recipients: list[str], context: Mapping | None) -> MIMEMultipart:
-        subject = self.compiled_subject(context)
+        subject = self.render_subject(context)
         body = self.compiled_body(context)
 
         message = MIMEMultipart("alternative")

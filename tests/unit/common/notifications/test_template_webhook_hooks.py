@@ -87,3 +87,11 @@ def test_all_templates_return_none_on_none_context():
     ):
         assert template.webhook_project_name(None) is None
         assert template.webhook_summary_url(None) is None
+
+
+def test_subject_and_webhook_summary_are_not_html_escaped():
+    """Handlebars escapes inserted values for HTML; a subject line is plain text."""
+    template = TestRunEmailTemplate()
+    context = {"test_run": {"status_label": "Completed", "test_suite": "Orders & Returns 'EU'"}}
+    assert template.render_subject(context) == "[TestGen] Test Run Completed: Orders & Returns 'EU'"
+    assert template.webhook_summary(context) == "Test Run Completed: Orders & Returns 'EU'"

@@ -1,13 +1,20 @@
 """Tests for testgen.api.deps — FastAPI authentication dependencies and db_session."""
 
+import asyncio
 import base64
+import time
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
+import httpx
 import jwt
 import pytest
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.routing import APIRoute
+from pydantic import BaseModel
 
-from testgen.api.deps import db_session, get_authorized_user
+from testgen.api.deps import db_session, fields_to_change, get_authorized_user
+from testgen.common.models import get_current_session
 
 JWT_KEY = base64.b64encode(b"test-secret-key-for-jwt-signing!").decode("ascii")
 
@@ -130,42 +137,103 @@ def test_get_authorized_user_rejects_revoked_token(mock_get_session, mock_settin
 # --- db_session ---
 
 
-@patch("testgen.api.deps._current_session_wrapper")
-@patch("testgen.api.deps.Session")
-def test_db_session_commits_on_success(mock_session_cls, mock_wrapper):
-    mock_session = MagicMock()
-    mock_session_cls.return_value.__enter__ = MagicMock(return_value=mock_session)
-    mock_session_cls.return_value.__exit__ = MagicMock(return_value=False)
+def _run_db_session(session, raise_inside: Exception | None = None):
+    """Drive the dependency the way FastAPI does, returning the session it yielded."""
 
-    gen = db_session()
-    session = next(gen)
+    async def drive():
+        gen = db_session()
+        yielded = await gen.__anext__()
+        assert get_current_session() is yielded
+        if raise_inside:
+            await gen.athrow(raise_inside)
+        else:
+            with pytest.raises(StopAsyncIteration):
+                await gen.__anext__()
+        return yielded
 
-    assert session is mock_session
-    mock_wrapper.__setattr__("value", mock_session)
-
-    # Exhaust the generator (simulates successful request completion)
-    with pytest.raises(StopIteration):
-        next(gen)
-
-    mock_session.commit.assert_called_once()
+    with patch("testgen.api.deps.Session", return_value=session):
+        return asyncio.run(drive())
 
 
-@patch("testgen.api.deps._current_session_wrapper")
-@patch("testgen.api.deps.Session")
-def test_db_session_rolls_back_on_exception(mock_session_cls, mock_wrapper):
-    mock_session = MagicMock()
-    mock_session_cls.return_value.__enter__ = MagicMock(return_value=mock_session)
-    mock_session_cls.return_value.__exit__ = MagicMock(return_value=False)
+def test_db_session_commits_and_closes_on_success():
+    session = MagicMock()
 
-    gen = db_session()
-    next(gen)
+    assert _run_db_session(session) is session
 
-    # Simulate an exception thrown into the generator
-    with pytest.raises(ValueError):
-        gen.throw(ValueError("boom"))
+    assert session.method_calls == [call.commit(), call.close()]
+    assert get_current_session() is None
 
-    mock_session.rollback.assert_called_once()
-    mock_session.commit.assert_not_called()
+
+def test_db_session_rolls_back_and_closes_on_exception():
+    session = MagicMock()
+
+    with pytest.raises(ValueError, match="boom"):
+        _run_db_session(session, raise_inside=ValueError("boom"))
+
+    assert session.method_calls == [call.rollback(), call.close()]
+
+
+def test_every_request_sees_its_own_open_session_under_concurrency():
+    """FastAPI runs sync dependencies and endpoints on worker threads other than the one that set the
+    session up, so a session stored per thread reaches the wrong request, or none."""
+
+    class FakeSession:
+        def __init__(self):
+            self.closed = False
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            self.closed = True
+
+    def seen_by(name):
+        def dependency():
+            current = get_current_session()
+            return None if current is None or current.closed else id(current)
+
+        dependency.__name__ = name
+        return dependency
+
+    app = FastAPI()
+    auth_dependency = seen_by("auth")
+
+    @app.get("/{n}", dependencies=[Depends(db_session, scope="function")])
+    def endpoint(n: int, from_dependency=Depends(auth_dependency)):  # noqa: B008
+        time.sleep(0.002)
+        current = get_current_session()
+        return {"endpoint": None if current is None or current.closed else id(current), "dependency": from_dependency}
+
+    async def burst():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            return await asyncio.gather(*(client.get(f"/{n}") for n in range(200)))
+
+    with patch("testgen.api.deps.Session", FakeSession):
+        responses = asyncio.run(burst())
+
+    seen = [response.json() for response in responses]
+    assert all(entry["endpoint"] is not None and entry["endpoint"] == entry["dependency"] for entry in seen)
+    assert len({entry["endpoint"] for entry in seen}) == len(seen)
+
+
+def test_every_router_commits_before_it_responds():
+    from testgen import api
+    from testgen.api.oauth import routes as oauth_routes
+
+    routes = [
+        route for route in (*api.router.routes, *oauth_routes.router.routes) if isinstance(route, APIRoute)
+    ]
+    declared = [
+        dependency.scope
+        for route in routes
+        for dependency in route.dependencies
+        if dependency.dependency is db_session
+    ]
+    assert len(declared) == len(routes)
+    assert set(declared) == {"function"}
 
 
 # --- has_project_permission ---
@@ -220,3 +288,24 @@ def test_has_permission_checks_membership_even_for_global_admin(mock_pm):
     assert has_project_permission(user, "project_a", "edit") is False
 
 
+class _Patch(BaseModel):
+    type: str = "email"
+    name: str | None = None
+    note: str | None = None
+
+
+def test_fields_to_change_returns_what_the_body_sends():
+    assert fields_to_change(_Patch.model_validate({"name": "Team"})) == {"name": "Team"}
+
+
+@pytest.mark.parametrize(("body", "code"), [
+    ({}, "no_fields"),
+    ({"type": "email"}, "no_fields"),
+    ({"name": None}, "null_field"),
+])
+def test_fields_to_change_refuses_an_empty_or_null_body(body, code):
+    with pytest.raises(HTTPException) as excinfo:
+        fields_to_change(_Patch.model_validate(body), ignore=("type",))
+
+    assert excinfo.value.status_code == 422
+    assert excinfo.value.detail["errors"][0]["code"] == code

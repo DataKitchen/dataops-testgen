@@ -20,7 +20,7 @@ from testgen.common.models.connection import Connection
 
 _error_responses = {404: {"model": ErrorResponse, "description": "Not found"}}
 
-router = APIRouter(tags=["Connections"], dependencies=[Depends(db_session)], responses=_error_responses)
+router = APIRouter(tags=["Connections"], dependencies=[Depends(db_session, scope="function")], responses=_error_responses)
 
 
 @router.get(

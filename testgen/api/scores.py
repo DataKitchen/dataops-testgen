@@ -27,7 +27,7 @@ _error_responses = {
     404: {"model": ErrorResponse, "description": "Not found"},
 }
 
-router = APIRouter(tags=["Scores"], dependencies=[Depends(db_session)], responses=_error_responses)
+router = APIRouter(tags=["Scores"], dependencies=[Depends(db_session, scope="function")], responses=_error_responses)
 
 # API ``group_by`` value → underlying score-engine category column.
 # The engine's Categories literal uses ``dq_dimension`` and ``table_groups_name``;

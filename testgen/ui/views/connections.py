@@ -31,7 +31,7 @@ from testgen.common.flavors import (
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection, ConnectionMinimal
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY, JobSchedule
-from testgen.common.models.table_group import TableGroup
+from testgen.common.models.table_group import TableGroup, default_profiling_masks
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.monitor_service import enable_monitoring
 from testgen.ui.assets import get_asset_data_url
@@ -361,6 +361,7 @@ class ConnectionsPage(Page):
         table_group = TableGroup(
             project_code=project_code,
             **{
+                **default_profiling_masks(),
                 **(table_group_data or {}),
                 "connection_id": connection_id,
             },

@@ -99,3 +99,13 @@ def test_every_upsert_writes_the_version_it_conflicts_on():
         "placeholder version, where neither the deletes nor the reads of the same generation "
         "run can see it. Offenders: " + ", ".join(offenders)
     )
+
+
+def test_generic_freshness_fingerprints_cast_before_defaulting_nulls():
+    """PostgreSQL money cannot take an integer default, so a numeric column is cast before COALESCE."""
+    templates = [
+        TEMPLATE_ROOT / "gen_query_tests" / "gen_Freshness_Trend.sql",
+        TEMPLATE_ROOT / "gen_query_tests" / "gen_Table_Freshness.sql",
+    ]
+
+    assert [path.name for path in templates if "COALESCE(@@@," in path.read_text()] == []

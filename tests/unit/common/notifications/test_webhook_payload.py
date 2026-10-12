@@ -124,6 +124,17 @@ def test_slack_wrapper_includes_project_and_url_in_context_block():
     assert "https://tg/x" in text
 
 
+def test_slack_wrapper_escapes_only_slack_control_characters():
+    envelope = _make_envelope(summary='Orders & Returns <EU> "daily"')
+    envelope["project"]["name"] = "R&D"
+    payload = wrap_slack(envelope)
+    expected = 'Orders &amp; Returns &lt;EU&gt; "daily"'
+    assert payload["text"] == expected
+    assert payload["blocks"][0]["text"]["text"] == expected
+    context_text = payload["blocks"][1]["elements"][0]["text"]
+    assert context_text.startswith("*R&amp;D*")
+
+
 # ─── wrap_teams ──────────────────────────────────────────────────────
 
 

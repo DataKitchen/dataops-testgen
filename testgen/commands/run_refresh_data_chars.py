@@ -24,7 +24,13 @@ def run_data_chars_refresh(
     connection: Connection,
     table_group: TableGroup,
     run_date: datetime,
+    count_rows: bool = True,
 ) -> list[ColumnChars]:
+    """Refresh a table group's data catalog from its target and return the columns written.
+
+    :param count_rows: Count each table's rows. Without it the catalog gets the tables and columns
+        only, and no table's data is read.
+    """
     sql_generator = RefreshDataCharsSQL(connection, table_group)
 
     LOG.info("Getting DDF for table group")
@@ -46,19 +52,21 @@ def run_data_chars_refresh(
     if data_chars:
         distinct_tables = {column.table_name for column in data_chars}
         LOG.info(f"Tables: {len(distinct_tables)}, Columns: {len(data_chars)}")
-        if sql_generator.flavor_service.caches_tables(connection.sql_flavor_code):
-            # Ahead of the row counts, so that they and every later query read the local copies.
-            cache_target_tables(distinct_tables)
-        count_queries = sql_generator.get_row_counts(distinct_tables)
+        error_data = None
+        if count_rows:
+            if sql_generator.flavor_service.caches_tables(connection.sql_flavor_code):
+                # Ahead of the row counts, so that they and every later query read the local copies.
+                cache_target_tables(distinct_tables)
+            count_queries = sql_generator.get_row_counts(distinct_tables)
 
-        LOG.info("Getting row counts for table group")
-        count_results, _, error_data = fetch_from_db_threaded(
-            count_queries, use_target_db=True, max_threads=connection.effective_max_threads,
-        )
+            LOG.info("Getting row counts for table group")
+            count_results, _, error_data = fetch_from_db_threaded(
+                count_queries, use_target_db=True, max_threads=connection.effective_max_threads,
+            )
 
-        count_map = {row["table_name"]: row["row_count"] for row in count_results}
-        for column in data_chars:
-            column.record_ct = count_map.get(column.table_name)
+            count_map = {row["table_name"]: row["row_count"] for row in count_results}
+            for column in data_chars:
+                column.record_ct = count_map.get(column.table_name)
 
         if declares_files(connection.sql_flavor_code):
             file_count_map = {}
