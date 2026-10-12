@@ -7,6 +7,7 @@ Grant types:
 All DB operations use get_current_session() for thread-local session access.
 """
 
+import logging
 import secrets
 import time
 from typing import ClassVar
@@ -16,13 +17,15 @@ from authlib.oauth2.rfc6749.authenticate_client import authenticate_none
 from authlib.oauth2.rfc6749.errors import InvalidRequestError
 from authlib.oauth2.rfc7009 import RevocationEndpoint
 from authlib.oauth2.rfc7636 import CodeChallenge
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from testgen import settings
 from testgen.common.auth import create_jwt_token
 from testgen.common.models import get_current_session
 from testgen.common.models.oauth import OAuth2AuthorizationCode, OAuth2Client, OAuth2ClientAuthMethod, OAuth2Token
 from testgen.common.models.user import User
+
+LOG = logging.getLogger("testgen")
 
 CLIENT_AUTH_METHODS = [method.value for method in OAuth2ClientAuthMethod]
 
@@ -82,8 +85,9 @@ class AuthorizationCodeGrant(grants.AuthorizationCodeGrant):
 
 
 class RefreshTokenGrant(grants.RefreshTokenGrant):
-    """Refresh token grant. Public clients get a rotated refresh token on every refresh;
-    confidential clients keep reusing theirs until it expires.
+    """Refresh token grant. Public clients get a rotated refresh token on every refresh, and
+    presenting an already-rotated refresh token revokes its whole chain; confidential clients
+    keep reusing theirs until it expires.
     """
 
     TOKEN_ENDPOINT_AUTH_METHODS: ClassVar[list[str]] = CLIENT_AUTH_METHODS
@@ -104,9 +108,35 @@ class RefreshTokenGrant(grants.RefreshTokenGrant):
         item = session.scalars(
             select(OAuth2Token).where(OAuth2Token.refresh_token == refresh_token)
         ).first()
-        if item and item.is_refresh_token_active():
+        if not item:
+            return None
+        if item.is_refresh_token_active():
             return item
+        if item.refresh_token_revoked_at and self._rotates_refresh_token() and item.check_client(self.request.client):
+            self._revoke_refresh_chain(item)
         return None
+
+    def _revoke_refresh_chain(self, credential: OAuth2Token) -> None:
+        """Revoke every live token in the credential's rotation chain.
+
+        A rotated refresh token presented again may have been stolen, and the server cannot tell
+        whether the legitimate client or an attacker sent it, so the whole chain is revoked.
+        """
+        now = int(time.time())
+        result = get_current_session().execute(
+            update(OAuth2Token)
+            .where(
+                OAuth2Token.client_id == credential.client_id,
+                OAuth2Token.user_id == credential.user_id,
+                OAuth2Token.refresh_chain_issued_at == credential.refresh_chain_issued_at,
+                OAuth2Token.refresh_token_revoked_at == 0,
+            )
+            .values(access_token_revoked_at=now, refresh_token_revoked_at=now)
+        )
+        LOG.warning(
+            f"Rotated refresh token presented again: revoked {result.rowcount} live tokens in its chain "
+            f"(client_id={credential.client_id}, user_id={credential.user_id})"
+        )
 
     def authenticate_user(self, credential):
         session = get_current_session()

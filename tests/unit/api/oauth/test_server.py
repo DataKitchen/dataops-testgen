@@ -13,6 +13,7 @@ import pytest
 from authlib.oauth2.rfc6749.errors import InvalidRequestError
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
 from testgen import settings
 from testgen.api.deps import db_session
@@ -136,20 +137,82 @@ def test_refresh_token_authenticate_valid_token(mock_get_session):
     assert result is mock_token
 
 
+def _refresh_grant(client_id: str, auth_method: OAuth2ClientAuthMethod) -> RefreshTokenGrant:
+    grant = RefreshTokenGrant.__new__(RefreshTokenGrant)
+    grant.request = MagicMock()
+    grant.request.client.client_id = client_id
+    grant.request.client.get_client_id.return_value = client_id
+    grant.request.client.token_endpoint_auth_method = auth_method
+    return grant
+
+
+def _stored_token(client_id: str = "pub", refresh_revoked_at: int = 0) -> OAuth2Token:
+    return OAuth2Token(
+        client_id=client_id,
+        user_id=uuid4(),
+        access_token="jwt",  # noqa: S106
+        refresh_token="refresh_abc",  # noqa: S106
+        issued_at=int(time.time()) - 600,
+        expires_in=3600,
+        access_token_revoked_at=refresh_revoked_at,
+        refresh_token_revoked_at=refresh_revoked_at,
+        refresh_token_chain_issued_at=int(time.time()) - 3600,
+    )
+
+
 @patch("testgen.api.oauth.server.get_current_session")
-def test_refresh_token_authenticate_returns_none_for_revoked(mock_get_session):
+def test_refresh_token_replay_from_public_client_revokes_its_chain(mock_get_session, caplog):
     mock_session = MagicMock()
     mock_get_session.return_value = mock_session
+    mock_session.execute.return_value.rowcount = 1
+    token = _stored_token(refresh_revoked_at=int(time.time()) - 60)
+    mock_session.scalars.return_value.first.return_value = token
+    grant = _refresh_grant("pub", OAuth2ClientAuthMethod.NONE)
 
-    mock_token = MagicMock()
-    mock_token.is_refresh_token_active.return_value = False
-    mock_session.scalars.return_value.first.return_value = mock_token
-
-    grant = RefreshTokenGrant.__new__(RefreshTokenGrant)
-
-    result = grant.authenticate_refresh_token("revoked_token")
+    result = grant.authenticate_refresh_token("refresh_abc")
 
     assert result is None
+    mock_session.execute.assert_called_once()
+    statement = mock_session.execute.call_args.args[0]
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+    assert sql.startswith("UPDATE oauth2_tokens SET access_token_revoked_at=")
+    assert "refresh_token_revoked_at=" in sql
+    where = str(statement.whereclause.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    assert "oauth2_tokens.client_id = 'pub'" in where
+    assert f"oauth2_tokens.user_id = '{token.user_id}'" in where
+    assert (
+        "coalesce(oauth2_tokens.refresh_token_chain_issued_at, oauth2_tokens.issued_at)"
+        f" = {token.refresh_token_chain_issued_at}"
+    ) in where
+    assert "oauth2_tokens.refresh_token_revoked_at = 0" in where
+    assert " OR " not in where
+    assert f"revoked 1 live tokens in its chain (client_id=pub, user_id={token.user_id})" in caplog.text
+    assert "refresh_abc" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("auth_method", "request_client_id", "refresh_revoked_at"),
+    [
+        pytest.param(OAuth2ClientAuthMethod.CLIENT_SECRET_BASIC, "pub", 1, id="confidential-client"),
+        pytest.param(OAuth2ClientAuthMethod.NONE, "other", 1, id="other-client"),
+        pytest.param(OAuth2ClientAuthMethod.NONE, "pub", 0, id="expired-not-revoked"),
+    ],
+)
+@patch("testgen.api.oauth.server.get_current_session")
+def test_refresh_token_rejection_leaves_chain_alone(
+    mock_get_session, auth_method, request_client_id, refresh_revoked_at
+):
+    mock_session = MagicMock()
+    mock_get_session.return_value = mock_session
+    token = _stored_token(refresh_revoked_at=refresh_revoked_at)
+    token.refresh_token_chain_issued_at = int(time.time()) - settings.REFRESH_TOKEN_EXPIRES_IN - 60
+    mock_session.scalars.return_value.first.return_value = token
+    grant = _refresh_grant(request_client_id, auth_method)
+
+    result = grant.authenticate_refresh_token("refresh_abc")
+
+    assert result is None
+    mock_session.execute.assert_not_called()
 
 
 @patch("testgen.api.oauth.server.get_current_session")
@@ -435,7 +498,7 @@ def test_create_authorization_server_returns_configured_server():
     assert "revocation" in server._endpoints
 
 
-# --- Token and revocation flows through the real authorization server ---
+# --- Token and revocation flows through the HTTP routes ---
 
 REDIRECT_URI = "http://localhost/cb"
 CODE_VERIFIER = "v" * 64

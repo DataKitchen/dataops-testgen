@@ -793,8 +793,7 @@ def render_diff_table(
 def report_no_change(doc: MdDoc) -> str:
     """Roll back the current session and render ``doc`` with a "No fields changed" line.
 
-    The rollback discards every pending change in the session, not only the compared fields,
-    so the record is left exactly as it was.
+    The rollback discards every pending change in the session, not only the compared fields.
 
     Returns the rendered document.
     """
