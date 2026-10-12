@@ -23,8 +23,10 @@ from sqlalchemy import (
     exists,
     func,
     insert,
+    or_,
     select,
     text,
+    true,
     update,
 )
 from sqlalchemy.dialects import postgresql
@@ -1332,6 +1334,36 @@ class TestDefinition(Entity):
         db_session.execute(text(query), params)
 
     @classmethod
+    def _retargeted_schemas(
+        cls,
+        target_table_group_id: str | UUID,
+        target_schema: str,
+        qualifies_table_refs: bool,
+    ) -> dict[str, ColumnElement]:
+        """The schema columns of a definition relocated into a table group, keyed by column name.
+
+        A definition from another table group takes ``target_schema``. Its reference table's schema
+        takes it too when it was blank or named the definition's own schema, and always when
+        ``qualifies_table_refs`` is false, since the target then reaches every table through one
+        schema. A definition already in the target table group keeps both.
+        """
+        same_group = cls.table_groups_id == target_table_group_id
+        no_reference = func.nullif(cls.match_table_name, "").is_(None)
+        reference_follows = (
+            or_(func.nullif(cls.match_schema_name, "").is_(None), cls.match_schema_name == cls.schema_name)
+            if qualifies_table_refs
+            else true()
+        )
+        return {
+            "schema_name": case((same_group, cls.schema_name), else_=literal(target_schema)),
+            "match_schema_name": case(
+                (or_(same_group, no_reference), cls.match_schema_name),
+                (reference_follows, literal(target_schema)),
+                else_=cls.match_schema_name,
+            ),
+        }
+
+    @classmethod
     def move(
         cls,
         test_definition_ids: list[str | UUID],
@@ -1339,7 +1371,15 @@ class TestDefinition(Entity):
         target_test_suite_id: str | UUID,
         target_table_name: str | None = None,
         target_column_name: str | None = None,
+        *,
+        target_schema: str,
+        qualifies_table_refs: bool,
     ) -> None:
+        """Relocate test definitions into a test suite, taking the target table group's schema.
+
+        ``target_schema`` is the target table group's schema, and ``qualifies_table_refs`` whether its
+        connection's flavor names a table as ``schema.table``.
+        """
         db_session = get_current_session()
         target_version = db_session.scalar(select(SuiteVersion.resolved_for(target_test_suite_id)))
         cls.assert_version_writable(target_version)
@@ -1351,31 +1391,23 @@ class TestDefinition(Entity):
             )
         ).all()
 
-        query = f"""
-        WITH selected AS (
-            SELECT UNNEST(ARRAY [:test_definition_ids]) AS id
-        )
-        UPDATE test_definitions
-        SET
-            {"table_name = :target_table_name," if target_table_name else ""}
-            {"column_name = :target_column_name," if target_column_name else ""}
-            table_groups_id = :target_table_group,
-            test_suite_id = :target_test_suite,
-            version_id = :target_version
-        FROM test_definitions td
-            INNER JOIN selected ON (td.id = selected.id::UUID)
-        WHERE td.id = test_definitions.id;
-        """
-        params = {
-            "test_definition_ids": scoped_ids,
-            "target_table_group": target_table_group_id,
-            "target_test_suite": target_test_suite_id,
-            "target_version": target_version,
-            "target_table_name": target_table_name,
-            "target_column_name": target_column_name,
+        values: dict[str, object] = {
+            **cls._retargeted_schemas(target_table_group_id, target_schema, qualifies_table_refs),
+            "table_groups_id": target_table_group_id,
+            "test_suite_id": target_test_suite_id,
+            "version_id": target_version,
         }
+        if target_table_name:
+            values["table_name"] = target_table_name
+        if target_column_name:
+            values["column_name"] = target_column_name
 
-        db_session.execute(text(query), params)
+        db_session.execute(
+            update(cls)
+            .where(cls.id.in_(scoped_ids))
+            .values(values)
+            .execution_options(synchronize_session=False)
+        )
 
     @classmethod
     def copy(
@@ -1385,11 +1417,21 @@ class TestDefinition(Entity):
         target_test_suite_id: str | UUID,
         target_table_name: str | None = None,
         target_column_name: str | None = None,
+        *,
+        target_schema: str,
+        qualifies_table_refs: bool,
     ) -> None:
+        """Copy test definitions into a test suite, taking the target table group's schema.
+
+        ``target_schema`` is the target table group's schema, and ``qualifies_table_refs`` whether its
+        connection's flavor names a table as ``schema.table``.
+        """
         db_session = get_current_session()
         target_version = db_session.scalar(select(SuiteVersion.resolved_for(target_test_suite_id)))
         cls.assert_version_writable(target_version)
         cls._assert_no_managed_definitions(cls.id.in_([UUID(str(identifier)) for identifier in test_definition_ids]))
+
+        retargeted = cls._retargeted_schemas(target_table_group_id, target_schema, qualifies_table_refs)
 
         modified_columns = [
             cls.id,
@@ -1399,6 +1441,8 @@ class TestDefinition(Entity):
             cls.last_auto_gen_date,
             cls.version_id,
             cls.contract_term_id,
+            cls.schema_name,
+            cls.match_schema_name,
         ]
 
         select_columns = [
@@ -1412,6 +1456,8 @@ class TestDefinition(Entity):
             literal(None).label("last_auto_gen_date"),
             literal(target_version).label("version_id"),
             literal(None).label("contract_term_id"),
+            retargeted["schema_name"].label("schema_name"),
+            retargeted["match_schema_name"].label("match_schema_name"),
         ]
 
         if target_table_name:

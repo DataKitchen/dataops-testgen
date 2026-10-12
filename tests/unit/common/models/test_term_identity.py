@@ -411,7 +411,7 @@ def test_copying_terms_mints_identities_on_the_target_version():
         patch.object(TestDefinition, "_assert_no_managed_definitions"),
         patch.object(TestDefinition, "assign_missing_term_ids") as sweep,
     ):
-        TestDefinition.copy([uuid4()], uuid4(), uuid4())
+        TestDefinition.copy([uuid4()], uuid4(), uuid4(), target_schema="public", qualifies_table_refs=True)
 
     sweep.assert_called_once_with(target_version)
 

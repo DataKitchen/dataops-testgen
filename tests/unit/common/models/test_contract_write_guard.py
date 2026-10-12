@@ -181,7 +181,7 @@ def test_move_refuses_a_frozen_suite_owned_target_version():
     session.scalar.side_effect = [frozen_version_id, frozen_version_id]
     with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
         with pytest.raises(FrozenVersionError):
-            TestDefinition.move([str(uuid4())], uuid4(), uuid4())
+            TestDefinition.move([str(uuid4())], uuid4(), uuid4(), target_schema="public", qualifies_table_refs=True)
 
     session.execute.assert_not_called()
 
@@ -192,7 +192,7 @@ def test_copy_refuses_a_frozen_suite_owned_target_version():
     session.scalar.side_effect = [frozen_version_id, frozen_version_id]
     with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
         with pytest.raises(FrozenVersionError):
-            TestDefinition.copy([str(uuid4())], uuid4(), uuid4())
+            TestDefinition.copy([str(uuid4())], uuid4(), uuid4(), target_schema="public", qualifies_table_refs=True)
 
     session.execute.assert_not_called()
 

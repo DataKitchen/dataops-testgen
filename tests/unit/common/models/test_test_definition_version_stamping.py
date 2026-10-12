@@ -103,7 +103,7 @@ def test_move_restamps_the_version_from_the_target_suite():
 
     entity_patch, model_patch = _patched(session)
     with entity_patch, model_patch:
-        TestDefinition.move([str(uuid4())], uuid4(), target_suite)
+        TestDefinition.move([str(uuid4())], uuid4(), target_suite, target_schema="public", qualifies_table_refs=True)
 
     resolution = str(
         session.scalar.call_args_list[0].args[0].compile(
@@ -115,9 +115,7 @@ def test_move_restamps_the_version_from_the_target_suite():
 
     sql = _emitted_sql(session)
     assert "version_id" in sql, "move leaves the definition on the source suite's version"
-    assert resolved in session.execute.call_args.args[1].values(), (
-        "move does not bind the resolved version"
-    )
+    assert str(resolved) in sql, "move does not write the target suite's resolved version"
 
 
 def test_copy_restamps_the_version_and_drops_the_contract_term():
@@ -126,7 +124,7 @@ def test_copy_restamps_the_version_and_drops_the_contract_term():
 
     entity_patch, model_patch = _patched(session)
     with entity_patch, model_patch:
-        TestDefinition.copy([str(uuid4())], uuid4(), uuid4())
+        TestDefinition.copy([str(uuid4())], uuid4(), uuid4(), target_schema="public", qualifies_table_refs=True)
 
     sql = _emitted_sql(session)
     insert_columns = sql[sql.index("(") : sql.index(")")]
@@ -141,7 +139,7 @@ def test_copy_reads_only_the_rows_of_their_resolved_version():
 
     entity_patch, model_patch = _patched(session)
     with entity_patch, model_patch:
-        TestDefinition.copy([str(uuid4())], uuid4(), uuid4())
+        TestDefinition.copy([str(uuid4())], uuid4(), uuid4(), target_schema="public", qualifies_table_refs=True)
 
     sql = _emitted_sql(session)
     assert "suite_versions" in sql, "copy reads definitions from every version of the source suite"
@@ -197,7 +195,7 @@ def test_move_takes_only_the_rows_of_their_resolved_version():
 
     entity_patch, model_patch = _patched(session)
     with entity_patch, model_patch:
-        TestDefinition.move([str(uuid4())], uuid4(), uuid4())
+        TestDefinition.move([str(uuid4())], uuid4(), uuid4(), target_schema="public", qualifies_table_refs=True)
 
     narrowing = [
         call.args[0]
