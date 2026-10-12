@@ -234,13 +234,13 @@ default: `tmp%%`
 
 A SQL filter supported by the project database's `LIKE` operator representing ID columns.
 
-default: `%%id`
+default: `%%_id`
 
 #### `DEFAULT_PROFILING_SK_COLUMN_MASK`
 
 A SQL filter supported by the project database's `LIKE` operator representing surrogate key columns.
 
-default: `%%sk`
+default: `%%_sk`
 
 #### `OBSERVABILITY_API_URL`
 

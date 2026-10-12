@@ -531,8 +531,9 @@ class DuckdbFlavorService(FlavorService):
         # connection drops the catalog and every subsequent query fails on a name that no longer
         # resolves rather than on whatever actually went wrong.
         connection.commit()
-        # The attached file stays readable once attached, so nothing on the host needs to be.
-        self._confine_reads(connection, [])
+        # Views in the database may read files kept beside it, so its directory stays readable.
+        # The trailing slash keeps a sibling that shares the prefix outside the allow-list.
+        self._confine_reads(connection, [f"{os.path.dirname(os.path.abspath(database_file))}/"])
 
     def _set_spill_directory(self, connection: Connection) -> None:
         """Point this connection's spill at a directory no other connection writes to.

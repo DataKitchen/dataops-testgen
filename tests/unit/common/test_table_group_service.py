@@ -285,15 +285,19 @@ def test_defaults_mirror_the_model_column_defaults():
     assert "id" not in defaults
 
 
-def test_defaults_carry_the_configured_profiling_masks():
+def test_defaults_carry_the_configured_table_and_column_masks():
     with (
         patch.object(settings, "DEFAULT_PROFILING_INCLUDE_MASK", "fact_%"),
         patch.object(settings, "DEFAULT_PROFILING_EXCLUDE_MASK", "stg_%"),
+        patch.object(settings, "DEFAULT_PROFILING_ID_COLUMN_MASK", "%_key"),
+        patch.object(settings, "DEFAULT_PROFILING_SK_COLUMN_MASK", "%_surrogate"),
     ):
         defaults = table_group_defaults()
 
     assert defaults["profiling_include_mask"] == "fact_%"
     assert defaults["profiling_exclude_mask"] == "stg_%"
+    assert defaults["profile_id_column_mask"] == "%_key"
+    assert defaults["profile_sk_column_mask"] == "%_surrogate"
 
 
 def test_defaults_are_a_fresh_copy():

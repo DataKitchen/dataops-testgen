@@ -231,8 +231,6 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         if (parsed_test_date := parse_fuzzy_date(issue_data["test_date"]))
         else None,
         "CUSTOM_QUERY": strip_trailing_semicolons(test_definition.custom_query),
-        # After CUSTOM_QUERY, which may contain it
-        "DATA_SCHEMA": issue_data["schema_name"],
         # BASELINE_VALUE varies (quoted literal / number / IN-list) by test type — templated as-is.
         # The numeric baselines render empty as NULL to avoid invalid SQL like CAST( AS FLOAT).
         "BASELINE_VALUE": test_definition.baseline_value,
@@ -255,7 +253,7 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         "MATCH_SUBSET_CONDITION": test_definition.match_subset_condition or "1=1",
         "MATCH_GROUPBY_NAMES": test_definition.match_groupby_names,
         "MATCH_HAVING_CONDITION": f"HAVING {test_definition.match_having_condition}"
-        if test_definition.having_condition
+        if test_definition.match_having_condition
         else "",
         "COLUMN_NAME_NO_QUOTES": issue_data["column_names"],
         "WINDOW_DATE_COLUMN": test_definition.window_date_column,
@@ -265,6 +263,8 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         "LIMIT": limit,
         "LIMIT_2": int(limit / 2),
         "LIMIT_4": int(limit / 4),
+        # After every user-supplied parameter, since any of them may contain {DATA_SCHEMA}
+        "DATA_SCHEMA": issue_data["schema_name"],
         # These two go last, so their values are never expanded by a later substitution
         "BASELINE_VALUE_LIST": flavor_service.string_literal_list(parse_value_list(test_definition.baseline_value)),
         "BASELINE_VALUE_LITERAL": flavor_service.string_literal_or_null(test_definition.baseline_value),

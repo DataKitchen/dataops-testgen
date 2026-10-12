@@ -385,22 +385,22 @@ from env variable: `DEFAULT_PROFILING_EXCLUDE_MASK`
 defaults to: `tmp%`
 """
 
-DEFAULT_PROFILING_ID_COLUMN_MASK = getenv("DEFAULT_PROFILING_ID_COLUMN_MASK", "%id")
+DEFAULT_PROFILING_ID_COLUMN_MASK = getenv("DEFAULT_PROFILING_ID_COLUMN_MASK", "%_id")
 """
 A SQL filter supported by the project database's `LIKE` operator
 representing ID columns.
 
 from env variable: `DEFAULT_PROFILING_ID_COLUMN_MASK`
-defaults to: `%id`
+defaults to: `%_id`
 """
 
-DEFAULT_PROFILING_SK_COLUMN_MASK = getenv("DEFAULT_PROFILING_SK_COLUMN_MASK", "%sk")
+DEFAULT_PROFILING_SK_COLUMN_MASK = getenv("DEFAULT_PROFILING_SK_COLUMN_MASK", "%_sk")
 """
 A SQL filter supported by the project database's `LIKE` operator
 representing surrogate key columns.
 
 from env variable: `DEFAULT_PROFILING_SK_COLUMN_MASK`
-defaults to: `%sk`
+defaults to: `%_sk`
 """
 
 OBSERVABILITY_API_URL: str = getenv("OBSERVABILITY_API_URL", "")

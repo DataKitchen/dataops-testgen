@@ -163,6 +163,8 @@ def test_create_table_group_applies_model_defaults_when_optional_args_omitted(
     assert kwargs["profiling_delay_days"] == 0
     assert kwargs["profiling_include_mask"] == "%"
     assert kwargs["profiling_exclude_mask"] == "tmp%"
+    assert kwargs["profile_id_column_mask"] == "%_id"
+    assert kwargs["profile_sk_column_mask"] == "%_sk"
 
 
 @patch(f"{MODULE}.TableGroup")

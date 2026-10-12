@@ -388,11 +388,11 @@ def create_table_group(
     ] = None,
     profile_id_column_mask: Annotated[
         str | None,
-        Field(description="SQL LIKE pattern marking ID columns. Default ``%_id``."),
+        Field(description="SQL LIKE pattern marking ID columns. Omit for the default ID column mask."),
     ] = None,
     profile_sk_column_mask: Annotated[
         str | None,
-        Field(description="SQL LIKE pattern marking surrogate-key columns. Default ``%_sk``."),
+        Field(description="SQL LIKE pattern marking surrogate-key columns. Omit for the default SK column mask."),
     ] = None,
     profile_use_sampling: Annotated[
         bool | None,

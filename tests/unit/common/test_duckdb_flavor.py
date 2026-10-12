@@ -504,8 +504,8 @@ def test_schema_discovery_separates_tables_from_views(typed_database):
         "SET enable_external_access = true",
     ],
 )
-def test_the_attached_database_is_the_only_file_a_query_can_reach(customer_database, tmp_path, statement):
-    outside = tmp_path / "outside.csv"
+def test_files_outside_the_database_directory_are_unreachable(customer_database, tmp_path_factory, statement):
+    outside = tmp_path_factory.mktemp("elsewhere") / "outside.csv"
     outside.write_text("secret\n")
     service = DuckdbFlavorService()
     params = connection_params(customer_database)
@@ -517,6 +517,23 @@ def test_the_attached_database_is_the_only_file_a_query_can_reach(customer_datab
                 connection.execute(text(statement.format(outside=outside))).fetchall()
             connection.rollback()
             assert connection.execute(text("SELECT count(*) FROM sales.orders")).scalar() == 1
+    finally:
+        engine.dispose()
+
+
+def test_a_view_in_the_database_reads_files_beside_it(tmp_path):
+    (tmp_path / "claims.csv").write_text("id,amount\n1,10\n2,20\n")
+    database_file = tmp_path / "customer.duckdb"
+    setup = duckdb.connect(str(database_file))
+    setup.execute(f"CREATE VIEW claims AS SELECT * FROM read_csv('{tmp_path / 'claims.csv'}')")
+    setup.close()
+    service = DuckdbFlavorService()
+    params = connection_params(database_file)
+    engine = service.create_engine(params)
+    try:
+        with engine.connect() as connection:
+            service.init(connection, resolve_connection_params(params), [])
+            assert connection.execute(text("SELECT sum(amount) FROM claims")).scalar() == 30
     finally:
         engine.dispose()
 

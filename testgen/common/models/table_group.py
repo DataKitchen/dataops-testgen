@@ -351,8 +351,8 @@ class TableGroup(Entity):
     profiling_table_set: str = Column(NullIfEmptyString)
     profiling_include_mask: str = Column(NullIfEmptyString)
     profiling_exclude_mask: str = Column(NullIfEmptyString)
-    profile_id_column_mask: str = Column(String, default="%_id")
-    profile_sk_column_mask: str = Column(String, default="%_sk")
+    profile_id_column_mask: str = Column(String)
+    profile_sk_column_mask: str = Column(String)
     profile_use_sampling: bool = Column(YNString, default="N")
     profile_sample_percent: int = Column(Integer, default=30)
     profile_sample_min_count: int = Column(BigInteger, default=100000)
@@ -1337,18 +1337,20 @@ _MODEL_DEFAULTS: dict[str, Any] = {
 
 
 def default_profiling_masks() -> dict[str, str]:
-    """Return the profiling include and exclude masks a new table group starts with, keyed by attribute."""
+    """Return the table and column masks a new table group starts with, keyed by attribute."""
     return {
         "profiling_include_mask": settings.DEFAULT_PROFILING_INCLUDE_MASK,
         "profiling_exclude_mask": settings.DEFAULT_PROFILING_EXCLUDE_MASK,
+        "profile_id_column_mask": settings.DEFAULT_PROFILING_ID_COLUMN_MASK,
+        "profile_sk_column_mask": settings.DEFAULT_PROFILING_SK_COLUMN_MASK,
     }
 
 
 def table_group_defaults() -> dict[str, Any]:
     """Return the values a new table group starts with, keyed by attribute.
 
-    These are the scalar ``Column(default=...)`` values of ``TableGroup`` plus the default profiling
-    masks. Column defaults only fire at flush time, so a table group validated before it is saved
+    These are the scalar ``Column(default=...)`` values of ``TableGroup`` plus the default table and
+    column masks. Column defaults only fire at flush time, so a table group validated before it is saved
     has to be constructed with these to pass validation.
     """
     return {**_MODEL_DEFAULTS, **default_profiling_masks()}
