@@ -1073,3 +1073,59 @@ def test_claim_returns_both_queries_rows_in_submission_order(mock_session):
     assert cancel.status == "cancel_requested"
     assert in_process_early.status == "claimed"
     assert server_late.status == "claimed"
+
+
+def _compiled(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+
+
+def test_request_project_score_refresh_merges_into_the_pending_refresh(mock_session):
+    job_id = uuid4()
+    mock_session.execute.return_value.scalar_one.return_value = job_id
+
+    result = JobExecution.request_project_score_refresh(
+        "DEFAULT",
+        test_table_group_ids=["tg-b", "tg-a", "tg-b"],
+        refresh_date=datetime(2026, 10, 1, 12, 0, tzinfo=UTC),
+    )
+
+    assert result == job_id
+    compiled = mock_session.execute.call_args.args[0].compile(dialect=postgresql.dialect())
+    assert "ON CONFLICT (project_code) WHERE job_key = %(job_key_1)s AND status = %(status_1)s" in str(compiled)
+    assert "DO UPDATE SET kwargs" in str(compiled)
+    assert (compiled.params["job_key_1"], compiled.params["status_1"]) == ("refresh-project-scores", "pending")
+    assert compiled.params["kwargs"] == {
+        "project_code": "DEFAULT",
+        "profile_table_group_ids": [],
+        "test_table_group_ids": ["tg-a", "tg-b"],
+        "refresh_date": "2026-10-01T12:00:00+00:00",
+    }
+    mock_session.commit.assert_not_called()
+
+
+def test_claim_actionable_skips_a_project_refresh_while_one_of_the_project_is_working(mock_session):
+    mock_session.scalars.return_value.all.return_value = []
+
+    JobExecution.claim_actionable(limit=5, in_process_slots=0)
+
+    sql = _compiled(mock_session.scalars.call_args_list[0].args[0])
+    assert "NOT (job_executions.job_key IN ('refresh-project-scores')" in sql
+    assert "EXISTS (SELECT" in sql
+    assert "job_executions_1.project_code = job_executions.project_code" in sql
+
+
+def test_claim_actionable_claims_one_project_refresh_per_project_per_poll(mock_session):
+    first = JobExecution(id=uuid4(), status="interrupted", job_key="refresh-project-scores", project_code="A")
+    second = JobExecution(id=uuid4(), status="pending", job_key="refresh-project-scores", project_code="A")
+    other_project = JobExecution(id=uuid4(), status="pending", job_key="refresh-project-scores", project_code="B")
+    other_key = JobExecution(id=uuid4(), status="pending", job_key="run-tests", project_code="A")
+    rows = [first, second, other_project, other_key]
+    for offset, row in enumerate(rows):
+        row.created_at = datetime(2026, 10, 1, tzinfo=UTC) + timedelta(seconds=offset)
+    mock_session.scalars.return_value.all.return_value = rows
+    _mock_claim_results(mock_session, first, other_project, other_key)
+
+    result = JobExecution.claim_actionable(limit=5, in_process_slots=0)
+
+    assert result == [first, other_project, other_key]
+    assert second.status == "pending"

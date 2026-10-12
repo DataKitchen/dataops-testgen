@@ -61,6 +61,7 @@ class JobKey(StrEnum):
     recalculate_project_scores = "recalculate-project-scores"
     refresh_run_scores = "refresh-run-scores"
     recalculate_score_card = "recalculate-score-card"
+    refresh_project_scores = "refresh-project-scores"
     run_data_cleanup = "run-data-cleanup"
 
 
@@ -69,6 +70,10 @@ class JobKey(StrEnum):
 # cannot actually observe the request never stops early, and holds shutdown open for the rest
 # of its run.
 PAUSABLE_JOB_KEYS: frozenset[JobKey] = frozenset({JobKey.run_profile})
+
+# Job keys of which a project runs at most one at a time. The scheduler leaves a row of one of
+# these pending while another row of the same key and project is working.
+ONE_PER_PROJECT_JOB_KEYS: frozenset[JobKey] = frozenset({JobKey.refresh_project_scores})
 
 
 class PublicJobKey(StrEnum):
