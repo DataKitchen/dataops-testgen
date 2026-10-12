@@ -531,3 +531,68 @@ def test_names_by_id_uses_single_in_query(mock_session_fn):
     args, _ = mock_session_fn.return_value.execute.call_args
     sql = str(args[0].compile(compile_kwargs={"literal_binds": True}))
     assert " IN (" in sql.upper()
+
+
+def _filter(field: str, value: str, *linked: tuple[str, str]) -> ScoreDefinitionFilter:
+    root = current = ScoreDefinitionFilter(field=field, value=value)
+    for linked_field, linked_value in linked:
+        current.next_filter = ScoreDefinitionFilter(field=linked_field, value=linked_value)
+        current = current.next_filter
+    return root
+
+
+def _criteria(*filters: ScoreDefinitionFilter, group_by_field: bool = True) -> ScoreDefinitionCriteria:
+    return ScoreDefinitionCriteria(
+        operand="AND" if group_by_field else "OR", group_by_field=group_by_field, filters=list(filters),
+    )
+
+
+@pytest.mark.parametrize(
+    "criteria, included",
+    [
+        (_criteria(), True),
+        (_criteria(_filter("table_groups_name", "sales")), True),
+        (_criteria(_filter("table_groups_name", "finance")), False),
+        (_criteria(_filter("table_groups_name", "finance"), _filter("table_groups_name", "sales")), True),
+        (_criteria(_filter("table_groups_name", "finance"), _filter("data_source", "crm")), False),
+        (_criteria(_filter("data_source", "crm"), _filter("table_name", "orders")), True),
+        (_criteria(_filter("table_groups_name", "finance"), group_by_field=False), False),
+        (_criteria(_filter("table_groups_name", "finance"), _filter("table_name", "orders"), group_by_field=False), True),
+        (_criteria(_filter("table_groups_name", "sales", ("table_name", "orders")), group_by_field=False), True),
+        (_criteria(_filter("table_name", "orders", ("table_groups_name", "finance")), group_by_field=False), False),
+        (_criteria(
+            _filter("table_groups_name", "sales", ("table_groups_name", "finance")), group_by_field=False,
+        ), False),
+    ],
+    ids=[
+        "no filters",
+        "grouped, its table group",
+        "grouped, another table group",
+        "grouped, one of several table groups",
+        "grouped, another table group and other fields",
+        "grouped, other fields only",
+        "chained, another table group",
+        "chained, another table group or other fields",
+        "chained, its table group and other fields",
+        "chained, other fields and another table group",
+        "chained, its table group and another",
+    ],
+)
+def test_criteria_can_include_table_group(criteria, included):
+    assert criteria.can_include_table_group("sales") is included
+
+
+def test_definition_without_criteria_can_include_any_table_group():
+    assert ScoreDefinition(project_code="demo", name="card").can_include_table_group("sales") is True
+
+
+def test_lock_for_refresh_bounds_only_its_own_lock_wait():
+    session = MagicMock()
+    definition = ScoreDefinition(id=uuid4(), project_code="demo", name="card")
+    with patch("testgen.common.models.scores.get_current_session", return_value=session):
+        definition.lock_for_refresh(60)
+
+    statements = [str(c.args[0]) for c in session.execute.call_args_list]
+    assert statements[0] == "SET LOCAL lock_timeout = '60s'"
+    assert "FOR UPDATE" in statements[1]
+    assert statements[2] == "SET LOCAL lock_timeout = DEFAULT"

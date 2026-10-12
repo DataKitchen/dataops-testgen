@@ -5,10 +5,10 @@ from testgen.common.database.database_service import replace_params
 
 
 class RollupScoresSQL:
-    run_id: str
+    run_id: str | None
     table_group_id: str | None
 
-    def __init__(self, run_id: str, table_group_id: str | UUID | None = None):
+    def __init__(self, run_id: str | None, table_group_id: str | UUID | None = None):
         self.run_id = run_id
         self.table_group_id = str(table_group_id) if table_group_id is not None else None
 
@@ -20,7 +20,7 @@ class RollupScoresSQL:
     ) -> tuple[str, dict]:
         query = read_template_sql_file(template_file_name, sub_directory)
         params = {
-            "RUN_ID": self.run_id,
+            "RUN_ID": self.run_id or "",
             "TABLE_GROUPS_ID": self.table_group_id or "",
         }
         query = replace_params(query, params)
@@ -34,6 +34,14 @@ class RollupScoresSQL:
         if self.table_group_id:
             queries.append(self._get_query("rollup_scores_profile_table_group.sql"))
         return queries
+
+    def rollup_profiling_table_group(self) -> list[tuple[str, dict]]:
+        # Runs on App database
+        return [self._get_query("rollup_scores_profile_table_group.sql")]
+
+    def rollup_test_table_group(self) -> list[tuple[str, dict]]:
+        # Runs on App database
+        return [self._get_query("rollup_scores_test_table_group.sql")]
     
     def rollup_test_scores(self, update_prevalence: bool = False, update_table_group: bool = False) -> list[tuple[str, dict]]:
         # Runs on App database

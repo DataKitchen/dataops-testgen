@@ -53,7 +53,7 @@ def _make_test_suite(last_complete_test_run_id=None):
 def test_no_table_groups_only_calls_refresh():
     with (
         patch(f"{MODULE}.database_session", side_effect=[_make_db_ctx([])]),
-        patch(f"{MODULE}.execute_db_queries") as mock_exec,
+        patch(f"{MODULE}.execute_rollup_queries") as mock_exec,
         patch(f"{MODULE}.RollupScoresSQL") as mock_rollup_cls,
         patch(f"{MODULE}.run_refresh_score_cards_results") as mock_refresh,
     ):
@@ -69,7 +69,7 @@ def test_table_group_without_profile_run_skips_profiling_rollup():
 
     with (
         patch(f"{MODULE}.database_session", side_effect=[_make_db_ctx([tg]), _make_db_ctx([])]),
-        patch(f"{MODULE}.execute_db_queries") as mock_exec,
+        patch(f"{MODULE}.execute_rollup_queries") as mock_exec,
         patch(f"{MODULE}.RollupScoresSQL") as mock_rollup_cls,
         patch(f"{MODULE}.run_refresh_score_cards_results"),
     ):
@@ -88,7 +88,7 @@ def test_table_group_with_profile_run_calls_profiling_rollup():
 
     with (
         patch(f"{MODULE}.database_session", side_effect=[_make_db_ctx([tg]), _make_db_ctx([])]),
-        patch(f"{MODULE}.execute_db_queries") as mock_exec,
+        patch(f"{MODULE}.execute_rollup_queries") as mock_exec,
         patch(f"{MODULE}.RollupScoresSQL", return_value=mock_rollup),
         patch(f"{MODULE}.run_refresh_score_cards_results"),
     ):
@@ -108,7 +108,7 @@ def test_one_test_suite_calls_rollup_with_update_table_group_true():
 
     with (
         patch(f"{MODULE}.database_session", side_effect=[_make_db_ctx([tg]), _make_db_ctx([ts])]),
-        patch(f"{MODULE}.execute_db_queries"),
+        patch(f"{MODULE}.execute_rollup_queries"),
         patch(f"{MODULE}.RollupScoresSQL", return_value=mock_rollup),
         patch(f"{MODULE}.run_refresh_score_cards_results"),
     ):
@@ -128,7 +128,7 @@ def test_multiple_test_suites_only_last_has_update_table_group_true():
 
     with (
         patch(f"{MODULE}.database_session", side_effect=[_make_db_ctx([tg]), _make_db_ctx([ts1, ts2])]),
-        patch(f"{MODULE}.execute_db_queries"),
+        patch(f"{MODULE}.execute_rollup_queries"),
         patch(f"{MODULE}.RollupScoresSQL", return_value=mock_rollup),
         patch(f"{MODULE}.run_refresh_score_cards_results"),
     ):
@@ -150,7 +150,7 @@ def test_refresh_always_called_at_end():
 
     with (
         patch(f"{MODULE}.database_session", side_effect=[_make_db_ctx([tg]), _make_db_ctx([ts])]),
-        patch(f"{MODULE}.execute_db_queries"),
+        patch(f"{MODULE}.execute_rollup_queries"),
         patch(f"{MODULE}.RollupScoresSQL", return_value=mock_rollup),
         patch(f"{MODULE}.run_refresh_score_cards_results") as mock_refresh,
     ):
@@ -165,7 +165,7 @@ def test_test_suite_query_admits_regular_and_contract_suite_types():
 
     with (
         patch(f"{MODULE}.database_session", side_effect=[_make_db_ctx([tg]), test_suite_ctx]),
-        patch(f"{MODULE}.execute_db_queries"),
+        patch(f"{MODULE}.execute_rollup_queries"),
         patch(f"{MODULE}.RollupScoresSQL"),
         patch(f"{MODULE}.run_refresh_score_cards_results"),
     ):

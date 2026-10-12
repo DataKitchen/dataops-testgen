@@ -14,20 +14,32 @@ from sqlalchemy import (
     Select,
     String,
     Text,
+    and_,
     case,
     delete,
+    exists,
     false,
     func,
     literal,
+    literal_column,
+    not_,
     or_,
     select,
     text,
     update,
 )
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
-from testgen.common.enums import PAUSABLE_JOB_KEYS, WORKING_STATUSES, JobKey, JobSource, JobStatus
+from testgen.common.enums import (
+    ONE_PER_PROJECT_JOB_KEYS,
+    PAUSABLE_JOB_KEYS,
+    WORKING_STATUSES,
+    JobKey,
+    JobSource,
+    JobStatus,
+)
 from testgen.common.flavors import runs_in_process
 from testgen.common.models import Base, database_session, get_current_session
 from testgen.common.models.connection import Connection
@@ -69,6 +81,17 @@ def process_failure_message(pid: int, exit_code: int, job_key: str | None = None
         f" TestGen ran out of memory. {remedy}"
         f" (Process {pid} exited with code {exit_code}.)"
     )
+
+
+def _merged_ids_sql(key: str) -> str:
+    """SQL for the sorted union of the ``key`` id lists on a pending row and on its conflicting insert."""
+    return f"""(
+        SELECT COALESCE(jsonb_agg(DISTINCT merged.id ORDER BY merged.id), '[]'::jsonb)
+          FROM jsonb_array_elements_text(
+                   COALESCE(job_executions.kwargs -> '{key}', '[]'::jsonb)
+                   || COALESCE(excluded.kwargs -> '{key}', '[]'::jsonb)
+               ) AS merged(id)
+    )"""
 
 
 @dataclass(frozen=True)
@@ -180,6 +203,67 @@ class JobExecution(Base):
         return job_exec
 
     @classmethod
+    def request_project_score_refresh(
+        cls,
+        project_code: str,
+        *,
+        profile_table_group_ids: Iterable[str] = (),
+        test_table_group_ids: Iterable[str] = (),
+        refresh_date: datetime | None = None,
+    ) -> UUID:
+        """Queue a score refresh for the project, or merge into the one already pending.
+
+        A pending refresh absorbs the request: its table group lists gain the given ids and its
+        ``refresh_date`` becomes the later of the two. Caller controls the commit.
+
+        :param project_code: Project whose scores are refreshed.
+        :param profile_table_group_ids: Table groups whose profiling scores are rolled up.
+        :param test_table_group_ids: Table groups whose test scores are rolled up.
+        :param refresh_date: Date of the scorecard history entry the refresh adds.
+        :returns: Id of the pending refresh job execution.
+        """
+        kwargs = {
+            "project_code": project_code,
+            "profile_table_group_ids": sorted({str(id_) for id_ in profile_table_group_ids}),
+            "test_table_group_ids": sorted({str(id_) for id_ in test_table_group_ids}),
+            "refresh_date": refresh_date.isoformat() if refresh_date else None,
+        }
+        merged_kwargs = literal_column(f"""
+            jsonb_build_object(
+                'project_code', job_executions.kwargs -> 'project_code',
+                'profile_table_group_ids', {_merged_ids_sql("profile_table_group_ids")},
+                'test_table_group_ids', {_merged_ids_sql("test_table_group_ids")},
+                'refresh_date', to_jsonb(GREATEST(
+                    (job_executions.kwargs ->> 'refresh_date')::timestamptz,
+                    (excluded.kwargs ->> 'refresh_date')::timestamptz
+                ))
+            )
+        """)
+        statement = (
+            postgresql.insert(cls)
+            .values(
+                id=uuid4(),
+                job_key=JobKey.refresh_project_scores,
+                kwargs=kwargs,
+                source=JobSource.system,
+                project_code=project_code,
+                in_process=False,
+            )
+            .on_conflict_do_update(
+                index_elements=[cls.project_code],
+                index_where=and_(
+                    cls.job_key == JobKey.refresh_project_scores,
+                    cls.status == JobStatus.PENDING,
+                ),
+                set_={"kwargs": merged_kwargs},
+            )
+            .returning(cls.id)
+        )
+        job_id = get_current_session().execute(statement).scalar_one()
+        LOG.info("Requested score refresh %s for project %s: %s", job_id, project_code, kwargs)
+        return job_id
+
+    @classmethod
     def _reads_in_process_target(cls, job_key: str, kwargs: dict[str, Any]) -> bool:
         """Whether the job's handler opens a target connection whose engine runs in-process.
 
@@ -244,7 +328,8 @@ class JobExecution(Base):
         session = get_current_session()
         rows = list(session.scalars(
             cls._select_actionable(
-                or_(cls.status == JobStatus.CANCEL_REQUESTED, cls.in_process.is_(False))
+                or_(cls.status == JobStatus.CANCEL_REQUESTED, cls.in_process.is_(False)),
+                not_(cls._waits_for_same_project_job()),
             ).limit(limit)
         ).all())
         if in_process_slots > 0:
@@ -256,8 +341,13 @@ class JobExecution(Base):
         rows.sort(key=lambda row: (row.created_at, row.id))
         actionable: list[Self] = []
         claimed = 0
+        one_per_project_claims: set[tuple[str, str]] = set()
         for row in rows:
             if row.status in JobStatus.claimable():
+                if row.job_key in ONE_PER_PROJECT_JOB_KEYS:
+                    if (row.job_key, row.project_code) in one_per_project_claims:
+                        continue
+                    one_per_project_claims.add((row.job_key, row.project_code))
                 if not row.claim():
                     continue
                 claimed += 1
@@ -275,6 +365,22 @@ class JobExecution(Base):
         if queued := cls._transition_bulk_where(JobStatus.QUEUED, cls.id.in_(held)):
             LOG.info("Queued %d job execution(s) for an in-process slot", len(queued))
         return actionable
+
+    @classmethod
+    def _waits_for_same_project_job(cls) -> ColumnElement[bool]:
+        """True for a startable row whose key allows one per project while another row of that key
+        and project is working."""
+        other = aliased(cls)
+        return and_(
+            cls.job_key.in_(ONE_PER_PROJECT_JOB_KEYS),
+            cls.status.in_(JobStatus.claimable()),
+            exists().where(
+                other.job_key == cls.job_key,
+                other.project_code == cls.project_code,
+                other.id != cls.id,
+                other.status.in_(JobStatus.ordered({*WORKING_STATUSES, JobStatus.CANCEL_REQUESTED})),
+            ),
+        )
 
     @classmethod
     def select_active_by_kwargs(

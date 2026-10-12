@@ -851,7 +851,8 @@ CREATE TABLE IF NOT EXISTS score_definition_results (
                                             REFERENCES score_definitions (id)
                                             ON DELETE CASCADE,
     category        TEXT                NOT NULL,
-    score           DOUBLE PRECISION    DEFAULT NULL
+    score           DOUBLE PRECISION    DEFAULT NULL,
+    CONSTRAINT score_definition_results_pk PRIMARY KEY (definition_id, category)
 );
 
 CREATE TABLE IF NOT EXISTS score_definition_results_breakdown (
@@ -881,6 +882,9 @@ CREATE TABLE IF NOT EXISTS score_definition_results_breakdown (
     score                DOUBLE PRECISION    DEFAULT 0.0,
     issue_ct             INTEGER             DEFAULT 0
 );
+
+CREATE INDEX ix_sdrb_definition
+    ON score_definition_results_breakdown (definition_id);
 
 CREATE UNIQUE INDEX table_groups_name_unique ON table_groups(project_code, table_groups_name);
 
@@ -1141,6 +1145,10 @@ CREATE INDEX idx_job_executions_schedule ON job_executions (job_schedule_id);
 CREATE INDEX idx_job_executions_project ON job_executions (project_code, created_at DESC);
 CREATE INDEX idx_job_executions_project_completed
     ON job_executions (project_code, completed_at);
+-- At most one project score refresh waits per project; further requests merge into it.
+CREATE UNIQUE INDEX uix_job_executions_pending_project_scores
+    ON job_executions (project_code)
+    WHERE job_key = 'refresh-project-scores' AND status = 'pending';
 
 CREATE TABLE settings (
     key VARCHAR(50) NOT NULL PRIMARY KEY,

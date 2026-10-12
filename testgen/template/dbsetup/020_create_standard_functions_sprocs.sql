@@ -321,12 +321,14 @@ BEGIN
         state := 0;
     END IF;
 
-    -- Handle edge cases: null/zero population, null/invalid/extremely high probabilities
-    IF probability IS NULL
-       OR probability <= 0
-       OR probability > 0.999999
-    THEN
+    -- Null or non-positive probabilities affect no rows
+    IF probability IS NULL OR probability <= 0 THEN
         RETURN state; -- do not update the log-sum
+    END IF;
+
+    -- A probability of 1 or more affects every row, so the product of (1 - p) is 0
+    IF probability >= 1 THEN
+        RETURN '-Infinity'::double precision;
     END IF;
 
     -- Otherwise accumulate LN(1 - probability)
@@ -346,6 +348,10 @@ BEGIN
     -- If never updated, or all skipped => return 1 (no effect)
     IF state IS NULL THEN
         RETURN 1;
+    END IF;
+
+    IF state = '-Infinity'::double precision THEN
+        RETURN 0;
     END IF;
 
     -- Convert the total logs to a product

@@ -50,9 +50,9 @@ def test_a_run_with_no_version_still_notifies():
     assert send.called
 
 
-@pytest.mark.parametrize("is_draft, enqueues", [(True, False), (False, True)])
-def test_a_draft_run_enqueues_no_score_rollup_and_a_frozen_one_does(is_draft, enqueues):
-    # A rollup of a preview writes a score-history entry per definition per category, timestamped
+@pytest.mark.parametrize("is_draft, rolls_up", [(True, False), (False, True)])
+def test_a_draft_run_rolls_up_no_scores_and_a_frozen_one_does(is_draft, rolls_up):
+    # A score refresh for a preview writes a score-history entry per definition per category, timestamped
     # at the preview, and runs the score-drop notification path -- neither of which a run that
     # verified nothing in force should cause.
     job = _job_exec()
@@ -62,24 +62,25 @@ def test_a_draft_run_enqueues_no_score_rollup_and_a_frozen_one_does(is_draft, en
         patch.object(job_registry, "database_session"),
         patch.object(job_registry, "select"),
         patch.object(job_registry.SuiteVersion, "is_draft", return_value=is_draft),
-        patch.object(job_registry.JobExecution, "submit") as submit,
+        patch.object(job_registry, "rollup_run_and_request_refresh") as rollup,
     ):
         session = job_registry.database_session.return_value.__enter__.return_value
         session.scalars.return_value.first.return_value = _run_with(uuid4())
-        job_registry._enqueue_score_update(job)
+        job_registry._rollup_scores(job)
 
-    assert submit.called is enqueues
+    assert rollup.called is rolls_up
 
 
-def test_a_completed_profiling_run_still_enqueues_a_score_rollup():
+def test_a_completed_profiling_run_still_rolls_up_scores():
     # Only a test run carries a version; the draft gate must not reach for one on a profiling run.
     job = _job_exec()
     job.status = job_registry.JobStatus.COMPLETED
     job.job_key = job_registry.JobKey.run_profile
     with (
-        patch.object(job_registry, "database_session"),
-        patch.object(job_registry.JobExecution, "submit") as submit,
+        patch.object(job_registry, "database_session") as database_session,
+        patch.object(job_registry, "rollup_run_and_request_refresh") as rollup,
     ):
-        job_registry._enqueue_score_update(job)
+        job_registry._rollup_scores(job)
 
-    assert submit.called
+    database_session.assert_not_called()
+    rollup.assert_called_once_with(parent_job_id=str(job.id), parent_job_key=job_registry.JobKey.run_profile)

@@ -23,7 +23,7 @@ from testgen.commands.run_profiling import report_profiling_run, run_profiling
 from testgen.commands.run_recalculate_project_scores import run_recalculate_project_scores
 from testgen.commands.run_refresh_score_cards_results import run_recalculate_score_card
 from testgen.commands.run_rollup_scores import run_refresh_run_scores
-from testgen.commands.run_score_update import run_score_update
+from testgen.commands.run_score_update import rollup_run_and_request_refresh, run_project_score_refresh
 from testgen.commands.run_test_execution import run_test_execution
 from testgen.commands.test_generation import run_monitor_generation, run_test_generation
 from testgen.common.enums import JobKey, JobSource, JobStatus
@@ -64,7 +64,8 @@ JOB_DISPATCH: dict[JobKey, JobConfig] = {
     JobKey.run_monitors:               JobConfig(handler=run_test_execution),
     JobKey.run_test_generation:        JobConfig(handler=run_test_generation),
     JobKey.run_monitor_generation:     JobConfig(handler=run_monitor_generation, scheduler_source=JobSource.system),
-    JobKey.run_score_update:           JobConfig(handler=run_score_update, scheduler_source=JobSource.system),
+    JobKey.run_score_update:           JobConfig(handler=rollup_run_and_request_refresh, scheduler_source=JobSource.system),
+    JobKey.refresh_project_scores:     JobConfig(handler=run_project_score_refresh, scheduler_source=JobSource.system),
     JobKey.recalculate_project_scores: JobConfig(handler=run_recalculate_project_scores, scheduler_source=JobSource.system),
     JobKey.run_data_cleanup:           JobConfig(handler=run_data_cleanup, scheduler_source=JobSource.system),
     JobKey.refresh_run_scores:         JobConfig(handler=run_refresh_run_scores, scheduler_source=JobSource.system),
@@ -117,35 +118,28 @@ def _notify_monitor_run(job_exec: JobExecution) -> None:
         send_monitor_notifications(test_run)
 
 
-def _enqueue_score_update(job_exec: JobExecution) -> None:
-    """Enqueue a score rollup for the just-completed run.
+def _rollup_scores(job_exec: JobExecution) -> None:
+    """Roll up the just-completed run's scores and request a refresh of its project's scores.
 
-    A run that verified a draft is skipped: the rollup writes a score-history entry per
+    A run that verified a draft is skipped: the refresh writes a score-history entry per
     definition per category timestamped at that run and drives the score-drop notifications,
     neither of which a preview of an agreement not yet in force should cause.
     """
     if job_exec.status != JobStatus.COMPLETED:
         return
 
-    with database_session() as session:
-        if job_exec.job_key == JobKey.run_tests:
+    if job_exec.job_key == JobKey.run_tests:
+        with database_session() as session:
             test_run = session.scalars(select(TestRun).where(TestRun.id == job_exec.id)).first()
             if test_run and SuiteVersion.is_draft(test_run.version_id):
-                LOG.info("Run %s verified a draft; no score rollup enqueued", job_exec.id)
+                LOG.info("Run %s verified a draft; no score rollup", job_exec.id)
                 return
-        JobExecution.submit(
-            job_key=JobKey.run_score_update,
-            kwargs={
-                "parent_job_id": str(job_exec.id),
-                "parent_job_key": job_exec.job_key,
-            },
-            source=JobSource.system,
-            project_code=job_exec.project_code,
-        )
+
+    rollup_run_and_request_refresh(parent_job_id=str(job_exec.id), parent_job_key=job_exec.job_key)
 
 
 JOB_FINAL_CALLBACKS: dict[JobKey, list[FinalCallback]] = {
-    JobKey.run_profile: [_notify_profiling_run, report_profiling_run, _enqueue_score_update],
-    JobKey.run_tests: [_notify_test_run, _enqueue_score_update],
+    JobKey.run_profile: [_notify_profiling_run, report_profiling_run, _rollup_scores],
+    JobKey.run_tests: [_notify_test_run, _rollup_scores],
     JobKey.run_monitors: [_notify_monitor_run],
 }

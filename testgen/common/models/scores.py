@@ -615,6 +615,20 @@ class ScoreDefinition(Base):
             + _sum_issue_ct("v_dq_test_scoring_latest_by_column")
         )
 
+    def can_include_table_group(self, table_groups_name: str) -> bool:
+        """Whether this scorecard's filters can match records of the named table group."""
+        return self.criteria is None or self.criteria.can_include_table_group(table_groups_name)
+
+    def lock_for_refresh(self, lock_timeout_seconds: int) -> None:
+        """Lock this scorecard's row until the transaction ends, so refreshes of it take turns.
+
+        :raises sqlalchemy.exc.OperationalError: when the lock is not granted within the timeout.
+        """
+        session = get_current_session()
+        session.execute(text(f"SET LOCAL lock_timeout = '{int(lock_timeout_seconds)}s'"))
+        session.execute(select(ScoreDefinition.id).where(ScoreDefinition.id == self.id).with_for_update())
+        session.execute(text("SET LOCAL lock_timeout = DEFAULT"))
+
     def _get_raw_query_filters(self, cde_only: bool = False, prefix: str | None = None) -> list[str]:
         parts = [f"{prefix or ''}project_code = '{self.project_code}'"]
         if cde_only:
@@ -712,6 +726,24 @@ class ScoreDefinitionCriteria(Base):
 
     def has_filters(self) -> bool:
         return len(self.filters) > 0
+
+    def can_include_table_group(self, table_groups_name: str) -> bool:
+        """Whether these filters can match records of the named table group.
+
+        Only ``table_groups_name`` filters can rule a table group out; a filter on any other field
+        is treated as one that may match.
+        """
+        def chain_can_match(root: ScoreDefinitionFilter) -> bool:
+            return all(f.value == table_groups_name for f in root if f.field == "table_groups_name")
+
+        if not self.filters:
+            return True
+        if self.group_by_field:
+            grouped_filters = groupby(sorted(self.filters, key=lambda f: f.field), key=lambda f: f.field)
+            parts = [any(chain_can_match(f) for f in field_filters) for _, field_filters in grouped_filters]
+        else:
+            parts = [chain_can_match(f) for f in self.filters]
+        return all(parts) if self.operand == "AND" else any(parts)
 
     @classmethod
     def from_filters(cls, filters: list[dict], group_by_field: bool = True) -> ScoreDefinitionCriteria:
