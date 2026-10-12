@@ -93,23 +93,24 @@ Password to log into the web application
 from env variable: `TESTGEN_PASSWORD`
 """
 
-DATABASE_USER: str = getenv("TG_METADATA_DB_USER", USERNAME)
+DATABASE_USER: str | None = getenv("TG_METADATA_DB_USER")
 """
-User to connect to the testgen application postgres database.
+User to connect to the testgen application postgres database. Required
+outside standalone mode, which connects to its embedded postgres server
+without credentials.
 
 from env variable: `TG_METADATA_DB_USER`
-defaults to: `environ[USERNAME]`
 """
 
-DATABASE_PASSWORD: str = getenv("TG_METADATA_DB_PASSWORD", PASSWORD)
+DATABASE_PASSWORD: str | None = getenv("TG_METADATA_DB_PASSWORD")
 """
 Password to connect to the testgen application postgres database.
+Required outside standalone mode.
 
 from env variable: `TG_METADATA_DB_PASSWORD`
-defaults to: `environ[PASSWORD]`
 """
 
-DATABASE_ADMIN_USER: str = getenv("DATABASE_ADMIN_USER", DATABASE_USER)
+DATABASE_ADMIN_USER: str | None = getenv("TG_METADATA_DB_ADMIN_USER", DATABASE_USER)
 """
 User with admin privileges in the testgen application postgres database
 used to create the database and schema and to apply upgrades. Required
@@ -117,17 +118,17 @@ if the user in `TG_METADATA_DB_USER` does not have the required privileges.
 When this is a different user, setup grants `TG_METADATA_DB_USER` read
 and write access to the schema, including objects later upgrades create.
 
-from env variable: `DATABASE_ADMIN_USER`
-defaults to: `environ[DATABASE_USER]`
+from env variable: `TG_METADATA_DB_ADMIN_USER`
+defaults to: `environ[TG_METADATA_DB_USER]`
 """
 
-DATABASE_ADMIN_PASSWORD: str = getenv("DATABASE_ADMIN_PASSWORD", DATABASE_PASSWORD)
+DATABASE_ADMIN_PASSWORD: str | None = getenv("TG_METADATA_DB_ADMIN_PASSWORD", DATABASE_PASSWORD)
 """
 Password for the admin user to connect to the testgen application
 postgres database.
 
-from env variable: `DATABASE_ADMIN_PASSWORD`
-defaults to: `environ[DATABASE_PASSWORD]`
+from env variable: `TG_METADATA_DB_ADMIN_PASSWORD`
+defaults to: `environ[TG_METADATA_DB_PASSWORD]`
 """
 
 DATABASE_HOST: str = getenv("TG_METADATA_DB_HOST", "localhost")

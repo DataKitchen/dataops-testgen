@@ -8,6 +8,8 @@ x-common-variables: &common-variables
   TG_DECRYPT_PASSWORD: ${TG_DECRYPT_PASSWORD}
   TG_JWT_HASHING_KEY: ${TG_JWT_HASHING_KEY}
   TG_METADATA_DB_HOST: postgres
+  TG_METADATA_DB_USER: ${TG_METADATA_DB_USER}
+  TG_METADATA_DB_PASSWORD: ${TG_METADATA_DB_PASSWORD}
   TG_TARGET_DB_TRUST_SERVER_CERTIFICATE: yes
   TG_EXPORT_TO_OBSERVABILITY_VERIFY_SSL: no
 
@@ -41,12 +43,12 @@ services:
     image: postgres:14.1-alpine
     restart: always
     environment:
-      - POSTGRES_USER=${TESTGEN_USERNAME}
-      - POSTGRES_PASSWORD=${TESTGEN_PASSWORD}
+      - POSTGRES_USER=${TG_METADATA_DB_USER}
+      - POSTGRES_PASSWORD=${TG_METADATA_DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${TESTGEN_USERNAME}"]
+      test: ["CMD-SHELL", "pg_isready -U ${TG_METADATA_DB_USER}"]
       interval: 8s
       timeout: 5s
       retries: 3
