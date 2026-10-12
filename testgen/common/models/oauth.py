@@ -87,12 +87,17 @@ class OAuth2Token(Base, OAuth2TokenMixin):
     name = Column(String(255), nullable=True)
 
     # Set on a rotated refresh token: when the first refresh token of its chain was issued, so
-    # rotation does not extend the chain's lifetime.
+    # rotation does not extend the chain's lifetime. With client_id and user_id, it also
+    # identifies the chain.
     refresh_token_chain_issued_at = Column(Integer, nullable=True)
 
-    @property
+    @hybrid_property
     def refresh_chain_issued_at(self) -> int:
         return self.refresh_token_chain_issued_at or self.issued_at
+
+    @refresh_chain_issued_at.expression  # type: ignore[no-redef]
+    def refresh_chain_issued_at(cls):
+        return func.coalesce(cls.refresh_token_chain_issued_at, cls.issued_at)
 
     def is_refresh_token_active(self) -> bool:
         if self.refresh_token_revoked_at:
