@@ -5,14 +5,14 @@ services:
     image: postgres:14.1-alpine
     restart: always
     environment:
-      - POSTGRES_USER=${TESTGEN_USERNAME}
-      - POSTGRES_PASSWORD=${TESTGEN_PASSWORD}
+      - POSTGRES_USER=${TG_METADATA_DB_USER}
+      - POSTGRES_PASSWORD=${TG_METADATA_DB_PASSWORD}
     ports:
       - 5432:5432
     volumes:
       -  local_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${TESTGEN_USERNAME}"]
+      test: ["CMD-SHELL", "pg_isready -U ${TG_METADATA_DB_USER}"]
       interval: 8s
       timeout: 5s
       retries: 3
