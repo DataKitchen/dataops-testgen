@@ -1,6 +1,7 @@
 import datetime
 import logging
 import time
+from collections.abc import Iterable
 
 from testgen.common.enums import JobKey, JobSource
 from testgen.common.models import get_current_session, with_database_session
@@ -14,10 +15,15 @@ from testgen.common.models.scores import (
     ScoreDefinitionResult,
     ScoreDefinitionResultHistoryEntry,
 )
+from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.notifications.score_drop import collect_score_notification_data, send_score_drop_notifications
 
 LOG = logging.getLogger("testgen")
+
+
+# How long a refresh waits for another refresh of the same scorecard before skipping it.
+REFRESH_LOCK_TIMEOUT_SECONDS = 60
 
 
 @with_database_session
@@ -26,7 +32,16 @@ def run_refresh_score_cards_results(
     definition_id: str | None = None,
     add_history_entry: bool = False,
     refresh_date: datetime.datetime | None = None,
+    table_group_ids: Iterable[str] | None = None,
 ):
+    """Recompute and store the results, breakdown and, optionally, a history entry of scorecards.
+
+    :param project_code: Refresh the scorecards of this project; all projects when omitted.
+    :param definition_id: Refresh only this scorecard.
+    :param add_history_entry: Add a history entry dated ``refresh_date`` to each refreshed scorecard.
+    :param refresh_date: Date of the history entry; now when omitted.
+    :param table_group_ids: Refresh only the scorecards whose filters can include one of these table groups.
+    """
     start_time = time.time()
     _refresh_date = refresh_date or datetime.datetime.now(datetime.UTC)
 
@@ -35,6 +50,15 @@ def run_refresh_score_cards_results(
             definitions = ScoreDefinition.all(project_code=project_code)
         else:
             definitions = [ScoreDefinition.get(str(definition_id))]
+        if table_group_ids is not None:
+            names = [
+                table_group.table_groups_name
+                for table_group in TableGroup.select_minimal_where(TableGroup.id.in_(list(table_group_ids)))
+            ]
+            definitions = [
+                definition for definition in definitions
+                if any(definition.can_include_table_group(name) for name in names)
+            ]
     except Exception:
         LOG.exception("Stopping scorecards results refresh after unexpected error")
         return
@@ -51,12 +75,20 @@ def run_refresh_score_cards_results(
 
         try:
             fresh_score_card = definition.as_score_card()
+            results = _score_card_to_results(fresh_score_card)
+            breakdown = _score_definition_to_results_breakdown(definition)
 
-            collect_score_notification_data(score_notification_data, definition, fresh_score_card)
+            # Locked after the slow queries above, so a concurrent refresh of this scorecard waits
+            # only for the rows to be written, and its delete then sees them. The drop check reads
+            # the results again under the lock, so it compares against what that refresh stored.
+            definition.lock_for_refresh(REFRESH_LOCK_TIMEOUT_SECONDS)
+            db_session.refresh(definition, ["results"])
+            definition_notification_data: list[tuple[ScoreDefinition, str, float, float]] = []
+            collect_score_notification_data(definition_notification_data, definition, fresh_score_card)
 
             definition.clear_results()
-            definition.results = _score_card_to_results(fresh_score_card)
-            definition.breakdown = _score_definition_to_results_breakdown(definition)
+            definition.results = results
+            definition.breakdown = breakdown
             if add_history_entry:
                 LOG.debug(
                     "Adding history entry for scorecard %s in project %s",
@@ -84,6 +116,7 @@ def run_refresh_score_cards_results(
             # Each scorecard commits on its own, so a refresh of many holds a scorecard's rows only
             # while writing them, and a save of one scorecard does not wait for the whole refresh.
             db_session.commit()
+            score_notification_data.extend(definition_notification_data)
         except Exception:
             db_session.rollback()
             LOG.exception(

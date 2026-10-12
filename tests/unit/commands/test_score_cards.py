@@ -265,3 +265,76 @@ def test_recalculating_a_missing_scorecard_raises(db_session_mock):
         pytest.raises(ValueError, match="Scorecard missing-id not found"),
     ):
         run_recalculate_score_card(project_code="demo", definition_id="missing-id")
+
+
+def test_a_scorecard_is_locked_after_computing_and_before_its_rows_are_replaced(db_session_mock):
+    definition = MagicMock(name="definition")
+    steps = MagicMock()
+    steps.attach_mock(definition.as_score_card, "compute")
+    steps.attach_mock(definition.lock_for_refresh, "lock")
+    steps.attach_mock(definition.clear_results, "clear")
+    steps.attach_mock(definition.save, "save")
+    with (
+        patch(f"{REFRESH_MODULE}.ScoreDefinition.all", return_value=[definition]),
+        patch(f"{REFRESH_MODULE}._score_card_to_results", return_value=[]),
+        patch(f"{REFRESH_MODULE}._score_definition_to_results_breakdown", side_effect=lambda _: steps.breakdown()),
+        patch(f"{REFRESH_MODULE}.collect_score_notification_data"),
+        patch(f"{REFRESH_MODULE}.send_score_drop_notifications"),
+    ):
+        run_refresh_score_cards_results(project_code="test_project")
+
+    assert [name for name, *_ in steps.mock_calls if name in {"compute", "breakdown", "lock", "clear", "save"}] == [
+        "compute", "breakdown", "lock", "clear", "save",
+    ]
+
+
+def test_a_scorecard_whose_lock_times_out_is_rolled_back_and_the_next_still_refreshes(db_session_mock):
+    locked, free = MagicMock(name="locked"), MagicMock(name="free")
+    locked.lock_for_refresh.side_effect = RuntimeError("canceling statement due to lock timeout")
+
+    _refresh_project([locked, free])
+
+    locked.clear_results.assert_not_called()
+    db_session_mock.rollback.assert_called_once()
+    free.save.assert_called_once()
+
+
+def test_score_drops_are_checked_under_the_lock_and_sent_only_for_committed_scorecards(db_session_mock):
+    locked, free = MagicMock(name="locked"), MagicMock(name="free")
+    locked.lock_for_refresh.side_effect = RuntimeError("canceling statement due to lock timeout")
+    steps = MagicMock()
+    steps.attach_mock(free.lock_for_refresh, "lock")
+    steps.attach_mock(db_session_mock.refresh, "reread")
+    with (
+        patch(f"{REFRESH_MODULE}.ScoreDefinition.all", return_value=[locked, free]),
+        patch(f"{REFRESH_MODULE}._score_card_to_results", return_value=[]),
+        patch(f"{REFRESH_MODULE}._score_definition_to_results_breakdown", return_value=[]),
+        patch(
+            f"{REFRESH_MODULE}.collect_score_notification_data",
+            side_effect=lambda data, definition, _: (steps.collect(), data.append(definition)),
+        ),
+        patch(f"{REFRESH_MODULE}.send_score_drop_notifications") as send,
+    ):
+        run_refresh_score_cards_results(project_code="test_project")
+
+    assert [name for name, *_ in steps.mock_calls] == ["lock", "reread", "collect"]
+    send.assert_called_once_with([free])
+
+
+def test_refresh_for_table_groups_skips_scorecards_that_cannot_include_them(db_session_mock):
+    sales_card, finance_card = MagicMock(name="sales_card"), MagicMock(name="finance_card")
+    sales_card.can_include_table_group.side_effect = lambda name: name == "sales"
+    finance_card.can_include_table_group.side_effect = lambda name: name == "finance"
+    table_group = MagicMock(table_groups_name="sales")
+    with (
+        patch(f"{REFRESH_MODULE}.ScoreDefinition.all", return_value=[sales_card, finance_card]),
+        patch(f"{REFRESH_MODULE}.TableGroup.select_minimal_where", return_value=[table_group]),
+        patch(f"{REFRESH_MODULE}._score_card_to_results", return_value=[]),
+        patch(f"{REFRESH_MODULE}._score_definition_to_results_breakdown", return_value=[]),
+        patch(f"{REFRESH_MODULE}.collect_score_notification_data"),
+        patch(f"{REFRESH_MODULE}.send_score_drop_notifications"),
+    ):
+        run_refresh_score_cards_results(project_code="test_project", table_group_ids=[str(uuid4())])
+
+    sales_card.save.assert_called_once()
+    finance_card.save.assert_not_called()
