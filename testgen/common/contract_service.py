@@ -10,15 +10,18 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import yaml
-from sqlalchemy import asc, delete, func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm.attributes import flag_modified
 
-from testgen.commands.test_generation import run_conformance_generation, run_test_generation
+from testgen.commands.test_generation import (
+    ContractGenerationResult,
+    reconcile_contract_conformance,
+    run_contract_generation,
+)
 from testgen.common.enums import SuiteType
 from testgen.common.generation_set_service import CONTRACT_GENERATION_SET
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
-from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import MANAGED_TEST_TYPES, TestDefinition
@@ -162,10 +165,8 @@ def save_metadata_document(suite: TestSuite, document: dict) -> UUID:
     version = SuiteVersion.get(version_id)
     version.metadata_document = document
     flag_modified(version, "metadata_document")
-    session = get_current_session()
-    session.commit()
-    run_conformance_generation(suite.id)
-    TestDefinition.assign_missing_term_ids(version_id)
+    get_current_session().commit()
+    reconcile_contract_conformance(suite.id)
     return version_id
 
 
@@ -202,117 +203,11 @@ def initialize_contract(
     return draft
 
 
-def declared_tables(document: dict | None) -> list[str]:
-    """The table names a metadata document's schema section declares, in document order."""
-    if not document:
-        return []
-    return [table["name"] for table in document.get("schema", [])]
-
-
-def _column_descriptor(column: DataColumnChars) -> dict:
-    """A profiled column's ODCS ``SchemaProperty`` descriptor, built from scratch.
-
-    Carries only fields the ODCS schema defines: ``name`` (required), ``physicalType`` as
-    the database declares the column's type, ``logicalType`` when the catalog maps the type
-    to an ODCS logical type, and the profiled functional type as a ``customProperties``
-    entry (ODCS has no dedicated field for it).
-    """
-    descriptor: dict = {"name": column.column_name}
-    if column.db_data_type:
-        descriptor["physicalType"] = column.db_data_type
-    if column.logical_type:
-        descriptor["logicalType"] = column.logical_type
-    if column.functional_data_type:
-        descriptor["customProperties"] = [{"property": "functionalDataType", "value": column.functional_data_type}]
-    return descriptor
-
-
-def _merge_functional_data_type(custom_properties: list[dict], functional_data_type: str) -> list[dict]:
-    """``customProperties`` with the ``functionalDataType`` entry set, every other entry untouched."""
-    merged = [dict(entry) for entry in custom_properties]
-    for entry in merged:
-        if entry.get("property") == "functionalDataType":
-            entry["value"] = functional_data_type
-            return merged
-    merged.append({"property": "functionalDataType", "value": functional_data_type})
-    return merged
-
-
-def _merge_column_descriptor(existing: dict, column: DataColumnChars) -> dict:
-    """An already-declared column's descriptor, refreshed with what profiling has to offer.
-
-    Keeps every field ``existing`` carries. Overwrites ``physicalType`` and ``logicalType``
-    only when profiling has a value for them, and updates or adds the ``functionalDataType``
-    custom property only when profiling has one -- a field profiling has nothing to say
-    about this time is left exactly as it was, not cleared.
-    """
-    merged = dict(existing)
-    if column.db_data_type:
-        merged["physicalType"] = column.db_data_type
-    if column.logical_type:
-        merged["logicalType"] = column.logical_type
-    if column.functional_data_type:
-        merged["customProperties"] = _merge_functional_data_type(
-            merged.get("customProperties", []), column.functional_data_type
-        )
-    return merged
-
-
-def _merge_properties(existing_properties: list[dict], columns: list[DataColumnChars]) -> list[dict]:
-    """A table's column descriptors, refreshed from profiling without losing declared columns.
-
-    A column already declared keeps every field it carries, refreshed by
-    ``_merge_column_descriptor`` when profiling still sees it, and left untouched when
-    profiling no longer does -- a hand-authored column profiling cannot see is exactly as
-    legal as one it can. A profiled column not yet declared is added.
-    """
-    by_name = {column.column_name: column for column in columns}
-    seen: set[str] = set()
-    merged = []
-    for prop in existing_properties:
-        name = prop.get("name")
-        seen.add(name)
-        column = by_name.get(name)
-        merged.append(_merge_column_descriptor(prop, column) if column else prop)
-    for column in columns:
-        if column.column_name not in seen:
-            merged.append(_column_descriptor(column))
-    return merged
-
-
-def add_table(suite: TestSuite, table_name: str) -> dict:
-    """Declare a table on the contract's draft, merging into any earlier descriptor for it.
-
-    Keeps every field an existing descriptor for the table carries, refreshing only its
-    ``properties`` from current profiling, and generates terms for the table. Returns a
-    report with the declared table name in a list, and ``unverifiable: True`` when the
-    table group holds no profiling for it.
-    """
-    version_id, _ = resolve_write_target(suite)
-    draft = SuiteVersion.get(version_id)
-    columns = _profiled_columns(suite, table_name)
-
-    document = draft.metadata_document if draft.metadata_document is not None else {}
-    schema = document.get("schema", [])
-    existing = next((entry for entry in schema if entry["name"] == table_name), None)
-    descriptor = dict(existing) if existing else {"name": table_name}
-    descriptor["properties"] = _merge_properties(existing.get("properties", []) if existing else [], columns)
-
-    if existing is None:
-        schema = [*schema, descriptor]
-    else:
-        schema = [descriptor if entry["name"] == table_name else entry for entry in schema]
-    document["schema"] = schema
-    draft.metadata_document = document
-    flag_modified(draft, "metadata_document")
-    get_current_session().flush()
-
-    _generate_for_tables(suite, [table_name], version_id)
-
-    report: dict = {"declared": [table_name]}
-    if not columns:
-        report["unverifiable"] = True
-    return report
+def add_table(suite: TestSuite, table_name: str) -> ContractGenerationResult:
+    """Declare a table on the contract's draft and generate it as ``run_contract_generation`` does,
+    merging into any earlier descriptor for it. The contract's own description and tags are left as
+    they are. Returns what the generation did."""
+    return run_contract_generation(suite.id, table_names=[table_name], refresh_identity=False)
 
 
 def remove_table(suite: TestSuite, table_name: str) -> dict:
@@ -342,46 +237,3 @@ def remove_table(suite: TestSuite, table_name: str) -> dict:
     return {"terms_removed": sum(1 for test_type in removed_types if test_type not in MANAGED_TEST_TYPES)}
 
 
-def generate_terms(suite: TestSuite) -> dict:
-    """Generate terms for every table the contract's draft currently declares."""
-    version_id, _ = resolve_write_target(suite)
-    draft = SuiteVersion.get(version_id)
-    table_names = declared_tables(draft.metadata_document)
-    _generate_for_tables(suite, table_names, version_id)
-    return {"declared": table_names}
-
-
-def _profiled_columns(suite: TestSuite, table_name: str) -> list[DataColumnChars]:
-    """Profiled columns for a table in the suite's table group, ordered by ordinal position."""
-    session = get_current_session()
-    return session.scalars(
-        select(DataColumnChars)
-        .where(
-            DataColumnChars.table_groups_id == suite.table_groups_id,
-            DataColumnChars.table_name == table_name,
-            DataColumnChars.drop_date.is_(None),
-        )
-        .order_by(asc(DataColumnChars.ordinal_position))
-    ).all()
-
-
-def _generate_for_tables(suite: TestSuite, table_names: list[str], version_id: UUID) -> None:
-    """Run test generation for a contract, filtered to the given declared tables, and reconcile
-    its Schema Conformance tests with every table the draft declares.
-
-    Generation reaches the database on its own connection and commits each statement itself,
-    so the draft and the document change it is generating against have to be committed first:
-    a merely flushed draft is invisible there, and the terms generation inserts fail the
-    version foreign key.
-
-    The cost is that the caller stops being one unit of work. The declaration is durable
-    before the terms are, so generation failing past this point leaves the tables declared
-    with nothing generated for them, and no rollback in the caller can take that back.
-    Running the operation again resolves it: the document merge keeps what is already
-    declared, and generation replaces its own stale terms.
-    """
-    session = get_current_session()
-    session.commit()
-    run_test_generation(suite.id, table_names=table_names)
-    run_conformance_generation(suite.id)
-    TestDefinition.assign_missing_term_ids(version_id)

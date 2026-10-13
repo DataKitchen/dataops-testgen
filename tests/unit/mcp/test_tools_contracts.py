@@ -1,11 +1,13 @@
-"""Tests for the MCP contract export tool."""
+"""Tests for the MCP contract read tools."""
 
+import copy
 import hashlib
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+import yaml
 
 from testgen import settings
 from testgen.common.contract_service import InvalidContractDocumentError
@@ -19,6 +21,7 @@ from testgen.mcp.tools.contracts import (
     discard_contract_draft,
     export_contract,
     freeze_contract_version,
+    get_contract_metadata,
     list_contract_versions,
     split_document,
 )
@@ -378,6 +381,145 @@ def test_a_changed_document_carries_a_different_digest(db_session_mock):
 
     assert hashlib.sha256(changed.encode()).hexdigest() in _export_chunked(changed, 2_000, chunk=2)
     assert hashlib.sha256(document.encode()).hexdigest() not in _export_chunked(changed, 2_000, chunk=2)
+
+
+# --- get_contract_metadata ---
+
+
+def _read_metadata(suite, target, *, active=True, protected=False, **kwargs):
+    with (
+        _patch_perms(),
+        patch(f"{MODULE}.mcp_source_data_protected", return_value=protected),
+        patch(f"{MODULE}.resolve_contract", return_value=suite),
+        patch(f"{MODULE}.contract_service.version_for_export", return_value=target) as resolve,
+        patch.object(SuiteVersion, "is_active", return_value=active),
+    ):
+        return get_contract_metadata(test_suite_id=str(suite.id), **kwargs), resolve
+
+
+def test_metadata_returns_the_stored_document_as_yaml(db_session_mock):
+    document = {"schema": [{"name": "orders", "properties": [{"name": "id", "logicalType": "integer"}]}]}
+
+    out, _ = _read_metadata(_contract(), _draft(document=document))
+
+    assert "- name: orders" in out
+    assert "logicalType: integer" in out
+
+
+def test_metadata_names_the_version_it_read(db_session_mock):
+    out, _ = _read_metadata(_contract(), _draft(version=4))
+    assert "v4 draft" in out
+
+    out, _ = _read_metadata(_contract(), _frozen(version=3), active=True)
+    assert "v3 active" in out
+
+
+def test_metadata_passes_the_requested_version_through(db_session_mock):
+    suite = _contract()
+
+    _, resolve = _read_metadata(suite, _frozen(version=2), version=2)
+
+    resolve.assert_called_once_with(suite, 2)
+
+
+def test_metadata_says_where_the_terms_are(db_session_mock):
+    out, _ = _read_metadata(_contract(), _draft())
+
+    assert "The contract's terms are not included" in out
+    assert "list_tests" in out
+    assert "export_contract" in out
+
+
+def test_metadata_reports_a_contract_with_no_version_as_a_user_error(db_session_mock):
+    suite = _contract()
+    with (
+        _patch_perms(),
+        patch(f"{MODULE}.resolve_contract", return_value=suite),
+        patch(f"{MODULE}.contract_service.version_for_export", side_effect=ValueError("This contract has no version 9.")),
+    ):
+        with pytest.raises(MCPUserError, match="no version 9"):
+            get_contract_metadata(test_suite_id=str(suite.id), version=9)
+
+
+def test_a_large_metadata_document_arrives_in_chunks(db_session_mock, monkeypatch):
+    monkeypatch.setattr(settings, "MCP_CONTRACT_EXPORT_CHUNK_BYTES", 200)
+    document = {"schema": [{"name": f"table_{index}", "description": "x" * 60} for index in range(10)]}
+
+    first, _ = _read_metadata(_contract(), _draft(document=document))
+    second, _ = _read_metadata(_contract(), _draft(document=document), chunk=2)
+
+    assert "chunk 1 of" in first
+    assert "chunk=2" in first
+    assert "chunk 2 of" in second
+    assert "The contract's terms are not included" not in second
+
+
+_DOCUMENT_WITH_SOURCE_VALUES = {
+    "schema": [{
+        "name": "orders",
+        "quality": [{"metric": "rowCount", "mustBeGreaterThan": 100, "description": "Has rows"}],
+        "properties": [
+            {
+                "name": "amount",
+                "logicalType": "number",
+                "logicalTypeOptions": {"minimum": 0.5, "maximum": 120},
+                "customProperties": [{"property": "profiledValues", "value": {"minimum": 0.5, "maximum": 120}}],
+                "examples": [42.0],
+                "enum": [{"value": 42.0}],
+            },
+            {
+                "name": "status",
+                "logicalType": "string",
+                "logicalTypeOptions": {"minLength": 2, "maxLength": 8},
+                "customProperties": [
+                    {"property": "owner", "value": "ops"},
+                    {"property": "profiledValues", "value": {"minLength": 2, "maxLength": 8}},
+                ],
+                "quality": [
+                    {"metric": "invalidValues", "arguments": {"validValues": ["open"]}, "mustBe": 0},
+                    {"type": "sql", "query": "SELECT COUNT(*) FROM orders WHERE status = 'open'", "mustBe": 0},
+                ],
+            },
+        ],
+    }],
+}
+
+
+def test_metadata_under_protection_omits_fields_that_can_carry_source_values(db_session_mock):
+    out, _ = _read_metadata(_contract(), _draft(document=_DOCUMENT_WITH_SOURCE_VALUES), protected=True)
+
+    document = yaml.safe_load(out.split("```yaml\n", 1)[1].split("```", 1)[0])
+    amount, status = document["schema"][0]["properties"]
+    assert amount == {"name": "amount", "logicalType": "number"}
+    assert status["logicalTypeOptions"] == {"minLength": 2, "maxLength": 8}
+    assert status["customProperties"] == [
+        {"property": "owner", "value": "ops"},
+        {"property": "profiledValues", "value": {"minLength": 2, "maxLength": 8}},
+    ]
+    assert status["quality"] == [{"metric": "invalidValues"}, {"type": "sql"}]
+    assert document["schema"][0]["quality"] == [{"metric": "rowCount", "description": "Has rows"}]
+    assert "Omitted Fields" in out
+    assert "list_tests" in out
+    assert "export_contract" not in out
+
+
+def test_metadata_leaves_the_stored_document_untouched_under_protection(db_session_mock):
+    document = copy.deepcopy(_DOCUMENT_WITH_SOURCE_VALUES)
+
+    _read_metadata(_contract(), _draft(document=document), protected=True)
+
+    assert document == _DOCUMENT_WITH_SOURCE_VALUES
+
+
+def test_metadata_without_protection_returns_every_field(db_session_mock):
+    out, _ = _read_metadata(_contract(), _draft(document=_DOCUMENT_WITH_SOURCE_VALUES))
+
+    document = yaml.safe_load(out.split("```yaml\n", 1)[1].split("```", 1)[0])
+    assert document == _DOCUMENT_WITH_SOURCE_VALUES
+    assert "Omitted Fields" not in out
+
+
+# --- list_contract_versions, freeze_contract_version, discard_contract_draft ---
 
 
 def _item(version, frozen_at=None, **kw):

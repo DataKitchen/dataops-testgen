@@ -4,9 +4,17 @@ from uuid import uuid4
 
 import pytest
 
-from testgen.commands.test_generation import TestGeneration, run_conformance_generation, run_test_generation
+from testgen.commands.test_generation import (
+    ContractGenerationResult,
+    TestGeneration,
+    _term_count,
+    reconcile_contract_conformance,
+    run_contract_generation,
+    run_test_generation,
+)
 from testgen.common.enums import SuiteType
 from testgen.common.models.suite_version import FrozenVersionError
+from tests.unit.sql_assertions import conjuncts, equality_conjunct
 
 MODULE = "testgen.commands.test_generation"
 
@@ -251,21 +259,13 @@ def test_run_test_generation_rejects_monitor_suite(generation_mocks):
         run_test_generation("suite-1", ["Standard"])
 
 
-def test_a_contracts_generation_opens_and_commits_its_draft_before_generating(generation_mocks):
-    """Generation writes on its own connection, so a draft opened in this session must be
-    committed before the generation SQL can stamp tests onto it."""
+def test_a_contracts_generation_runs_the_contract_generation(generation_mocks):
     generation_mocks["suite"].suite_type = SuiteType.CONTRACT
-    events = MagicMock()
-    with (
-        patch(f"{MODULE}.TestDefinition.resolve_writable", side_effect=lambda *_: events.route()) as route,
-        patch(f"{MODULE}.get_current_session") as get_session,
-    ):
-        get_session.return_value.commit.side_effect = lambda: events.commit()
-        generation_mocks["generation"].return_value.run.side_effect = lambda: events.generate()
-        run_test_generation("suite-1")
+    with patch(f"{MODULE}.run_contract_generation") as generate_contract:
+        run_test_generation("suite-1", table_names=["orders"])
 
-    route.assert_called_once_with(generation_mocks["suite"].id)
-    assert [name for name, *_ in events.mock_calls] == ["route", "commit", "generate"]
+    generate_contract.assert_called_once_with(generation_mocks["suite"].id, table_names=["orders"], profile_run_id=None)
+    generation_mocks["generation"].assert_not_called()
 
 
 def test_a_regular_suites_generation_opens_nothing(generation_mocks):
@@ -367,9 +367,8 @@ def test_a_run_with_no_declared_tables_leaves_the_stale_delete_unscoped(_mock_ge
 
 
 def test_a_contract_declaring_no_tables_generates_for_none_of_them():
-    """An empty declared-table list is a scope of nothing, not an absent scope. A contract
-    whose document declares no tables yet must generate no terms, rather than falling back
-    to every table in the group.
+    """An empty table-name list is a scope of nothing, not an absent scope: generation narrowed
+    to no tables generates no terms rather than falling back to every table in the group.
     """
     params = _generation(table_names=[])._get_params()
 
@@ -458,19 +457,215 @@ def test_conformance_run_refuses_to_write_a_frozen_contract_version(mock_exec):
 
 
 @pytest.mark.parametrize("suite_type", [SuiteType.REGULAR, SuiteType.MONITOR])
-def test_conformance_generation_refuses_a_suite_that_is_not_a_contract(generation_mocks, suite_type):
+@pytest.mark.parametrize("generate", [run_contract_generation, reconcile_contract_conformance])
+def test_contract_generation_refuses_a_suite_that_is_not_a_contract(generation_mocks, suite_type, generate):
     generation_mocks["suite"].suite_type = suite_type
 
     with pytest.raises(ValueError, match="not a contract"):
-        run_conformance_generation("suite-1")
+        generate("suite-1")
 
     generation_mocks["generation"].assert_not_called()
 
 
-def test_conformance_generation_reconciles_a_contract(generation_mocks):
+def test_reconciling_conformance_generates_only_conformance_tests(generation_mocks):
     generation_mocks["suite"].suite_type = SuiteType.CONTRACT
 
-    run_conformance_generation("suite-1", table_names=["orders"])
+    with patch(f"{MODULE}.TestDefinition") as definitions:
+        reconcile_contract_conformance("suite-1")
 
-    generation_mocks["generation"].return_value.conformance_run.assert_called_once_with()
-    assert generation_mocks["generation"].call_args.kwargs["table_names"] == ["orders"]
+    generation = generation_mocks["generation"]
+    generation.return_value.conformance_run.assert_called_once_with()
+    generation.return_value.run.assert_not_called()
+    definitions.assign_missing_term_ids.assert_called_once_with(generation.return_value.version_id)
+
+
+@pytest.fixture
+def contract_mocks(generation_mocks):
+    generation_mocks["suite"].suite_type = SuiteType.CONTRACT
+    draft = MagicMock(metadata_document={"schema": [{"name": "orders"}, {"name": "customers"}]})
+    version_id = uuid4()
+    run_id = uuid4()
+    events: list[str] = []
+    session = MagicMock()
+    session.commit.side_effect = lambda: events.append("commit")
+    generation_mocks["generation"].return_value.run.side_effect = lambda: events.append("generate")
+    generation_mocks["generation"].return_value.conformance_run.side_effect = lambda: events.append("conformance")
+    with (
+        patch(f"{MODULE}.TestDefinition") as definitions,
+        patch(f"{MODULE}.SuiteVersion") as versions,
+        patch(f"{MODULE}.contract_document") as document,
+        patch(f"{MODULE}.resolve_generation_profile_run", return_value=run_id) as resolve_run,
+        patch(f"{MODULE}.get_current_session", return_value=session),
+        patch(f"{MODULE}.flag_modified"),
+        patch(f"{MODULE}._term_count", return_value=7),
+    ):
+        definitions.resolve_write_target.return_value = (version_id, {})
+        versions.get.return_value = draft
+        document.declared_tables.side_effect = lambda doc: [table["name"] for table in doc.get("schema", [])]
+        document.catalog_table_names.return_value = ["orders", "customers", "products"]
+        document.refresh_tables.side_effect = lambda _doc, _group, names: dict.fromkeys(names, 3)
+        document.profiled_table_names.side_effect = lambda _run, names: list(names)
+        yield {
+            **generation_mocks,
+            "draft": draft,
+            "session": session,
+            "version_id": version_id,
+            "run_id": run_id,
+            "events": events,
+            "definitions": definitions,
+            "document": document,
+            "resolve_run": resolve_run,
+        }
+
+
+def test_generating_an_unprofiled_contract_writes_catalog_metadata_and_reconciles_conformance_only(contract_mocks):
+    contract_mocks["resolve_run"].return_value = None
+
+    result = run_contract_generation("suite-1")
+
+    contract_mocks["document"].refresh_tables.assert_called_once()
+    contract_mocks["generation"].return_value.run.assert_not_called()
+    contract_mocks["generation"].return_value.conformance_run.assert_called_once_with()
+    contract_mocks["document"].fill_profiled_values.assert_not_called()
+    assert contract_mocks["events"] == ["commit", "conformance"]
+    assert result.tables_not_profiled == ["orders", "customers"]
+
+
+def test_a_generation_refreshes_the_contract_identity_before_its_tables(contract_mocks):
+    calls = []
+    contract_mocks["document"].refresh_identity.side_effect = lambda _doc, _group: calls.append("identity")
+    contract_mocks["document"].refresh_tables.side_effect = lambda _doc, _group, names: (
+        calls.append("tables") or dict.fromkeys(names, 3)
+    )
+
+    run_contract_generation("suite-1")
+
+    assert calls == ["identity", "tables"]
+
+
+def test_a_generation_that_skips_the_identity_leaves_the_contract_fields_alone(contract_mocks):
+    run_contract_generation("suite-1", table_names=["orders"], refresh_identity=False)
+
+    contract_mocks["document"].refresh_identity.assert_not_called()
+    contract_mocks["document"].refresh_tables.assert_called_once()
+
+
+def test_a_generation_never_generates_terms_for_a_declared_table_the_profiling_run_missed(contract_mocks):
+    """Generation deletes the terms of the tables it covers that it did not produce again, so a
+    table the run has no results for would lose every generated term."""
+    contract_mocks["document"].profiled_table_names.side_effect = lambda _run, _names: ["orders"]
+
+    result = run_contract_generation("suite-1")
+
+    assert contract_mocks["generation"].call_args_list[0].kwargs["table_names"] == ["orders"]
+    assert result.tables_not_profiled == ["customers"]
+
+
+def test_a_generation_with_no_profiled_table_generates_no_terms(contract_mocks):
+    contract_mocks["document"].profiled_table_names.side_effect = lambda _run, _names: []
+
+    result = run_contract_generation("suite-1")
+
+    contract_mocks["generation"].return_value.run.assert_not_called()
+    contract_mocks["generation"].return_value.conformance_run.assert_called_once_with()
+    assert result.tables_not_profiled == ["orders", "customers"]
+
+
+def test_a_generation_reports_what_it_did(contract_mocks):
+    contract_mocks["document"].refresh_tables.side_effect = lambda _doc, _group, _names: {"orders": 4, "customers": 0}
+
+    result = run_contract_generation("suite-1")
+
+    assert result == ContractGenerationResult(
+        term_count=7, tables_declared=["orders", "customers"], tables_not_in_catalog=["customers"],
+        tables_not_profiled=[],
+    )
+
+
+def test_generating_a_contract_generates_the_contract_set_for_its_declared_tables(contract_mocks):
+    run_contract_generation("suite-1")
+
+    generation = contract_mocks["generation"]
+    set_generation = generation.call_args_list[0]
+    assert set_generation.args[3] == ["Contract"]
+    assert set_generation.kwargs["table_names"] == ["orders", "customers"]
+    assert set_generation.kwargs["profile_run_id"] == contract_mocks["run_id"]
+    generation.return_value.run.assert_called_once_with()
+    generation.return_value.conformance_run.assert_called_once_with()
+
+
+def test_generating_named_tables_reconciles_conformance_across_the_whole_draft(contract_mocks):
+    run_contract_generation("suite-1", table_names=["orders"])
+
+    set_generation, conformance = contract_mocks["generation"].call_args_list
+    assert set_generation.kwargs["table_names"] == ["orders"]
+    assert "table_names" not in conformance.kwargs
+
+
+def test_generating_a_contract_that_declares_no_tables_declares_the_whole_catalog(contract_mocks):
+    contract_mocks["draft"].metadata_document = {"schema": []}
+
+    run_contract_generation("suite-1")
+
+    tables = ["orders", "customers", "products"]
+    assert contract_mocks["document"].refresh_tables.call_args.args[2] == tables
+    assert contract_mocks["generation"].call_args_list[0].kwargs["table_names"] == tables
+
+
+def test_generating_named_tables_covers_only_those(contract_mocks):
+    run_contract_generation("suite-1", table_names=["orders"])
+
+    assert contract_mocks["document"].refresh_tables.call_args.args[2] == ["orders"]
+    assert contract_mocks["generation"].call_args_list[0].kwargs["table_names"] == ["orders"]
+
+
+def test_generating_a_contract_commits_the_document_before_generating(contract_mocks):
+    run_contract_generation("suite-1")
+
+    assert contract_mocks["events"] == ["commit", "generate", "conformance"]
+
+
+def test_generating_a_contract_reloads_the_draft_before_writing_profiled_values(contract_mocks):
+    events = contract_mocks["events"]
+    contract_mocks["session"].refresh.side_effect = lambda _draft: events.append("refresh")
+    contract_mocks["document"].fill_profiled_values.side_effect = lambda *_args: events.append("profiled")
+
+    run_contract_generation("suite-1")
+
+    contract_mocks["session"].refresh.assert_called_once_with(contract_mocks["draft"])
+    assert events[-2:] == ["refresh", "profiled"]
+
+
+def test_generating_a_contract_fills_the_profiled_values_of_its_tables(contract_mocks):
+    run_contract_generation("suite-1")
+
+    contract_mocks["document"].fill_profiled_values.assert_called_once_with(
+        contract_mocks["draft"].metadata_document, contract_mocks["run_id"], ["orders", "customers"]
+    )
+
+
+def test_the_term_count_covers_the_draft_s_generated_tables_and_leaves_out_conformance_tests():
+    version_id = uuid4()
+    session = MagicMock()
+    session.scalar.return_value = 4
+    with patch(f"{MODULE}.get_current_session", return_value=session):
+        assert _term_count(version_id, ["orders"]) == 4
+
+    statement = session.scalar.call_args.args[0]
+    terms = conjuncts(statement.whereclause)
+    assert any(equality_conjunct(term, "version_id", "test_definitions", version_id) for term in terms)
+    compiled = str(statement.compile(compile_kwargs={"literal_binds": True}))
+    assert "table_name IN ('orders')" in compiled
+    assert "test_type NOT IN ('Schema_Conformance')" in compiled
+
+
+def test_run_test_generation_generates_a_contract(generation_mocks):
+    generation_mocks["suite"].suite_type = SuiteType.CONTRACT
+    generation_mocks["resolve"].return_value = ["Contract"]
+
+    with patch(f"{MODULE}.run_contract_generation") as generate:
+        run_test_generation("suite-1")
+
+    generate.assert_called_once_with(generation_mocks["suite"].id, table_names=None, profile_run_id=None)
+    generation_mocks["generation"].assert_not_called()
+    generation_mocks["mixpanel"].return_value.send_event.assert_called_once()

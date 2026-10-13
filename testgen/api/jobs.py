@@ -18,7 +18,7 @@ from testgen.api.schemas import (
     TestGenerationRequest,
     TestRunRequest,
 )
-from testgen.common.enums import JobKey, JobSource, JobStatus, PublicJobKey
+from testgen.common.enums import JobKey, JobSource, JobStatus, PublicJobKey, SuiteType
 from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.table_group import TableGroup
@@ -86,13 +86,16 @@ def submit_test_run(
     responses={400: {"model": ErrorResponse, "description": "Invalid generation set"}},
 )
 def submit_test_generation(
-    test_suite: TestSuite = resolve_test_suite("edit"),  # noqa: B008
+    test_suite: TestSuite = resolve_test_suite("edit", (SuiteType.REGULAR, SuiteType.CONTRACT)),  # noqa: B008
     body: TestGenerationRequest | None = None,
 ):
-    """Submit a test generation job for a test suite.
+    """Submit a test generation job for a test suite or a contract.
 
     Generates from the test suite's stored generation sets when none are given,
-    falling back to Standard.
+    falling back to Standard. A contract always generates its own fixed set of test types into
+    its draft version and generates the draft's metadata. Before its table group has been
+    profiled, the metadata is generated from the data catalog alone and only schema conformance tests are
+    created.
 
     The value hash test types (Match Text, Numeric and Date Hash, their Keyed variants, and Match
     Epoch Sum, in the Table Comparison set) are generated only from a profiling run that computed

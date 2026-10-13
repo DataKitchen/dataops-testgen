@@ -772,6 +772,24 @@ def test_a_date_bound_declares_a_string_and_a_length_range_only_the_bounds_it_se
     assert validate_document(document) == []
 
 
+@pytest.mark.parametrize(("logical_type", "baseline", "declared"), [
+    ("date", "2026-01-31 00:00:00", "2026-01-31"),
+    ("date", "2026-01-31", "2026-01-31"),
+    ("date", "2026-01-31 06:00:00", "2026-01-31 06:00:00"),
+    ("timestamp", "2026-01-31 00:00:00", "2026-01-31 00:00:00"),
+])
+def test_a_date_bound_drops_only_a_midnight_time_and_only_on_a_date_column(logical_type, baseline, declared):
+    version = _declaring_version({"name": "shipped", "logicalType": logical_type})
+    terms = [
+        _term(test_type="Min_Date", column_name="shipped", baseline_value=baseline, contract_term_id="term-date"),
+    ]
+
+    document = _render_with(version=version, terms=terms, test_types=_COLUMN_TYPES)
+
+    assert _property_named(document, "shipped")["logicalTypeOptions"] == {"minimum": declared}
+    assert validate_document(document) == []
+
+
 def test_unique_declares_required_too():
     version = _declaring_version({"name": "order_id", "logicalType": "integer", "required": False})
     term = _term(test_type="Unique", column_name="order_id", contract_term_id="term-unique")

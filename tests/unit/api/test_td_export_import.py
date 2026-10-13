@@ -1935,7 +1935,7 @@ def _response_schema_ref(path: str, method: str, status: str) -> set[str]:
 @patch("testgen.api.deps.has_project_permission", return_value=True)
 @patch("testgen.api.deps.TestSuite")
 def test_strict_import_400_body_matches_the_declared_model(mock_suite_cls, _perm):
-    mock_suite_cls.get_regular.return_value = _make_test_suite()
+    mock_suite_cls.get.return_value = _make_test_suite()
     body = ImportRequest(
         config=_make_config(mode=ImportMode.apply_strict),
         payload=_make_payload(_make_import_td(test_type="Alpha", table_name="t1")),
@@ -1959,7 +1959,7 @@ def test_strict_import_400_body_matches_the_declared_model(mock_suite_cls, _perm
 @patch("testgen.api.deps.has_project_permission", return_value=True)
 @patch("testgen.api.deps.TestSuite")
 def test_not_found_body_matches_the_declared_model(mock_suite_cls, _perm):
-    mock_suite_cls.get_regular.return_value = None
+    mock_suite_cls.get.return_value = None
 
     resp = _client().get(f"/api/v1/test-suites/{uuid4()}/test-definition-export")
 

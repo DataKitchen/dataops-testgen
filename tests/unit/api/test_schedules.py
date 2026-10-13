@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from testgen.api.deps import db_session, get_authorized_user
 from testgen.api.schedules import router
 from testgen.common.cron_service import describe_cron
-from testgen.common.enums import JobKey
+from testgen.common.enums import JobKey, SuiteType
 from testgen.common.models.scheduler import JobSchedule
 
 pytestmark = pytest.mark.unit
@@ -70,7 +70,7 @@ def _post(url: str, body: dict, *, permitted: bool = True, flush_error: Exceptio
         patch(f"{MODULE}.get_current_session") as mock_session,
     ):
         mock_tg_cls.get.return_value = MagicMock(id=TG_ID, project_code="demo") if parent else None
-        mock_ts_cls.get_regular.return_value = MagicMock(id=TS_ID, project_code="demo") if parent else None
+        mock_ts_cls.get.return_value = MagicMock(id=TS_ID, project_code="demo") if parent else None
         mock_session.return_value.add.side_effect = added.append
         mock_session.return_value.flush.side_effect = flush
         resp = _client().post(url, json=body)
@@ -204,13 +204,13 @@ def test_create_schedule_404_without_edit_permission(url):
 
 
 def test_create_test_run_schedule_resolves_only_regular_suites():
-    """A monitor suite's id reaches ``get_regular``, which returns None for it, so a monitor
-    schedule cannot be created here."""
+    """The suite is looked up narrowed to regular suites, so a monitor suite's id finds nothing
+    and a monitor schedule cannot be created here."""
     resp, added, _, mock_ts_cls = _post(TEST_RUN_URL, {"cron_expression": "0 3 * * *"}, parent=False)
 
     assert resp.status_code == 404
-    mock_ts_cls.get_regular.assert_called_once_with(TS_ID)
-    mock_ts_cls.get.assert_not_called()
+    mock_ts_cls.suite_type.in_.assert_called_once_with((SuiteType.REGULAR,))
+    mock_ts_cls.get.assert_called_once_with(TS_ID, mock_ts_cls.suite_type.in_.return_value)
     assert added == []
 
 

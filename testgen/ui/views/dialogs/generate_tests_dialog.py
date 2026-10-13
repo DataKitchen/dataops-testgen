@@ -1,10 +1,8 @@
-from datetime import UTC, datetime, timedelta
-
+from testgen.commands.test_generation import resolve_generation_profile_run
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.profile_result import ProfileResult
-from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
@@ -67,9 +65,7 @@ def get_value_hash_warning(table_group_id: str) -> str | None:
     if not get_flavor_service(connection.sql_flavor).supports_value_hash:
         return None
 
-    delay_days = table_group.profiling_delay_days or 0
-    as_of_date = datetime.now(UTC) - timedelta(days=delay_days)
-    profile_run_id = ProfilingRun.latest_readable_id(table_group.id, as_of_date)
+    profile_run_id = resolve_generation_profile_run(table_group)
     if profile_run_id is None or ProfileResult.has_value_hashes(profile_run_id):
         return None
 
@@ -85,7 +81,7 @@ def get_value_hash_warning(table_group_id: str) -> str | None:
             "so the hash tests and Match Epoch Sum will not be generated. "
             "To generate them, edit the table group, select Profile for table comparison, and run profiling again."
         )
-    if delay_days:
+    if delay_days := table_group.profiling_delay_days:
         day_noun = "day" if delay_days == 1 else "days"
         warning += (
             f" Test generation uses the new profiling run once it is {delay_days} {day_noun} old, "

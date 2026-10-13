@@ -81,6 +81,7 @@ class DataTable(Entity):
     aggregation_level: str | None = Column(String(40))
     data_product: str | None = Column(String(40))
     data_classification: str | None = Column(String(40))
+    functional_table_type: str | None = Column(String(50))
     drop_date: datetime | None = Column(postgresql.TIMESTAMP)
     last_complete_profile_run_id: UUID | None = Column(postgresql.UUID(as_uuid=True))
     dq_score_profiling: float | None = Column(Float)
@@ -90,8 +91,7 @@ class DataTable(Entity):
     # primary key column is "table_id" — order by a real column instead.
     _default_order_by = (asc(table_name),)
 
-    # Unmapped columns: functional_table_type, add_date,
-    # last_refresh_date, last_profile_record_ct
+    # Unmapped columns: add_date, last_refresh_date, last_profile_record_ct
 
     @classmethod
     def select_table_names(

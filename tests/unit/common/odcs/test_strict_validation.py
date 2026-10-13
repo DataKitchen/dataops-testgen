@@ -1,25 +1,27 @@
 """One realistic contract, rendered through the product's own path, validated in strict mode.
 
 The document is built the way the product builds one -- ``initialize_contract`` for the root
-and the server block, ``add_table`` for each table's column descriptors, ``render_document``
-for the quality rules -- then serialized, parsed back from YAML and validated against the
-pinned ODCS schema. Validating the parsed text rather than the in-memory dict is what makes
-serialization part of what this module proves: a value the schema accepts but
-``yaml.safe_dump`` cannot represent (a leaked ``StrEnum`` member, for instance) fails here.
+and the server block, ``contract_document.refresh_tables`` for the contract's identity fields
+and each table's descriptor and columns, ``render_document`` for the quality rules -- then
+serialized, parsed back from YAML and validated against the pinned ODCS schema. Validating the
+parsed text rather than the in-memory dict is what makes serialization part of what this module
+proves: a value the schema accepts but ``yaml.safe_dump`` cannot represent (a leaked
+``StrEnum`` member, for instance) fails here.
 
-Real: ``initialize_contract``, ``build_server_block``, ``add_table``'s document merge,
-``render_document``'s merge/attach/enum logic, ``project_rule`` and every shape it renders,
-``slugify_term_id`` for each term's identity, ``serialize_document`` and ``validate_document``.
-The test types and ``cat_test_conditions`` rows are the catalogue's own YAML, read off disk,
-not invented stand-ins -- so the rendered ``query`` text is built from the measures the
-execution engine runs.
+Real: ``initialize_contract``, ``build_server_block``, the document merge in
+``contract_document.refresh_tables`` with the catalog's descriptions, critical-data-element
+flags, tags, table types, primary keys and formats, ``render_document``'s merge/attach/enum
+logic, ``project_rule`` and every shape it renders, ``slugify_term_id`` for each term's
+identity, ``serialize_document`` and ``validate_document``. The test types and
+``cat_test_conditions`` rows are the catalogue's own YAML, read off disk, not invented
+stand-ins -- so the rendered ``query`` text is built from the measures the execution engine
+runs.
 
 Substituted: the database session everywhere, and with it ``render``'s six reading helpers
 (``_terms_for_version``, ``_test_types_for``, ``_table_group_for``, ``_flavor_code_for``,
-``_conditions_for``, ``_column_types_for``) and ``contract_service._profiled_columns`` --
-the seam ``test_render.py`` already uses. Each is fed the data the query behind it would
-return. Term generation (``_generate_for_tables``) is a no-op; the terms are constructed
-directly instead.
+``_conditions_for``, ``_column_types_for``) and the catalog reads ``contract_document.catalog_columns``
+and ``contract_document._catalog_table``. Each is fed the data the query behind it would
+return. Term generation does not run; the terms are constructed directly instead.
 """
 
 import copy
@@ -30,7 +32,8 @@ from uuid import uuid4
 import pytest
 import yaml
 
-from testgen.common import contract_service
+from testgen.common import contract_document, contract_service
+from testgen.common.data_catalog_service import TAG_FIELDS
 from testgen.common.enums import SuiteType
 from testgen.common.flavors import SqlFlavorCode
 from testgen.common.models.suite_version import SuiteVersion
@@ -48,17 +51,17 @@ _FLAVOR = SqlFlavorCode.POSTGRESQL
 _SCHEMA = "public"
 
 # (column_name, functional_data_type, column_type, db_data_type, logical_type) -- the
-# DataColumnChars fields `add_table` and the renderer read.
+# DataColumnChars fields the catalog merge and the renderer read.
 _PROFILED_COLUMNS: dict[str, list[tuple[str, str, str, str, str]]] = {
     "orders": [
-        ("order_id", "ID", "integer", "integer", "integer"),
-        ("customer_id", "ID", "integer", "integer", "integer"),
+        ("order_id", "ID-Unique", "integer", "integer", "integer"),
+        ("customer_id", "ID-FK", "integer", "integer", "integer"),
         ("status", "Category", "varchar(20)", "character varying(20)", "string"),
         ("total_amount", "Amount", "numeric(12,2)", "numeric(12,2)", "number"),
         ("order_date", "Date", "date", "date", "date"),
     ],
     "customers": [
-        ("customer_id", "ID", "integer", "integer", "integer"),
+        ("customer_id", "ID-Unique-SK", "integer", "integer", "integer"),
         ("email", "Email", "varchar(200)", "character varying(200)", "string"),
         ("city", "City", "varchar(80)", "character varying(80)", "string"),
         ("state", "State", "char(2)", "character(2)", "string"),
@@ -69,6 +72,30 @@ _PROFILED_COLUMNS: dict[str, list[tuple[str, str, str, str, str]]] = {
         ("quantity", "Measurement", "integer", "integer", "integer"),
     ],
 }
+
+_NO_GOVERNANCE = {
+    "description": None, "critical_data_element": None, "pii_flag": None, "excluded_data_element": None,
+    "functional_table_type": None, **dict.fromkeys(TAG_FIELDS),
+}
+# Catalog values the fill writes into the document, so strict validation covers each field it can write.
+_CATALOG_GOVERNANCE = {
+    ("orders", "order_id"): {
+        **_NO_GOVERNANCE,
+        "description": "Order identifier",
+        "critical_data_element": True,
+        "pii_flag": "A/ID",
+        "data_classification": "internal",
+        "source_system": "erp",
+    },
+}
+_TABLE_GOVERNANCE = {
+    "orders": {
+        "description": "Customer orders", "critical_data_element": True, "data_product": "sales",
+        "functional_table_type": "cumulative-transaction",
+    },
+}
+_TABLE_GROUP_IDENTITY = {**dict.fromkeys(TAG_FIELDS), "business_domain": "retail", "data_product": "orders-360",
+                         "source_system": "erp", "data_location": "Cloud", "description": "Retail orders and customers"}
 
 # A rule a human wrote into the document by hand, before any term existed for it. The merge
 # must carry it through untouched.
@@ -211,18 +238,19 @@ def _draft() -> SuiteVersion:
     for table_name, columns in _PROFILED_COLUMNS.items():
         profiled = [
             MagicMock(
-                column_name=name, functional_data_type=functional, db_data_type=db_type, logical_type=logical
+                column_name=name, functional_data_type=functional, db_data_type=db_type, logical_type=logical,
+                **_CATALOG_GOVERNANCE.get((table_name, name), _NO_GOVERNANCE),
             )
             for name, functional, _column_type, db_type, logical in columns
         ]
+        catalog_table = MagicMock(**{**_NO_GOVERNANCE, **_TABLE_GOVERNANCE.get(table_name, {})})
         with (
-            patch.object(contract_service, "resolve_write_target", return_value=(version.id, {})),
-            patch.object(SuiteVersion, "get", return_value=version),
-            patch.object(contract_service, "_profiled_columns", return_value=profiled),
-            patch.object(contract_service, "_generate_for_tables"),
-            patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+            patch.object(contract_document, "catalog_columns", return_value=profiled),
+            patch.object(contract_document, "_catalog_table", return_value=catalog_table),
         ):
-            contract_service.add_table(suite, table_name)
+            contract_document.refresh_tables(
+                version.metadata_document, MagicMock(**_TABLE_GROUP_IDENTITY), [table_name]
+            )
 
     orders = next(table for table in version.metadata_document["schema"] if table["name"] == "orders")
     orders["quality"] = [copy.deepcopy(_RETAINED_RULE)]
