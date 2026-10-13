@@ -1,0 +1,193 @@
+test_types:
+  id: '1549'
+  test_type: Match_Epoch_Sum
+  test_name_short: Match Epoch Sum
+  test_name_long: Sum of epoch seconds equals baseline
+  test_description: |-
+    Tests that the sum of the column's dates, as seconds since 1970, equals the baseline sum.
+  except_message: |-
+    Sum of dates differs from baseline.
+  measure_uom: Epoch seconds
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'D' AND epoch_sum IS NOT NULL
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_sum
+  default_parm_values: |-
+    epoch_sum
+  default_parm_prompts: |-
+    Epoch Sum at Baseline
+  default_parm_help: |-
+    The expected sum of the column's non-null dates, each as whole seconds since 1970-01-01 UTC.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  column_general_types: [D]
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Baseline epoch sum
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Epoch Sum tests that the sum of the column's dates, as seconds since 1970, is exactly the baseline sum. A uniform time-zone shift moves the sum by the number of non-null values times the offset in seconds, so dividing the difference by that number reads the shift.
+  active: Y
+  ai_redact_values: true
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '11354'
+    test_type: Match_Epoch_Sum
+    sql_flavor: bigquery
+    measure: |-
+      SUM({EPOCH_SUM_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_SUM}' AS BIGNUMERIC)
+  - id: '11355'
+    test_type: Match_Epoch_Sum
+    sql_flavor: databricks
+    measure: |-
+      SUM({EPOCH_SUM_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_SUM}' AS DECIMAL(38,0))
+  - id: '11356'
+    test_type: Match_Epoch_Sum
+    sql_flavor: mssql
+    measure: |-
+      SUM({EPOCH_SUM_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_SUM}' AS DECIMAL(38,0))
+  - id: '11357'
+    test_type: Match_Epoch_Sum
+    sql_flavor: postgresql
+    measure: |-
+      SUM({EPOCH_SUM_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_SUM}' AS NUMERIC(38,0))
+  - id: '11358'
+    test_type: Match_Epoch_Sum
+    sql_flavor: redshift
+    measure: |-
+      SUM({EPOCH_SUM_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_SUM}' AS DECIMAL(38,0))
+  - id: '11359'
+    test_type: Match_Epoch_Sum
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM({EPOCH_SUM_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_SUM}' AS DECIMAL(38,0))
+  - id: '11360'
+    test_type: Match_Epoch_Sum
+    sql_flavor: snowflake
+    measure: |-
+      SUM({EPOCH_SUM_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_SUM}' AS NUMBER(38,0))
+  - id: '11361'
+    test_type: Match_Epoch_Sum
+    sql_flavor: oracle
+    measure: |-
+      SUM({EPOCH_SUM_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_SUM}' AS NUMBER(38,0))
+  - id: '11362'
+    test_type: Match_Epoch_Sum
+    sql_flavor: duckdb
+    measure: |-
+      SUM({EPOCH_SUM_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_SUM}' AS DECIMAL(38,0))
+  target_data_lookups:
+  - id: '11363'
+    test_id: '1549'
+    test_type: Match_Epoch_Sum
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({EPOCH_SUM_TERM}) AS current_epoch_sum, CAST('{BASELINE_SUM}' AS BIGNUMERIC) AS baseline_epoch_sum FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '11364'
+    test_id: '1549'
+    test_type: Match_Epoch_Sum
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({EPOCH_SUM_TERM}) AS current_epoch_sum, CAST('{BASELINE_SUM}' AS DECIMAL(38,0)) AS baseline_epoch_sum FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '11365'
+    test_id: '1549'
+    test_type: Match_Epoch_Sum
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({EPOCH_SUM_TERM}) AS current_epoch_sum, CAST('{BASELINE_SUM}' AS DECIMAL(38,0)) AS baseline_epoch_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11366'
+    test_id: '1549'
+    test_type: Match_Epoch_Sum
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({EPOCH_SUM_TERM}) AS current_epoch_sum, CAST('{BASELINE_SUM}' AS NUMERIC(38,0)) AS baseline_epoch_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11367'
+    test_id: '1549'
+    test_type: Match_Epoch_Sum
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({EPOCH_SUM_TERM}) AS current_epoch_sum, CAST('{BASELINE_SUM}' AS DECIMAL(38,0)) AS baseline_epoch_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11368'
+    test_id: '1549'
+    test_type: Match_Epoch_Sum
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({EPOCH_SUM_TERM}) AS current_epoch_sum, CAST('{BASELINE_SUM}' AS DECIMAL(38,0)) AS baseline_epoch_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11369'
+    test_id: '1549'
+    test_type: Match_Epoch_Sum
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({EPOCH_SUM_TERM}) AS current_epoch_sum, CAST('{BASELINE_SUM}' AS NUMBER(38,0)) AS baseline_epoch_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11370'
+    test_id: '1549'
+    test_type: Match_Epoch_Sum
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({EPOCH_SUM_TERM}) AS current_epoch_sum, CAST('{BASELINE_SUM}' AS NUMBER(38,0)) AS baseline_epoch_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '11371'
+    test_id: '1549'
+    test_type: Match_Epoch_Sum
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({EPOCH_SUM_TERM}) AS current_epoch_sum, CAST('{BASELINE_SUM}' AS DECIMAL(38,0)) AS baseline_epoch_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

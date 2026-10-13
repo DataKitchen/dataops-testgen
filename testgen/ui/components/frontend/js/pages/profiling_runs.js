@@ -3,7 +3,7 @@
  *
  * @typedef ProgressStep
  * @type {object}
- * @property {'data_chars'|'col_profiling'|'freq_analysis'|'hygiene_issues'} key
+ * @property {'data_chars'|'col_profiling'|'freq_analysis'|'hygiene_issues'|'keyed_hash'} key
  * @property {'Pending'|'Running'|'Completed'|'Warning'} status
  * @property {string} label
  * @property {string} detail

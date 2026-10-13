@@ -363,6 +363,20 @@ def test_reports_unmatched_rows_kept_tables_and_followed_columns():
     assert "Columns renamed" not in text
 
 
+def test_reports_kept_key_columns_apart_from_kept_tables():
+    document = _document(
+        _test("Match_Row_Ct", "orders"),
+        _test("Match_Keyed_Hash_Text", "orders", "name", groupby_names="order_id"),
+        _test("Match_Keyed_Hash_Num", "orders", "amt", groupby_names="order_id"),
+    )
+
+    _, report = _map(document, _mapping(""))
+    text = script.format_report(report, Path("in.json"), Path("map.csv"))
+
+    assert "Tables kept as named (1)\n  orders: 3 tests (table-level and 2 columns)\n" in text
+    assert "Key columns kept as named (1)\n  orders.order_id: 2 tests\n" in text
+
+
 def test_main_writes_the_document_and_report(tmp_path):
     (tmp_path / "mapping.csv").write_text("source_table,source_column,target_table,target_column\na,x,b,y\n")
     (tmp_path / "in.json").write_text(json.dumps(_document(_test("Match_Null_Ct", "a", "x"))))

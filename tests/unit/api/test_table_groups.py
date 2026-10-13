@@ -94,6 +94,7 @@ def _table_group(**overrides):
         "profile_flag_cdes": True,
         "profile_flag_pii": True,
         "profile_exclude_xde": True,
+        "profile_table_comparison": False,
         "include_in_dashboard": True,
         "data_source": "CRM",
         "source_system": "Salesforce",
@@ -556,6 +557,7 @@ def test_create_table_group_applies_model_defaults_to_omitted_fields():
     assert body["profile_flag_cdes"] is True
     assert body["profile_flag_pii"] is True
     assert body["profile_exclude_xde"] is True
+    assert body["profile_table_comparison"] is False
     assert body["include_in_dashboard"] is True
     assert body["include_masks"] == ["%"]
     assert body["exclude_masks"] == ["tmp%"]
@@ -617,6 +619,7 @@ def test_create_table_group_applies_every_supplied_field():
         "profile_flag_cdes": False,
         "profile_flag_pii": False,
         "profile_exclude_xde": False,
+        "profile_table_comparison": True,
         "include_in_dashboard": False,
         "catalog_tags": {"data_source": "Snowflake", "business_domain": "Claims"},
         "add_scorecard": False,
@@ -646,6 +649,7 @@ def test_create_table_group_applies_every_supplied_field():
     assert body["profile_flag_cdes"] is False
     assert body["profile_flag_pii"] is False
     assert body["profile_exclude_xde"] is False
+    assert body["profile_table_comparison"] is True
     assert body["include_in_dashboard"] is False
     assert body["catalog_tags"]["data_source"] == "Snowflake"
     assert body["catalog_tags"]["business_domain"] == "Claims"

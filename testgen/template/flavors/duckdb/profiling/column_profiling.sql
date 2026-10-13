@@ -8,6 +8,11 @@ WITH column_rows AS MATERIALIZED (
 , whole_table_measures AS (
   SELECT
     COUNT(*) AS record_ct,
+-- TG-ENDIF
+-- TG-IF is_A_hashed
+    SUM({MULTISET_HASH_TERM}) AS multiset_hash,
+-- TG-ENDIF
+-- TG-IF is_type_A
     COUNT("{COL_NAME}") AS value_ct,
     COUNT(DISTINCT "{COL_NAME}") AS distinct_value_ct,
     SUM(CASE WHEN "{COL_NAME}" IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
@@ -241,6 +246,12 @@ SELECT
 -- TG-ENDIF
 -- TG-IF is_type_B
   SUM(CAST("{COL_NAME}" AS INTEGER)) AS boolean_true_ct,
+-- TG-ENDIF
+-- TG-IF is_DN_hashed
+  SUM({MULTISET_HASH_TERM}) AS multiset_hash,
+-- TG-ENDIF
+-- TG-IF is_epoch_summed
+  SUM({EPOCH_SUM_TERM}) AS epoch_sum,
 -- TG-ENDIF
 -- TG-IF is_not_A
   COUNT(*) AS record_ct

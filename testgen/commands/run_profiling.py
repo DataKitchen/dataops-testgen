@@ -43,7 +43,7 @@ LOG = logging.getLogger("testgen")
 # measures, or a different meaning for an existing one. A parked run resuming under a build that
 # measures differently would file both readings under one profiling run; a bump discards its
 # checkpoint so the run starts over and is measured one way.
-PROFILE_RESULT_SHAPE_VERSION = 4
+PROFILE_RESULT_SHAPE_VERSION = 5
 
 
 @with_database_session
@@ -97,9 +97,10 @@ class ProfilingJob(PausableJob[ColumnChars]):
     """Profile every column of a table group, in steps that can stop and continue later.
 
     The steps, in order: refresh the data catalog, profile each column, run frequency
-    analysis, detect hygiene issues, and queue test and monitor generation. Each step's work sits inside a
-    checkpointed guard, so a pause stops the run at a work-key boundary and a later process
-    continues from there. ``STEPS`` at the foot of the class binds these to their methods.
+    analysis, detect hygiene issues, infer each table's key column and hash each column's values
+    with it when the table group is profiled for table comparison, and queue test and monitor
+    generation. Each step's work sits inside a checkpointed guard, so a pause stops the run at a
+    work-key boundary and a later process continues from there. ``STEPS`` at the foot of the class binds these to their methods.
     """
 
     def __init__(
@@ -149,7 +150,7 @@ class ProfilingJob(PausableJob[ColumnChars]):
                 schema_name=self.table_group.table_group_schema,
                 profiling_starttime=datetime.now(UTC) + self.time_delta,
             )
-        self.profiling_run.init_progress()
+        self.profiling_run.init_progress(self._prepares_table_comparison())
         self.profiling_run.save()
         get_current_session().commit()
 
@@ -177,11 +178,17 @@ class ProfilingJob(PausableJob[ColumnChars]):
         # The restart discards the abandoned attempt's results, so its recorded progress goes with
         # them; otherwise a step the restart re-runs cleanly would keep the earlier attempt's warning.
         self.profiling_run.progress = []
-        self.profiling_run.init_progress()
+        self.profiling_run.init_progress(self._prepares_table_comparison())
 
         get_current_session().commit()
 
     # ---- progress ---------------------------------------------------------------------
+
+    def _prepares_table_comparison(self) -> bool:
+        """Whether the run profiles for table comparison on a flavor that hashes values."""
+        return bool(self.table_group.profile_table_comparison) and get_flavor_service(
+            self.connection.sql_flavor
+        ).supports_value_hash
 
     def on_step_start(self, step: Step) -> None:
         self._set_progress(step, "Running")
@@ -193,15 +200,13 @@ class ProfilingJob(PausableJob[ColumnChars]):
 
     def on_step_end(self, step: Step, errors: int) -> None:
         if errors:
-            self._set_progress(
-                step,
-                "Warning",
-                error=f"{errors} column{'s' if errors > 1 else ''} had errors. See details in results.",
-            )
+            noun = "table" if step.name == "keyed_hash" else "column"
+            error = f"{errors} {noun}{'s' if errors > 1 else ''} had errors. See details in results."
+            self._set_progress(step, "Warning", error=error)
         else:
             # Columns an earlier process lost are still lost, and its account of them is the
             # only one there will be, so finishing the rest cleanly does not clear the warning.
-            recorded = self.profiling_run.progress_error(step.name)
+            recorded = self.profiling_run.progress_error(_progress_key(step))
             self._set_progress(step, "Warning" if recorded else "Completed")
 
     def on_step_failed(self, step: Step, error: str) -> None:
@@ -216,9 +221,10 @@ class ProfilingJob(PausableJob[ColumnChars]):
         commit: bool = True,
     ) -> None:
         # The display is coarser than the step list; steps without an entry stay silent.
-        if step.name not in PROGRESS_KEYS:
+        key = _progress_key(step)
+        if key not in PROGRESS_KEYS:
             return
-        self.profiling_run.set_progress(cast(ProgressKey, step.name), status, detail=detail, error=error)
+        self.profiling_run.set_progress(cast(ProgressKey, key), status, detail=detail, error=error)
         self.profiling_run.save()
         if commit:
             get_current_session().commit()
@@ -240,8 +246,11 @@ class ProfilingJob(PausableJob[ColumnChars]):
         # Resolved inside the step so an unreachable target fails this step like any other target
         # error. Pinned because the probe can answer differently once the target is upgraded, which
         # would file an exact and an approximate reading of the same measure under one run.
-        self.capabilities = resolve_profiling_capabilities(self.sql_generator.flavor_service)
+        self.capabilities = resolve_profiling_capabilities(
+            self.sql_generator.flavor_service, table_comparison=bool(self.table_group.profile_table_comparison)
+        )
         self.pin("approx_percentile", self.capabilities.approx_percentile)
+        self.pin("hashed_types", "".join(sorted(self.capabilities.hashed_types)))
 
         if not self.once(self._refresh_catalog):
             LOG.info("Reading the data catalog recorded by the interrupted run")
@@ -323,6 +332,7 @@ class ProfilingJob(PausableJob[ColumnChars]):
             column,
             self.sampling_params.get(column.table_name),
             use_approx_percentile=self.capabilities.approx_percentile,
+            hashed_types=self.capabilities.hashed_types,
         )
 
     def _freq_analysis(self) -> None:
@@ -359,7 +369,7 @@ class ProfilingJob(PausableJob[ColumnChars]):
             ),
             _fetch_target,
             handle,
-            on_error=lambda column, error: _write_frequency_error(self.sql_generator, column, error),
+            on_error=lambda column, error: _write_query_error(self.sql_generator, column, error),
             max_threads=self.connection.effective_max_threads,
         )
         if result.errors:
@@ -403,6 +413,62 @@ class ProfilingJob(PausableJob[ColumnChars]):
                 self.sql_generator.update_hygiene_issue_counts(),
             ]
         )
+
+    def _key_inference(self) -> None:
+        if not self.data_chars or not self.capabilities.hashed_types:
+            return
+        self.once(self._infer_key_columns)
+
+    def _infer_key_columns(self) -> None:
+        LOG.info("Inferring each table's key column")
+        execute_db_queries([self.sql_generator.infer_key_columns()])
+
+    def _keyed_hash(self) -> None:
+        if not self.data_chars or not self.capabilities.hashed_types:
+            return
+
+        columns = {(column.table_name, column.column_name): column for column in self.data_chars}
+        keyed_columns: dict[str, list[ColumnChars]] = {}
+        key_columns: list[ColumnChars] = []
+        for table_name, (key_name, column_names) in ProfileResult.list_keyed_hash_columns(self.profiling_run.id).items():
+            if (key_column := columns.get((table_name, key_name))) is None:
+                continue
+            key_columns.append(key_column)
+            keyed_columns[table_name] = [
+                columns[(table_name, name)] for name in column_names if (table_name, name) in columns
+            ]
+        if not key_columns:
+            self.no_work()
+            return
+
+        key_columns = _order_largest_work_first(key_columns, self.table_record_counts)
+        LOG.info(f"Running keyed hash queries: {len(key_columns)} tables")
+
+        def handle(outcome: WorkerOutcome[ColumnChars, list]) -> None:
+            for column, keyed_hash in zip(keyed_columns[outcome.key.table_name], outcome.result, strict=True):
+                ProfileResult.upsert(
+                    {
+                        "table_groups_id": self.table_group.id,
+                        "table_name": column.table_name,
+                        "column_name": column.column_name,
+                        "profile_run_id": self.profiling_run.id,
+                        "keyed_hash": keyed_hash,
+                    }
+                )
+
+        result = self.fan_out(
+            key_columns,
+            lambda key_column: self.sql_generator.run_keyed_hash(key_column, keyed_columns[key_column.table_name]),
+            _fetch_target_sums,
+            handle,
+            # The query covers the whole table; its error is recorded on the key column's row
+            on_error=lambda key_column, error: _write_query_error(
+                self.sql_generator, key_column, f"Keyed hash for table {key_column.table_name}: {error}"
+            ),
+            max_threads=self.connection.effective_max_threads,
+        )
+        if result.errors:
+            LOG.warning(f"Errors running keyed hash queries: {result.errors}")
 
     def _generate_tests_step(self) -> None:
         self.once(self._enqueue_generation)
@@ -449,8 +515,16 @@ class ProfilingJob(PausableJob[ColumnChars]):
         Step("col_profiling", _col_profiling),
         Step("freq_analysis", _freq_analysis, fatal=False),
         Step("hygiene_issues", _hygiene_issues, fatal=False),
+        # After hygiene issues, which assign the functional data types that rank key candidates
+        Step("key_inference", _key_inference, fatal=False),
+        Step("keyed_hash", _keyed_hash, fatal=False),
         Step("generate_tests", _generate_tests_step, fatal=False),
     )
+
+
+def _progress_key(step: Step) -> str:
+    # Key inference reports under the keyed hash row: the two are one step to the user
+    return "keyed_hash" if step.name == "key_inference" else step.name
 
 
 def _exclude_xde_columns(data_chars: list[ColumnChars], table_group_id: UUID) -> list[ColumnChars]:
@@ -538,7 +612,12 @@ def _fetch_target(built: tuple[str, dict]) -> list[dict]:
     return fetch_dict_from_db(*built, use_target_db=True)
 
 
-def _write_frequency_error(sql_generator: ProfilingSQL, column: ColumnChars, error: str) -> None:
+def _fetch_target_sums(queries: list[tuple[str, dict]]) -> list:
+    """Run single-row queries on the target and return their values, in query and column order."""
+    return [value for query in queries for value in fetch_dict_from_db(*query, use_target_db=True)[0].values()]
+
+
+def _write_query_error(sql_generator: ProfilingSQL, column: ColumnChars, error: str) -> None:
     # Only the error: the column pass measured this column and its row holds those measures, so
     # writing the wider error-row shape here would overwrite them with the nulls this step knows.
     ProfileResult.upsert(

@@ -11,11 +11,16 @@ from typing import Literal
 import pandas as pd
 from sqlalchemy import text
 
+from testgen.commands.run_test_validation import ColumnLookup
 from testgen.common.clean_sql import concat_columns, null_if_empty, parse_value_list, strip_trailing_semicolons
+from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import get_flavor_service, replace_params
+from testgen.common.database.flavor.flavor_service import FlavorService
 from testgen.common.date_service import parse_fuzzy_date
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection, SQLFlavor
+from testgen.common.models.data_column import DataColumnChars
+from testgen.common.models.data_table import DataTable
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import MISSING_TEST_DEFINITION_MESSAGE, TestDefinition
 from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_source_data_pii
@@ -263,6 +268,7 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         "LIMIT": limit,
         "LIMIT_2": int(limit / 2),
         "LIMIT_4": int(limit / 4),
+        **_value_hash_params(flavor_service, issue_data, test_definition),
         # After every user-supplied parameter, since any of them may contain {DATA_SCHEMA}
         "DATA_SCHEMA": issue_data["schema_name"],
         # These two go last, so their values are never expanded by a later substitution
@@ -273,6 +279,21 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
     lookup_query = replace_params(lookup_data.lookup_query, params)
     lookup_query = replace_templated_functions(lookup_query, lookup_data.sql_flavor)
     return lookup_query
+
+
+def _value_hash_params(flavor_service: FlavorService, issue_data: dict, test_definition: TestDefinition) -> dict:
+    """Value-hash parameters for a test's column and key column, matched in the catalog of its table as test
+    execution matches them."""
+    columns = ColumnLookup(
+        DataTable.list_column_chars(issue_data["table_groups_id"], DataColumnChars.table_name == issue_data["table_name"])
+    )
+
+    def find(name: str | None) -> ColumnChars | None:
+        if not name:
+            return None
+        return columns.find(issue_data["schema_name"], issue_data["table_name"], name.strip(f" {flavor_service.quote_character}"))
+
+    return flavor_service.value_hash_params(find(issue_data["column_names"]), find(test_definition.groupby_names))
 
 
 def _build_query_custom(issue_data: dict) -> str | None:

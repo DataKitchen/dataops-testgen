@@ -18,6 +18,8 @@ EXPECTED_PAIRS = {("Standard", t) for t in [
         "Match_Min_Date", "Match_Max_Date", "Match_Distinct_Date_Ct", "Match_True_Ct", "Match_Min_Length",
         "Match_Max_Length", "Match_Total_Length", "Match_Lead_Space_Ct", "Match_Zero_Length_Ct", "Match_Upper_Case_Ct",
         "Match_Non_Printing_Ct", "Match_Distinct_Hash", "Match_Frequent_Values", "Match_Frequent_Patterns",
+        "Match_Hash_Text", "Match_Hash_Num", "Match_Hash_Date", "Match_Epoch_Sum",
+        "Match_Keyed_Hash_Text", "Match_Keyed_Hash_Num", "Match_Keyed_Hash_Date",
     ]
 }
 

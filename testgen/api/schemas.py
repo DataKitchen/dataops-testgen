@@ -1071,6 +1071,7 @@ class TableGroupResponse(BaseModel):
     profile_flag_cdes: bool
     profile_flag_pii: bool
     profile_exclude_xde: bool
+    profile_table_comparison: bool
     include_in_dashboard: bool
 
     catalog_tags: CatalogTags
@@ -1174,6 +1175,14 @@ class TableGroupCreate(BaseModel):
     profile_exclude_xde: StrictBool | None = Field(
         default=_TABLE_GROUP_DEFAULTS["profile_exclude_xde"],
         description="Skip columns marked as excluded data elements when profiling.",
+    )
+    profile_table_comparison: StrictBool | None = Field(
+        default=_TABLE_GROUP_DEFAULTS["profile_table_comparison"],
+        description=(
+            "Collect value hashes during profiling, which Table Comparison test generation needs for tests that"
+            " detect changed, moved, or swapped values. Adds profiling time. Has no effect on SAP HANA and"
+            " Salesforce Data 360 connections."
+        ),
     )
     include_in_dashboard: StrictBool | None = Field(
         default=_TABLE_GROUP_DEFAULTS["include_in_dashboard"],

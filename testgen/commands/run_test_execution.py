@@ -30,9 +30,28 @@ from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 
 from .run_refresh_data_chars import run_data_chars_refresh
-from .run_test_validation import run_test_validation
+from .run_test_validation import ColumnLookup, run_test_validation
 
 LOG = logging.getLogger("testgen")
+
+
+def attach_column_chars(test_defs: list[TestExecutionDef], data_chars: list[ColumnChars], quote_char: str) -> None:
+    """Set each test's catalog column, column type and key column, matched by exact name, else by
+    case-insensitive name when only one column of the table has it.
+
+    Args:
+        test_defs: The tests to run.
+        data_chars: The table group's catalog columns.
+        quote_char: The flavor's identifier quote, stripped from the tests' column names.
+    """
+    columns = ColumnLookup(data_chars)
+    for td in test_defs:
+        td.column_chars = (
+            columns.find(td.schema_name, td.table_name, td.column_name.strip(f" {quote_char}")) if td.column_name else None
+        )
+        td.column_type = td.column_chars.column_type if td.column_chars else None
+        if td.groupby_names:
+            td.key_column_chars = columns.find(td.schema_name, td.table_name, td.groupby_names.strip(f" {quote_char}"))
 
 
 def retarget_match_schema(test_defs: list[TestExecutionDef], match_schema_name: str) -> None:
@@ -143,9 +162,7 @@ def run_test_execution(
             )
 
             if valid_test_defs:
-                column_types = {(col.schema_name, col.table_name, col.column_name): col.column_type for col in data_chars}
-                for td in valid_test_defs:
-                    td.column_type = column_types.get((td.schema_name, td.table_name, td.column_name))
+                attach_column_chars(valid_test_defs, data_chars, sql_generator.flavor_service.quote_character)
 
                 run_functions = {
                     "QUERY": partial(_run_tests, sql_generator, "QUERY"),

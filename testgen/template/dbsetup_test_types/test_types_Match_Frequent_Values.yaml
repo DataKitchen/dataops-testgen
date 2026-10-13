@@ -71,7 +71,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT val AS frequent_value, ct AS count FROM ( SELECT {COLUMN_VALUE} AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST({COLUMN_VALUE} AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2) AS rn FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} > ' ' GROUP BY {COLUMN_VALUE} ) ranked WHERE rn <= 10 ORDER BY rn;
+      SELECT val AS frequent_value, ct AS count FROM ( SELECT CAST(MIN(CAST(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX)) AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(MIN(CAST(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2) AS rn FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} > ' ' GROUP BY {COLUMN_VALUE} ) ranked WHERE rn <= 10 ORDER BY rn;
     error_type: Test Results
   - id: '1612'
     test_id: '1543'
@@ -233,9 +233,11 @@ test_types:
     sql_flavor: mssql
     template: |-
       WITH ranked AS (
-        SELECT {COLUMN_VALUE} AS val,
+        -- A group of values that differ only in case or trailing spaces is written as its least member by binary
+        -- value, as profiling writes it: which member a GROUP BY returns is not defined
+        SELECT CAST(MIN(CAST(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX)) AS val,
                COUNT(*) AS ct,
-               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST({COLUMN_VALUE} AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2) AS rn
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(MIN(CAST(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2) AS rn
           FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
          WHERE {COLUMN_VALUE} > ' '
          GROUP BY {COLUMN_VALUE}

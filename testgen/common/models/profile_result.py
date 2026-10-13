@@ -180,6 +180,13 @@ class ProfileResult(Entity):
     fractional_sum: float | None = Column(Numeric(38, 6))
     sum_value: Decimal | None = Column(Numeric(38, 8))
 
+    # Table comparison: value hashes over the column's non-null values, the table's inferred key,
+    # and the column's hash keyed by it
+    multiset_hash: Decimal | None = Column(Numeric(38, 0))
+    epoch_sum: Decimal | None = Column(Numeric(38, 0))
+    key_column_name: str | None = Column(String)
+    keyed_hash: Decimal | None = Column(Numeric(38, 0))
+
     # Date-specific
     min_date: datetime | None = Column(postgresql.TIMESTAMP)
     max_date: datetime | None = Column(postgresql.TIMESTAMP)
@@ -258,6 +265,9 @@ class ProfileResult(Entity):
         "stdev_value": MeasureAcquisition.WHOLE_TABLE,
         "fractional_sum": MeasureAcquisition.WHOLE_TABLE,
         "sum_value": MeasureAcquisition.WHOLE_TABLE,
+        "multiset_hash": MeasureAcquisition.WHOLE_TABLE,
+        "epoch_sum": MeasureAcquisition.WHOLE_TABLE,
+        "keyed_hash": MeasureAcquisition.WHOLE_TABLE,
         "min_date": MeasureAcquisition.WHOLE_TABLE,
         "max_date": MeasureAcquisition.WHOLE_TABLE,
         "before_1yr_date_ct": MeasureAcquisition.WHOLE_TABLE,
@@ -374,6 +384,28 @@ class ProfileResult(Entity):
         for a column that has since gone would otherwise outlive the column."""
         result = get_current_session().execute(delete(cls).where(cls.profile_run_id == profile_run_id))
         return result.rowcount or 0
+
+    @classmethod
+    def list_keyed_hash_columns(cls, profile_run_id: UUID) -> dict[str, tuple[str, list[str]]]:
+        """Return, for each table of a run that has a key column, its key and its other hashed columns.
+
+        Returns:
+            ``{table_name: (key_column_name, [column_name, ...])}``, columns in position order.
+        """
+        rows = get_current_session().execute(
+            select(cls.table_name, cls.key_column_name, cls.column_name)
+            .where(
+                cls.profile_run_id == profile_run_id,
+                cls.key_column_name.is_not(None),
+                cls.multiset_hash.is_not(None),
+                cls.column_name != cls.key_column_name,
+            )
+            .order_by(cls.table_name, cls.position, cls.column_name)
+        ).all()
+        keyed: dict[str, tuple[str, list[str]]] = {}
+        for table_name, key_column_name, column_name in rows:
+            keyed.setdefault(table_name, (key_column_name, []))[1].append(column_name)
+        return keyed
 
     @classmethod
     def get_for_column(

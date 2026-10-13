@@ -75,6 +75,7 @@ def _mock_table_group(**overrides) -> MagicMock:
     tg.profile_flag_cdes = overrides.get("profile_flag_cdes", True)
     tg.profile_flag_pii = overrides.get("profile_flag_pii", True)
     tg.profile_exclude_xde = overrides.get("profile_exclude_xde", True)
+    tg.profile_table_comparison = overrides.get("profile_table_comparison", False)
     tg.include_in_dashboard = overrides.get("include_in_dashboard", True)
     tg.description = overrides.get("description", None)
     tg.data_source = overrides.get("data_source", None)
@@ -165,6 +166,28 @@ def test_create_table_group_applies_model_defaults_when_optional_args_omitted(
     assert kwargs["profiling_exclude_mask"] == "tmp%"
     assert kwargs["profile_id_column_mask"] == "%_id"
     assert kwargs["profile_sk_column_mask"] == "%_sk"
+    assert kwargs["profile_table_comparison"] is False
+
+
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_connection")
+def test_create_table_group_profiles_for_table_comparison_when_asked(mock_resolve, mock_tg_cls, db_session_mock):
+    mock_resolve.return_value = _mock_connection()
+    instance = _mock_table_group()
+    mock_tg_cls.return_value = instance
+
+    from testgen.mcp.tools.table_groups import create_table_group
+
+    with _patch_perms():
+        create_table_group(
+            connection_id=42,
+            table_group_name="Sample TG",
+            schema="public",
+            profile_table_comparison=True,
+        )
+
+    assert instance.profile_table_comparison is True
+    instance.save.assert_called_once()
 
 
 @patch(f"{MODULE}.TableGroup")
@@ -582,6 +605,23 @@ def test_update_table_group_delay_days_assigned(mock_resolve, mock_tg_cls, db_se
         update_table_group(table_group_id=str(tg.id), profiling_delay_days=3)
 
     assert tg.profiling_delay_days == 3
+
+
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_turns_on_table_comparison_profiling(mock_resolve, mock_tg_cls, db_session_mock):
+    tg = _mock_table_group(profile_table_comparison=False)
+    mock_resolve.return_value = tg
+    mock_tg_cls.is_in_use.return_value = False
+
+    from testgen.mcp.tools.table_groups import update_table_group
+
+    with _patch_perms():
+        out = update_table_group(table_group_id=str(tg.id), profile_table_comparison=True)
+
+    assert tg.profile_table_comparison is True
+    tg.save.assert_called_once()
+    assert "Profile for table comparison" in out
 
 
 # ---------------------------------------------------------------------------
@@ -1064,6 +1104,7 @@ def test_get_table_group_renders_all_dialog_sections(mock_resolve, mock_resolve_
     # Settings
     assert "## Settings" in out
     assert "Flag CDEs" in out  # _DIFF_LABELS["profile_flag_cdes"]
+    assert "Profile for table comparison" in out
     # Sampling enabled → percent + min count rendered (labels via _DIFF_LABELS)
     assert "## Sampling parameters" in out
     assert "**Sample %:** 50" in out

@@ -1,11 +1,12 @@
-"""Tests for ``run_test_execution``'s run-scoped referential retargeting."""
+"""Tests for ``run_test_execution``'s run-scoped referential retargeting and catalog column matching."""
 
 from uuid import uuid4
 
 import pytest
 
 from testgen.commands.queries.execute_tests_query import TestExecutionDef
-from testgen.commands.run_test_execution import retarget_match_schema
+from testgen.commands.run_test_execution import attach_column_chars, retarget_match_schema
+from testgen.common.database.column_chars import ColumnChars
 
 pytestmark = pytest.mark.unit
 
@@ -63,3 +64,27 @@ def test_leaves_the_stored_definition_fields_it_does_not_own():
 
     assert test_def.table_name == "orders"
     assert test_def.match_table_name == "totals"
+
+
+def _column(name: str) -> ColumnChars:
+    return ColumnChars("staging_a", "orders", name, general_type="N", column_type="bigint")
+
+
+def test_a_test_finds_its_column_and_key_whatever_their_case():
+    td = _td(test_type="Match_Keyed_Hash_Num", test_scope="column", column_name='"Amount"', groupby_names="ORDER_ID")
+
+    attach_column_chars([td], [_column("amount"), _column("order_id")], '"')
+
+    assert td.column_chars.column_name == "amount"
+    assert td.column_type == "bigint"
+    assert td.key_column_chars.column_name == "order_id"
+
+
+def test_an_exact_name_wins_and_an_ambiguous_case_insensitive_name_matches_nothing():
+    exact, ambiguous = _td(column_name="Amount"), _td(column_name="AMOUNT")
+
+    attach_column_chars([exact, ambiguous], [_column("amount"), _column("Amount")], '"')
+
+    assert exact.column_chars.column_name == "Amount"
+    assert ambiguous.column_chars is None
+    assert ambiguous.column_type is None

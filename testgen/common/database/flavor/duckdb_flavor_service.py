@@ -21,6 +21,7 @@ from sqlalchemy.engine.base import Connection
 from sqlalchemy.pool import NullPool, QueuePool
 
 from testgen import settings
+from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.file_declarations import (
     BASE_PATH_PARAMETER,
     NO_FILES_MATCHED,
@@ -37,6 +38,7 @@ from testgen.common.database.flavor.flavor_service import (
     FlavorConnectionError,
     FlavorService,
     ResolvedConnectionParams,
+    exact_float_canonical,
 )
 from testgen.common.database.sql_quoting import sql_identifier, sql_literal
 from testgen.common.flavors import SqlFlavorCode, declares_files, fixed_table_group_schema
@@ -342,6 +344,41 @@ class DuckdbFlavorService(FlavorService):
     row_limiting_clause = "limit"
     default_uppercase = False
     url_scheme = "duckdb"
+
+    supports_value_hash = True
+    float_types = frozenset({"double", "float", "real", "float4", "float8"})
+
+    double_type = "DOUBLE"
+
+    def canonical_number(self, column_ref: str, is_float: bool) -> str:
+        if is_float:
+            # A direct cast loses digits above about 10^9, and a float's shortest text is not its exact value
+            canonical = exact_float_canonical(column_ref, self.double_type, "HUGEINT", lambda a, b: f"(({a}) // {b})")
+            return f"CAST({canonical} AS {self.varchar_type})"
+        return super().canonical_number(column_ref, is_float)
+
+    def hashable_condition(self, column_ref: str, column: ColumnChars) -> str:
+        if column.general_type == "N" and not self.is_float(column):
+            # TRY_CAST: a HUGEINT can exceed the wide decimal, and such a value is left out
+            below = f"TRY_CAST(FLOOR({column_ref}) AS {self.wide_decimal_type}) < {10**32}"
+            above = f"TRY_CAST(CEIL({column_ref}) AS {self.wide_decimal_type}) > {-(10**32)}"
+            return f"{column_ref} IS NOT NULL AND {below} AND {above}"
+        if column.general_type == "D":
+            return f"{super().hashable_condition(column_ref, column)} AND ISFINITE({column_ref})"
+        return super().hashable_condition(column_ref, column)
+
+    def hex_to_wide_decimal(self, hex_expr: str) -> str:
+        return f"CAST(CAST('0x' || {hex_expr} AS BIGINT) AS {self.wide_decimal_type})"
+
+    def utc_timestamp(self, column_ref: str, column: ColumnChars) -> str:  # noqa: ARG002
+        # The session time zone is UTC, so a time-zone-aware value casts to its UTC wall-clock time
+        return f"CAST({column_ref} AS TIMESTAMP)"
+
+    def format_timestamp(self, timestamp_expr: str) -> str:
+        return f"STRFTIME({timestamp_expr}, '%Y-%m-%d %H:%M:%S')"
+
+    def epoch_seconds(self, timestamp_expr: str) -> str:
+        return f"DATE_DIFF('second', TIMESTAMP '1970-01-01', DATE_TRUNC('second', {timestamp_expr}))"
 
     def qualifies_table_refs_with_schema(self, sql_flavor_code: str) -> bool:
         # A declaration view lands in the default schema of the in-memory database a file code

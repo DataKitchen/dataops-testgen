@@ -4,14 +4,20 @@ Baselines are taken from the DuckDB profile of the source table the way each typ
 reads ``profile_results``, then the type's DuckDB measure or template runs against a copy.
 """
 
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import duckdb
 import pytest
 from yaml import safe_load
 
 import testgen
+from testgen.commands.queries.profiling_query import ProfilingSQL
+from testgen.common import value_hash
 from testgen.common.clean_sql import parse_value_list
+from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import get_flavor_service, process_conditionals, replace_params
 from testgen.common.profile_frequency import build_frequent_patterns, build_frequent_values
 from testgen.common.read_file import read_template_sql_file, replace_templated_functions
@@ -20,6 +26,8 @@ pytestmark = pytest.mark.unit
 
 YAML_DIR = Path(testgen.__file__).parent / "template" / "dbsetup_test_types"
 FLAVOR = "duckdb"
+# DuckDB has no text hash probe, so a run profiling for table comparison hashes every hashable type.
+HASHED_TYPES = frozenset({"A", "N", "D"})
 RUN_DATE = "2024-06-01 12:00:00"
 
 CODES = ["AB-1", "AB-2", "ab-3", "XY-10", "AB-1", "AB-2", "AB-1", " lead", "ZZ\u00a0Z", "", None, "QQ", "QQ", "Rr"]
@@ -29,6 +37,29 @@ COLUMNS = [  # name, general type, is_decimal, exact sum
     ("id", "N", False, True), ("amount", "N", True, True), ("price", "N", False, False), ("flag", "B", False, False),
     ("code", "A", False, False), ("note", "A", False, False), ("ts", "D", False, False), ("d", "D", False, False),
 ]
+DB_TYPES = {
+    "id": "INTEGER", "amount": "DECIMAL(18,4)", "price": "DOUBLE", "flag": "BOOLEAN",
+    "code": "VARCHAR", "note": "VARCHAR", "ts": "TIMESTAMP", "d": "DATE",
+}
+
+
+def _chars(column: str, general_type: str, db_type: str | None = None) -> ColumnChars:
+    db_type = db_type or DB_TYPES.get(column)
+    return ColumnChars(
+        "s", "src", column, general_type=general_type, column_type=(db_type or "").lower(), db_data_type=db_type
+    )
+
+
+COLUMN_CHARS = {column: _chars(column, general_type) for column, general_type, *_ in COLUMNS}
+KEYED_TYPES = {"A": "Match_Keyed_Hash_Text", "N": "Match_Keyed_Hash_Num", "D": "Match_Keyed_Hash_Date"}
+
+
+def _keyed_hashes(con, key: ColumnChars, columns: list[ColumnChars], max_query_chars: int | None = None) -> list:
+    """The keyed hashes profiling records for ``columns``, by the queries it runs."""
+    sql = ProfilingSQL.__new__(ProfilingSQL)
+    sql.connection = SimpleNamespace(sql_flavor_code=FLAVOR, max_query_chars=max_query_chars)
+    sql.flavor_service = get_flavor_service(FLAVOR)
+    return [value for query, _ in sql.run_keyed_hash(key, columns) for value in con.execute(query).fetchone()]
 
 
 def _canonical(frequent: dict | None) -> str | None:
@@ -70,6 +101,10 @@ BASELINES = {
     "Match_Distinct_Hash": lambda p: {"baseline_value": p["distinct_value_hash"]},
     "Match_Frequent_Values": lambda p: {"baseline_value": _canonical(p["frequent_values"])},
     "Match_Frequent_Patterns": lambda p: {"baseline_value": _canonical(p["frequent_patterns"])},
+    "Match_Hash_Text": lambda p: {"baseline_value": p.get("multiset_hash")},
+    "Match_Hash_Num": lambda p: {"baseline_value": p.get("multiset_hash")},
+    "Match_Hash_Date": lambda p: {"baseline_value": p.get("multiset_hash")},
+    "Match_Epoch_Sum": lambda p: {"baseline_sum": p.get("epoch_sum")},
 }
 SELECTED = {  # the general types each type's selection criteria admit
     "Match_Null_Ct": "NADB", "Match_Distinct_Ct": "NADB", "Match_Min_Val": "N", "Match_Max_Val": "N",
@@ -78,6 +113,7 @@ SELECTED = {  # the general types each type's selection criteria admit
     "Match_Min_Length": "A", "Match_Max_Length": "A", "Match_Total_Length": "A", "Match_Lead_Space_Ct": "A", "Match_Zero_Length_Ct": "A",
     "Match_Upper_Case_Ct": "A", "Match_Non_Printing_Ct": "A", "Match_Distinct_Hash": "A",
     "Match_Frequent_Values": "A", "Match_Frequent_Patterns": "A",
+    "Match_Hash_Text": "A", "Match_Hash_Num": "N", "Match_Hash_Date": "D", "Match_Epoch_Sum": "D",
 }
 
 
@@ -106,7 +142,12 @@ def con():
     return con
 
 
-def _profile(con, column: str, general_type: str, is_decimal: bool, exact_sum: bool = False) -> dict:
+def _profile(
+    con, column: str, general_type: str, is_decimal: bool, exact_sum: bool = False, db_type: str | None = None
+) -> dict:
+    service = get_flavor_service(FLAVOR)
+    chars = _chars(column, general_type, db_type)
+    is_hashed = general_type in HASHED_TYPES
     flags = {
         "do_sample": False, "do_sample_bool": False, "is_type_A": general_type == "A", "is_type_N": general_type == "N",
         "is_type_D": general_type == "D", "is_type_B": general_type == "B", "is_type_ADN": general_type in "ADN",
@@ -115,12 +156,15 @@ def _profile(con, column: str, general_type: str, is_decimal: bool, exact_sum: b
         "is_N_decimal": general_type == "N" and is_decimal, "is_N_exact_sum": general_type == "N" and exact_sum,
         "is_N_approx_pctile": False,
         "is_N_exact_pctile": general_type == "N",
+        "is_A_hashed": is_hashed and general_type == "A", "is_DN_hashed": is_hashed and general_type in "DN",
+        "is_epoch_summed": is_hashed and general_type == "D",
     }
     params = {
         "CONNECTION_ID": 1, "PROJECT_CODE": "P", "TABLE_GROUPS_ID": "tg", "DATA_SCHEMA": "s", "RUN_DATE": RUN_DATE,
         "DATA_TABLE": "src", "COL_POS": 1, "COL_NAME": column, "COL_NUM": f'"{column}"', "COL_NAME_SANITIZED": column, "COL_TYPE": "",
         "DB_DATA_TYPE": "", "COL_GEN_TYPE": general_type, "PROFILE_RUN_ID": "pr", "MAX_PATTERN_LENGTH": 25,
         "PERCENTILE_METHOD": "exact", "TABLE_HINT": "",
+        **(service.value_hash_params(chars) if is_hashed else {}),
     }
 
     def run(template: str) -> list[dict]:
@@ -143,9 +187,18 @@ def _test_type(test_type: str) -> dict:
     return safe_load((YAML_DIR / f"test_types_{test_type}.yaml").read_text())["test_types"]
 
 
-def _passes(con, test_type: str, table: str, column: str | None, baseline: dict) -> bool:
+def _passes(
+    con,
+    test_type: str,
+    table: str,
+    column: str | None,
+    baseline: dict,
+    column_chars: ColumnChars | None = None,
+    key_chars: ColumnChars | None = None,
+) -> bool:
     doc = _test_type(test_type)
     service = get_flavor_service(FLAVOR)
+    key = baseline.get("groupby_names")
     null_if_empty = lambda value: "NULL" if value in (None, "") else value
     params = {
         "TEST_TYPE": test_type, "TEST_DEFINITION_ID": "td", "TEST_SUITE_ID": "ts", "TEST_RUN_ID": "tr",
@@ -158,6 +211,8 @@ def _passes(con, test_type: str, table: str, column: str | None, baseline: dict)
         "BASELINE_SUM": null_if_empty(baseline.get("baseline_sum")),
         "BASELINE_SD": null_if_empty(baseline.get("baseline_sd")),
         "UPPER_TOLERANCE": null_if_empty(baseline.get("upper_tolerance")),
+        "GROUPBY_NAMES": key,
+        **service.value_hash_params(column_chars or COLUMN_CHARS.get(column), key_chars or COLUMN_CHARS.get(key)),
         "BASELINE_VALUE_LIST": service.string_literal_list(parse_value_list(baseline.get("baseline_value"))),
         "BASELINE_VALUE_LITERAL": service.string_literal_or_null(baseline.get("baseline_value")),
     }
@@ -177,6 +232,10 @@ def _passes(con, test_type: str, table: str, column: str | None, baseline: dict)
 @pytest.fixture(scope="module")
 def generated(con) -> list[tuple[str, str | None, dict]]:
     tests = [("Match_Row_Ct", None, {"threshold_value": "40"})]
+    service = get_flavor_service(FLAVOR)
+    hashed = [chars for name, chars in COLUMN_CHARS.items() if name != "id" and chars.general_type in HASHED_TYPES]
+    for chars, keyed_hash in zip(hashed, _keyed_hashes(con, COLUMN_CHARS["id"], hashed), strict=True):
+        tests.append((KEYED_TYPES[chars.general_type], chars.column_name, {"groupby_names": "id", "baseline_value": str(keyed_hash)}))
     for column, general_type, is_decimal, exact_sum in COLUMNS:
         profile = _profile(con, column, general_type, is_decimal, exact_sum)
         for test_type, read in BASELINES.items():
@@ -203,6 +262,8 @@ def test_a_changed_value_fails_the_tests_that_measure_it(con, generated):
     assert failures == {
         ("Match_Distinct_Ct", "code"), ("Match_Distinct_Hash", "code"), ("Match_Frequent_Values", "code"),
         ("Match_Distinct_Ct", "d"), ("Match_Distinct_Date_Ct", "d"), ("Match_Max_Date", "d"),
+        ("Match_Hash_Text", "code"), ("Match_Hash_Date", "d"), ("Match_Epoch_Sum", "d"),
+        ("Match_Keyed_Hash_Text", "code"), ("Match_Keyed_Hash_Date", "d"),
     }
 
 
@@ -357,3 +418,226 @@ def test_an_exact_sum_is_left_unset_past_the_values_it_can_hold():
     con.execute("CREATE TABLE s.src AS SELECT 1e25::HUGEINT + i AS v FROM range(0, 5) t(i)")
 
     assert _profile(con, "v", "N", False, exact_sum=True)["sum_value"] is None
+
+
+def test_profiled_hashes_equal_the_reference_values(con):
+    rows = con.execute("SELECT id, amount, price, code, ts, d FROM s.src").fetchall()
+    columns = [("id", "N"), ("amount", "N"), ("price", "N"), ("code", "A"), ("ts", "D"), ("d", "D")]
+    for index, (column, general_type) in enumerate(columns):
+        profile = _profile(con, column, general_type, column == "amount")
+        assert profile["multiset_hash"] == value_hash.multiset_hash(row[index] for row in rows), column
+        if general_type == "D":
+            assert profile["epoch_sum"] == value_hash.epoch_sum(row[index] for row in rows), column
+
+
+def test_a_float_column_hashes_like_the_same_values_held_as_decimals():
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA s")
+    con.execute("CREATE TABLE s.src (n DECIMAL(18,8))")
+    con.execute("INSERT INTO s.src VALUES (0.1234565), (-0.1234565), (0.12345649), (12345678.9999995), (2.675), "
+                "(0.00000049), (3), (NULL)")
+    con.execute("CREATE TABLE s.dest AS SELECT n::DOUBLE AS n FROM s.src")
+    baseline = {"baseline_value": str(_profile(con, "n", "N", True, db_type="DECIMAL(18,8)")["multiset_hash"])}
+
+    assert _passes(con, "Match_Hash_Num", "dest", "n", baseline, _chars("n", "N", "DOUBLE"))
+
+
+def test_floats_out_of_decimal_range_are_left_out_of_the_hash():
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA s")
+    con.execute("CREATE TABLE s.src AS SELECT * FROM (VALUES (1.5::DOUBLE), (1e30), "
+                "(-1e35), (1e20)) t(n)")
+    values = [row[0] for row in con.execute("SELECT n FROM s.src").fetchall()]
+
+    assert _profile(con, "n", "N", False, db_type="DOUBLE")["multiset_hash"] == value_hash.multiset_hash(values)
+    assert value_hash.multiset_hash(values) == value_hash.multiset_hash([1.5, 1e20])
+
+
+def test_the_reference_leaves_infinite_and_nan_floats_out_of_the_hash():
+    assert value_hash.multiset_hash([1.5, float("nan"), float("inf"), float("-inf")]) == value_hash.multiset_hash([1.5])
+
+
+def test_decimals_out_of_decimal_range_are_left_out_of_the_hash_and_the_profile_still_runs():
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA s")
+    con.execute(
+        "CREATE TABLE s.src AS SELECT * FROM (VALUES (1.5::DECIMAL(38,0)), (1e33::DECIMAL(38,0)), "
+        f"('{10**32 - 1}'::DECIMAL(38,0)), ('{10**32}'::DECIMAL(38,0))) t(n)"
+    )
+    values = [row[0] for row in con.execute("SELECT n FROM s.src").fetchall()]
+
+    profile = _profile(con, "n", "N", True, db_type="DECIMAL(38,0)")
+
+    assert profile["multiset_hash"] == value_hash.multiset_hash(values)
+    assert value_hash.multiset_hash(values) == value_hash.multiset_hash([Decimal(2), Decimal(10**32 - 1)])
+
+
+@pytest.mark.parametrize(
+    ("db_type", "value"),
+    [("SMALLINT", -(2**15)), ("INTEGER", -(2**31)), ("BIGINT", -(2**63))],
+)
+def test_an_integer_types_minimum_value_is_hashed(db_type, value):
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA s")
+    con.execute(f"CREATE TABLE s.src AS SELECT * FROM (VALUES ('{value}'::{db_type}), (1::{db_type})) t(n)")
+
+    profile = _profile(con, "n", "N", False, db_type=db_type)
+
+    assert profile["multiset_hash"] == value_hash.multiset_hash([value, 1])
+
+
+@pytest.mark.parametrize(
+    ("db_type", "values"),
+    [
+        ("DECIMAL(9,8)", ["9.99999999", "-9.99999995"]),
+        ("DECIMAL(38,6)", [f"-{10**32 - 1}.5", f"{10**32 - 1}.5"]),
+    ],
+    ids=["rounding adds a whole digit", "a fraction just inside the bound"],
+)
+def test_decimals_at_the_edges_of_their_type_are_hashed(db_type, values):
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA s")
+    rows = ", ".join(f"('{value}'::{db_type})" for value in values)
+    con.execute(f"CREATE TABLE s.src AS SELECT * FROM (VALUES {rows}) t(n)")
+
+    profile = _profile(con, "n", "N", True, db_type=db_type)
+
+    assert profile["multiset_hash"] == value_hash.multiset_hash(Decimal(value) for value in values)
+
+
+def test_a_hugeint_past_the_wide_decimal_is_left_out_of_the_hash():
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA s")
+    con.execute(f"CREATE TABLE s.src AS SELECT * FROM (VALUES (2::HUGEINT), ({10**38}::HUGEINT)) t(n)")
+
+    assert _profile(con, "n", "N", False, db_type="HUGEINT")["multiset_hash"] == value_hash.multiset_hash([2])
+
+
+def test_infinite_dates_are_left_out_of_the_hash():
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA s")
+    con.execute("CREATE TABLE s.src AS SELECT * FROM (VALUES ('infinity'::DATE), ('2024-01-01'::DATE)) t(d)")
+
+    profile = _profile(con, "d", "D", False, db_type="DATE")
+
+    assert profile["multiset_hash"] == value_hash.multiset_hash([date(2024, 1, 1)])
+    assert profile["epoch_sum"] == value_hash.epoch_sum([date(2024, 1, 1)])
+
+
+def test_the_reference_leaves_out_a_decimal_that_rounds_up_to_the_bound():
+    assert not value_hash.is_hashable(Decimal(f"-{10**32 - 1}.9999995"))
+    assert value_hash.is_hashable(Decimal(f"-{10**32 - 1}.9999994"))
+
+
+def test_the_reference_zero_pads_years_below_one_thousand():
+    assert value_hash.canonical_text(date(1, 1, 1)) == "0001-01-01 00:00:00"
+
+
+def test_a_single_precision_float_hashes_like_its_exact_double_value():
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA s")
+    con.execute("CREATE TABLE s.src AS SELECT * FROM (VALUES (123.456789::FLOAT), (0.1::FLOAT)) t(n)")
+    doubles = [row[0] for row in con.execute("SELECT n::DOUBLE FROM s.src").fetchall()]
+
+    assert _profile(con, "n", "N", False, db_type="FLOAT")["multiset_hash"] == value_hash.multiset_hash(doubles)
+
+
+def test_a_key_value_out_of_decimal_range_leaves_its_row_out_of_the_keyed_hash():
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA s")
+    con.execute("CREATE TABLE s.src AS SELECT * FROM (VALUES (1::DECIMAL(38,0), 'a'), (1e33::DECIMAL(38,0), 'b')) t(k, v)")
+    rows = con.execute("SELECT k, v FROM s.src").fetchall()
+    key, value = _chars("k", "N", "DECIMAL(38,0)"), _chars("v", "A", "VARCHAR")
+
+    assert _keyed_hashes(con, key, [value]) == [value_hash.keyed_hash(rows)] == [value_hash.keyed_hash(rows[:1])]
+
+
+@pytest.mark.parametrize(
+    ("damage", "fails"),
+    [
+        ("UPDATE s.dest SET v = 'changed' WHERE k = 3", True),
+        ("INSERT INTO s.dest SELECT * FROM s.dest WHERE k = 3", True),
+        ("DELETE FROM s.dest WHERE k = 3", True),
+        ("UPDATE s.dest SET v = CASE k WHEN 3 THEN 'v4' WHEN 4 THEN 'v3' ELSE v END", False),
+    ],
+    ids=["changed value", "duplicated row", "dropped row", "values swapped between rows"],
+)
+def test_the_text_hash_fails_on_any_change_to_the_values_but_not_on_their_order(damage, fails):
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA s")
+    con.execute("CREATE TABLE s.src AS SELECT i AS k, 'v' || i::VARCHAR AS v FROM range(0, 20) t(i)")
+    con.execute("CREATE TABLE s.dest AS SELECT * FROM s.src")
+    con.execute(damage)
+
+    chars = _chars("v", "A", "VARCHAR")
+    baseline = {"baseline_value": str(_profile(con, "v", "A", False, db_type="VARCHAR")["multiset_hash"])}
+
+    assert _passes(con, "Match_Hash_Text", "dest", "v", baseline, chars) is not fails
+
+
+def test_a_uniform_time_zone_shift_moves_the_epoch_sum_by_the_row_count_times_the_offset():
+    con = duckdb.connect()
+    con.execute("SET TimeZone = 'UTC'")
+    con.execute("CREATE SCHEMA s")
+    con.execute("CREATE TABLE s.src AS SELECT TIMESTAMP '2024-03-01 10:00:00.5' + i * INTERVAL 1 DAY AS ts FROM range(0, 25) t(i)")
+    con.execute("CREATE TABLE s.shifted AS SELECT ts + INTERVAL 1 HOUR AS ts FROM s.src")
+
+    chars = _chars("ts", "D", "TIMESTAMP")
+    source = _profile(con, "ts", "D", False, db_type="TIMESTAMP")["epoch_sum"]
+    measure = con.execute(f"SELECT SUM({get_flavor_service(FLAVOR).epoch_sum_term('ts', chars)}) FROM s.shifted").fetchone()[0]
+
+    assert measure - source == 25 * 3600
+    assert not _passes(con, "Match_Epoch_Sum", "shifted", "ts", {"baseline_sum": str(source)}, chars)
+    assert not _passes(con, "Match_Hash_Date", "shifted", "ts", {"baseline_value": str(_profile(con, "ts", "D", False, db_type="TIMESTAMP")["multiset_hash"])}, chars)
+
+
+def test_the_same_values_hash_alike_whatever_the_declared_type():
+    con = duckdb.connect()
+    con.execute("SET TimeZone = 'UTC'")
+    con.execute("CREATE SCHEMA s")
+    con.execute("CREATE TABLE s.src (n BIGINT, ts TIMESTAMP)")
+    con.execute("INSERT INTO s.src VALUES (5, '2024-01-02 03:04:05'), (-7, '2024-01-02 00:00:00'), (NULL, NULL)")
+    con.execute("CREATE TABLE s.dest AS SELECT n::DECIMAL(12,3) AS n, ts::TIMESTAMPTZ AS ts FROM s.src")
+
+    baselines = {
+        "n": {"baseline_value": str(_profile(con, "n", "N", False, db_type="BIGINT")["multiset_hash"])},
+        "ts": {"baseline_value": str(_profile(con, "ts", "D", False, db_type="TIMESTAMP")["multiset_hash"])},
+    }
+
+    assert _passes(con, "Match_Hash_Num", "dest", "n", baselines["n"], _chars("n", "N", "DECIMAL(12,3)"))
+    assert _passes(con, "Match_Hash_Date", "dest", "ts", baselines["ts"], _chars("ts", "D", "TIMESTAMP WITH TIME ZONE"))
+
+
+@pytest.mark.parametrize(
+    ("damage", "plain_fails", "keyed_fails"),
+    [
+        ("UPDATE s.dest SET v = CASE k WHEN 3 THEN 'v4' WHEN 4 THEN 'v3' ELSE v END", False, True),
+        ("UPDATE s.dest SET k = k + 1000", False, True),
+        ("UPDATE s.dest SET v = 'changed' WHERE k = 3", True, True),
+        ("UPDATE s.dest SET v = NULL WHERE k = 3", True, True),
+    ],
+    ids=["values swapped between rows", "key regenerated", "changed value", "value nulled"],
+)
+def test_the_keyed_hash_ties_each_value_to_its_row(damage, plain_fails, keyed_fails):
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA s")
+    con.execute("CREATE TABLE s.src AS SELECT i AS k, 'v' || i::VARCHAR AS v FROM range(0, 20) t(i)")
+    con.execute("CREATE TABLE s.dest AS SELECT * FROM s.src")
+    con.execute(damage)
+
+    key, value = _chars("k", "N", "BIGINT"), _chars("v", "A", "VARCHAR")
+    plain = {"baseline_value": str(_profile(con, "v", "A", False, db_type="VARCHAR")["multiset_hash"])}
+    keyed = {"groupby_names": "k", "baseline_value": str(_keyed_hashes(con, key, [value])[0])}
+
+    assert _passes(con, "Match_Hash_Text", "dest", "v", plain, value) is not plain_fails
+    assert _passes(con, "Match_Keyed_Hash_Text", "dest", "v", keyed, value, key) is not keyed_fails
+
+
+def test_keyed_hashes_equal_the_reference_values_however_the_queries_are_split(con):
+    service = get_flavor_service(FLAVOR)
+    hashed = [chars for name, chars in COLUMN_CHARS.items() if name != "id" and chars.general_type in HASHED_TYPES]
+    rows = con.execute(f"SELECT id, {', '.join(chars.column_name for chars in hashed)} FROM s.src").fetchall()
+    expected = [value_hash.keyed_hash((row[0], row[index + 1]) for row in rows) for index in range(len(hashed))]
+
+    assert _keyed_hashes(con, COLUMN_CHARS["id"], hashed) == expected
+    assert _keyed_hashes(con, COLUMN_CHARS["id"], hashed, max_query_chars=600) == expected

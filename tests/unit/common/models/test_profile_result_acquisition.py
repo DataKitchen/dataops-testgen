@@ -17,6 +17,7 @@ NOT_MEASURES = {
     "db_data_type",
     "functional_data_type",
     "functional_table_type",
+    "key_column_name",
     "datatype_suggestion",
     "pii_flag",
     "percentile_method",

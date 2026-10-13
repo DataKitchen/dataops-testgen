@@ -11,6 +11,8 @@ from yaml import safe_load
 
 import testgen
 from testgen.commands.queries.execute_tests_query import InputParameters, TestExecutionSQL
+from testgen.common.database.column_chars import ColumnChars
+from testgen.common.database.database_service import get_flavor_service
 from testgen.common.pii_masking import PII_REDACTED
 from testgen.common.source_data_service import (
     LookupData,
@@ -19,6 +21,7 @@ from testgen.common.source_data_service import (
     _build_query_standard,
     _generate_recency_lookup_query,
     _mask_lookup_pii,
+    _value_hash_params,
     build_hygiene_query,
     build_test_result_query,
     fetch_hygiene_source_data,
@@ -37,6 +40,17 @@ _MOCK_ROWS = [{"col_a": "val1"}, {"col_b": "val2"}]
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def catalog_columns():
+    """The table's catalog, read for the value-hash parameters: a date column and a key, so every value-hash placeholder renders."""
+    columns = [
+        ColumnChars("demo", "orders", "email", general_type="D", column_type="timestamp", db_data_type="timestamp"),
+        ColumnChars("demo", "orders", "id", general_type="N", column_type="bigint", db_data_type="bigint"),
+    ]
+    with patch(f"{MODULE}.DataTable.list_column_chars", return_value=columns) as list_column_chars:
+        yield list_column_chars
+
 
 def _standard_issue_data(**overrides):
     base = {
@@ -264,7 +278,8 @@ def _test_type_lookups():
 def test_every_lookup_placeholder_is_substituted(mock_lookup, mock_td, sql_flavor, lookup_query):
     mock_lookup.return_value = LookupData(lookup_query=lookup_query, sql_flavor=sql_flavor)
     mock_td.return_value = _FakeTestDefinition(
-        **{name: "1" for name in _FakeTestDefinition.__dataclass_fields__ if name.startswith("baseline_")}
+        groupby_names="id",
+        **{name: "1" for name in _FakeTestDefinition.__dataclass_fields__ if name.startswith("baseline_")},
     )
     query = _build_query_standard(_standard_issue_data(column_names="email"), limit=500)
     assert not re.findall(r"\{[A-Z_0-9]+\}", query)
@@ -610,3 +625,13 @@ class Test_SourceDataResult:
         r = SourceDataResult("ERR", "something broke", None, None)
         assert r.status == "ERR"
         assert r.df is None
+
+
+def test_value_hash_params_find_the_key_column_as_test_execution_does():
+    flavor_service = get_flavor_service("postgresql")
+    test_definition = SimpleNamespace(groupby_names=' "ID" ')
+
+    params = _value_hash_params(flavor_service, _standard_issue_data(column_names="email"), test_definition)
+
+    assert '"id"' in params["KEYED_HASH_TERM"]
+    assert "EPOCH_SUM_TERM" in params

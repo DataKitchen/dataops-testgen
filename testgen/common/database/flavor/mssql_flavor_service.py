@@ -3,8 +3,13 @@ import re
 from sqlalchemy.engine import URL
 
 from testgen import settings
-from testgen.common.database.column_chars import ObjectType
-from testgen.common.database.flavor.flavor_service import FlavorService, ResolvedConnectionParams
+from testgen.common.database.column_chars import ColumnChars, ObjectType
+from testgen.common.database.flavor.flavor_service import (
+    FlavorService,
+    ResolvedConnectionParams,
+    base_type_name,
+    exact_float_canonical,
+)
 
 
 class MssqlFlavorService(FlavorService):
@@ -19,6 +24,12 @@ class MssqlFlavorService(FlavorService):
     # APPROX_PERCENTILE_CONT arrived in SQL Server 2022; older servers fail the probe and stay exact.
     supports_approx_percentile = True
     approx_percentile_probe = "SELECT APPROX_PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY n) FROM (SELECT 1 AS n) AS t"
+
+    supports_value_hash = True
+    # Text is hashed as UTF-8, which only the UTF-8 collations of SQL Server 2019 and later produce
+    text_hash_probe = "SELECT HASHBYTES('MD5', CAST(N'x' COLLATE Latin1_General_100_BIN2_UTF8 AS VARCHAR(10)))"
+    float_types = frozenset({"float", "real"})
+    double_type = "FLOAT"
 
     def sampleable_object_types(self, sql_flavor_code: str) -> frozenset[ObjectType] | None:
         # Fabric rejects TABLESAMPLE; SQL Server accepts it only on base tables.
@@ -37,6 +48,52 @@ class MssqlFlavorService(FlavorService):
         if column_type and re.fullmatch(r"n?char(\(\d+\))?", column_type.lower()):
             return f"RTRIM({column_ref})"
         return column_ref
+
+    def canonical_text(self, column_ref: str, column: ColumnChars) -> str:
+        text = super().canonical_text(column_ref, column)
+        if column.general_type == "A":
+            return f"CAST(CAST({text} AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2_UTF8 AS VARCHAR(MAX))"
+        return text
+
+    def canonical_number(self, column_ref: str, is_float: bool) -> str:
+        if is_float:
+            # A direct cast keeps only 17 significant digits
+            canonical = exact_float_canonical(
+                column_ref, self.double_type, "DECIMAL(38,0)", lambda a, b: f"(({a}) - ({a}) % {b}) / {b}"
+            )
+            return f"CAST(CAST({canonical} AS DECIMAL(38,0)) AS {self.varchar_type})"
+        # The cast rounds half away from zero; ROUND keeps the column's precision, which overflows when
+        # rounding adds a whole digit. Decimal arithmetic here can drop the scale; the rounded value's
+        # text with its point removed is exact.
+        fixed = f"CAST(CAST({column_ref} AS DECIMAL(38,6)) AS VARCHAR(50))"
+        return f"CAST(CAST(REPLACE({fixed}, '.', '') AS DECIMAL(38,0)) AS {self.varchar_type})"
+
+    def hashable_condition(self, column_ref: str, column: ColumnChars) -> str:
+        if column.general_type == "N" and not self.is_float(column):
+            # Compared directly: FLOOR overflows money at its minimum value, and SQL Server converts
+            # both sides to a decimal that holds them
+            return f"{column_ref} IS NOT NULL AND {column_ref} < {10**32} AND {column_ref} > {-(10**32)}"
+        return super().hashable_condition(column_ref, column)
+
+    def md5_hex(self, text_expr: str) -> str:
+        return f"LOWER(CONVERT(VARCHAR(32), HASHBYTES('MD5', {text_expr}), 2))"
+
+    def hash_integer(self, text_expr: str) -> str:
+        return f"CAST(CONVERT(BIGINT, SUBSTRING(HASHBYTES('MD5', {text_expr}), 1, 7)) AS {self.wide_decimal_type})"
+
+    def utc_timestamp(self, column_ref: str, column: ColumnChars) -> str:
+        if base_type_name(column.db_data_type) == "datetimeoffset":
+            return f"CAST(SWITCHOFFSET({column_ref}, '+00:00') AS DATETIME2)"
+        return f"CAST({column_ref} AS DATETIME2)"
+
+    def format_timestamp(self, timestamp_expr: str) -> str:
+        return f"CONVERT(VARCHAR(19), {timestamp_expr}, 120)"
+
+    def epoch_seconds(self, timestamp_expr: str) -> str:
+        # Azure Synapse has no DATEDIFF_BIG, and DATEDIFF overflows INT in seconds; days and seconds into the day fit
+        days = f"DATEDIFF(DAY, CAST('1970-01-01' AS DATETIME2), {timestamp_expr})"
+        seconds = f"DATEDIFF(SECOND, CAST(CAST({timestamp_expr} AS DATE) AS DATETIME2), {timestamp_expr})"
+        return f"CAST({days} AS BIGINT) * 86400 + {seconds}"
 
     def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
         connection_url = URL.create(

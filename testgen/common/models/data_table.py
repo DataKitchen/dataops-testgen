@@ -108,7 +108,7 @@ class DataTable(Entity):
         return list(get_current_session().scalars(query).all())
 
     @classmethod
-    def list_column_chars(cls, table_groups_id: UUID) -> list[ColumnChars]:
+    def list_column_chars(cls, table_groups_id: UUID, *clauses) -> list[ColumnChars]:
         """Read back the catalog a profiling run recorded, in place of querying the target.
 
         Row counts live here rather than on the column, and they are what a run's sampling was
@@ -136,6 +136,7 @@ class DataTable(Entity):
                 cls.table_groups_id == table_groups_id,
                 cls.drop_date.is_(None),
                 DataColumnChars.drop_date.is_(None),
+                *clauses,
             )
             .order_by(DataColumnChars.table_name, DataColumnChars.ordinal_position, DataColumnChars.column_name)
         )

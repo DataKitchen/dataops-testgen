@@ -61,6 +61,11 @@ _PII_FLAG_DENIED_MESSAGE = (
     "Changing PII detection requires permission to view PII. "
     "Leave this setting unchanged or contact your administrator."
 )
+_TABLE_COMPARISON_DESCRIPTION = (
+    "Whether profiling collects value hashes, which Table Comparison test generation needs for tests that "
+    "detect changed, moved, or swapped values. Adds profiling time. Has no effect on SAP HANA and Salesforce "
+    "Data 360 connections."
+)
 
 
 class FileDeclaration(FileDeclarationSpec):
@@ -202,6 +207,7 @@ def get_table_group(
     doc.field(_DIFF_LABELS["profile_flag_cdes"], table_group.profile_flag_cdes)
     doc.field(_DIFF_LABELS["profile_flag_pii"], table_group.profile_flag_pii)
     doc.field(_DIFF_LABELS["profile_exclude_xde"], table_group.profile_exclude_xde)
+    doc.field(_DIFF_LABELS["profile_table_comparison"], table_group.profile_table_comparison)
     doc.field(_DIFF_LABELS["include_in_dashboard"], table_group.include_in_dashboard)
     doc.field(_DIFF_LABELS["profiling_delay_days"], table_group.profiling_delay_days)
 
@@ -302,6 +308,10 @@ def create_table_group(
         bool | None,
         Field(description="Whether profiling excludes columns flagged as excluded data elements."),
     ] = None,
+    profile_table_comparison: Annotated[
+        bool | None,
+        Field(description=_TABLE_COMPARISON_DESCRIPTION + " Default false."),
+    ] = None,
     include_in_dashboard: Annotated[
         bool | None,
         Field(description="Whether the table group appears on the project dashboard."),
@@ -395,6 +405,7 @@ def create_table_group(
         profile_flag_cdes=profile_flag_cdes,
         profile_flag_pii=profile_flag_pii,
         profile_exclude_xde=profile_exclude_xde,
+        profile_table_comparison=profile_table_comparison,
         include_in_dashboard=include_in_dashboard,
         data_source=data_source,
         source_system=source_system,
@@ -470,6 +481,7 @@ def update_table_group(
     profile_flag_cdes: Annotated[bool | None, Field(description="Whether profiling flags CDEs.")] = None,
     profile_flag_pii: Annotated[bool | None, Field(description="Whether profiling flags PII.")] = None,
     profile_exclude_xde: Annotated[bool | None, Field(description="Whether profiling excludes XDE columns.")] = None,
+    profile_table_comparison: Annotated[bool | None, Field(description=_TABLE_COMPARISON_DESCRIPTION)] = None,
     include_in_dashboard: Annotated[
         bool | None,
         Field(description="Whether the table group appears on the project dashboard."),
@@ -547,6 +559,7 @@ def update_table_group(
         "profile_flag_cdes": profile_flag_cdes,
         "profile_flag_pii": profile_flag_pii,
         "profile_exclude_xde": profile_exclude_xde,
+        "profile_table_comparison": profile_table_comparison,
         "include_in_dashboard": include_in_dashboard,
         "data_source": data_source,
         "source_system": source_system,
@@ -760,6 +773,7 @@ _DIFF_ATTRS: tuple[str, ...] = (
     "profile_flag_cdes",
     "profile_flag_pii",
     "profile_exclude_xde",
+    "profile_table_comparison",
     "include_in_dashboard",
     "description",
     "data_source",
@@ -789,6 +803,7 @@ _DIFF_LABELS: dict[str, str] = {
     "profile_flag_cdes": "Flag CDEs",
     "profile_flag_pii": "Flag PII",
     "profile_exclude_xde": "Exclude XDE",
+    "profile_table_comparison": "Profile for table comparison",
     "include_in_dashboard": "Include in dashboard",
     "description": "Description",
     "data_source": "Data source",
@@ -842,6 +857,7 @@ def _apply_args_to_table_group(
     profile_flag_cdes: bool | None = None,
     profile_flag_pii: bool | None = None,
     profile_exclude_xde: bool | None = None,
+    profile_table_comparison: bool | None = None,
     include_in_dashboard: bool | None = None,
     data_source: str | None = None,
     source_system: str | None = None,
@@ -890,6 +906,8 @@ def _apply_args_to_table_group(
         table_group.profile_flag_pii = profile_flag_pii
     if profile_exclude_xde is not None:
         table_group.profile_exclude_xde = profile_exclude_xde
+    if profile_table_comparison is not None:
+        table_group.profile_table_comparison = profile_table_comparison
     if include_in_dashboard is not None:
         table_group.include_in_dashboard = include_in_dashboard
     if data_source is not None:
@@ -997,6 +1015,8 @@ def _render_created_table_group(
         profile_flags.append("Flag PII")
     if table_group.profile_exclude_xde:
         profile_flags.append("Exclude XDE")
+    if table_group.profile_table_comparison:
+        profile_flags.append("Profile for table comparison")
     if profile_flags:
         doc.field("Profiling flags", ", ".join(profile_flags))
 

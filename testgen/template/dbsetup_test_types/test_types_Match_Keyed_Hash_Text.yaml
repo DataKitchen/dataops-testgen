@@ -1,0 +1,193 @@
+test_types:
+  id: '1550'
+  test_type: Match_Keyed_Hash_Text
+  test_name_short: Match Keyed Text Hash
+  test_name_long: Keyed hash sum of text values equals baseline
+  test_description: |-
+    Tests that each text value in the column is attached to the same row as at baseline, by comparing a sum of hashes of each row's key and value.
+  except_message: |-
+    Text values are not attached to the same rows as at baseline.
+  measure_uom: Keyed hash sum
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'A' AND keyed_hash IS NOT NULL
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value,groupby_names
+  default_parm_values: |-
+    keyed_hash,key_column_name
+  default_parm_prompts: |-
+    Keyed Hash Sum at Baseline,Key Column
+  default_parm_help: |-
+    The expected sum of the hashes of each row's key and text value.|The column that identifies each row of the table, named without quotes.
+  default_parm_required: Y,Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  column_general_types: [A]
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Baseline keyed hash sum
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Keyed Text Hash tests that each value in the column is attached to the same row as at baseline, by comparing a sum of hashes of each row's key and value. It detects values moved between rows, which leaves every column-level count, sum, and unkeyed hash unchanged. The key column is named in the test. If the key itself was regenerated, as a surrogate key often is when a table is reloaded, every keyed hash test on the table fails while the unkeyed hash tests pass; that means the key changed, not the values.
+  active: Y
+  ai_redact_values: true
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '11372'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: bigquery
+    measure: |-
+      SUM({KEYED_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS BIGNUMERIC)
+  - id: '11373'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: databricks
+    measure: |-
+      SUM({KEYED_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS DECIMAL(38,0))
+  - id: '11374'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: mssql
+    measure: |-
+      SUM({KEYED_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS DECIMAL(38,0))
+  - id: '11375'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: postgresql
+    measure: |-
+      SUM({KEYED_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS NUMERIC(38,0))
+  - id: '11376'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: redshift
+    measure: |-
+      SUM({KEYED_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS DECIMAL(38,0))
+  - id: '11377'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM({KEYED_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS DECIMAL(38,0))
+  - id: '11378'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: snowflake
+    measure: |-
+      SUM({KEYED_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS NUMBER(38,0))
+  - id: '11379'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: oracle
+    measure: |-
+      SUM({KEYED_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS NUMBER(38,0))
+  - id: '11380'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: duckdb
+    measure: |-
+      SUM({KEYED_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS DECIMAL(38,0))
+  target_data_lookups:
+  - id: '11381'
+    test_id: '1550'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({KEYED_HASH_TERM}) AS current_keyed_hash_sum, CAST('{BASELINE_VALUE}' AS BIGNUMERIC) AS baseline_keyed_hash_sum FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '11382'
+    test_id: '1550'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({KEYED_HASH_TERM}) AS current_keyed_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_keyed_hash_sum FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '11383'
+    test_id: '1550'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({KEYED_HASH_TERM}) AS current_keyed_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_keyed_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11384'
+    test_id: '1550'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({KEYED_HASH_TERM}) AS current_keyed_hash_sum, CAST('{BASELINE_VALUE}' AS NUMERIC(38,0)) AS baseline_keyed_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11385'
+    test_id: '1550'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({KEYED_HASH_TERM}) AS current_keyed_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_keyed_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11386'
+    test_id: '1550'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({KEYED_HASH_TERM}) AS current_keyed_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_keyed_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11387'
+    test_id: '1550'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({KEYED_HASH_TERM}) AS current_keyed_hash_sum, CAST('{BASELINE_VALUE}' AS NUMBER(38,0)) AS baseline_keyed_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11388'
+    test_id: '1550'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({KEYED_HASH_TERM}) AS current_keyed_hash_sum, CAST('{BASELINE_VALUE}' AS NUMBER(38,0)) AS baseline_keyed_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '11389'
+    test_id: '1550'
+    test_type: Match_Keyed_Hash_Text
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({KEYED_HASH_TERM}) AS current_keyed_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_keyed_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

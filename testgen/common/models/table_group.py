@@ -73,6 +73,7 @@ class TableGroupMinimal(EntityMinimal):
     profile_flag_cdes: bool
     profile_flag_pii: bool
     profile_exclude_xde: bool
+    profile_table_comparison: bool
     last_complete_profile_run_id: UUID | None
 
 
@@ -360,6 +361,7 @@ class TableGroup(Entity):
     profile_flag_cdes: bool = Column(Boolean, default=True)
     profile_flag_pii: bool = Column(Boolean, default=True)
     profile_exclude_xde: bool = Column(Boolean, default=True)
+    profile_table_comparison: bool = Column(Boolean, default=False)
     include_in_dashboard: bool = Column(Boolean, default=True)
     description: str = Column(NullIfEmptyString)
     data_source: str = Column(NullIfEmptyString)
