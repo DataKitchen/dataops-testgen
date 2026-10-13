@@ -73,6 +73,13 @@ def _lift(count: Any, whole: Decimal, sampled: Decimal) -> int | None:
     return int((number * whole / sampled).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
+def _lift_frequent(frequent: MutableMapping[str, Any], whole: Decimal, sampled: Decimal) -> None:
+    for entry in frequent["values"]:
+        entry["ct"] = _lift(entry["ct"], whole, sampled)
+    if other := frequent.get("other"):
+        other["ct"] = _lift(other["ct"], whole, sampled)
+
+
 def _lift_partition(counts: list[Decimal], whole: Decimal, sampled: Decimal) -> list[int]:
     """Scale counts that add up to ``sampled`` so that they add up to ``whole``.
 
@@ -284,7 +291,7 @@ class ProfileResult(Entity):
         "avg_embedded_spaces": MeasureAcquisition.SAMPLEABLE,
         "std_pattern_match": MeasureAcquisition.SAMPLEABLE,
         "distinct_pattern_ct": MeasureAcquisition.SAMPLEABLE,
-        "frequent_values": MeasureAcquisition.SAMPLEABLE,
+        "frequent_values": MeasureAcquisition.SAMPLEABLE_COUNT,
         "distinct_value_hash": MeasureAcquisition.SAMPLEABLE,
     })
     """How each measure column is taken. See ``MeasureAcquisition``."""
@@ -316,15 +323,16 @@ class ProfileResult(Entity):
         with localcontext() as context:
             context.prec = 60
             if (patterns := row.get("frequent_patterns")) and pattern_sampled != whole:
-                for entry in patterns["values"]:
-                    entry["ct"] = _lift(entry["ct"], whole, pattern_sampled)
+                _lift_frequent(patterns, whole, pattern_sampled)
             if whole == sampled:
                 return
 
             counts = [
                 column
                 for column, acquisition in cls.measure_acquisition.items()
-                if acquisition is MeasureAcquisition.SAMPLEABLE_COUNT and column != "frequent_patterns" and column in row
+                if acquisition is MeasureAcquisition.SAMPLEABLE_COUNT
+                and column not in ("frequent_patterns", "frequent_values")
+                and column in row
             ]
             if not sampled:
                 # The sample held no values while the table did: there is no ratio to lift by.
@@ -340,6 +348,25 @@ class ProfileResult(Entity):
                 counts = [column for column in counts if column not in cls._case_class_columns]
             for column in counts:
                 row[column] = _lift(row[column], whole, sampled)
+
+    @staticmethod
+    def calibrate_frequent_values(frequent: MutableMapping[str, Any] | None, whole: Any, sampled: Any) -> None:
+        """Lift the counts in a ``frequent_values`` field taken on the sample onto the whole-table scale, in place.
+
+        Each value's count and the count of the trailing ``other`` entry are multiplied by ``whole``, the
+        column's whole-table value count, over ``sampled``, the value count of the read the frequencies
+        were taken on, and rounded to the nearest integer, ties away from zero. The number of distinct
+        values the ``other`` entry covers is left as observed. Nothing changes when either value count is
+        missing or ``sampled`` is zero.
+        """
+        whole_ct = _as_decimal(whole)
+        sampled_ct = _as_decimal(sampled)
+        if not frequent or whole_ct is None or not sampled_ct or whole_ct == sampled_ct:
+            return
+
+        with localcontext() as context:
+            context.prec = 60
+            _lift_frequent(frequent, whole_ct, sampled_ct)
 
     @classmethod
     def delete_for_run(cls, profile_run_id: UUID) -> int:

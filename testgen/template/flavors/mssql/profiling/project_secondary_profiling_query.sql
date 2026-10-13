@@ -1,6 +1,8 @@
 -- Get Freqs for selected columns
 -- One row per top value, ordered by rank. A trailing row with a NULL value carries the
 -- combined count of the values past the top 10, and how many distinct values it covers.
+-- Every row also carries sample_value_ct, the number of non-null values the read held, blank ones
+-- included. Blank values are ranked after every other value so that they never reach the output.
 WITH target_table AS (
 -- TG-IF do_sample_bool
     SELECT {COL_VALUE} AS "{COL_NAME}" FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT) {TABLE_HINT}
@@ -12,15 +14,17 @@ ranked_vals
 AS
     (SELECT "{COL_NAME}" AS val,
             COUNT(*) AS  ct,
-            ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST("{COL_NAME}" AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2) AS rn
+            ROW_NUMBER() OVER (ORDER BY CASE WHEN "{COL_NAME}" > ' ' THEN 0 ELSE 1 END, COUNT(*) DESC, CAST("{COL_NAME}" AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2) AS rn,
+            SUM(COUNT_BIG(*)) OVER () AS sample_value_ct
      FROM target_table
-     WHERE "{COL_NAME}" > ' '
+     WHERE "{COL_NAME}" IS NOT NULL
      GROUP BY "{COL_NAME}"
     ),
 grouped_vals
 AS (
-    SELECT CASE WHEN rn <= 10 THEN val END AS top_val, ct, rn
+    SELECT CASE WHEN rn <= 10 THEN val END AS top_val, ct, rn, sample_value_ct
     FROM ranked_vals
+    WHERE val > ' '
     ),
 -- The hash is over the UTF-8 bytes of the distinct values, which SQL Server 2017 has no collation
 -- to produce, so they are built from the code points: one row per UTF-16 code unit, a surrogate
@@ -70,6 +74,7 @@ SELECT top_val AS value,
        SUM(ct) AS value_ct,
        MIN(rn) AS value_rank,
        CASE WHEN MIN(rn) > 10 THEN COUNT(*) END AS other_distinct_ct,
+       MAX(sample_value_ct) AS sample_value_ct,
        (SELECT distinct_value_hash FROM value_hash) AS distinct_value_hash
 FROM grouped_vals
 GROUP BY top_val

@@ -2,6 +2,8 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
 from testgen.common.models.profile_result import ColumnErrorRow, MeasureAcquisition, ProfileResult
 
 
@@ -107,6 +109,7 @@ SAMPLEABLE_COUNTS = {
     "date_ct",
     "embedded_space_ct",
     "frequent_patterns",
+    "frequent_values",
 }
 
 
@@ -317,3 +320,36 @@ def test_list_column_errors_for_run_reads_one_run_with_errors(mock_paginate):
     assert "profile_results.table_name = :table_name_1" in where
     assert query._order_by_clauses
     assert mock_paginate.call_args.kwargs == {"page": 1, "limit": 20, "data_class": ColumnErrorRow}
+
+
+def test_the_column_pass_calibration_leaves_frequent_values_alone():
+    frequent = {"values": [{"value": "A", "ct": 3}]}
+    row = {"value_ct": 1000, "sample_value_ct": 300, "sample_pattern_value_ct": 300, "frequent_values": frequent}
+    ProfileResult.calibrate_sampled_counts(row)
+    assert row["frequent_values"] == {"values": [{"value": "A", "ct": 3}]}
+
+
+# --- ProfileResult.calibrate_frequent_values ---
+
+
+def test_frequent_value_counts_are_lifted_and_the_other_distinct_count_is_kept():
+    frequent = {"values": [{"value": "A", "ct": 240}, {"value": "B", "ct": 30}], "other": {"distinct_ct": 12, "ct": 15}}
+    ProfileResult.calibrate_frequent_values(frequent, 1000, 300)
+    assert frequent == {"values": [{"value": "A", "ct": 800}, {"value": "B", "ct": 100}], "other": {"distinct_ct": 12, "ct": 50}}
+
+
+def test_frequent_values_covering_every_sampled_value_land_on_the_value_count():
+    frequent = {"values": [{"value": "A", "ct": Decimal(299)}]}
+    ProfileResult.calibrate_frequent_values(frequent, Decimal(1001), 299.0)
+    assert frequent == {"values": [{"value": "A", "ct": 1001}]}
+
+
+@pytest.mark.parametrize(("whole", "sampled"), [(None, 300), (1000, None), (1000, 0), (1000, float("nan"))])
+def test_frequent_values_without_a_ratio_are_left_as_counted(whole, sampled):
+    frequent = {"values": [{"value": "A", "ct": 3}], "other": {"distinct_ct": 2, "ct": 1}}
+    ProfileResult.calibrate_frequent_values(frequent, whole, sampled)
+    assert frequent == {"values": [{"value": "A", "ct": 3}], "other": {"distinct_ct": 2, "ct": 1}}
+
+
+def test_missing_frequent_values_are_accepted():
+    ProfileResult.calibrate_frequent_values(None, 1000, 300)
