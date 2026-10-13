@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from testgen.common.models import _current_session_wrapper, database_session, get_current_session
+from testgen.common.models import _current_session_wrapper, bound_session, database_session, get_current_session
 
 pytestmark = pytest.mark.unit
 
@@ -63,3 +63,16 @@ def test_session_cm_rollback_on_exception():
     mock_session.rollback.assert_called_once()
     mock_session.commit.assert_not_called()
     assert get_current_session() is None
+
+
+def test_a_bound_session_takes_precedence_and_is_released_on_exit():
+    thread_session, bound = MagicMock(), MagicMock()
+    _current_session_wrapper.value = thread_session
+
+    with bound_session(bound):
+        assert get_current_session() is bound
+        with database_session() as session:
+            assert session is bound
+        bound.commit.assert_not_called()
+
+    assert get_current_session() is thread_session

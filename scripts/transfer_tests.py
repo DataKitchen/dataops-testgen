@@ -110,7 +110,7 @@ SKIP_REASONS = {
     "invalid_table": "table not found in the destination table group",
     "invalid_column": "column not found in the destination table group",
     "invalid_test_type": "test type does not exist",
-    "non_public_test_type": "monitor test type",
+    "managed_test_type": "managed test type",
     "missing_external_id": "manual test without an external_id",
     "missing_required_field": "required field left blank",
 }

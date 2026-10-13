@@ -601,6 +601,28 @@ def test_baseline_value_literal_is_not_expanded_by_other_params():
     assert query == "SELECT '{DATA_SCHEMA} (2), {BASELINE_CT} (1)' FROM public.t"
 
 
+@pytest.mark.parametrize(
+    ("field", "placeholder"),
+    [
+        ("custom_query", "CUSTOM_QUERY"),
+        ("subset_condition", "SUBSET_CONDITION"),
+        ("groupby_names", "GROUPBY_NAMES"),
+        ("having_condition", "HAVING_CONDITION"),
+        ("window_date_column", "WINDOW_DATE_COLUMN"),
+        ("match_subset_condition", "MATCH_SUBSET_CONDITION"),
+        ("match_groupby_names", "MATCH_GROUPBY_NAMES"),
+        ("match_having_condition", "MATCH_HAVING_CONDITION"),
+    ],
+)
+def test_data_schema_is_expanded_inside_user_parameters(field, placeholder):
+    instance = _make_params_execution_sql()
+    instance.flavor_service = get_flavor_service("postgresql")
+    td = _make_td(test_type="Aggregate_Balance", **{field: "x IN (SELECT x FROM {DATA_SCHEMA}.t)"})
+    query = replace_params(f"{{{placeholder}}}", instance._get_params(td))
+    assert "{DATA_SCHEMA}" not in query
+    assert "public.t" in query
+
+
 def test_run_query_test_renders_inline_template_unbound():
     instance = _make_params_execution_sql()
     instance.flavor_service = get_flavor_service("postgresql")

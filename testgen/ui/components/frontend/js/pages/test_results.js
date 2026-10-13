@@ -800,7 +800,7 @@ const TestResults = (/** @type Properties */ props) => {
         const si = selectedItemData.val;
         if (!si?.history?.length) return [];
         return si.history.map(h => ({
-            test_date_display: h.test_date ? new Date(h.test_date).toLocaleString() : '',
+            test_date_display: h.test_date ? new Date(parseDate(h.test_date)).toLocaleString() : '',
             threshold_display: formatNumber(h.threshold_value),
             measure_display: formatNumber(h.result_measure),
             status_display: h.result_status

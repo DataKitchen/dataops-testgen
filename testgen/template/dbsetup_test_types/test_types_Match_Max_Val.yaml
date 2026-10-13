@@ -39,7 +39,7 @@ test_types:
   usage_notes: |-
     Match Maximum Value tests that the highest value in the column is exactly the baseline value, compared as a number.
   active: Y
-  ai_redact_values: false
+  ai_redact_values: true
   null_measure_fails: true
   algorithm: Aggregate reconciliation
   generation_sets:

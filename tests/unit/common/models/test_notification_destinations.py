@@ -122,6 +122,21 @@ def test_email_destination_reports_case_insensitive_name_clash():
     assert str(exc.value) == messages.name_already_exists("Team")
 
 
+def test_name_clash_check_does_not_flush_a_pending_rename():
+    """A flushed rename would hit the unique index before the check could report the clash."""
+    dest = EmailDestination(
+        project_code="p", name="Team", destination_type="email",
+        config={"recipients": ["a@x.co"]},
+    )
+    with patch("testgen.common.models.notification_destinations.get_current_session") as gcs:
+        session = gcs.return_value
+        session.scalar.side_effect = lambda _query: session.no_autoflush.__enter__.call_count
+        with pytest.raises(NotificationSettingsValidationError) as exc:
+            dest._validate()
+    assert str(exc.value) == messages.name_already_exists("Team")
+    session.no_autoflush.__exit__.assert_called_once()
+
+
 # ─── InlineRecipientList — wrapper for the send seam ─────────────────
 
 
@@ -291,6 +306,8 @@ def _validate_with_no_collisions(dest: WebhookDestination) -> None:
     ("http://insecure.example.com/hook", "WEBHOOK_URL_NOT_HTTPS"),
     ("ftp://ftp.example.com/hook", "WEBHOOK_URL_NOT_HTTPS"),
     ("https://", "WEBHOOK_URL_INVALID"),
+    ("https://example.com:99999/hook", "WEBHOOK_URL_INVALID"),
+    ("https://example.com:port/hook", "WEBHOOK_URL_INVALID"),
 ])
 def test_webhook_destination_rejects_bad_urls(url, message_key):
     dest = _webhook(secrets={"url": url})
@@ -475,6 +492,8 @@ def test_target_summary_survives_undecryptable_secrets():
      "https://example.com:8443/•••"),
     ("https://example.com:8443/path/token",
      "https://example.com:8443/path/•••"),
+    # An invalid port fails closed like any other unparseable URL.
+    ("https://example.com:99999/path/token", "•••"),
 ])
 def test_mask_webhook_url(url, expected):
     assert mask_webhook_url(url) == expected

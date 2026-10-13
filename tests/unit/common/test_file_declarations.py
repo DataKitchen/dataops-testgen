@@ -325,7 +325,9 @@ def test_a_table_group_declarations_reach_the_target_connection(monkeypatch):
     monkeypatch.setattr(database_service.engine_cache, "target_db", None, raising=False)
     set_target_db_params(
         {"sql_flavor": "duckdb", "sql_flavor_code": "files"},
-        SimpleNamespace(file_declarations=[{"name": "claims", "uri": "claims_*.csv", "format": "csv"}]),
+        SimpleNamespace(
+            file_declarations=[{"name": "claims", "uri": "claims_*.csv", "format": "csv"}], table_group_schema=None
+        ),
     )
 
     assert database_service.target_db_params.declarations == [

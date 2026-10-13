@@ -84,6 +84,8 @@ def test_catalog_refresh_runs_its_steps_in_order(
     run_catalog_refresh(table_group_id, monitor_suite_id=monitor_suite_id, run_profiling=True)
 
     assert [name for name, *_ in steps.mock_calls] == ["refresh", "generate", "submit"]
+    # The profiling run counts the rows itself, so this refresh reads no table's data.
+    assert mock_refresh.call_args.kwargs == {"count_rows": False}
     assert mock_gen.call_args == call(monitor_suite_id, INITIAL_MONITOR_TYPES)
     assert mock_submit.call_args.kwargs["job_key"] == JobKey.run_profile
     assert mock_submit.call_args.kwargs["kwargs"] == {"table_group_id": table_group_id}
@@ -155,6 +157,26 @@ def test_catalog_refresh_alone_has_no_follow_ups(mock_tg, _conn, _target, mock_r
 
     run_catalog_refresh(str(uuid4()))
 
-    mock_refresh.assert_called_once()
+    assert mock_refresh.call_args.kwargs == {"count_rows": True}
     mock_gen.assert_not_called()
     mock_submit.assert_not_called()
+
+
+@patch(f"{MODULE}.JobExecution.submit")
+@patch(f"{MODULE}.run_monitor_generation")
+@patch(f"{MODULE}.run_data_chars_refresh")
+@patch(f"{MODULE}.Connection.get")
+@patch(f"{MODULE}.TableGroup.get", return_value=None)
+def test_a_refresh_whose_table_group_was_deleted_completes_without_doing_anything(
+    _tg, mock_conn, mock_refresh, mock_gen, mock_submit, caplog
+):
+    table_group_id = str(uuid4())
+
+    with caplog.at_level("INFO", logger="testgen"):
+        run_catalog_refresh(table_group_id, monitor_suite_id=str(uuid4()), run_profiling=True)
+
+    mock_conn.assert_not_called()
+    mock_refresh.assert_not_called()
+    mock_gen.assert_not_called()
+    mock_submit.assert_not_called()
+    assert caplog.messages == [f"Skipping data catalog refresh: table group {table_group_id} no longer exists"]

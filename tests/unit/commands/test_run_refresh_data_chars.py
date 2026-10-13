@@ -249,3 +249,21 @@ def test_a_connection_that_reads_in_place_copies_nothing(mock_sql, _fetch, _thre
     run_data_chars_refresh(_connection(), MagicMock(), datetime.now(UTC))
 
     mock_cache.assert_not_called()
+
+
+@patch(f"{MODULE}.write_data_chars")
+@patch(f"{MODULE}.cache_target_tables")
+@patch(f"{MODULE}.fetch_from_db_threaded", return_value=([], [], {}))
+@patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+def test_a_refresh_without_row_counts_reads_no_table_data(mock_sql, _fetch, mock_threaded, mock_cache, mock_write):
+    mock_sql.return_value = sql_generator = _file_refresh_generator()
+    sql_generator.flavor_service.caches_tables.return_value = True
+
+    data_chars = run_data_chars_refresh(_connection(SqlFlavorCode.S3), MagicMock(), datetime.now(UTC), count_rows=False)
+
+    mock_cache.assert_not_called()
+    sql_generator.get_row_counts.assert_not_called()
+    assert {column.table_name for column in data_chars} == {"claims", "orders"}
+    assert {column.record_ct for column in data_chars} == {None}
+    mock_write.assert_called_once()

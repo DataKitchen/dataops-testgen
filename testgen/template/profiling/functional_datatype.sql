@@ -276,7 +276,11 @@ WHERE profile_run_id = :PROFILE_RUN_ID
 UPDATE profile_results
 SET functional_data_type =
         CASE WHEN (std_pattern_match = 'ZIP_USA' AND (column_name ILIKE '%zip%' OR column_name ILIKE '%postal%'))
-               OR (general_type = 'A' AND LOWER(column_name) IN ('zip_code', 'zip'))
+               -- Numeric values of at most 9 characters, with blanks allowed: five-digit and ZIP+4 codes, including
+               -- ones stored as numbers that lost their leading zeros. Postal codes with letters, such as UK and
+               -- Canadian ones, stay out.
+               OR (general_type = 'A' AND LOWER(column_name) IN ('zip_code', 'zip')
+                   AND numeric_ct > 0 AND value_ct = numeric_ct + zero_length_ct AND max_length <= 9)
                 THEN 'Zip'
             WHEN std_pattern_match = 'EMAIL'
                 THEN 'Email'

@@ -65,7 +65,7 @@ Password to connect to the testgen application postgres database. Required outsi
 
 User with admin privileges in the testgen application postgres database used to create the database and schema and to apply upgrades. Required if the user in `TG_METADATA_DB_USER` does not have the required privileges.
 
-When this is a different user, setup grants `TG_METADATA_DB_USER` read and write access to the schema, including objects that later upgrades create, as long as the upgrades run as this same user. To separate the two users after setup, or to change this user later, grant that access yourself.
+When this is a different user, setup and every upgrade grant `TG_METADATA_DB_USER` read and write access to the schema. To separate the two users after setup, or to change this user later, run `testgen upgrade-system-version` to grant that access. The admin user must own the TestGen schema.
 
 default: `os.environ["TG_METADATA_DB_USER"]`
 
@@ -234,13 +234,13 @@ default: `tmp%%`
 
 A SQL filter supported by the project database's `LIKE` operator representing ID columns.
 
-default: `%%id`
+default: `%%_id`
 
 #### `DEFAULT_PROFILING_SK_COLUMN_MASK`
 
 A SQL filter supported by the project database's `LIKE` operator representing surrogate key columns.
 
-default: `%%sk`
+default: `%%_sk`
 
 #### `OBSERVABILITY_API_URL`
 

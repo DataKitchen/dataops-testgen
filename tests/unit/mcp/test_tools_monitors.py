@@ -2342,3 +2342,33 @@ def test_list_monitors_keeps_all_bounds_when_no_metric_monitor(
         out = list_monitors(str(tg.id), "orders")
 
     assert "60" in out
+
+
+_DRIVER_ERROR = 'invalid input syntax for type timestamp: "alice@example.com"'
+
+
+@pytest.mark.parametrize("protected", [True, False])
+@patch(f"{MODULE}.TestResult")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_events_freshness_error_text_is_withheld_when_protected(
+    mock_resolve, mock_tr_cls, db_session_mock, protected,
+):
+    """A freshness error event's message is the driver's text, which can quote the value that caused it."""
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_tr_cls.list_monitor_events_for_table.return_value = (
+        [
+            _monitor_event(test_type="Freshness_Trend", is_error=True, message=_DRIVER_ERROR),
+            _monitor_event(test_type="Freshness_Trend", message="Table update detected: No. Late.", is_anomaly=True),
+        ],
+        2,
+    )
+
+    from testgen.mcp.tools.monitors import list_monitor_events
+
+    with _patch_perms(), patch("testgen.mcp.tools.common.mcp_source_data_protected", return_value=protected):
+        out = list_monitor_events(str(tg.id), "orders", "freshness")
+
+    assert ("alice@example.com" in out) is not protected
+    assert ("withheld by the source-data protection policy" in out) is protected
+    assert "| No | Late |" in out

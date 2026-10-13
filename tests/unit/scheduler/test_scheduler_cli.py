@@ -384,3 +384,31 @@ def test_run_scheduler_settles_stale_jobs_before_starting(scheduler_db_session):
 
     recover.assert_called_once()
     scheduler_cls.return_value.run.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("revision_check", "ready"),
+    [
+        ({"return_value": True}, True),
+        ({"return_value": False}, False),
+        ({"side_effect": RuntimeError('relation "tg_revision" does not exist')}, False),
+    ],
+)
+def test_the_scheduler_starts_only_on_a_schema_this_version_matches(revision_check, ready):
+    from testgen.scheduler.cli_scheduler import check_db_is_ready
+
+    with patch("testgen.scheduler.cli_scheduler.is_db_revision_up_to_date", **revision_check):
+        assert check_db_is_ready() is ready
+
+
+def test_the_scheduler_waits_for_the_upgrade_instead_of_exiting(scheduler_db_session):
+    with (
+        patch("testgen.scheduler.cli_scheduler.is_db_revision_up_to_date", side_effect=[False, False, True]),
+        patch("testgen.scheduler.cli_scheduler.time.sleep") as sleep,
+        patch.object(JobExecution, "recover_stale", return_value=0) as recover,
+        patch("testgen.scheduler.cli_scheduler.CliScheduler"),
+    ):
+        run_scheduler()
+
+    assert sleep.call_count == 2
+    recover.assert_called_once()

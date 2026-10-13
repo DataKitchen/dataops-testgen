@@ -1093,6 +1093,7 @@ def run_app(module):
             ]
 
             terminating = False
+            unexpected_exit = False
 
             def term_children(signum, _):
                 # Shutdown is underway: record it so the watcher below does not read the
@@ -1119,8 +1120,16 @@ def run_app(module):
                     if child.poll() is not None:
                         children.remove(child)
                         if not terminating:
-                            terminating = True
+                            LOG.error(
+                                f"An application module exited unexpectedly with code {child.returncode}."
+                                " Stopping the others."
+                            )
+                            unexpected_exit = True
                             term_children(signal.SIGTERM, None)
+
+            # A module that died is a failure even when it exited cleanly, so a restart policy acts on it.
+            if unexpected_exit:
+                sys.exit(1)
 
 
 

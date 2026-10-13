@@ -40,7 +40,7 @@ test_types:
   usage_notes: |-
     Match Sum tests that the column total is within a relative tolerance of the baseline total. The default tolerance is 0 for integer and exact-decimal columns, whose sum is profiled exactly, and close to an exact match for floating-point columns. Widen it per test when small numeric differences are expected.
   active: Y
-  ai_redact_values: false
+  ai_redact_values: true
   null_measure_fails: true
   algorithm: Aggregate reconciliation
   generation_sets:

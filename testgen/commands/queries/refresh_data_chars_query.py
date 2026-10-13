@@ -1,5 +1,5 @@
 import re
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from datetime import datetime
 from uuid import UUID
 
@@ -135,17 +135,21 @@ class RefreshDataCharsSQL:
         chunked_queries = chunk_queries(count_queries, " UNION ALL ", max_query_chars)
         return [ (query, None) for query in chunked_queries ]
 
-    def get_file_counts(self) -> list[tuple[str, None]]:
+    def get_file_counts(self, skip: Collection[str] = ()) -> list[tuple[str, None]]:
+        """One query per declaration, so a declaration whose files cannot be listed fails only its own count.
+
+        ``skip`` names declarations to leave out.
+        """
         # Runs on Target database
         if not declares_files(self.connection.sql_flavor_code):
             return []
         params = resolve_connection_params(self.connection.__dict__)
-        declarations = parse_file_declarations(self.table_group.file_declarations)
-        if not (count_queries := self.flavor_service.file_count_queries(params, declarations)):
-            return []
-        max_query_chars = self.connection.max_query_chars or DEFAULT_MAX_QUERY_CHARS
-        chunked_queries = chunk_queries(count_queries, " UNION ALL ", max_query_chars)
-        return [ (query, None) for query in chunked_queries ]
+        declarations = [
+            declaration
+            for declaration in parse_file_declarations(self.table_group.file_declarations)
+            if declaration.name not in skip
+        ]
+        return [(query, None) for query in self.flavor_service.file_count_queries(params, declarations)]
 
     def verify_access(self, table_name: str) -> tuple[str, None]:
         # Runs on Target database

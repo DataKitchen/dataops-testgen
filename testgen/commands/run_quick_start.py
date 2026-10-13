@@ -216,7 +216,6 @@ def _prepare_connection_to_target_database(params_mapping):
         "project_port": params_mapping["PROJECT_DB_PORT"],
         "project_db": params_mapping["PROJECT_DB"],
         "project_user": params_mapping["TESTGEN_ADMIN_USER"],
-        "table_group_schema": params_mapping["PROJECT_SCHEMA"],
         "project_pw_encrypted": params_mapping["TESTGEN_ADMIN_PASSWORD"],
     }
     set_target_db_params(connection_params, None)

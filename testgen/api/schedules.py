@@ -32,7 +32,7 @@ _create_responses = {
 
 _FIELD_NAMES = {"cron_expr": "cron_expression", "cron_tz": "timezone"}
 
-router = APIRouter(tags=["Schedules"], dependencies=[Depends(db_session)], responses=_error_responses)
+router = APIRouter(tags=["Schedules"], dependencies=[Depends(db_session, scope="function")], responses=_error_responses)
 
 
 @router.post(

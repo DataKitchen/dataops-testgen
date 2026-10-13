@@ -27,7 +27,7 @@ _error_responses = {
 
 router = APIRouter(
     tags=["Test Definitions"],
-    dependencies=[Depends(db_session)],
+    dependencies=[Depends(db_session, scope="function")],
     responses=_error_responses,
 )
 

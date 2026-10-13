@@ -9,6 +9,7 @@ from sqlalchemy import BigInteger, Boolean, Column, Float, ForeignKey, Integer, 
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
+from testgen import settings
 from testgen.common.enums import MonitorType
 from testgen.common.flavors import table_group_schema_label
 from testgen.common.models import get_current_session
@@ -350,8 +351,8 @@ class TableGroup(Entity):
     profiling_table_set: str = Column(NullIfEmptyString)
     profiling_include_mask: str = Column(NullIfEmptyString)
     profiling_exclude_mask: str = Column(NullIfEmptyString)
-    profile_id_column_mask: str = Column(String, default="%id")
-    profile_sk_column_mask: str = Column(String, default="%_sk")
+    profile_id_column_mask: str = Column(String)
+    profile_sk_column_mask: str = Column(String)
     profile_use_sampling: bool = Column(YNString, default="N")
     profile_sample_percent: int = Column(Integer, default=30)
     profile_sample_min_count: int = Column(BigInteger, default=100000)
@@ -425,6 +426,7 @@ class TableGroup(Entity):
                 SUM(column_ct * approx_record_ct) AS approx_data_point_ct,
                 SUM(column_ct * record_ct) AS data_point_ct
             FROM data_table_chars
+            WHERE drop_date IS NULL
             GROUP BY table_groups_id
         )
         SELECT groups.id,
@@ -473,6 +475,7 @@ class TableGroup(Entity):
                 SUM(column_ct * approx_record_ct) AS approx_data_point_ct,
                 SUM(column_ct * record_ct) AS data_point_ct
             FROM data_table_chars
+            WHERE drop_date IS NULL
             GROUP BY table_groups_id
         ),
         latest_profile AS (
@@ -710,6 +713,7 @@ class TableGroup(Entity):
                 SUM(column_ct) AS column_count,
                 SUM(COALESCE(record_ct, approx_record_ct)) AS row_count
             FROM data_table_chars
+            WHERE drop_date IS NULL
             GROUP BY table_groups_id
         ),
         latest_profile AS (
@@ -1332,10 +1336,21 @@ _MODEL_DEFAULTS: dict[str, Any] = {
 }
 
 
-def table_group_defaults() -> dict[str, Any]:
-    """Return the scalar ``Column(default=...)`` values of ``TableGroup``, keyed by attribute.
+def default_profiling_masks() -> dict[str, str]:
+    """Return the table and column masks a new table group starts with, keyed by attribute."""
+    return {
+        "profiling_include_mask": settings.DEFAULT_PROFILING_INCLUDE_MASK,
+        "profiling_exclude_mask": settings.DEFAULT_PROFILING_EXCLUDE_MASK,
+        "profile_id_column_mask": settings.DEFAULT_PROFILING_ID_COLUMN_MASK,
+        "profile_sk_column_mask": settings.DEFAULT_PROFILING_SK_COLUMN_MASK,
+    }
 
-    Column defaults only fire at flush time, so a table group validated before
-    it is saved has to be constructed with these to pass validation.
+
+def table_group_defaults() -> dict[str, Any]:
+    """Return the values a new table group starts with, keyed by attribute.
+
+    These are the scalar ``Column(default=...)`` values of ``TableGroup`` plus the default table and
+    column masks. Column defaults only fire at flush time, so a table group validated before it is saved
+    has to be constructed with these to pass validation.
     """
-    return dict(_MODEL_DEFAULTS)
+    return {**_MODEL_DEFAULTS, **default_profiling_masks()}

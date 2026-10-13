@@ -12,7 +12,9 @@ import ipaddress
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
+from testgen.common.models.notification_destinations import WebhookDestination, WebhookType
 from testgen.common.notifications import messages
 from testgen.common.notifications import webhook_delivery as wd
 
@@ -168,3 +170,28 @@ def test_unpreparable_url_raises_delivery_error():
         wd._canonical_connect_target("https://")
 
     assert "not a valid URL" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("variable", ["HTTPS_PROXY", "https_proxy", "ALL_PROXY"])
+def test_delivery_ignores_a_proxy_set_in_the_environment(monkeypatch, variable):
+    """A proxy from the environment would be refused by the pinned adapter, so the
+    request must go out without one rather than fail every delivery.
+    """
+    monkeypatch.setenv(variable, "http://proxy.example:3128")
+    destination = WebhookDestination(project_code="DEFAULT", name="probe", webhook_type=WebhookType.generic)
+    destination.url = "https://webhook.example.com/hook"
+    seen_proxies = []
+
+    def record_send(_adapter, request, **kwargs):
+        seen_proxies.append(requests.utils.select_proxy(request.url, kwargs.get("proxies")))
+        raise requests.ConnectionError("stop before the network")
+
+    with (
+        patch.object(wd.http_guard, "resolve_and_verify", return_value=[ipaddress.ip_address("203.0.113.10")]),
+        patch.object(wd._PinnedHTTPAdapter, "send", record_send),
+        pytest.raises(wd.WebhookDeliveryError) as excinfo,
+    ):
+        wd.deliver_test_payload(destination)
+
+    assert seen_proxies == [None]
+    assert str(excinfo.value) == "Delivery failed: ConnectionError"

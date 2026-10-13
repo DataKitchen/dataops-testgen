@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from testgen import settings
 from testgen.common.database.column_chars import ObjectType
 from testgen.common.database.table_group_service import (
     SchemaMove,
@@ -279,8 +280,24 @@ def test_defaults_mirror_the_model_column_defaults():
 
     assert defaults["profile_sample_percent"] == 30
     assert defaults["profile_sample_min_count"] == 100000
-    assert defaults["profile_id_column_mask"] == "%id"
+    assert defaults["profile_id_column_mask"] == "%_id"
+    assert defaults["profile_sk_column_mask"] == "%_sk"
     assert "id" not in defaults
+
+
+def test_defaults_carry_the_configured_table_and_column_masks():
+    with (
+        patch.object(settings, "DEFAULT_PROFILING_INCLUDE_MASK", "fact_%"),
+        patch.object(settings, "DEFAULT_PROFILING_EXCLUDE_MASK", "stg_%"),
+        patch.object(settings, "DEFAULT_PROFILING_ID_COLUMN_MASK", "%_key"),
+        patch.object(settings, "DEFAULT_PROFILING_SK_COLUMN_MASK", "%_surrogate"),
+    ):
+        defaults = table_group_defaults()
+
+    assert defaults["profiling_include_mask"] == "fact_%"
+    assert defaults["profiling_exclude_mask"] == "stg_%"
+    assert defaults["profile_id_column_mask"] == "%_key"
+    assert defaults["profile_sk_column_mask"] == "%_surrogate"
 
 
 def test_defaults_are_a_fresh_copy():
@@ -711,6 +728,57 @@ def test_each_file_table_reports_the_files_it_reads(mock_session, mock_sql_cls):
     assert preview["tables"]["claims"]["file_ct"] == 3
     # The columns saved from the preview carry it too, so the catalog written from it is complete.
     assert {(column.object_type, column.file_ct) for column in data_chars} == {(ObjectType.FILES, 3)}
+
+
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+@patch(f"{MODULE}.target_db_session")
+def test_a_declaration_whose_files_cannot_be_counted_still_previews(mock_session, mock_sql_cls):
+    """Credentials that can read an object but not list its bucket fail only that declaration's count."""
+    table_group, sql_generator = _files_preview(
+        mock_session,
+        mock_sql_cls,
+        rows=[],
+        declarations=[
+            {"name": "claims", "uri": "claims.csv", "format": "csv"},
+            {"name": "locked", "uri": "locked/data.csv", "format": "csv"},
+        ],
+    )
+    sql_generator.get_file_counts.return_value = [("count claims", None), ("count locked", None)]
+
+    def respond(query):
+        if query == "count claims":
+            return [{"table_name": "claims", "file_ct": 1}]
+        if query == "count locked":
+            raise RuntimeError("HTTP 403 listing locked/")
+        return [_column_row("claims", "id"), _column_row("locked", "id")]
+
+    _session(mock_session, respond)
+
+    preview, _, _ = preview_table_group(table_group, connection=_files_conn(), verify_access=False)
+
+    assert preview["success"] is True
+    assert preview["tables"]["claims"]["file_ct"] == 1
+    assert preview["tables"]["locked"]["file_ct"] is None
+    assert preview["tables"]["locked"]["error"] is None
+
+
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+@patch(f"{MODULE}.target_db_session")
+def test_a_declaration_that_failed_is_not_counted(mock_session, mock_sql_cls):
+    table_group, sql_generator = _files_preview(
+        mock_session,
+        mock_sql_cls,
+        rows=[_column_row("claims", "id")],
+        declarations=[
+            {"name": "claims", "uri": "claims.csv", "format": "csv"},
+            {"name": "missing", "uri": "absent.csv", "format": "csv"},
+        ],
+        failures={"missing": "No files matched this path."},
+    )
+
+    preview_table_group(table_group, connection=_files_conn(), verify_access=False)
+
+    assert sql_generator.get_file_counts.call_args.kwargs["skip"] == {"missing": "No files matched this path."}
 
 
 # --- write_table_group_catalog ---

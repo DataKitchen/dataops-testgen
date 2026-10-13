@@ -110,7 +110,7 @@ CREATE TABLE table_groups
     profiling_table_set      VARCHAR(2000),
     profiling_include_mask   VARCHAR(2000),
     profiling_exclude_mask   VARCHAR(2000),
-    profile_id_column_mask   VARCHAR(2000) DEFAULT '%id' :: VARCHAR(2000),
+    profile_id_column_mask   VARCHAR(2000) DEFAULT '%_id' :: VARCHAR(2000),
     profile_sk_column_mask   VARCHAR(150) DEFAULT '%_sk',
     profile_use_sampling     VARCHAR(3) DEFAULT 'N',
     profile_sample_percent   INTEGER DEFAULT 30,

@@ -16,6 +16,7 @@ from sqlalchemy.pool import NullPool
 
 from testgen.common.database.file_declarations import (
     NAME_INVALID,
+    NO_FILES_MATCHED,
     PATH_OUTSIDE_BASE_PATH,
     URI_IS_FOLDER,
     parse_file_declarations,
@@ -490,6 +491,51 @@ def test_schema_discovery_separates_tables_from_views(typed_database):
     assert rows[("a_view", "a_varchar")]["object_type"] == "VIEW"
     # duckdb_views() carries no row estimate.
     assert rows[("a_view", "a_varchar")]["approx_record_ct"] is None
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "SELECT * FROM read_text('{outside}')",
+        "SELECT * FROM read_csv('{outside}')",
+        "SELECT * FROM glob('{outside}')",
+        "ATTACH '{outside}' AS other",
+        "COPY (SELECT 1) TO '{outside}'",
+        "SET enable_external_access = true",
+    ],
+)
+def test_files_outside_the_database_directory_are_unreachable(customer_database, tmp_path_factory, statement):
+    outside = tmp_path_factory.mktemp("elsewhere") / "outside.csv"
+    outside.write_text("secret\n")
+    service = DuckdbFlavorService()
+    params = connection_params(customer_database)
+    engine = service.create_engine(params)
+    try:
+        with engine.connect() as connection:
+            service.init(connection, resolve_connection_params(params), [])
+            with pytest.raises(SQLAlchemyError, match="disabled by configuration|configuration has been locked"):
+                connection.execute(text(statement.format(outside=outside))).fetchall()
+            connection.rollback()
+            assert connection.execute(text("SELECT count(*) FROM sales.orders")).scalar() == 1
+    finally:
+        engine.dispose()
+
+
+def test_a_view_in_the_database_reads_files_beside_it(tmp_path):
+    (tmp_path / "claims.csv").write_text("id,amount\n1,10\n2,20\n")
+    database_file = tmp_path / "customer.duckdb"
+    setup = duckdb.connect(str(database_file))
+    setup.execute(f"CREATE VIEW claims AS SELECT * FROM read_csv('{tmp_path / 'claims.csv'}')")
+    setup.close()
+    service = DuckdbFlavorService()
+    params = connection_params(database_file)
+    engine = service.create_engine(params)
+    try:
+        with engine.connect() as connection:
+            service.init(connection, resolve_connection_params(params), [])
+            assert connection.execute(text("SELECT sum(amount) FROM claims")).scalar() == 30
+    finally:
+        engine.dispose()
 
 
 def test_the_attachment_survives_a_rollback(customer_database):
@@ -976,9 +1022,10 @@ def test_a_connection_that_spills_and_closes_cleanly_leaves_no_directory_behind(
     engine = service.create_engine(params)
     try:
         with engine.connect() as connection:
-            service.init(connection, resolve_connection_params(params), [])
+            # Ahead of init, which locks the configuration.
             connection.execute(text("SET memory_limit = '150MB'"))
             connection.execute(text("SET threads = 2"))
+            service.init(connection, resolve_connection_params(params), [])
             spilled_into = Path(_spill_directory_of(connection))
             connection.execute(
                 text("CREATE TEMP TABLE spilled AS SELECT i, repeat(md5(i::VARCHAR), 40) AS pad"
@@ -1429,7 +1476,7 @@ def test_a_run_opens_a_connection_whose_declarations_did_not_all_build(data_dire
     target = database_service.TargetDbParams(files_params(data_directory), parse_file_declarations([
         {"name": "missing", "uri": "absent_*.csv", "format": "csv"},
         {"name": "claims", "uri": "claims_*.csv", "format": "csv"},
-    ]))
+    ]), None)
     monkeypatch.setattr(database_service, "target_db_params", target)
     monkeypatch.setattr(database_service.engine_cache, "target_db", None, raising=False)
 
@@ -1442,6 +1489,19 @@ def test_a_run_opens_a_connection_whose_declarations_did_not_all_build(data_dire
         assert built == ["claims"]
     finally:
         connection.close()
+
+
+@pytest.mark.parametrize("uri", ["absent.csv", "absent_*.csv"])
+def test_a_path_that_matches_no_file_reports_it_without_the_server_path(data_directory, uri):
+    service = DuckdbFlavorService()
+    engine, connection = open_files_connection(service, files_params(data_directory), [
+        {"name": "missing", "uri": uri, "format": "csv"},
+    ])
+    try:
+        assert service.declaration_failures(connection) == {"missing": NO_FILES_MATCHED}
+    finally:
+        connection.close()
+        engine.dispose()
 
 
 def test_the_failures_stay_on_the_connection_for_the_caller(data_directory):
@@ -1579,7 +1639,7 @@ def test_a_failed_init_leaves_the_pool_usable(tmp_path, monkeypatch):
     """
     from testgen.common.database import database_service
 
-    target = database_service.TargetDbParams(files_params(tmp_path / "absent"), [])
+    target = database_service.TargetDbParams(files_params(tmp_path / "absent"), [], None)
     monkeypatch.setattr(database_service, "target_db_params", target)
     monkeypatch.setattr(database_service.engine_cache, "target_db", None, raising=False)
 

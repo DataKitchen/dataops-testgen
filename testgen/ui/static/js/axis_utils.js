@@ -85,8 +85,8 @@ function scale(value, ranges, zero=0) {
 }
 
 /**
- * @param {SVGElement} svg 
- * @param {MouseEvent} event 
+ * @param {SVGElement} svg
+ * @param {MouseEvent} event
  * @returns {({x: number, y: number})}
  */
 function screenToSvgCoordinates(svg, event) {
@@ -102,7 +102,7 @@ function screenToSvgCoordinates(svg, event) {
  * Generates an array of "nice" and properly spaced tick dates for a time-series axis.
  * It automatically selects the best time step (granularity) based on the range.
  *
- * @param {Date[]} dates An array of Date objects representing the data points.
+ * @param {Date[]} dates Dates or epoch-millisecond timestamps spanning the data points.
  * @param {number} minTicks The minimum number of ticks desired.
  * @param {number} maxTicks The maximum number of ticks desired.
  * @returns {Date[]} An array of Date objects for the axis ticks.
@@ -113,7 +113,7 @@ function getAdaptiveTimeTicks(dates, minTicks, maxTicks) {
     }
 
     if (typeof dates[0] === 'number') {
-        dates = dates.map(d => new Date(d * 1000));
+        dates = dates.map(d => new Date(d));
     }
 
     const timestamps = dates.map(d => d.getTime());
@@ -132,7 +132,7 @@ function getAdaptiveTimeTicks(dates, minTicks, maxTicks) {
         { name: '6 months', ms: null, count: 6 },
         { name: 'year', ms: null, count: 12 },
     ];
-    
+
     let bestStepIndex = -1;
     let ticks = [];
 
@@ -148,10 +148,10 @@ function getAdaptiveTimeTicks(dates, minTicks, maxTicks) {
 
         if (estimatedTickCount <= maxTicks) {
             bestStepIndex = i;
-            break; 
+            break;
         }
     }
-    
+
     if (bestStepIndex === -1) {
         const roughStep = rangeMs / (maxTicks - 1);
         const niceMsStep = getNiceStep(roughStep);
@@ -164,7 +164,7 @@ function getAdaptiveTimeTicks(dates, minTicks, maxTicks) {
     } else {
         ticks = generateMonthYearTicks(minTime, maxTime, bestStep.count);
     }
-    
+
     while (ticks.length < minTicks && bestStepIndex > 0) {
         bestStepIndex--;
         const nextStep = timeSteps[bestStepIndex];
@@ -175,20 +175,20 @@ function getAdaptiveTimeTicks(dates, minTicks, maxTicks) {
             ticks = generateMonthYearTicks(minTime, maxTime, nextStep.count);
         }
     }
-    
+
     return ticks;
 }
 
 /** Calculates a "nice" step size (1, 2, 5, etc. * power of 10) for raw milliseconds. */
 function getNiceStep(step) {
-    const exponent = Math.floor(Math.log10(step)); 
-    const fraction = step / Math.pow(10, exponent); 
+    const exponent = Math.floor(Math.log10(step));
+    const fraction = step / Math.pow(10, exponent);
     let niceFraction;
     if (fraction <= 1) niceFraction = 1;
     else if (fraction <= 2) niceFraction = 2;
     else if (fraction <= 5) niceFraction = 5;
     else return 1 * Math.pow(10, exponent + 1); // Next power of 10
-    
+
     return niceFraction * Math.pow(10, exponent);
 }
 
@@ -211,11 +211,11 @@ function generateMsTicks(minTime, maxTime, niceStepMs) {
     }
 
     const ticks = [];
-    const epsilon = 1e-10; 
+    const epsilon = 1e-10;
     let currentTick = tickStart;
-    
+
     while (currentTick <= maxTime + niceStepMs + epsilon) {
-        ticks.push(Math.round(currentTick)); 
+        ticks.push(Math.round(currentTick));
         currentTick += niceStepMs;
     }
 
@@ -226,13 +226,13 @@ function generateMsTicks(minTime, maxTime, niceStepMs) {
 function generateMonthYearTicks(minTime, maxTime, monthStep) {
     const ticks = [];
     let currentDate = new Date(minTime);
-    
+
     currentDate.setDate(1); // Set to the 1st of the month
-    currentDate.setHours(0, 0, 0, 0); 
-    
+    currentDate.setHours(0, 0, 0, 0);
+
     let year = currentDate.getFullYear();
     let month = currentDate.getMonth();
-    
+
     while (month % monthStep !== 0) {
         month--;
         if (month < 0) {
@@ -241,16 +241,16 @@ function generateMonthYearTicks(minTime, maxTime, monthStep) {
         }
     }
     currentDate.setFullYear(year, month, 1);
-    
+
     while (currentDate.getTime() + monthStep * 30 * 86400000 < minTime) {
         currentDate.setMonth(currentDate.getMonth() + monthStep);
     }
-    
+
     while (currentDate.getTime() <= maxTime) {
         ticks.push(new Date(currentDate.getTime()));
         currentDate.setMonth(currentDate.getMonth() + monthStep);
     }
-    
+
     if (ticks.length > 0 && currentDate.getTime() - maxTime < monthStep * 30 * 86400000 / 2) {
          ticks.push(new Date(currentDate.getTime()));
     }
@@ -262,7 +262,7 @@ function generateMonthYearTicks(minTime, maxTime, monthStep) {
 function estimateMonthYearTicks(minTime, maxTime, monthStep) {
     const minDate = new Date(minTime);
     const maxDate = new Date(maxTime);
-    
+
     let years = maxDate.getFullYear() - minDate.getFullYear();
     let months = maxDate.getMonth() - minDate.getMonth();
     let totalMonths = years * 12 + months;
@@ -337,7 +337,7 @@ function getAdaptiveTimeTicksV2(dates, totalWidth, tickWidth) {
  */
 function generateMsTicksStrict(minTime, maxTime, stepMs) {
     const ticks = [];
-    
+
     let currentTick = Math.ceil(minTime / stepMs) * stepMs;
 
     while (currentTick <= maxTime) {
@@ -353,7 +353,7 @@ function generateMsTicksStrict(minTime, maxTime, stepMs) {
 function generateMonthYearTicksStrict(minTime, maxTime, monthStep) {
     const ticks = [];
     let currentDate = new Date(minTime);
-    
+
     currentDate.setDate(1);
     currentDate.setHours(0, 0, 0, 0);
 
@@ -381,7 +381,7 @@ function estimateMonthYearTicksStrict(minTime, maxTime, monthStep) {
     let count = 0;
     let d = new Date(minTime);
     d.setDate(1); d.setHours(0,0,0,0);
-    
+
     let m = d.getMonth();
     let y = d.getFullYear();
     while (m % monthStep !== 0) { m--; if(m<0){m=11; y--;} }
@@ -424,12 +424,12 @@ function formatSmartTimeTicks(ticks) {
         const currentTick = ticks[i];
         const previousTick = ticks[i - 1];
         const nextTick = ticks[i + 1];
-        
+
         let needsYear = false;
         let needsMonth = false;
         let needsDay = false;
         let needsTime = false;
-        
+
         if (!previousTick) {
             needsYear = true;
             needsMonth = true;
@@ -456,7 +456,7 @@ function formatSmartTimeTicks(ticks) {
                 needsTime = true;
             }
         }
-        
+
         let line1 = [];
         let line2 = [];
 
@@ -484,7 +484,7 @@ function formatSmartTimeTicks(ticks) {
         if (needsYear) {
             line2.push(formatPart(currentTick, yearFormat));
         }
-        
+
         line1 = line1.filter(p => p.length > 0).join(' ');
         line2 = line2.filter(p => p.length > 0).join(' ');
 

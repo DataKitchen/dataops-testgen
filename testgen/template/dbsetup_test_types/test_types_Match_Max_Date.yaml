@@ -39,7 +39,7 @@ test_types:
   usage_notes: |-
     Match Maximum Date tests that the latest date in the column is exactly the baseline date. Dates are compared to the second, and fractional seconds are ignored.
   active: Y
-  ai_redact_values: false
+  ai_redact_values: true
   null_measure_fails: true
   algorithm: Aggregate reconciliation
   generation_sets:

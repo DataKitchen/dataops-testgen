@@ -19,7 +19,7 @@ SELECT '{PROJECT_CODE}'                            as project_code,
 
 INSERT INTO table_groups
 (id, project_code, connection_id, table_groups_name, table_group_schema, profiling_table_set, profiling_include_mask, profiling_exclude_mask,
- profile_sample_min_count)
+ profile_id_column_mask, profile_sk_column_mask, profile_sample_min_count)
 SELECT '0ea85e17-acbe-47fe-8394-9970725ad37d'::UUID as id,
        '{PROJECT_CODE}'                         as project_code,
        1                                        as connection_id,
@@ -28,6 +28,8 @@ SELECT '0ea85e17-acbe-47fe-8394-9970725ad37d'::UUID as id,
        NULLIF('{PROFILING_TABLE_SET}', '')      as profiling_table_set,
        NULLIF('{PROFILING_INCLUDE_MASK}', '')   as profiling_include_mask,
        NULLIF('{PROFILING_EXCLUDE_MASK}', '')   as profiling_exclude_mask,
+       NULLIF('{PROFILING_ID_COLUMN_MASK}', '') as profile_id_column_mask,
+       NULLIF('{PROFILING_SK_COLUMN_MASK}', '') as profile_sk_column_mask,
        15000                                    as profile_sample_min_count;
 
 INSERT INTO test_suites

@@ -95,13 +95,16 @@ class NotificationDestination(Entity):
         if len(name) > 100:
             raise NotificationSettingsValidationError(messages.NAME_TOO_LONG)
         session = get_current_session()
-        clash = session.scalar(
-            select(func.count()).select_from(NotificationDestination).where(
-                NotificationDestination.project_code == self.project_code,
-                func.lower(NotificationDestination.name) == name.lower(),
-                NotificationDestination.id != self.id,
+        # Autoflush would write a pending rename before the check, so the unique
+        # index would reject it ahead of this message.
+        with session.no_autoflush:
+            clash = session.scalar(
+                select(func.count()).select_from(NotificationDestination).where(
+                    NotificationDestination.project_code == self.project_code,
+                    func.lower(NotificationDestination.name) == name.lower(),
+                    NotificationDestination.id != self.id,
+                )
             )
-        )
         if clash:
             raise NotificationSettingsValidationError(messages.name_already_exists(name))
 
@@ -337,6 +340,8 @@ def _validate_webhook_url(url: str | None) -> None:
         raise NotificationSettingsValidationError(messages.WEBHOOK_URL_NOT_HTTPS)
     try:
         parsed = urlparse(url)
+        # ``port`` is parsed lazily and raises on an out-of-range value.
+        parsed.port  # noqa: B018
     except ValueError as exc:
         raise NotificationSettingsValidationError(messages.WEBHOOK_URL_INVALID) from exc
     if not parsed.hostname:
@@ -396,6 +401,7 @@ def mask_webhook_url(url: str | None) -> str:
         return ""
     try:
         parsed = urlparse(url)
+        port = parsed.port
     except ValueError:
         return "•••"
     # ``hostname`` strips userinfo and normalizes case; ``netloc`` preserves the
@@ -403,7 +409,7 @@ def mask_webhook_url(url: str | None) -> str:
     host = parsed.hostname
     if not parsed.scheme or not host:
         return "•••"
-    port_suffix = f":{parsed.port}" if parsed.port else ""
+    port_suffix = f":{port}" if port else ""
     base = f"{parsed.scheme}://{host}{port_suffix}"
     path = parsed.path.strip("/")
     if not path:

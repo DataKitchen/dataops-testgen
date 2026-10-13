@@ -21,7 +21,7 @@ def _connection(**overrides):
     return connection
 
 
-@patch(f"{MODULE}.resolve_connection_params", side_effect=lambda params: params)
+@patch(f"{MODULE}.resolve_connection_params", side_effect=lambda params, _schema=None: params)
 @patch(f"{MODULE}.get_flavor_service")
 def test_one_connection_serves_every_query(mock_get_flavor, _mock_resolve):
     flavor_service = mock_get_flavor.return_value
@@ -37,7 +37,7 @@ def test_one_connection_serves_every_query(mock_get_flavor, _mock_resolve):
     engine.dispose.assert_called_once()
 
 
-@patch(f"{MODULE}.resolve_connection_params", side_effect=lambda params: params)
+@patch(f"{MODULE}.resolve_connection_params", side_effect=lambda params, _schema=None: params)
 @patch(f"{MODULE}.get_flavor_service")
 def test_a_failed_query_leaves_the_session_usable(mock_get_flavor, _mock_resolve):
     """Without the rollback the next query reports the aborted transaction, not its own outcome."""
@@ -54,7 +54,7 @@ def test_a_failed_query_leaves_the_session_usable(mock_get_flavor, _mock_resolve
         run("SELECT good")
 
 
-@patch(f"{MODULE}.resolve_connection_params", side_effect=lambda params: params)
+@patch(f"{MODULE}.resolve_connection_params", side_effect=lambda params, _schema=None: params)
 @patch(f"{MODULE}.get_flavor_service")
 def test_the_declarations_that_failed_are_available_to_the_caller(mock_get_flavor, _mock_resolve):
     flavor_service = mock_get_flavor.return_value
@@ -66,7 +66,7 @@ def test_the_declarations_that_failed_are_available_to_the_caller(mock_get_flavo
 
 
 @patch(f"{MODULE}.initialize_connection")
-@patch(f"{MODULE}.resolve_connection_params", side_effect=lambda params: params)
+@patch(f"{MODULE}.resolve_connection_params", side_effect=lambda params, _schema=None: params)
 @patch(f"{MODULE}.get_flavor_service")
 def test_without_a_table_group_no_declarations_reach_the_connection(mock_get_flavor, _mock_resolve, mock_init):
     flavor_service = mock_get_flavor.return_value
@@ -80,7 +80,7 @@ def test_without_a_table_group_no_declarations_reach_the_connection(mock_get_fla
 
 
 @patch(f"{MODULE}.initialize_connection")
-@patch(f"{MODULE}.resolve_connection_params", side_effect=lambda params: params)
+@patch(f"{MODULE}.resolve_connection_params", side_effect=lambda params, _schema=None: params)
 @patch(f"{MODULE}.get_flavor_service")
 def test_a_table_group_carries_its_declarations_to_the_connection(mock_get_flavor, _mock_resolve, mock_init):
     flavor_service = mock_get_flavor.return_value

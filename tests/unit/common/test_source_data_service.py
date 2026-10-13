@@ -179,6 +179,46 @@ class Test_build_query_standard:
         schema = _standard_issue_data()["schema_name"]
         assert query == f"SELECT q.* FROM (SELECT COUNT(*) AS n FROM {schema}.orders) q"
 
+    @pytest.mark.parametrize(
+        ("field", "placeholder"),
+        [
+            ("subset_condition", "SUBSET_CONDITION"),
+            ("groupby_names", "GROUPBY_NAMES"),
+            ("having_condition", "HAVING_CONDITION"),
+            ("window_date_column", "WINDOW_DATE_COLUMN"),
+            ("match_subset_condition", "MATCH_SUBSET_CONDITION"),
+            ("match_groupby_names", "MATCH_GROUPBY_NAMES"),
+            ("match_having_condition", "MATCH_HAVING_CONDITION"),
+        ],
+    )
+    @patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q)
+    @patch(f"{MODULE}.TestDefinition.get")
+    @patch(f"{MODULE}._get_lookup_data")
+    def test_data_schema_is_expanded_inside_user_parameters(
+        self, mock_lookup, mock_td, _mock_templated, field, placeholder,
+    ):
+        mock_lookup.return_value = LookupData(lookup_query=f"SELECT {{{placeholder}}}", sql_flavor="postgresql")
+        mock_td.return_value = _FakeTestDefinition(**{field: "x IN (SELECT x FROM {DATA_SCHEMA}.t)"})
+        query = _build_query_standard(_standard_issue_data(), limit=500)
+        assert "{DATA_SCHEMA}" not in query
+        assert "demo.t" in query
+
+    @pytest.mark.parametrize(
+        ("having", "match_having", "expected"),
+        [(None, "COUNT(*) > 1", "HAVING COUNT(*) > 1"), ("COUNT(*) > 1", None, "")],
+    )
+    @patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q)
+    @patch(f"{MODULE}.replace_params")
+    @patch(f"{MODULE}.TestDefinition.get")
+    @patch(f"{MODULE}._get_lookup_data")
+    def test_match_having_condition_follows_its_own_field(
+        self, mock_lookup, mock_td, mock_replace, _mock_templated, having, match_having, expected,
+    ):
+        mock_lookup.return_value = LookupData(lookup_query="SELECT 1", sql_flavor="postgresql")
+        mock_td.return_value = _FakeTestDefinition(having_condition=having, match_having_condition=match_having)
+        _build_query_standard(_standard_issue_data(), limit=500)
+        assert mock_replace.call_args[0][1]["MATCH_HAVING_CONDITION"] == expected
+
     @patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q)
     @patch(f"{MODULE}.replace_params")
     @patch(f"{MODULE}.TestDefinition.get")

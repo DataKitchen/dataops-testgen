@@ -88,9 +88,10 @@ def target_db_session(
     """
     connection_params = connection.to_dict()
     declarations = parse_file_declarations(table_group.file_declarations) if table_group else []
+    table_group_schema = table_group.table_group_schema if table_group else None
     flavor_service = get_flavor_service(connection.sql_flavor)
-    resolved = resolve_connection_params(connection_params)
-    engine = flavor_service.create_engine(connection_params)
+    resolved = resolve_connection_params(connection_params, table_group_schema)
+    engine = flavor_service.create_engine(connection_params, table_group_schema)
 
     # Each call creates a fresh engine for ad-hoc target-DB access (test connection,
     # preview, data catalog reads). Dispose on exit so the engine's pool doesn't
