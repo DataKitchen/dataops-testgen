@@ -21,7 +21,10 @@ RUN_STARTTIME = datetime(2026, 7, 14, 21, 22, 26, 227897, tzinfo=UTC)
 
 
 def _make_profiling_sql(
-    profile_flag_pii=False, profile_flag_cdes=False, profiling_starttime=RUN_STARTTIME, flavor="snowflake"
+    profile_flag_pii=False,
+    profile_flag_cdes=False,
+    profiling_starttime=RUN_STARTTIME,
+    flavor="snowflake",
 ):
     connection = MagicMock(sql_flavor=flavor, sql_flavor_code=flavor)
     table_group = MagicMock()
@@ -405,3 +408,40 @@ def test_a_non_numeric_column_carries_no_percentile_method():
     column = dataclasses_replace(_numeric_column(), general_type="A")
     query, _ = sql.run_column_profiling(column, None, use_approx_percentile=True)
     assert "percentile" not in query.lower()
+
+
+# --- ProfilingSQL.run_column_profiling: value hashes ---
+
+
+def _column_of_type(general_type: str) -> ColumnChars:
+    column_type, is_decimal = {"A": ("varchar", False), "N": ("numeric", True), "D": ("date", False)}[general_type]
+    return dataclasses_replace(
+        _numeric_column(), general_type=general_type, column_type=column_type, db_data_type=column_type,
+        is_decimal=is_decimal,
+    )
+
+
+@pytest.mark.parametrize(("general_type", "measures"), [
+    ("A", {"multiset_hash"}),
+    ("N", {"multiset_hash"}),
+    ("D", {"multiset_hash", "epoch_sum"}),
+])
+def test_a_hashed_type_records_its_value_hashes(general_type, measures):
+    sql = _make_profiling_sql()
+    query, _ = sql.run_column_profiling(_column_of_type(general_type), None, hashed_types=frozenset({"A", "N", "D"}))
+
+    assert {measure for measure in ("multiset_hash", "epoch_sum") if f"AS {measure}" in query} == measures
+
+
+@pytest.mark.parametrize(
+    ("general_type", "hashed_types"),
+    [("A", frozenset()), ("N", frozenset()), ("D", frozenset()), ("A", frozenset({"N", "D"}))],
+    ids=["text, nothing hashed", "number, nothing hashed", "date, nothing hashed", "text, text not hashed"],
+)
+def test_a_type_not_hashed_records_no_value_hashes(general_type, hashed_types):
+    sql = _make_profiling_sql()
+    query, _ = sql.run_column_profiling(_column_of_type(general_type), None, hashed_types=hashed_types)
+
+    assert "multiset_hash" not in query
+    assert "epoch_sum" not in query
+    assert "{MULTISET_HASH_TERM}" not in query

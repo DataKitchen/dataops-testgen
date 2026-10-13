@@ -548,6 +548,7 @@ class ConnectionFlavor:
     field_help: dict[str, str]
     fixed_max_threads: int | None
     schema_label: str | None
+    supports_value_hash: bool
 
 
 # Labels and families come from the shared source in ``common/flavors.py`` (the
@@ -596,6 +597,7 @@ FLAVOR_OPTIONS = [
         field_help=_FLAVOR_FIELD_HELP.get(code, {}),
         fixed_max_threads=fixed_max_threads(code),
         schema_label=table_group_schema_label(code),
+        supports_value_hash=get_flavor_service(FLAVOR_CODE_TO_FAMILY[code]).supports_value_hash,
     )
     for code, icon in _FLAVOR_ICONS.items()
 ]

@@ -4,7 +4,7 @@ from typing import Any
 from testgen.common import read_template_sql_file
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import get_flavor_service, process_conditionals, replace_params
-from testgen.common.models.connection import Connection
+from testgen.common.models.connection import DEFAULT_MAX_QUERY_CHARS, Connection
 from testgen.common.models.profile_result import PercentileMethod
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
@@ -134,6 +134,45 @@ class ProfilingSQL:
 
         return query, params
 
+    def infer_key_columns(self) -> tuple[str, dict]:
+        # Runs on App database
+        return self._get_query(
+            "infer_key_columns.sql", extra_params={"FLOAT_TYPES": sorted(self.flavor_service.float_types)}
+        )
+
+    def run_keyed_hash(self, key_column: ColumnChars, columns: list[ColumnChars]) -> list[tuple[str, dict]]:
+        """Return the queries that compute the keyed hash of each of a table's columns.
+
+        Args:
+            key_column: The table's key column.
+            columns: The table's other hashed columns.
+
+        Returns:
+            Queries that each read the whole table and return one row of sums, which in query order
+            follow ``columns``. The columns are split across queries so that none exceeds the
+            connection's query size.
+        """
+        # Runs on Target database
+        table_ref = self.flavor_service.get_table_ref(
+            key_column.schema_name, key_column.table_name, self.connection.sql_flavor_code
+        )
+        table_ref = f"{table_ref} {self.flavor_service.table_hint(self.connection.sql_flavor_code)}".rstrip()
+        max_chars = (self.connection.max_query_chars or DEFAULT_MAX_QUERY_CHARS) - len(table_ref) - 100
+
+        batches: list[list[str]] = [[]]
+        batch_chars = 0
+        for column in columns:
+            term = self.flavor_service.value_hash_params(column, key_column)["KEYED_HASH_TERM"]
+            sum_expression = f"SUM({term}) AS keyed_hash_{len(batches[-1])}"
+            if batches[-1] and batch_chars + len(sum_expression) > max_chars:
+                batches.append([])
+                batch_chars = 0
+                sum_expression = f"SUM({term}) AS keyed_hash_0"
+            batches[-1].append(sum_expression)
+            batch_chars += len(sum_expression) + 2
+
+        return [(f"SELECT {', '.join(batch)} FROM {table_ref}", {}) for batch in batches]
+
     def get_frequency_analysis_columns(self) -> tuple[str, dict]:
         # Runs on App database
         return self._get_query("secondary_profiling_columns.sql")
@@ -212,9 +251,11 @@ class ProfilingSQL:
         column_chars: ColumnChars,
         table_sampling: TableSampling | None = None,
         use_approx_percentile: bool = False,
+        hashed_types: frozenset[str] = frozenset(),
     ) -> tuple[str, dict]:
         # Runs on Target database. Percentiles read the whole table whether or not the run
-        # samples: approximately where the target has the function, exactly otherwise.
+        # samples: approximately where the target has the function, exactly otherwise. The value
+        # hash and the epoch sum read the whole table too, for the general types in ``hashed_types``.
         general_type = column_chars.general_type
         do_sample = bool(table_sampling)
         column_type = (column_chars.column_type or "").lower()
@@ -224,6 +265,7 @@ class ProfilingSQL:
             and (column_chars.logical_type == "integer" or bool(column_chars.is_decimal))
             and column_type not in self.flavor_service.exact_sum_excluded_types
         )
+        is_hashed = general_type in hashed_types
 
         extra_params = {
             "TABLE_HINT": self.flavor_service.table_hint(self.connection.sql_flavor_code),
@@ -245,7 +287,12 @@ class ProfilingSQL:
             "is_N_exact_sum": exact_sum,
             "is_N_approx_pctile": general_type == "N" and use_approx_percentile,
             "is_N_exact_pctile": general_type == "N" and not use_approx_percentile,
+            "is_A_hashed": is_hashed and general_type == "A",
+            "is_DN_hashed": is_hashed and general_type in ("D", "N"),
+            "is_epoch_summed": is_hashed and general_type == "D",
         }
+        if is_hashed:
+            extra_params.update(self.flavor_service.value_hash_params(column_chars))
 
         return self._get_query(
             "project_profiling_query.sql",

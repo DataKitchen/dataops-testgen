@@ -1,6 +1,12 @@
 from urllib.parse import quote_plus
 
-from testgen.common.database.flavor.flavor_service import FlavorService, ResolvedConnectionParams
+from testgen.common.database.column_chars import ColumnChars
+from testgen.common.database.flavor.flavor_service import (
+    FlavorService,
+    ResolvedConnectionParams,
+    base_type_name,
+    exact_float_canonical,
+)
 
 
 class DatabricksFlavorService(FlavorService):
@@ -14,6 +20,39 @@ class DatabricksFlavorService(FlavorService):
     supports_approx_percentile = True
 
     distinct_countable_x_types = frozenset({"binary"})
+
+    supports_value_hash = True
+    float_types = frozenset({"double", "float", "real"})
+    double_type = "DOUBLE"
+
+    def canonical_number(self, column_ref: str, is_float: bool) -> str:
+        if is_float:
+            # A direct cast keeps only 17 significant digits. DIV returns a BIGINT; a decimal quotient
+            # carries six decimal places, which leaves too few whole digits for the scaled value.
+            canonical = exact_float_canonical(
+                column_ref, self.double_type, "DECIMAL(38,0)", lambda a, b: f"(({a}) DIV {b})"
+            )
+            return f"CAST(CAST({canonical} AS DECIMAL(38,0)) AS {self.varchar_type})"
+        return super().canonical_number(column_ref, is_float)
+
+    def hex_to_wide_decimal(self, hex_expr: str) -> str:
+        return f"CAST(CONV({hex_expr}, 16, 10) AS {self.wide_decimal_type})"
+
+    def utc_timestamp(self, column_ref: str, column: ColumnChars) -> str:
+        # A TIMESTAMP is an instant rendered in the session time zone; TIMESTAMP_NTZ is a wall-clock time
+        if base_type_name(column.db_data_type) == "timestamp":
+            return f"CAST(TO_UTC_TIMESTAMP({column_ref}, CURRENT_TIMEZONE()) AS TIMESTAMP_NTZ)"
+        return f"CAST({column_ref} AS TIMESTAMP_NTZ)"
+
+    def format_timestamp(self, timestamp_expr: str) -> str:
+        return f"DATE_FORMAT({timestamp_expr}, 'yyyy-MM-dd HH:mm:ss')"
+
+    def epoch_seconds(self, timestamp_expr: str) -> str:
+        # From the wall-clock fields, which a TIMESTAMP_NTZ keeps independent of the session time zone
+        return (
+            f"(CAST(UNIX_DATE(CAST({timestamp_expr} AS DATE)) AS BIGINT) * 86400 + HOUR({timestamp_expr}) * 3600"
+            f" + MINUTE({timestamp_expr}) * 60 + SECOND({timestamp_expr}))"
+        )
 
     def get_pre_connection_queries(self, params: ResolvedConnectionParams) -> list[tuple[str, dict | None]]:
         if params.dbname:

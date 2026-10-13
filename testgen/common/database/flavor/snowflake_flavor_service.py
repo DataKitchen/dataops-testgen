@@ -4,7 +4,8 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from snowflake.sqlalchemy import URL
 
-from testgen.common.database.flavor.flavor_service import FlavorService, ResolvedConnectionParams
+from testgen.common.database.column_chars import ColumnChars
+from testgen.common.database.flavor.flavor_service import FlavorService, ResolvedConnectionParams, base_type_name
 
 
 class SnowflakeFlavorService(FlavorService):
@@ -16,6 +17,24 @@ class SnowflakeFlavorService(FlavorService):
     url_scheme = "snowflake"
 
     supports_approx_percentile = True
+
+    supports_value_hash = True
+    float_types = frozenset({"float", "float4", "float8", "double", "double precision", "real"})
+    wide_decimal_type = "NUMBER(38,0)"
+
+    def hex_to_wide_decimal(self, hex_expr: str) -> str:
+        return f"CAST(TO_NUMBER(UPPER({hex_expr}), 'XXXXXXXXXXXXXX') AS {self.wide_decimal_type})"
+
+    def utc_timestamp(self, column_ref: str, column: ColumnChars) -> str:
+        if base_type_name(column.db_data_type) in ("timestamp_tz", "timestamp_ltz"):
+            return f"CAST(CONVERT_TIMEZONE('UTC', {column_ref}) AS TIMESTAMP_NTZ)"
+        return f"CAST({column_ref} AS TIMESTAMP_NTZ)"
+
+    def format_timestamp(self, timestamp_expr: str) -> str:
+        return f"TO_CHAR({timestamp_expr}, 'YYYY-MM-DD HH24:MI:SS')"
+
+    def epoch_seconds(self, timestamp_expr: str) -> str:
+        return f"DATEDIFF(second, CAST('1970-01-01' AS TIMESTAMP_NTZ), {timestamp_expr})"
 
     def get_connect_args(self, params: ResolvedConnectionParams) -> dict:
         if params.connect_by_key:

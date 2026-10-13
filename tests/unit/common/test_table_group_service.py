@@ -282,6 +282,7 @@ def test_defaults_mirror_the_model_column_defaults():
     assert defaults["profile_sample_min_count"] == 100000
     assert defaults["profile_id_column_mask"] == "%_id"
     assert defaults["profile_sk_column_mask"] == "%_sk"
+    assert defaults["profile_table_comparison"] is False
     assert "id" not in defaults
 
 

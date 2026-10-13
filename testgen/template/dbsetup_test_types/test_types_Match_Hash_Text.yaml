@@ -1,0 +1,193 @@
+test_types:
+  id: '1546'
+  test_type: Match_Hash_Text
+  test_name_short: Match Text Hash
+  test_name_long: Hash sum of text values equals baseline
+  test_description: |-
+    Tests that the text values in the column, and how often each occurs, equal the baseline, by comparing a sum of per-value hashes.
+  except_message: |-
+    Text values differ from baseline.
+  measure_uom: Hash sum
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'A' AND multiset_hash IS NOT NULL
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value
+  default_parm_values: |-
+    multiset_hash
+  default_parm_prompts: |-
+    Hash Sum at Baseline
+  default_parm_help: |-
+    The expected sum of the hashes of the column's non-null text values.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  column_general_types: [A]
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Baseline hash sum
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Text Hash tests that the text values in the column, including how often each occurs, are exactly the baseline, by comparing a sum of per-value hashes. It detects nearly any change to the values, independent of row order. A failure says the values differ, not how; the column's counts, lengths and frequent values show what changed.
+  active: Y
+  ai_redact_values: true
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '11300'
+    test_type: Match_Hash_Text
+    sql_flavor: bigquery
+    measure: |-
+      SUM({MULTISET_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS BIGNUMERIC)
+  - id: '11301'
+    test_type: Match_Hash_Text
+    sql_flavor: databricks
+    measure: |-
+      SUM({MULTISET_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS DECIMAL(38,0))
+  - id: '11302'
+    test_type: Match_Hash_Text
+    sql_flavor: mssql
+    measure: |-
+      SUM({MULTISET_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS DECIMAL(38,0))
+  - id: '11303'
+    test_type: Match_Hash_Text
+    sql_flavor: postgresql
+    measure: |-
+      SUM({MULTISET_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS NUMERIC(38,0))
+  - id: '11304'
+    test_type: Match_Hash_Text
+    sql_flavor: redshift
+    measure: |-
+      SUM({MULTISET_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS DECIMAL(38,0))
+  - id: '11305'
+    test_type: Match_Hash_Text
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM({MULTISET_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS DECIMAL(38,0))
+  - id: '11306'
+    test_type: Match_Hash_Text
+    sql_flavor: snowflake
+    measure: |-
+      SUM({MULTISET_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS NUMBER(38,0))
+  - id: '11307'
+    test_type: Match_Hash_Text
+    sql_flavor: oracle
+    measure: |-
+      SUM({MULTISET_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS NUMBER(38,0))
+  - id: '11308'
+    test_type: Match_Hash_Text
+    sql_flavor: duckdb
+    measure: |-
+      SUM({MULTISET_HASH_TERM})
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS DECIMAL(38,0))
+  target_data_lookups:
+  - id: '11309'
+    test_id: '1546'
+    test_type: Match_Hash_Text
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS BIGNUMERIC) AS baseline_hash_sum FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '11310'
+    test_id: '1546'
+    test_type: Match_Hash_Text
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_hash_sum FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '11311'
+    test_id: '1546'
+    test_type: Match_Hash_Text
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11312'
+    test_id: '1546'
+    test_type: Match_Hash_Text
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS NUMERIC(38,0)) AS baseline_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11313'
+    test_id: '1546'
+    test_type: Match_Hash_Text
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11314'
+    test_id: '1546'
+    test_type: Match_Hash_Text
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11315'
+    test_id: '1546'
+    test_type: Match_Hash_Text
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS NUMBER(38,0)) AS baseline_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11316'
+    test_id: '1546'
+    test_type: Match_Hash_Text
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS NUMBER(38,0)) AS baseline_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '11317'
+    test_id: '1546'
+    test_type: Match_Hash_Text
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

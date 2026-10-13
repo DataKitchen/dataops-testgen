@@ -409,7 +409,7 @@ def probe_target_capability(query: str, capability: str, connectivity_query: str
         except Exception:
             LOG.warning(f"Target unreachable while probing for {capability}.")
             raise probe_error from None
-        LOG.warning(f"Capability probe failed ({capability}); using the exact function. {probe_error}")
+        LOG.warning(f"Capability probe failed ({capability}); going without it. {probe_error}")
         return False
     LOG.info(f"Capability probe succeeded ({capability}).")
     return True

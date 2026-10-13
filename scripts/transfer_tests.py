@@ -554,9 +554,9 @@ def format_report(report: Report, input_source: Path | str, mapping_path: Path) 
         parts = (["table-level"] if table in report.kept_table_level else []) + (
             [_plural(len(report.kept_columns[table]), "column")] if report.kept_columns[table] else [])
         kept.append(f"{table}: {tests(count)} ({' and '.join(parts)})")
-    kept += [f"key column {key}: {tests(count)}" for key, count in sorted(report.unmapped_keys.items())]
-    kept += [f"{test_type} with no table: {tests(count)}" for test_type, count in sorted(report.no_table.items())]
     section("Tables kept as named", kept)
+    section("Key columns kept as named", [f"{key}: {tests(count)}" for key, count in sorted(report.unmapped_keys.items())])
+    section("Tests with no table", [f"{test_type}: {tests(count)}" for test_type, count in sorted(report.no_table.items())])
     section("Columns with no column row that follow their table's rename", [
         f"{source} -> {target}: {_plural(len(report.followed_columns[(source, target)]), 'column')}, {tests(count)}"
         for (source, target), count in sorted(report.followed.items())

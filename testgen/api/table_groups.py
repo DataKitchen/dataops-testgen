@@ -224,6 +224,7 @@ def _to_response(table_group: TableGroup, connection: Connection | None = None) 
         profile_flag_cdes=table_group.profile_flag_cdes,
         profile_flag_pii=table_group.profile_flag_pii,
         profile_exclude_xde=table_group.profile_exclude_xde,
+        profile_table_comparison=table_group.profile_table_comparison,
         include_in_dashboard=table_group.include_in_dashboard,
         catalog_tags=CatalogTags.model_validate(table_group, from_attributes=True),
     )

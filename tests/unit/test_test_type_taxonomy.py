@@ -157,3 +157,14 @@ def test_column_general_types_include_every_general_type_generation_selects():
             continue
         for selected in re.findall(r"general_type\s*=\s*'([A-Z])'", tt["selection_criteria"]):
             assert selected in codes, f"{filename}: selects general_type {selected} but declares {codes}"
+
+
+@pytest.mark.unit
+def test_value_hash_types_redact_their_measures():
+    # An epoch sum carries the column's dates, and a hash sum of few values can be matched by hashing guesses.
+    value_hash_types = {
+        "Match_Hash_Text", "Match_Hash_Num", "Match_Hash_Date", "Match_Epoch_Sum",
+        "Match_Keyed_Hash_Text", "Match_Keyed_Hash_Num", "Match_Keyed_Hash_Date",
+    }
+    found = {tt["test_type"]: tt.get("ai_redact_values") for _, tt in _test_type_docs() if tt["test_type"] in value_hash_types}
+    assert found == dict.fromkeys(value_hash_types, True)

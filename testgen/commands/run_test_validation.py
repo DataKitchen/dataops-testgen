@@ -58,6 +58,10 @@ def collect_test_identifiers(
         if td.test_type == "CUSTOM" or td.test_scope == "tablegroup" or td.test_type in MANAGED_TEST_TYPES:
             continue
 
+        if td.run_type == "CAT" and not td.measure:
+            add_error(td.id, "Invalid test: test type not available for this connection type")
+            continue
+
         if td.schema_name and td.table_name and (td.column_name or td.test_scope in ["table", "custom"]):
             if td.test_scope in ["table", "custom"] or td.test_type.startswith("Aggregate_"):
                 # Validate only table for these test types - column is meaningless or uses aggregation functions
@@ -160,6 +164,25 @@ def _general_types_label(codes: list[str]) -> str:
     return f"{', '.join(labels[:-1])} or {labels[-1]}"
 
 
+class ColumnLookup:
+    """Find a catalog column by name: by exact name, else by case-insensitive name when only one
+    column of the table has it.
+    """
+
+    def __init__(self, column_chars: list[ColumnChars]) -> None:
+        self._exact = {(col.schema_name, col.table_name, col.column_name): col for col in column_chars}
+        self._by_lower_name: dict[tuple[str, str, str], list[ColumnChars]] = defaultdict(list)
+        for col in column_chars:
+            self._by_lower_name[(col.schema_name.lower(), col.table_name.lower(), col.column_name.lower())].append(col)
+
+    def find(self, schema_name: str, table_name: str, column_name: str) -> ColumnChars | None:
+        """Return the matching column, or None when there is none or the case-insensitive name is ambiguous."""
+        if column := self._exact.get((schema_name, table_name, column_name)):
+            return column
+        matches = self._by_lower_name.get((schema_name.lower(), table_name.lower(), column_name.lower()), [])
+        return matches[0] if len(matches) == 1 else None
+
+
 def check_column_types(
     test_defs: list[TestExecutionDef],
     column_chars: list[ColumnChars],
@@ -173,10 +196,7 @@ def check_column_types(
 
     Returns {test_id: [error_messages]} for columns whose general type the test type does not apply to.
     """
-    exact_columns = {(col.schema_name, col.table_name, col.column_name): col for col in column_chars}
-    columns_by_lower_name: dict[tuple[str, str, str], list[ColumnChars]] = defaultdict(list)
-    for col in column_chars:
-        columns_by_lower_name[(col.schema_name.lower(), col.table_name.lower(), col.column_name.lower())].append(col)
+    columns = ColumnLookup(column_chars)
     errors: dict[UUID, list[str]] = {}
 
     for td in test_defs:
@@ -185,10 +205,7 @@ def check_column_types(
 
         column_name = td.column_name.strip(f" {quote_char}")
         key = (td.schema_name.lower(), td.table_name.lower(), column_name.lower())
-        column = exact_columns.get((td.schema_name, td.table_name, column_name))
-        if not column:
-            matches = columns_by_lower_name.get(key, [])
-            column = matches[0] if len(matches) == 1 else None
+        column = columns.find(td.schema_name, td.table_name, column_name)
         if not column or column.general_type in _UNCHECKED_GENERAL_TYPES:
             continue
 

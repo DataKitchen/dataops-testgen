@@ -13,7 +13,7 @@ from testgen.commands.run_profiling import (
     ProfilingJob,
     _order_largest_work_first,
     _profiling_template_digest,
-    _write_frequency_error,
+    _write_query_error,
     report_profiling_run,
 )
 from testgen.common.database.column_chars import ColumnChars
@@ -24,7 +24,7 @@ from testgen.common.enums import JobKey, JobStatus
 from testgen.common.models import get_current_session
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.profile_result import ProfileResult
-from testgen.common.models.profiling_run import PROGRESS_KEYS
+from testgen.common.models.profiling_run import PROGRESS_KEYS, ProfilingRun
 from testgen.common.models.stg_functional_table_update import StgFunctionalTableUpdate
 from testgen.common.pausable_job import PausableJob, Step, WorkTasksChanged
 
@@ -206,7 +206,7 @@ def test_a_frequency_error_records_only_the_error_on_the_columns_row():
     """The column pass measured this column; a frequency failure must not blank its measures."""
     sql_generator = MagicMock(max_error_length=2000)
     with patch(f"{MODULE}.ProfileResult") as profile_result:
-        _write_frequency_error(sql_generator, _col("t", "c1"), "boom")
+        _write_query_error(sql_generator, _col("t", "c1"), "boom")
 
     row = profile_result.upsert.call_args[0][0]
     assert row["query_error"] == "boom"
@@ -232,12 +232,12 @@ def test_a_frequency_error_does_not_write_the_column_pass_error_row():
         patch(f"{MODULE}.get_current_session", return_value=MagicMock()),
         patch("testgen.common.pausable_job.get_current_session", return_value=_no_job_row_session()),
         patch.object(ProfilingJob, "on_start", lambda _self: None),
-        patch(f"{MODULE}._write_frequency_error") as write_frequency_error,
+        patch(f"{MODULE}._write_query_error") as write_query_error,
         patch(f"{MODULE}._write_column_error") as write_column_error,
     ):
         job.execute()
 
-    write_frequency_error.assert_called_once()
+    write_query_error.assert_called_once()
     write_column_error.assert_not_called()
 
 
@@ -300,6 +300,96 @@ def test_nothing_eligible_on_a_fresh_run_is_not_drift():
     assert job._tasks == []
 
 
+# --- the key inference and keyed hash steps -----------------------------------------------
+
+def _keyed_job(hashes_values: bool) -> ProfilingJob:
+    job = ProfilingJob.__new__(ProfilingJob)
+    PausableJob.__init__(job, job_id=uuid4())
+    job.table_group = MagicMock(id=uuid4())
+    job.capabilities = ProfilingCapabilities(hashed_types=frozenset({"A", "N", "D"}) if hashes_values else frozenset())
+    job.data_chars = [_col("t", "id"), _col("t", "amount")]
+    job.table_record_counts = {"t": 10}
+    job.sql_generator = MagicMock()
+    job.sql_generator.run_keyed_hash.return_value = [("SELECT 1", {})]
+    job.connection = MagicMock(max_threads=4)
+    job.profiling_run = MagicMock(id=uuid4(), **{"progress_error.return_value": None})
+    job.STEPS = (
+        Step("key_inference", ProfilingJob._key_inference, fatal=False),
+        Step("keyed_hash", ProfilingJob._keyed_hash, fatal=False),
+    )
+    return job
+
+
+def _run_keyed_steps(job: ProfilingJob, error: str | None = None) -> tuple[MagicMock, MagicMock, MagicMock, MagicMock]:
+    """Run the key inference and keyed hash steps; return the mocks of everything they could touch."""
+
+    def fake_pool(items, _process, *, max_threads, stop=None):
+        for key_column, _built in items:
+            yield WorkerOutcome(key=key_column, result=None if error else [123], error=error)
+
+    with (
+        patch(POOL, side_effect=fake_pool) as pool,
+        patch(f"{MODULE}.execute_db_queries") as execute_queries,
+        patch(f"{MODULE}.ProfileResult") as profile_result,
+        patch(f"{MODULE}.get_current_session", return_value=MagicMock()),
+        patch("testgen.common.pausable_job.get_current_session", return_value=_no_job_row_session()),
+        patch.object(ProfilingJob, "on_start", lambda _self: None),
+    ):
+        profile_result.list_keyed_hash_columns.return_value = {"t": ("id", ["amount"])}
+        job.execute()
+    return pool, execute_queries, profile_result, job.profiling_run
+
+
+def test_the_keyed_steps_do_no_work_when_not_profiling_for_table_comparison():
+    job = _keyed_job(hashes_values=False)
+
+    pool, execute_queries, profile_result, profiling_run = _run_keyed_steps(job)
+
+    execute_queries.assert_not_called()
+    profile_result.list_keyed_hash_columns.assert_not_called()
+    profile_result.upsert.assert_not_called()
+    pool.assert_not_called()
+    job.sql_generator.infer_key_columns.assert_not_called()
+    job.sql_generator.run_keyed_hash.assert_not_called()
+    profiling_run.set_progress.assert_any_call("keyed_hash", "Completed", detail=None, error=None)
+    assert job._tasks == []
+
+
+def test_the_keyed_steps_infer_keys_and_hash_when_profiling_for_table_comparison():
+    job = _keyed_job(hashes_values=True)
+
+    pool, execute_queries, profile_result, profiling_run = _run_keyed_steps(job)
+
+    execute_queries.assert_called_once_with([job.sql_generator.infer_key_columns.return_value])
+    job.sql_generator.run_keyed_hash.assert_called_once_with(_col("t", "id"), [_col("t", "amount")])
+    pool.assert_called_once()
+    row = profile_result.upsert.call_args.args[0]
+    assert (row["table_name"], row["column_name"], row["keyed_hash"]) == ("t", "amount", 123)
+    profiling_run.set_progress.assert_any_call("keyed_hash", "Completed", detail=None, error=None)
+
+
+def test_a_key_inference_failure_shows_on_the_table_comparison_row():
+    job = _keyed_job(hashes_values=True)
+    job.sql_generator.infer_key_columns.side_effect = RuntimeError("boom")
+
+    _, _, _, profiling_run = _run_keyed_steps(job)
+
+    profiling_run.set_progress.assert_any_call("keyed_hash", "Warning", detail=None, error="Error encountered. boom")
+
+
+def test_a_keyed_hash_failure_is_recorded_on_the_key_columns_row():
+    job = _keyed_job(hashes_values=True)
+    job.sql_generator.max_error_length = 2000
+
+    _, _, profile_result, profiling_run = _run_keyed_steps(job, error="timeout")
+
+    row = profile_result.upsert.call_args.args[0]
+    assert (row["table_name"], row["column_name"], row["query_error"]) == ("t", "id", "Keyed hash for table t: timeout")
+    profiling_run.set_progress.assert_any_call(
+        "keyed_hash", "Warning", detail=None, error="1 table had errors. See details in results."
+    )
+
+
 # --- the step declaration ----------------------------------------------------------------
 
 def test_steps_run_in_the_order_the_results_depend_on():
@@ -308,6 +398,8 @@ def test_steps_run_in_the_order_the_results_depend_on():
         "col_profiling",
         "freq_analysis",
         "hygiene_issues",
+        "key_inference",
+        "keyed_hash",
         "generate_tests",
     ]
 
@@ -317,9 +409,37 @@ def test_only_the_steps_everything_depends_on_are_fatal():
     assert fatal == {"data_chars", "col_profiling"}
 
 
+@pytest.mark.parametrize("table_comparison", [True, False])
+def test_progress_lists_preparing_table_comparison_only_when_the_run_does_it(table_comparison):
+    run = ProfilingRun()
+    run.init_progress(table_comparison)
+    run.set_progress("data_chars", "Completed")
+    run.set_progress("keyed_hash", "Completed")
+
+    rows = {step["key"]: step for step in run.progress}
+    assert ("keyed_hash" in rows) is table_comparison
+    assert list(rows)[:4] == ["data_chars", "col_profiling", "freq_analysis", "hygiene_issues"]
+    if table_comparison:
+        assert rows["keyed_hash"]["label"] == "Preparing table comparison"
+        assert rows["keyed_hash"]["status"] == "Completed"
+
+
+@pytest.mark.parametrize(
+    ("setting", "flavor", "expected"),
+    [(True, "postgresql", True), (False, "postgresql", False), (True, "sap_hana", False)],
+    ids=["setting on", "setting off", "setting on, flavor does not hash"],
+)
+def test_a_run_prepares_table_comparison_only_on_a_flavor_that_hashes_values(setting, flavor, expected):
+    job = ProfilingJob.__new__(ProfilingJob)
+    job.table_group = MagicMock(profile_table_comparison=setting)
+    job.connection = MagicMock(sql_flavor=flavor)
+
+    assert job._prepares_table_comparison() is expected
+
+
 def test_reporting_steps_match_the_progress_display():
     reported = {step.name for step in ProfilingJob.STEPS if step.name in PROGRESS_KEYS}
-    assert reported == {"data_chars", "col_profiling", "freq_analysis", "hygiene_issues"}
+    assert reported == {"data_chars", "col_profiling", "freq_analysis", "hygiene_issues", "keyed_hash"}
 
 
 def test_a_column_is_identified_by_where_it_lives():
@@ -450,13 +570,14 @@ def _started_job(existing_run=None):
     with (
         patch(f"{MODULE}.job_context") as job_ctx,
         patch(f"{MODULE}.TableGroup") as table_group,
-        patch(f"{MODULE}.Connection"),
+        patch(f"{MODULE}.Connection") as connection,
         patch(f"{MODULE}.ProfilingRun") as profiling_run_cls,
         patch(f"{MODULE}.ProfilingSQL") as sql_generator_cls,
         patch(f"{MODULE}.set_target_db_params") as set_params,
         patch(f"{MODULE}.get_current_session"),
     ):
         job_ctx.get.return_value = MagicMock(job_id=uuid4())
+        connection.get.return_value.sql_flavor = "postgresql"
         profiling_run_cls.get.return_value = existing_run
         job = ProfilingJob("tg-id")
         job.on_start()
@@ -476,7 +597,7 @@ def test_on_start_reuses_an_existing_run_row_on_resume():
     job, _, profiling_run_cls, _, _ = _started_job(existing_run=existing)
     assert job.profiling_run is existing
     profiling_run_cls.assert_not_called()  # did not construct a second row
-    existing.init_progress.assert_called_once()
+    existing.init_progress.assert_called_once_with(True)
 
 
 def test_on_start_keeps_a_resumed_runs_original_start_time():
@@ -584,6 +705,7 @@ def test_on_restart_clears_the_abandoned_run_and_resets_the_start_time():
     job.time_delta = timedelta()
     job.profiling_run = MagicMock()
     job.profiling_run.profiling_starttime = ORIGINAL_START
+    job.table_group = MagicMock(profile_table_comparison=False)
     with (
         patch(f"{MODULE}.ProfileResult") as profile_result,
         patch(f"{MODULE}.HygieneIssue") as hygiene_issue,
@@ -595,6 +717,7 @@ def test_on_restart_clears_the_abandoned_run_and_resets_the_start_time():
         profile_result.delete_for_run.assert_called_once_with(job.profiling_run.id)
         hygiene_issue.delete_for_run.assert_called_once_with(job.profiling_run.id)
         staged_tables.delete_for_run.assert_called_once_with(job.profiling_run.id)
+        job.profiling_run.init_progress.assert_called_once_with(False)
     # Restamped, not merely assigned: a restart is a new run and its duration starts here.
     assert job.profiling_run.profiling_starttime > ORIGINAL_START
 
@@ -639,7 +762,7 @@ def test_the_template_digest_tracks_content_and_names():
 def test_data_chars_pins_the_result_shape_and_the_templates():
     job = ProfilingJob.__new__(ProfilingJob)
     PausableJob.__init__(job, job_id=uuid4())
-    job.table_group = MagicMock(profile_exclude_xde=False)
+    job.table_group = MagicMock(profile_exclude_xde=False, profile_table_comparison=True)
     job.profiling_run = MagicMock()
     job.sql_generator = MagicMock(flavor="snowflake")
     job.data_chars = []
@@ -649,32 +772,66 @@ def test_data_chars_pins_the_result_shape_and_the_templates():
         patch(f"{MODULE}.DataTable") as data_table,
         # Capability resolution probes the target database.
         patch(
+            f"{MODULE}.resolve_profiling_capabilities",
+            return_value=ProfilingCapabilities(approx_percentile=True, hashed_types=frozenset({"A", "N", "D"})),
+        ) as resolve,
+    ):
+        data_table.list_column_chars.return_value = []
+        job._data_chars()
+
+    resolve.assert_called_once_with(job.sql_generator.flavor_service, table_comparison=True)
+    assert job.capabilities == ProfilingCapabilities(approx_percentile=True, hashed_types=frozenset({"A", "N", "D"}))
+    assert job._pins["result_shape"] == PROFILE_RESULT_SHAPE_VERSION
+    assert job._pins["profiling_templates"] == _profiling_template_digest("snowflake")
+    # A probe that answers differently after a pause would file two readings of one measure.
+    assert job._pins["approx_percentile"] is True
+    assert job._pins["hashed_types"] == "ADN"
+
+
+def test_data_chars_skips_the_text_hash_probe_when_not_profiling_for_table_comparison():
+    job = ProfilingJob.__new__(ProfilingJob)
+    PausableJob.__init__(job, job_id=uuid4())
+    job.table_group = MagicMock(profile_exclude_xde=False, profile_table_comparison=False)
+    job.profiling_run = MagicMock()
+    job.sql_generator = MagicMock(flavor="mssql")
+    job.data_chars = []
+
+    with (
+        patch.object(ProfilingJob, "once", return_value=False),
+        patch(f"{MODULE}.DataTable") as data_table,
+        patch(
             f"{MODULE}.resolve_profiling_capabilities", return_value=ProfilingCapabilities(approx_percentile=True)
         ) as resolve,
     ):
         data_table.list_column_chars.return_value = []
         job._data_chars()
 
-    resolve.assert_called_once_with(job.sql_generator.flavor_service)
-    assert job.capabilities == ProfilingCapabilities(approx_percentile=True)
-    assert job._pins["result_shape"] == PROFILE_RESULT_SHAPE_VERSION
-    assert job._pins["profiling_templates"] == _profiling_template_digest("snowflake")
-    # A probe that answers differently after a pause would file two readings of one measure.
-    assert job._pins["approx_percentile"] is True
+    resolve.assert_called_once_with(job.sql_generator.flavor_service, table_comparison=False)
+    assert job._pins["hashed_types"] == ""
 
 
-@pytest.mark.parametrize("approx_percentile", [False, True])
-def test_the_column_query_is_built_with_the_resolved_percentile_method(approx_percentile):
+@pytest.mark.parametrize("now_hashed", ["", "DN"], ids=["setting turned off", "text hash probe now fails"])
+def test_a_resume_that_would_hash_different_types_restarts_the_run(now_hashed):
+    job = ProfilingJob.__new__(ProfilingJob)
+    PausableJob.__init__(job, job_id=uuid4())
+    job._pins = {"hashed_types": "ADN"}
+
+    with pytest.raises(WorkTasksChanged):
+        job.pin("hashed_types", now_hashed)
+
+
+@pytest.mark.parametrize(("approx_percentile", "hashed_types"), [(False, frozenset({"A", "N", "D"})), (True, frozenset())])
+def test_the_column_query_is_built_with_the_resolved_capabilities(approx_percentile, hashed_types):
     job = ProfilingJob.__new__(ProfilingJob)
     PausableJob.__init__(job, job_id=uuid4())
     job.sampling_params = {}
-    job.capabilities = ProfilingCapabilities(approx_percentile=approx_percentile)
+    job.capabilities = ProfilingCapabilities(approx_percentile=approx_percentile, hashed_types=hashed_types)
     job.sql_generator = MagicMock()
 
     job._build_column_query(_col("t", "c"))
 
     job.sql_generator.run_column_profiling.assert_called_once_with(
-        _col("t", "c"), None, use_approx_percentile=approx_percentile
+        _col("t", "c"), None, use_approx_percentile=approx_percentile, hashed_types=hashed_types
     )
 
 
@@ -738,7 +895,7 @@ def _profiling_job() -> ProfilingJob:
 @patch("testgen.commands.run_profiling.TableGroup")
 @patch("testgen.commands.run_profiling.ProfilingRun")
 def test_a_new_run_records_the_schema_it_scans(
-    mock_run_cls, mock_tg_cls, _conn, _params, _sql, _session,
+    mock_run_cls, mock_tg_cls, mock_conn_cls, _params, _sql, _session,
 ):
     """The run list and its summary read this rather than the table group, so a run from before
     a move keeps the schema it actually read instead of being relabelled."""
@@ -746,6 +903,7 @@ def test_a_new_run_records_the_schema_it_scans(
         id=uuid4(), project_code="DEFAULT", connection_id=1, table_group_schema="onboard_2026_09_16"
     )
     mock_run_cls.get.return_value = None
+    mock_conn_cls.get.return_value.sql_flavor = "postgresql"
     job = _profiling_job()
 
     job.on_start()
@@ -760,7 +918,7 @@ def test_a_new_run_records_the_schema_it_scans(
 @patch("testgen.commands.run_profiling.TableGroup")
 @patch("testgen.commands.run_profiling.ProfilingRun")
 def test_a_resumed_run_keeps_the_schema_it_started_on(
-    mock_run_cls, mock_tg_cls, _conn, _params, _sql, _session,
+    mock_run_cls, mock_tg_cls, mock_conn_cls, _params, _sql, _session,
 ):
     """A resumed run reuses its row, so it is still reported against the schema it began reading
     even if the table group moved while it was stopped."""
@@ -769,6 +927,7 @@ def test_a_resumed_run_keeps_the_schema_it_started_on(
     )
     existing = MagicMock(schema_name="onboard_2026_09_10")
     mock_run_cls.get.return_value = existing
+    mock_conn_cls.get.return_value.sql_flavor = "postgresql"
     job = _profiling_job()
 
     job.on_start()
