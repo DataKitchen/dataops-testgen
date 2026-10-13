@@ -60,6 +60,8 @@ def test_relocating_a_managed_definition_is_refused(method):
         patch.object(TestDefinition, "assert_version_writable"),
     ):
         with pytest.raises(ManagedTestDefinitionError):
-            getattr(TestDefinition, method)([str(uuid4())], uuid4(), uuid4())
+            getattr(TestDefinition, method)(
+                [str(uuid4())], uuid4(), uuid4(), target_schema="public", qualifies_table_refs=True
+            )
 
     session.execute.assert_not_called()
