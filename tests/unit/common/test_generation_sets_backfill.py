@@ -11,7 +11,10 @@ EXPECTED_PAIRS = {("Standard", t) for t in [
     "Outlier_Pct_Above", "Outlier_Pct_Below", "Pattern_Match", "Recency", "Required", "Required_No_Placeholder",
     "Street_Addr_Pattern", "US_State", "Unique", "Unique_Pct", "Valid_Characters", "Valid_Month",
     "Valid_US_Zip", "Valid_US_Zip3", "Variability_Decrease", "Variability_Increase", "Weekly_Rec_Ct",
-]} | {("Monitor", t) for t in ["Schema_Drift", "Freshness_Trend", "Volume_Trend"]} | {("Contract", "Required_No_Placeholder")} | {
+]} | {("Monitor", t) for t in ["Schema_Drift", "Freshness_Trend", "Volume_Trend"]} | {("Contract", t) for t in [
+    "Dupe_Rows", "LOV_Match", "Min_Date", "Min_Val", "Pattern_Match", "Recency", "Required",
+    "Required_No_Placeholder", "Row_Ct", "Unique", "Valid_Characters",
+]} | {
     ("Table Comparison", t) for t in [
         "Match_Row_Ct", "Match_Column_Ct", "Match_Column_Type", "Match_Null_Ct", "Match_Distinct_Ct",
         "Match_Min_Val", "Match_Max_Val", "Match_Zero_Ct", "Match_Sum", "Match_Stdev", "Match_Fractional_Sum",

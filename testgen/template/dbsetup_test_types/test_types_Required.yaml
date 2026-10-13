@@ -40,6 +40,7 @@ test_types:
   algorithm: Counting
   generation_sets:
     - Standard
+    - Contract
   cat_test_conditions:
   - id: '7023'
     test_type: Required

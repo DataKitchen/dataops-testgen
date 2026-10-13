@@ -19,6 +19,7 @@ from testgen.common.database.table_group_service import (
 )
 from testgen.common.enums import JobSource, SuiteType
 from testgen.common.flavors import TableGroupSchemaLabel, table_group_schema_label
+from testgen.common.generation_set_service import CONTRACT_GENERATION_SET, MONITOR_GENERATION_SET
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
@@ -1183,7 +1184,10 @@ def run_test_type_lookup_query(test_type: str | None = None) -> pd.DataFrame:
         || ': '
         || lower(tt.test_name_long)
         || CASE
-            WHEN tt.selection_criteria > '' THEN ' [auto-generated]'
+            WHEN EXISTS (
+                SELECT 1 FROM generation_sets gs
+                WHERE gs.test_type = tt.test_type AND gs.generation_set != ALL(:suite_exclusive_sets)
+            ) THEN ' [auto-generated]'
             ELSE ''
         END as select_name
     FROM test_types tt
@@ -1201,7 +1205,12 @@ def run_test_type_lookup_query(test_type: str | None = None) -> pd.DataFrame:
         tt.test_name_short;
     """
     df = fetch_df_from_db(
-        query, {"test_type": test_type, "non_public_test_types": sorted(NON_PUBLIC_TEST_TYPES)}
+        query,
+        {
+            "test_type": test_type,
+            "non_public_test_types": sorted(NON_PUBLIC_TEST_TYPES),
+            "suite_exclusive_sets": [MONITOR_GENERATION_SET, CONTRACT_GENERATION_SET],
+        },
     )
     if not df.empty:
         # Criteria facet is derived (not stored) via the shared classifier so UI and MCP agree.

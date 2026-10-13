@@ -44,6 +44,7 @@ test_types:
   algorithm: Pattern / regex
   generation_sets:
     - Standard
+    - Contract
   cat_test_conditions:
   - id: '7036'
     test_type: Valid_Characters
