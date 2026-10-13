@@ -77,7 +77,7 @@ class ImportReason(StrEnum):
     policy = "policy"
     locked = "locked"
     invalid_test_type = "invalid_test_type"
-    non_public_test_type = "non_public_test_type"
+    managed_test_type = "managed_test_type"
     invalid_table = "invalid_table"
     invalid_column = "invalid_column"
     missing_external_id = "missing_external_id"
@@ -98,7 +98,7 @@ IMPORT_REASON_LABELS: dict[ImportReason, str] = {
     ImportReason.policy: "Excluded by the selected policy",
     ImportReason.locked: "Existing test is locked",
     ImportReason.invalid_test_type: "Unknown test type",
-    ImportReason.non_public_test_type: "Test type cannot be imported",
+    ImportReason.managed_test_type: "Test type cannot be imported",
     ImportReason.invalid_table: "Table not in the data catalog",
     ImportReason.invalid_column: "Column not in the data catalog",
     ImportReason.missing_external_id: "Missing external ID",
@@ -269,18 +269,31 @@ class ImportStrictViolation(Exception):
 # These are either identity fields (set once on create) or determined by matching logic.
 _UPDATE_EXCLUDE_FIELDS = frozenset({"test_type", "last_auto_gen_date", "external_id"})
 
-# Lightweight projection — only the columns needed for matching and policy decisions.
-_EXISTING_TD_COLUMNS = (
-    TestDefinition.id,
-    TestDefinition.test_type,
-    TestDefinition.table_name,
-    TestDefinition.column_name,
-    TestDefinition.last_auto_gen_date,
-    TestDefinition.external_id,
-    TestDefinition.lock_refresh,
-    TestDefinition.match_table_name,
-    TestDefinition.match_schema_name,
+# The columns needed for matching and policy decisions, plus every field the file can carry, so a
+# matched definition is validated as it would be saved.
+_EXISTING_TD_COLUMNS = tuple(
+    getattr(TestDefinition, name)
+    for name in dict.fromkeys((
+        "id",
+        "test_type",
+        "table_name",
+        "column_name",
+        "last_auto_gen_date",
+        "external_id",
+        "lock_refresh",
+        "match_table_name",
+        "match_schema_name",
+        *TestDefinitionExport.model_fields,
+    ))
 )
+
+
+def _value_as_saved(td_import: TestDefinitionExport, target: Row | None, field: str) -> object:
+    """The value ``field`` is saved with: the file's when it carries the field or the definition is new,
+    otherwise the matched definition's stored value."""
+    if target is None or field in td_import.model_fields_set:
+        return getattr(td_import, field, None)
+    return getattr(target, field, None)
 
 
 def export_definitions(
@@ -400,7 +413,7 @@ def import_definitions(
         # definition is refused: an update keeps the stored type, so a matched one stays importable.
         if target is None and td_import.test_type in NON_PUBLIC_TEST_TYPES:
             actions.append(
-                _PlannedAction(ImportAction.skip, ImportReason.non_public_test_type, idx, td_import, target)
+                _PlannedAction(ImportAction.skip, ImportReason.managed_test_type, idx, td_import, target)
             )
             continue
 
@@ -412,7 +425,9 @@ def import_definitions(
             actions.append(_PlannedAction(ImportAction.skip, ImportReason.invalid_column, idx, td_import, target))
             continue
 
-        if missing_required_fields(test_types[td_import.test_type], lambda field: getattr(td_import, field, None)):
+        if missing_required_fields(
+            test_types[td_import.test_type], lambda field: _value_as_saved(td_import, target, field)
+        ):
             actions.append(
                 _PlannedAction(ImportAction.skip, ImportReason.missing_required_field, idx, td_import, target)
             )

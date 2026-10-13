@@ -361,8 +361,10 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
             Connection.sql_flavor_code,
         )
         .select_from(TableGroup)
-        .join(Project)
-        .join(Connection)
+        .join(Project, Project.project_code == TableGroup.project_code)
+        # A connection also references the project, so a join left to infer its condition can match every
+        # connection in the project.
+        .join(Connection, Connection.connection_id == TableGroup.connection_id)
         .where(TableGroup.id == profiling_run.table_groups_id)
     )
     labels = get_current_session().execute(labels_query).mappings().one()

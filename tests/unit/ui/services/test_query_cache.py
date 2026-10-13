@@ -6,8 +6,13 @@ for targeted cache invalidation. Does NOT exercise Streamlit cache logic itself.
 
 from __future__ import annotations
 
-import pytest
+from unittest.mock import patch
+from uuid import uuid4
 
+import pytest
+from sqlalchemy.orm import Session, object_session
+
+from testgen.common.models.table_group import TableGroup
 from testgen.ui.services import query_cache
 
 # Wrappers that replace cached calls to model methods after TG-1091.
@@ -58,3 +63,24 @@ def test_wrapper_exists_and_is_cached(name: str) -> None:
     assert hasattr(wrapper, "clear"), (
         f"Wrapper missing .clear() (cache decorator dropped?): query_cache.{name}"
     )
+
+
+def test_a_fetched_entity_is_detached_even_on_a_cache_miss() -> None:
+    """A preview sets unsaved form values on the entity it fetched, and the run's session commits.
+
+    ``st.cache_data`` returns a copy on a hit but the computed value on a miss, so without the
+    getter's own copy a miss would hand back the session's instance and commit those values.
+    """
+    session = Session()
+    stored = TableGroup(id=uuid4(), table_groups_name="orders", table_group_schema="sales")
+    session.add(stored)
+
+    query_cache.get_table_group.clear()
+    with patch.object(TableGroup, "get", return_value=stored):
+        fetched = query_cache.get_table_group(str(stored.id))
+
+    fetched.table_group_schema = "sales_v2"
+
+    assert fetched is not stored
+    assert object_session(fetched) is None
+    assert stored.table_group_schema == "sales"

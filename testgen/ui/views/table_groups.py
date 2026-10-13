@@ -22,7 +22,7 @@ from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import ProfilingRunNotificationSettings
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY, JobSchedule
-from testgen.common.models.table_group import TableGroup, TableGroupMinimal
+from testgen.common.models.table_group import TableGroup, TableGroupMinimal, default_profiling_masks
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.monitor_service import enable_monitoring
@@ -343,7 +343,7 @@ class TableGroupsPage(Page):
 
         is_table_group_used = False
         wizard_connections = connections
-        table_group = TableGroup(project_code=project_code)
+        table_group = TableGroup(project_code=project_code, **default_profiling_masks())
         original_table_group_schema = None
         if table_group_id:
             table_group = get_table_group(table_group_id)
@@ -655,13 +655,19 @@ class TableGroupsPage(Page):
     @with_database_session
     def _execute_delete(self, table_group_id: str) -> None:
         table_group_name = st.session_state.get("tg_delete_dialog", {}).get("table_group", {}).get("table_groups_name", "")
-        if not (ProfilingRun.has_active_job_for(TableGroup, table_group_id) or TestRun.has_active_job_for(TableGroup, table_group_id)):
-            TableGroup.cascade_delete([table_group_id])
-            select_table_groups_minimal_where.clear()
-            st.toast(f"Table Group {table_group_name} has been deleted.", icon=":material/check:")
-        else:
+        if ProfilingRun.has_active_job_for(TableGroup, table_group_id) or TestRun.has_active_job_for(TableGroup, table_group_id):
             st.toast(
                 "This Table Group has an unfinished run and cannot be deleted. Cancel the run first.",
                 icon=":material/error:",
             )
+        elif not JobExecution.cancel_queued_catalog_refreshes(TableGroup, table_group_id):
+            st.toast(
+                "This Table Group has a data catalog refresh in progress and cannot be deleted."
+                " Try again when the refresh finishes.",
+                icon=":material/error:",
+            )
+        else:
+            TableGroup.cascade_delete([table_group_id])
+            select_table_groups_minimal_where.clear()
+            st.toast(f"Table Group {table_group_name} has been deleted.", icon=":material/check:")
         st.session_state.pop("tg_delete_dialog", None)

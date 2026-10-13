@@ -1,4 +1,5 @@
 import contextlib
+import contextvars
 import functools
 import platform
 import threading
@@ -45,6 +46,11 @@ Session = sessionmaker(
 )
 _current_session_wrapper = threading.local()
 _current_session_wrapper.value = None
+# Takes precedence over the thread-local. Worker threads that asyncio and anyio start for a task
+# receive a copy of the task's context, so a session bound here follows the task across threads.
+_context_session: contextvars.ContextVar[SQLAlchemySession | None] = contextvars.ContextVar(
+    "context_session", default=None
+)
 
 
 @contextlib.contextmanager
@@ -86,5 +92,19 @@ def with_database_session(func):
     return wrapper
 
 
+@contextlib.contextmanager
+def bound_session(session: SQLAlchemySession):
+    """Make ``session`` the current session in this context, and in every thread given a copy of it.
+
+    Does not commit, roll back or close the session.
+    """
+    token = _context_session.set(session)
+    try:
+        yield session
+    finally:
+        _context_session.reset(token)
+
+
 def get_current_session() -> SQLAlchemySession:
-    return getattr(_current_session_wrapper, "value", None)
+    session = _context_session.get()
+    return session if session is not None else getattr(_current_session_wrapper, "value", None)

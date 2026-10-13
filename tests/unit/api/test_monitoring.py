@@ -305,6 +305,15 @@ def test_patch_rejects_null_and_unknown_fields(body):
     mock_update.assert_not_called()
 
 
+@pytest.mark.parametrize(("body", "code"), [({}, "no_fields"), ({"lookback_runs": None}, "null_field")])
+def test_patch_reports_an_empty_or_null_body_like_every_other_patch(body, code):
+    resp, _, mock_update, _ = _call("patch", body)
+
+    assert resp.status_code == 422
+    assert _errors(resp)[0]["code"] == code
+    mock_update.assert_not_called()
+
+
 def test_patch_404_when_off():
     resp, _, mock_update, _ = _call("patch", {"sensitivity": "high"}, monitored=False)
 

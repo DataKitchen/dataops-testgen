@@ -78,7 +78,7 @@ _error_responses = {
     404: {"model": ErrorResponse, "description": "Not found"},
 }
 
-router = APIRouter(tags=["Runs"], dependencies=[Depends(db_session)], responses=_error_responses)
+router = APIRouter(tags=["Runs"], dependencies=[Depends(db_session, scope="function")], responses=_error_responses)
 
 
 def _schema_is_reported(table_group_id: UUID | None) -> bool:

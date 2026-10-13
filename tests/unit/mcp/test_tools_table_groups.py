@@ -161,6 +161,10 @@ def test_create_table_group_applies_model_defaults_when_optional_args_omitted(
     assert kwargs["profile_sample_percent"] == 30
     assert kwargs["profile_sample_min_count"] == 100000
     assert kwargs["profiling_delay_days"] == 0
+    assert kwargs["profiling_include_mask"] == "%"
+    assert kwargs["profiling_exclude_mask"] == "tmp%"
+    assert kwargs["profile_id_column_mask"] == "%_id"
+    assert kwargs["profile_sk_column_mask"] == "%_sk"
 
 
 @patch(f"{MODULE}.TableGroup")
@@ -1162,6 +1166,7 @@ def test_create_table_group_stores_the_declared_tables(mock_resolve, mock_tg_cls
         {"name": "orders", "uri": "sales/orders_*.csv", "format": "csv", "options": {"delimiter": "|"}},
         {"name": "products", "uri": "catalog/products.json", "format": "json", "options": {}},
     ]
+    assert (instance.profiling_include_mask, instance.profiling_exclude_mask) == (None, None)
     instance.save.assert_called_once()
 
 
@@ -1710,3 +1715,42 @@ def test_update_table_group_leaves_the_catalog_to_a_schema_move(
 
     mock_apply.assert_called_once()
     catalog_write.assert_not_called()
+
+
+@patch(f"{MODULE}.preview_table_group_service")
+@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.resolve_table_group")
+def test_a_declaration_read_error_is_withheld_under_source_data_protection(
+    mock_resolve, mock_conn_cls, mock_preview_svc, db_session_mock
+):
+    """A file read error can quote the file's contents, which are source data."""
+    tg = _mock_table_group(table_groups_name="Files TG", table_group_schema="main")
+    mock_resolve.return_value = tg
+    mock_conn_cls.get_by_table_group.return_value = _files_connection()
+    mock_preview_svc.return_value = (
+        {
+            "stats": {"id": tg.id, "table_groups_name": "Files TG", "table_group_schema": "main"},
+            "tables": {
+                "claims": {
+                    "column_ct": 0,
+                    "approx_record_ct": None,
+                    "approx_data_point_ct": None,
+                    "can_access": None,
+                    "error": 'Invalid Input Error: Error when converting column "ssn": "123-45-6789"',
+                },
+            },
+            "success": True,
+            "message": "1 table could not be read. Check the highlighted paths.",
+        },
+        None,
+        None,
+    )
+
+    from testgen.mcp.tools.table_groups import preview_table_group
+
+    with _patch_perms(), patch("testgen.mcp.tools.common.mcp_source_data_protected", return_value=True):
+        output = preview_table_group(table_group_id=str(tg.id))
+
+    assert "claims" in output
+    assert "123-45-6789" not in output
+    assert "withheld by the source-data protection policy" in output

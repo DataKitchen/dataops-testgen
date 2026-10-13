@@ -101,7 +101,7 @@ def wrap_slack(envelope: dict[str, Any]) -> dict[str, Any]:
     the blocks carry the same facts. Section text is truncated to Slack's per-block
     limit so a long summary does not fail the delivery.
     """
-    summary = envelope["summary"]
+    summary = _slack_escape(envelope["summary"])
     trimmed = summary if len(summary) <= MAX_SLACK_SECTION_CHARS else summary[: MAX_SLACK_SECTION_CHARS - 1] + "…"
     blocks: list[dict[str, Any]] = [
         {"type": "section", "text": {"type": "mrkdwn", "text": trimmed}},
@@ -141,11 +141,16 @@ def wrap_teams(envelope: dict[str, Any]) -> dict[str, Any]:
 
 def _slack_context_line(envelope: dict[str, Any]) -> str:
     project_name = envelope["project"]["name"] or envelope["project"]["code"]
-    parts = [f"*{project_name}*"] if project_name else []
+    parts = [f"*{_slack_escape(project_name)}*"] if project_name else []
     url = envelope.get("url")
     if url:
         parts.append(f"<{url}|Open in TestGen>")
     return " · ".join(parts)
+
+
+def _slack_escape(text: str) -> str:
+    """Escape the three characters Slack reserves for its own markup, and no others."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _teams_context_line(envelope: dict[str, Any]) -> str:

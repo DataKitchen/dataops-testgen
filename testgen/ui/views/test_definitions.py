@@ -21,7 +21,9 @@ from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_definition import (
+    MISSING_TEST_DEFINITION_MESSAGE,
     NON_PUBLIC_TEST_TYPES,
+    MissingTestDefinitionError,
     TestDefinition,
     TestDefinitionMinimal,
     TestDefinitionNote,
@@ -418,7 +420,11 @@ class TestDefinitionsPage(Page):
         @with_database_session
         def on_edit_test_saved(test_def: dict) -> None:
             test_def["last_manual_update"] = datetime.now(UTC)
-            _save_test_definition(test_def)
+            try:
+                _save_test_definition(test_def)
+            except MissingTestDefinitionError:
+                st.session_state[TD_VALIDATE_RESULT_KEY] = {"success": False, "message": MISSING_TEST_DEFINITION_MESSAGE}
+                return
             st.cache_data.clear()
             st.session_state.pop(TD_EDIT_DIALOG_KEY, None)
             st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)

@@ -39,7 +39,7 @@ test_types:
   usage_notes: |-
     Match Fractional Sum tests that the sum of the fractional parts of the column values is exactly the baseline sum. A drop points to values rounded or truncated to fewer decimal places. For a floor rather than an exact sum, use Decimal Truncation.
   active: Y
-  ai_redact_values: false
+  ai_redact_values: true
   null_measure_fails: true
   algorithm: Aggregate reconciliation
   generation_sets:

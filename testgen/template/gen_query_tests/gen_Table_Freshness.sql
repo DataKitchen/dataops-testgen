@@ -128,11 +128,11 @@ selected_tables AS (
             WHEN general_type = 'D' THEN 'MIN(@@@)::VARCHAR || ''|'' || MAX(@@@::VARCHAR) || ''|'' || COUNT(DISTINCT @@@)::VARCHAR'
             WHEN general_type = 'A' THEN 'MIN(@@@)::VARCHAR || ''|'' || MAX(@@@::VARCHAR) || ''|'' || COUNT(DISTINCT @@@)::VARCHAR || ''|'' || SUM(LENGTH(@@@))::VARCHAR'
             WHEN general_type = 'N' THEN 'COUNT(@@@)::VARCHAR || ''|'' ||
-              COUNT(DISTINCT MOD((COALESCE(@@@,0)::DECIMAL(38,6) * 1000000)::DECIMAL(38,0), 1000003))::VARCHAR || ''|'' ||
+              COUNT(DISTINCT MOD((COALESCE(@@@::DECIMAL(38,6),0) * 1000000)::DECIMAL(38,0), 1000003))::VARCHAR || ''|'' ||
               COALESCE((MIN(@@@)::DECIMAL(38,6))::VARCHAR, '''') || ''|'' ||
               COALESCE((MAX(@@@)::DECIMAL(38,6))::VARCHAR, '''') || ''|'' ||
-              COALESCE(MOD(COALESCE(SUM(MOD((ABS(COALESCE(@@@,0))::DECIMAL(38,6) * 1000000)::DECIMAL(38,6), 1000000007)), 0), 1000000007)::VARCHAR, '''') || ''|'' ||
-              COALESCE(MOD(COALESCE(SUM(MOD((ABS(COALESCE(@@@,0))::DECIMAL(38,6) * 1000000)::DECIMAL(38,6), 1000000009)), 0), 1000000009)::VARCHAR, '''')'
+              COALESCE(MOD(COALESCE(SUM(MOD((ABS(COALESCE(@@@::DECIMAL(38,6),0)) * 1000000)::DECIMAL(38,6), 1000000007)), 0), 1000000007)::VARCHAR, '''') || ''|'' ||
+              COALESCE(MOD(COALESCE(SUM(MOD((ABS(COALESCE(@@@::DECIMAL(38,6),0)) * 1000000)::DECIMAL(38,6), 1000000009)), 0), 1000000009)::VARCHAR, '''')'
           END,
           '@@@', '"' || column_name || '"'
         ),
@@ -149,15 +149,15 @@ INSERT INTO test_definitions (
   test_active, last_auto_gen_date, profiling_as_of_date, profile_run_id,
   history_calculation, history_lookback, custom_query
 )
-SELECT 
+SELECT
   :TABLE_GROUPS_ID ::UUID AS table_groups_id,
   :TEST_SUITE_ID ::UUID   AS test_suite_id,
   :VERSION_ID ::UUID      AS version_id,
   'Table_Freshness'       AS test_type,
   :DATA_SCHEMA            AS schema_name,
   s.table_name,
-  'Y'                     AS test_active, 
-  :RUN_DATE ::TIMESTAMP   AS last_auto_gen_date, 
+  'Y'                     AS test_active,
+  :RUN_DATE ::TIMESTAMP   AS last_auto_gen_date,
   :AS_OF_DATE ::TIMESTAMP AS profiling_as_of_date,
   s.profile_run_id,
   'Value'                 AS history_calculation,
@@ -169,9 +169,9 @@ WHERE EXISTS (SELECT 1 FROM test_types WHERE test_type = 'Table_Freshness' AND a
   {TABLE_FILTER}
 
 -- Match "uix_td_autogen_table" unique index exactly
-ON CONFLICT (test_suite_id, version_id, test_type, schema_name, table_name) 
-WHERE last_auto_gen_date IS NOT NULL 
-  AND table_name IS NOT NULL 
+ON CONFLICT (test_suite_id, version_id, test_type, schema_name, table_name)
+WHERE last_auto_gen_date IS NOT NULL
+  AND table_name IS NOT NULL
   AND column_name IS NULL
 
 -- Update tests if they already exist

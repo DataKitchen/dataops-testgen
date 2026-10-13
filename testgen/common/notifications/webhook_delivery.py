@@ -70,6 +70,11 @@ _RETRY_ATTEMPTS = 2
 # total time spent sleeping on a delivery at two seconds.
 _RETRY_BACKOFF_FACTOR = 1.0
 
+# requests fills each proxy key a request leaves out from the environment's proxy
+# variables, then drops keys mapped to ``None``. Mapping every key it looks up to
+# ``None`` therefore sends the request without a proxy.
+_PROXY_KEYS = ("http", "https", "all")
+
 
 class WebhookDeliveryError(Exception):
     """Raised on any delivery failure: address refused, network, non-2xx, malformed."""
@@ -193,6 +198,10 @@ def _post(destination: WebhookDestination, envelope: dict, *, event_type: str) -
             headers=headers,
             timeout=DEFAULT_TIMEOUT,
             allow_redirects=False,
+            # The pinned adapter refuses proxied connections, so a proxy picked up from
+            # the environment would fail every delivery. ``trust_env`` stays on so a CA
+            # bundle set in the environment still applies.
+            proxies=dict.fromkeys(_PROXY_KEYS),
             verify=True,
             # stream=True so ``_read_body_snippet`` can enforce the cap by reading
             # a bounded prefix of the response instead of eagerly consuming the

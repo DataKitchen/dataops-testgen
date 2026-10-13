@@ -10,7 +10,7 @@ test_types:
   measure_uom: Standard deviation
   measure_uom_description: null
   selection_criteria: |-
-    general_type = 'N' AND value_ct > 1 AND stdev_value IS NOT NULL
+    general_type = 'N' AND value_ct > 1 AND distinct_value_ct > 1 AND stdev_value IS NOT NULL
   generation_template: null
   dq_score_prevalence_formula: |-
     1

@@ -16,6 +16,7 @@ from sqlalchemy import (
     Text,
     and_,
     case,
+    cast,
     delete,
     exists,
     false,
@@ -43,6 +44,8 @@ from testgen.common.enums import (
 from testgen.common.flavors import runs_in_process
 from testgen.common.models import Base, database_session, get_current_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.entity import Entity
+from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
 
@@ -413,6 +416,45 @@ class JobExecution(Base):
                 query = query.where(cls.kwargs[k].astext == str(v))
         query = query.order_by(cls.created_at.desc())
         return list(get_current_session().scalars(query).all())
+
+    @classmethod
+    def cancel_queued_catalog_refreshes(cls, entity_cls: type[Entity], *entity_ids: str | UUID) -> bool:
+        """Cancel the catalog refreshes that have not started for the given table groups, or for
+        every table group of the given connections or projects.
+
+        The refreshes are locked before they are read, and the scheduler claims with SKIP LOCKED,
+        so none can start between the check and the cancel.
+
+        :returns: True when every matching refresh that has not started is canceled, or there are none;
+            False, canceling nothing, when any of them has already started.
+        """
+        if entity_cls is TableGroup:
+            table_group_ids = [str(entity_id) for entity_id in entity_ids]
+        elif entity_cls is Connection:
+            table_group_ids = select(cast(TableGroup.id, String)).where(TableGroup.connection_id.in_(entity_ids))
+        elif entity_cls is Project:
+            table_group_ids = select(cast(TableGroup.id, String)).where(TableGroup.project_code.in_(entity_ids))
+        else:
+            raise ValueError(f"Unsupported entity: {entity_cls.__name__}")
+
+        refreshes = get_current_session().execute(
+            select(cls.id, cls.status, cls.claimed_at)
+            .where(
+                cls.job_key == JobKey.refresh_data_catalog,
+                cls.status.in_(JobStatus.active()),
+                cls.kwargs["table_group_id"].astext.in_(table_group_ids),
+            )
+            .with_for_update()
+        ).all()
+        # A refresh canceled before any worker claimed it will never run, so it blocks nothing.
+        if any(
+            status not in JobStatus.claimable() and not (status == JobStatus.CANCEL_REQUESTED and claimed_at is None)
+            for _, status, claimed_at in refreshes
+        ):
+            return False
+        if queued := [job_id for job_id, status, _ in refreshes if status in JobStatus.claimable()]:
+            cls._transition_bulk_where(JobStatus.CANCEL_REQUESTED, cls.id.in_(queued))
+        return True
 
     @classmethod
     def recover_stale(cls) -> int:

@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import duckdb
 import pytest
 
 from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
@@ -296,7 +297,7 @@ def test_a_database_flavor_has_no_file_counts():
     assert sql_generator.get_file_counts() == []
 
 
-def test_the_files_of_a_table_group_are_counted_in_one_query(tmp_path):
+def _two_declaration_counts(tmp_path, **kwargs) -> list[tuple[str, None]]:
     connection = Connection(sql_flavor="duckdb", sql_flavor_code="files", parameters={"base_path": str(tmp_path)})
     table_group = TableGroup(
         table_group_schema="main",
@@ -305,13 +306,22 @@ def test_the_files_of_a_table_group_are_counted_in_one_query(tmp_path):
             {"name": "orders", "uri": "orders.csv", "format": "csv"},
         ],
     )
-    sql_generator = RefreshDataCharsSQL(connection, table_group)
+    return RefreshDataCharsSQL(connection, table_group).get_file_counts(**kwargs)
 
-    [(query, params)] = sql_generator.get_file_counts()
 
-    assert params is None
-    assert query.count(" UNION ALL ") == 1
-    assert "'claims' AS table_name" in query
+def test_each_declaration_is_counted_in_its_own_query(tmp_path):
+    """A declaration whose files cannot be listed then fails only its own count."""
+    queries = _two_declaration_counts(tmp_path)
+
+    assert [params for _, params in queries] == [None, None]
+    assert ["'claims' AS table_name" in query for query, _ in queries] == [True, False]
+    assert ["'orders' AS table_name" in query for query, _ in queries] == [False, True]
+    assert not any(" UNION ALL " in query for query, _ in queries)
+
+
+def test_a_declaration_named_in_skip_is_not_counted(tmp_path):
+    [(query, _)] = _two_declaration_counts(tmp_path, skip={"claims"})
+
     assert "'orders' AS table_name" in query
 
 
@@ -360,3 +370,23 @@ def test_the_catalog_merge_joins_each_updated_column_to_its_alias_by_primary_key
     for statement in column_updates:
         assert "WHERE data_column_chars.column_id = d.column_id" in statement
         assert "data_column_chars.column_name" not in statement
+
+
+def test_duckdb_mask_underscore_matches_only_a_literal_underscore():
+    """DuckDB's LIKE has no default escape character, so the escaped underscore needs an ESCAPE clause."""
+    table_group = TableGroup(
+        table_group_schema="main",
+        profiling_table_set="",
+        profiling_include_mask="sales_%",
+        profiling_exclude_mask="sales_tmp%",
+    )
+    sql_generator = RefreshDataCharsSQL(Connection(sql_flavor="duckdb"), table_group)
+    column = sql_generator.flavor_service.ddf_table_ref
+    names = ["sales_orders", "salesXorders", "sales_tmp_load", "other"]
+
+    rows = duckdb.connect().sql(
+        f"SELECT {column} FROM (VALUES {', '.join(f"('{name}')" for name in names)}) AS c({column})"
+        f" WHERE TRUE {sql_generator._get_table_criteria()}"
+    ).fetchall()
+
+    assert rows == [("sales_orders",)]

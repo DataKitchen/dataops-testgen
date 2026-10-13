@@ -12,6 +12,7 @@ from uuid import UUID
 
 from testgen import settings
 from testgen.commands.job_registry import JOB_DISPATCH, run_final_callbacks
+from testgen.commands.run_upgrade_db_config import is_db_revision_up_to_date
 from testgen.common.enums import PAUSABLE_JOB_KEYS, JobStatus
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution, process_failure_message
@@ -319,16 +320,22 @@ class CliScheduler(Scheduler):
         return interrupting
 
 
-@with_database_session
 def check_db_is_ready() -> bool:
+    """Whether the database schema matches this version, so the scheduler's queries can run.
+
+    An upgrade can start this version before it migrates the database, and runs the migration
+    inside this same container, so the scheduler waits rather than exits.
+    """
     try:
-        count = JobSchedule.count()
+        is_current = is_db_revision_up_to_date()
     except Exception:
         LOG.info("Database is not ready yet.")
         return False
-    else:
-        LOG.info("Database is ready. A total of %d schedule(s) were found.", count)
-        return True
+    if not is_current:
+        LOG.info("Database schema is out of date. Waiting for testgen upgrade-system-version to update it.")
+        return False
+    LOG.info("Database is ready.")
+    return True
 
 
 def run_scheduler():

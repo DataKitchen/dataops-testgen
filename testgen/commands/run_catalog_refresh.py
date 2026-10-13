@@ -62,14 +62,16 @@ def run_catalog_refresh(table_group_id: str, monitor_suite_id: str | None = None
     """
     table_group = TableGroup.get(table_group_id)
     if table_group is None:
-        raise ValueError(f"Table group {table_group_id} not found")
+        LOG.info(f"Skipping data catalog refresh: table group {table_group_id} no longer exists")
+        return
     connection = Connection.get(table_group.connection_id)
     set_target_db_params(connection.__dict__, table_group)
 
     LOG.info(f"Refreshing data catalog for table group {table_group_id}")
     first_error: Exception | None = None
     try:
-        run_data_chars_refresh(connection, table_group, datetime.now(UTC))
+        # Profiling refreshes the catalog in full, so the steps before it need only the tables and columns.
+        run_data_chars_refresh(connection, table_group, datetime.now(UTC), count_rows=not run_profiling)
     except Exception as error:
         # A refresh that fails on row counts has still written the catalog, and a profiling run
         # reports a target error to the user where this job's failure would go unseen.

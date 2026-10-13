@@ -410,8 +410,6 @@ class TestExecutionSQL:
                 "CONCAT_COLUMNS": concat_columns(test_def.column_name, self.null_value) if test_def.column_name else "",
                 "SKIP_ERRORS": test_def.skip_errors or 0,
                 "CUSTOM_QUERY": strip_trailing_semicolons(test_def.custom_query),
-                # After CUSTOM_QUERY, which may contain it
-                "DATA_SCHEMA": test_def.schema_name,
                 # Numeric baseline params feed division/arithmetic in CAT measures.
                 # Render empty values as NULL so the measure evaluates to NULL instead of producing
                 # invalid SQL like CAST( AS FLOAT). Cannot default to 0 — several are denominators.
@@ -458,6 +456,9 @@ class TestExecutionSQL:
             })
 
             params.update(self._freshness_exclusion_params(test_def))
+
+            # After every user-supplied parameter, since any of them may contain {DATA_SCHEMA}
+            params["DATA_SCHEMA"] = test_def.schema_name
 
             # These two go last, so their values are never expanded by a later substitution
             params["BASELINE_VALUE_LIST"] = self.flavor_service.string_literal_list(

@@ -93,7 +93,6 @@ DC_HISTORY_DIALOG_KEY = "dc:history_dialog"
 DC_IMPORT_DIALOG_KEY = "dc:import_dialog"
 DC_IMPORT_PREVIEW_KEY = "dc:import_preview"
 DC_IMPORT_RESULT_KEY = "dc:import_result"
-DC_CATALOG_VIEW_KEY = "dc:catalog_view"
 
 
 class DataCatalogPage(Page):
@@ -105,7 +104,14 @@ class DataCatalogPage(Page):
     ]
     menu_item = MenuItem(icon=PAGE_ICON, label=PAGE_TITLE, section="Data Profiling", order=0)
 
-    def render(self, project_code: str, table_group_id: str | None = None, selected: str | None = None, **_kwargs) -> None:
+    def render(
+        self,
+        project_code: str,
+        table_group_id: str | None = None,
+        selected: str | None = None,
+        page: str | None = None,
+        **kwargs,
+    ) -> None:
         testgen.page_header(
             PAGE_TITLE,
             "data-catalog",
@@ -128,16 +134,20 @@ class DataCatalogPage(Page):
                 if not table_group_id or table_group_id not in [ str(item.id) for item in table_groups ]:
                     table_group_id = str(table_groups[0].id) if table_groups else None
                     on_table_group_selected(table_group_id)
+                    page, kwargs = None, {}
 
                 catalog, catalog_filters, selected_item, selected_table_group = None, CatalogFilters(), None, None
                 if table_group_id:
                     selected_table_group = next(item for item in table_groups if str(item.id) == table_group_id)
-                    catalog_filters, catalog_page = get_catalog_view(table_group_id, selected)
+                    catalog_filters = catalog_filters_from_params(kwargs)
+                    catalog_page = get_catalog_page_number(table_group_id, catalog_filters, page, selected)
+                    if page is None and selected:
+                        on_catalog_page_changed(catalog_page)
                     catalog = get_catalog_page(table_group_id, catalog_filters, catalog_page)
                     if not catalog["tables"] and catalog_page > 0:
                         # Edits since the page was chosen can leave it past the last page.
                         catalog_page = max(0, (catalog["visible_count"] - 1) // catalog["page_size"])
-                        set_catalog_view(table_group_id, catalog_filters, catalog_page)
+                        on_catalog_page_changed(catalog_page)
                         catalog = get_catalog_page(table_group_id, catalog_filters, catalog_page)
                     selected_item = get_selected_item(selected, table_group_id)
 
@@ -204,12 +214,6 @@ class DataCatalogPage(Page):
                     st.toast("No tables or columns match the search and filters.", icon=":material/info:")
                     return
             st.session_state[DC_EXPORT_DIALOG_KEY] = items
-
-        def on_catalog_filters_changed(filters: dict) -> None:
-            set_catalog_view(table_group_id, CatalogFilters.from_dict(filters), 0)
-
-        def on_catalog_page_changed(page: int) -> None:
-            set_catalog_view(table_group_id, catalog_filters, page)
 
         def on_export_csv_clicked(_) -> None:
             if selected_table_group:
@@ -456,7 +460,19 @@ def export_metadata_csv(table_group: TableGroupMinimal) -> None:
 
 
 def on_table_group_selected(table_group_id: str | None) -> None:
-    Router().set_query_params({ "table_group_id": table_group_id })
+    Router().set_query_params({
+        "table_group_id": table_group_id,
+        "page": None,
+        **catalog_filter_params(CatalogFilters()),
+    })
+
+
+def on_catalog_filters_changed(filters: dict) -> None:
+    Router().set_query_params({"page": "0", **catalog_filter_params(CatalogFilters.from_dict(filters))})
+
+
+def on_catalog_page_changed(page: int) -> None:
+    Router().set_query_params({"page": str(page)})
 
 
 def on_item_selected(item_id: str | None) -> None:
@@ -703,25 +719,59 @@ def _run_metadata_import(preview: dict, table_group_id: str) -> dict:
     return {"success": True, "message": summary}
 
 
-def get_catalog_view(table_group_id: str, selected: str | None) -> tuple[CatalogFilters, int]:
-    """Return the filters and page the user is viewing the table group's catalog with.
+def catalog_filter_params(filters: CatalogFilters) -> dict[str, str | None]:
+    """Return the query parameters that carry ``filters``.
 
-    Opening a table group with an item already selected starts on the page that shows the item.
+    A filter at its default value maps to ``None``, which removes the parameter from the URL.
     """
-    view = st.session_state.get(DC_CATALOG_VIEW_KEY)
-    if view and view["table_group_id"] == table_group_id:
-        return view["filters"], view["page"]
+    search_in = None
+    if not filters.search_columns:
+        search_in = "tables"
+    elif not filters.search_tables:
+        search_in = "columns"
+    tags = dict(filters.tags)
+    return {
+        "search": filters.search or None,
+        "search_in": search_in,
+        "cde": "1" if filters.critical_data_element else None,
+        "pii": "1" if filters.pii_flag else None,
+        "show_excluded": "1" if filters.show_excluded else None,
+        **{tag: tags.get(tag) for tag in TAG_FIELDS},
+    }
 
-    filters, page = CatalogFilters(), 0
+
+def catalog_filters_from_params(params: typing.Mapping[str, typing.Any]) -> CatalogFilters:
+    """Return the filters carried by the query parameters ``params``."""
+    search_in = params.get("search_in")
+    return CatalogFilters.from_dict({
+        "search": params.get("search"),
+        "search_tables": search_in != "columns",
+        "search_columns": search_in != "tables",
+        "critical_data_element": params.get("cde") == "1",
+        "pii_flag": params.get("pii") == "1",
+        "show_excluded": params.get("show_excluded") == "1",
+        "tags": {tag: params[tag] for tag in TAG_FIELDS if isinstance(params.get(tag), str)},
+    })
+
+
+def get_catalog_page_number(
+    table_group_id: str, filters: CatalogFilters, page: str | None, selected: str | None,
+) -> int:
+    """Return the catalog page to show.
+
+    :param page: The ``page`` query parameter. Without one, the page is the one that shows the
+        selected item, else the first.
+    :param selected: The ``selected`` query parameter, ``<type>_<id>``.
+    """
+    if page is not None:
+        try:
+            return max(0, int(page))
+        except (TypeError, ValueError):
+            return 0
     if selected and "_" in selected:
         item_type, item_id = selected.split("_", 1)
-        page = get_catalog_page_of_item(table_group_id, filters, item_type, item_id) or 0
-    set_catalog_view(table_group_id, filters, page)
-    return filters, page
-
-
-def set_catalog_view(table_group_id: str, filters: CatalogFilters, page: int) -> None:
-    st.session_state[DC_CATALOG_VIEW_KEY] = {"table_group_id": table_group_id, "filters": filters, "page": page}
+        return get_catalog_page_of_item(table_group_id, filters, item_type, item_id) or 0
+    return 0
 
 
 def get_selected_item(selected: str, table_group_id: str) -> dict | None:

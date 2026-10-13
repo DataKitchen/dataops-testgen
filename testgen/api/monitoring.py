@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Response
 
-from testgen.api.deps import api_error, api_errors, db_session, resolve_table_group
+from testgen.api.deps import api_error, api_errors, db_session, fields_to_change, resolve_table_group
 from testgen.api.enums import MonitorSensitivity
 from testgen.api.schemas import ErrorResponse, MonitoringConfig, MonitoringResponse, MonitoringUpdate
 from testgen.common.cron_service import describe_cron, normalize_cron, validate_schedule
@@ -35,7 +35,7 @@ _SETTING_COLUMNS = {public: column for column, public in MONITOR_SETTING_PUBLIC_
 
 _SCHEDULE_FIELD_NAMES = {"cron_expr": "cron_expression", "cron_tz": "timezone"}
 
-router = APIRouter(tags=["Monitors"], dependencies=[Depends(db_session)], responses=_error_responses)
+router = APIRouter(tags=["Monitors"], dependencies=[Depends(db_session, scope="function")], responses=_error_responses)
 
 
 @router.get(
@@ -107,6 +107,7 @@ def patch_monitoring(
 
     Send `active` to pause or resume the monitor schedule. Returns 404 when monitoring is not enabled.
     """
+    fields_to_change(body)
     monitor_suite, schedule = _require_monitoring(table_group)
 
     sent = body.model_fields_set

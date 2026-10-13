@@ -1,14 +1,19 @@
 """FastAPI dependencies for API endpoints."""
 
+import functools
+from collections.abc import Callable, Collection
+from typing import Any
 from uuid import UUID
 
+import anyio
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel
 from sqlalchemy import select
 
 from testgen.common.auth import AuthError, authorize_token, decode_jwt_token
 from testgen.common.enums import PublicJobKey
-from testgen.common.models import Session, _current_session_wrapper, get_current_session
+from testgen.common.models import Session, bound_session, get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.monitor import Monitor
@@ -22,18 +27,35 @@ from testgen.common.models.user import User
 from testgen.utils.plugins import PluginHook
 
 
-def db_session():
-    """One DB session per request. Commits on success, rolls back on exception."""
-    with Session() as session:
-        _current_session_wrapper.value = session
-        try:
+async def db_session():
+    """One DB session per request. Commits on success, rolls back on exception.
+
+    Async so that it runs in the request's own context. FastAPI runs sync dependencies and endpoints
+    on worker threads, each given a copy of that context, so all of them see this session. Under
+    ``scope="function"`` the commit lands before the response is sent.
+    """
+    session = Session()
+    try:
+        with bound_session(session):
             yield session
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            _current_session_wrapper.value = None
+        await _end_session(session.commit)
+    except Exception:
+        await _end_session(session.rollback)
+        raise
+    finally:
+        await _end_session(session.close)
+
+
+@functools.cache
+def _session_end_limiter() -> anyio.CapacityLimiter:
+    # Built on first use, because a limiter can only be created inside a running event loop.
+    return anyio.CapacityLimiter(16)
+
+
+async def _end_session(step: Callable[[], None]) -> None:
+    # Off the threads that run endpoints. A request holding a connection must always be able to commit
+    # and release it, or a burst of endpoints waiting on the pool takes every thread and the pool times out.
+    await anyio.to_thread.run_sync(step, limiter=_session_end_limiter())
 
 
 _bearer_scheme = HTTPBearer()
@@ -78,6 +100,25 @@ def api_errors(status_code: int, code: str, details: list[str]) -> HTTPException
         status_code=status_code,
         detail={"errors": [{"code": code, "detail": detail} for detail in details]},
     )
+
+
+def fields_to_change(body: BaseModel, ignore: Collection[str] = ()) -> dict[str, Any]:
+    """Return the fields a PATCH body sends, keyed by name.
+
+    Raises a 422 ``no_fields`` error when the body sends nothing to change, and a 422 ``null_field``
+    error when it sends a field as ``null``. Fields named in ``ignore`` select the shape of the
+    body rather than change anything, so they count toward neither.
+    """
+    sent = {name: getattr(body, name) for name in body.model_fields_set if name not in ignore}
+    if not sent:
+        raise api_error(422, "no_fields", "No fields supplied to update.")
+    if nulled := sorted(name for name, value in sent.items() if value is None):
+        raise api_error(
+            422,
+            "null_field",
+            f"{', '.join(nulled)} cannot be null. Omit a field to leave it unchanged.",
+        )
+    return sent
 
 
 def has_project_permission(user: User, project_code: str, permission: str) -> bool:

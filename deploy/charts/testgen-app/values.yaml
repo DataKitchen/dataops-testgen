@@ -76,13 +76,14 @@ extraVolumes: []
 extraVolumeMounts: []
 
 # TestGen commands run as Helm hooks: the database is prepared on install and
-# migrated on upgrade.
+# migrated on upgrade. The migration runs before the application pod is replaced,
+# because `helm upgrade --wait` runs post-upgrade hooks only once the pod is ready.
 cliHooks:
   - name: "setup-db"
     triggers: "pre-install"
     command: ["/dk/bin/testgen", "setup-system-db", "--yes"]
   - name: "upgrade-db"
-    triggers: "post-upgrade"
+    triggers: "pre-upgrade"
     command: ["/dk/bin/testgen", "upgrade-system-version"]
 
 # Number of application pods. Keep at 1: each browser session is served by a

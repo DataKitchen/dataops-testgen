@@ -158,6 +158,10 @@ CUSTOM_METADATA_MAX_BYTES = 10_240
 
 MISSING_TEST_DEFINITION_MESSAGE = "Test definition no longer exists."
 
+
+class MissingTestDefinitionError(ValueError):
+    """Raised when a write targets a test definition that has been deleted."""
+
 # The key under custom_metadata reserved for ODCS quality-rule fields (dimension, tags,
 # customProperties, ...) that a contract render promotes onto the rule it emits. Kept here,
 # beside the validator that enforces its shape, rather than in the odcs package: the package
@@ -934,8 +938,8 @@ class TestDefinition(Entity):
         A row belonging to a version the agreement in force already supersedes is refused
         before anything is written, so the refusal leaves no draft behind.
 
-        Raises ``ValueError`` when the row being updated no longer exists, since nothing can
-        then establish which version the write would land on.
+        Raises ``MissingTestDefinitionError`` when the row being updated no longer exists, since
+        nothing can then establish which version the write would land on.
         """
         # Both ids are compared against ones the ORM hands back, never only passed to the
         # database, and a dialog payload delivers them as strings.
@@ -948,7 +952,7 @@ class TestDefinition(Entity):
                 select(TestDefinition.version_id).where(TestDefinition.id == row_id)
             )
             if version_id is None:
-                raise ValueError(f"Test definition {self.id} no longer exists.")
+                raise MissingTestDefinitionError(f"Test definition {self.id} no longer exists.")
 
         if not SuiteVersion.is_frozen_agreement(version_id):
             return

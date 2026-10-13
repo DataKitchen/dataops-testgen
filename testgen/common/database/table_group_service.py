@@ -386,11 +386,16 @@ def _build_preview(
             data_chars = [ColumnChars(**column) for column in rows]
             if declares_files(connection.sql_flavor_code):
                 declaration_failures = run.declaration_failures
-                file_count_map = {
-                    row["table_name"]: row["file_ct"]
-                    for query, params in sql_generator.get_file_counts()
-                    for row in run(query, params)
-                }
+                file_count_map = {}
+                for query, params in sql_generator.get_file_counts(skip=declaration_failures):
+                    try:
+                        rows = run(query, params)
+                    except Exception:
+                        # A file that can be read but not listed, such as one in an object store the
+                        # credentials cannot list, still previews; only its file count is unknown.
+                        LOG.warning("Could not count the files of a declaration", exc_info=True)
+                        continue
+                    file_count_map.update({row["table_name"]: row["file_ct"] for row in rows})
                 for column in data_chars:
                     column.object_type = ObjectType.FILES
                     column.file_ct = file_count_map.get(column.table_name)

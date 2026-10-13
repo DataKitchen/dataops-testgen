@@ -39,7 +39,7 @@ test_types:
   usage_notes: |-
     Match Minimum Value tests that the lowest value in the column is exactly the baseline value, compared as a number. For a floor that values may stay above, use Minimum Value.
   active: Y
-  ai_redact_values: false
+  ai_redact_values: true
   null_measure_fails: true
   algorithm: Aggregate reconciliation
   generation_sets:

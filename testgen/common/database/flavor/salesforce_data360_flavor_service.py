@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import Any
 
 from sqlalchemy.dialects import registry
@@ -69,11 +70,9 @@ class SalesforceData360FlavorService(FlavorService):
             "client_id": params.username,
         }
 
-        # Connection-only contexts (Test Connection from the connection wizard) have
-        # no table group yet, so dbschema is empty — the connector then defaults to
-        # the org's default Data Space, which is fine for "can we authenticate?".
-        # Table-group-scoped contexts (profiling, test execution, preview) supply
-        # the Data Space and the resulting CDP token is restricted to it.
+        # Without a table group there is no Data Space, and the connector
+        # defaults to the org's default one, which is enough to answer "can we authenticate?".
+        # With one, the CDP token is restricted to its Data Space.
         if params.dbschema:
             args["dataspace"] = params.dbschema
 
@@ -102,7 +101,7 @@ class SalesforceData360FlavorService(FlavorService):
         """
         from salesforcecdpconnector.connection import SalesforceCDPConnection
 
-        connect_args = self.get_connect_args(params)
+        connect_args = self.get_connect_args(replace(params, dbschema=schema))
         conn = SalesforceCDPConnection(**connect_args)
 
         try:

@@ -23,7 +23,7 @@ from testgen.common.models.test_suite import SuiteSeverity, TestSuite, TestSuite
 
 _error_responses = {404: {"model": ErrorResponse, "description": "Not found"}}
 
-router = APIRouter(tags=["Test Suites"], dependencies=[Depends(db_session)], responses=_error_responses)
+router = APIRouter(tags=["Test Suites"], dependencies=[Depends(db_session, scope="function")], responses=_error_responses)
 
 
 @router.get(

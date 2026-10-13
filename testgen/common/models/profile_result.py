@@ -95,6 +95,11 @@ def _lift_partition(counts: list[Decimal], whole: Decimal, sampled: Decimal) -> 
     return lifted
 
 
+# Timestamps read from the target, rather than set by TestGen.
+_SOURCE_TIMESTAMPS = frozenset({"min_date", "max_date"})
+_PERCENTILES = ("percentile_25", "percentile_50", "percentile_75")
+
+
 def _sanitize_write_value(value: Any) -> Any:
     # Databricks (via Arrow) returns float('nan') for NULL numerics, which PostgreSQL
     # rejects; PostgreSQL rejects NUL bytes in text; empty strings are stored as NULL.
@@ -214,6 +219,17 @@ class ProfileResult(Entity):
         back only that row and leaves the surrounding transaction usable.
         """
         values = {column: _sanitize_write_value(value) for column, value in row.items()}
+        for column in _SOURCE_TIMESTAMPS & values.keys():
+            if isinstance(values[column], datetime) and values[column].tzinfo is not None:
+                # The wall time the target session reports, which is what a test's measure renders
+                # on that same connection. Binding the zone instead stores the UTC instant.
+                values[column] = values[column].replace(tzinfo=None)
+        low, high = values.get("min_value"), values.get("max_value")
+        if low is not None and high is not None:
+            for column in _PERCENTILES:
+                if values.get(column) is not None:
+                    # An approximate percentile can land a rounding error outside the exact range.
+                    values[column] = min(max(values[column], low), high)
         statement = postgresql.insert(cls).values(values)
         overwrite = {column: statement.excluded[column] for column in values if column not in cls._upsert_key}
         if overwrite:

@@ -196,13 +196,13 @@ const TableGroupForm = (props) => {
     const tableGroup = getValue(props.tableGroup);
     const tableGroupConnectionId = van.state(tableGroup.connection_id);
     const tableGroupsName = van.state(tableGroup.table_groups_name);
-    const profilingIncludeMask = van.state(tableGroup.profiling_include_mask ?? '%');
-    const profilingExcludeMask = van.state(tableGroup.profiling_exclude_mask ?? 'tmp%');
+    const profilingIncludeMask = van.state(tableGroup.profiling_include_mask ?? '');
+    const profilingExcludeMask = van.state(tableGroup.profiling_exclude_mask ?? '');
     const profilingTableSet = van.state(normalizeTableSet(tableGroup.profiling_table_set));
     const declarationRows = van.state((tableGroup.file_declarations ?? []).map(declarationRow));
     const tableGroupSchema = van.state(tableGroup.table_group_schema);
-    const profileIdColumnMask = van.state(tableGroup.profile_id_column_mask ?? '%_id');
-    const profileSkColumnMask = van.state(tableGroup.profile_sk_column_mask ?? '%_sk');
+    const profileIdColumnMask = van.state(tableGroup.profile_id_column_mask ?? '');
+    const profileSkColumnMask = van.state(tableGroup.profile_sk_column_mask ?? '');
     const profilingDelayDays = van.state(tableGroup.profiling_delay_days ?? 0);
     const profileFlagCdes = van.state(tableGroup.profile_flag_cdes ?? true);
     const profileFlagPii = van.state(tableGroup.profile_flag_pii ?? true);

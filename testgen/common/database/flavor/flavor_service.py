@@ -21,7 +21,6 @@ class ConnectionParams(TypedDict):
     project_port: str
     project_user: str
     project_db: str
-    table_group_schema: str
     project_pw_encrypted: bytes
     url: str
     connect_by_url: bool
@@ -29,6 +28,7 @@ class ConnectionParams(TypedDict):
     private_key: bytes
     private_key_passphrase: bytes
     http_path: str
+    warehouse: str
     service_account_key: dict[str,Any]
     connect_with_identity: bool
     connect_with_service_principal: bool
@@ -80,7 +80,6 @@ class ResolvedConnectionParams:
     private_key: str | None = None
     private_key_passphrase: str | None = None
     http_path: str = ""
-    catalog: str = ""
     warehouse: str = ""
     service_account_key: dict[str, Any] | None = None
     connect_with_identity: bool = False
@@ -95,7 +94,9 @@ def _decrypt_if_needed(value: Any) -> str | None:
     return value
 
 
-def resolve_connection_params(connection_params: ConnectionParams) -> ResolvedConnectionParams:
+def resolve_connection_params(
+    connection_params: ConnectionParams, table_group_schema: str | None = None
+) -> ResolvedConnectionParams:
     sql_flavor = connection_params.get("sql_flavor") or ""
     host = connection_params.get("project_host") or ""
     port = connection_params.get("project_port") or ""
@@ -112,14 +113,13 @@ def resolve_connection_params(connection_params: ConnectionParams) -> ResolvedCo
         host=host,
         port=port,
         dbname=connection_params.get("project_db") or "",
-        dbschema=connection_params.get("table_group_schema"),
+        dbschema=table_group_schema,
         sql_flavor=sql_flavor,
         sql_flavor_code=connection_params.get("sql_flavor_code") or sql_flavor,
         connect_by_key=connection_params.get("connect_by_key", False),
         private_key=_decrypt_if_needed(connection_params.get("private_key")),
         private_key_passphrase=_decrypt_if_needed(connection_params.get("private_key_passphrase")),
         http_path=connection_params.get("http_path") or "",
-        catalog=connection_params.get("catalog") or "",
         warehouse=connection_params.get("warehouse") or "",
         service_account_key=connection_params.get("service_account_key"),
         connect_with_identity=connection_params.get("connect_with_identity") or False,
@@ -351,8 +351,13 @@ class FlavorService:
     def get_engine_args(self, params: ResolvedConnectionParams) -> dict[str, Any]:  # noqa: ARG002
         return {}
 
-    def create_engine(self, connection_params: ConnectionParams) -> Engine:
-        params = resolve_connection_params(connection_params)
+    def create_engine(self, connection_params: ConnectionParams, table_group_schema: str | None = None) -> Engine:
+        """Create an engine for the connection.
+
+        :param connection_params: The connection's stored parameters.
+        :param table_group_schema: Schema of the table group the engine reads for, or None when it reads for none.
+        """
+        params = resolve_connection_params(connection_params, table_group_schema)
         return sqlalchemy_create_engine(
             self.get_connection_string(params),
             connect_args=self.get_connect_args(params),

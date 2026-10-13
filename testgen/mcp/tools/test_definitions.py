@@ -104,14 +104,14 @@ def list_tests(
     page: Annotated[int, Field(description="Page number, starting from 1 (default 1).")] = 1,
 ) -> str:
     """List test definitions in a test suite."""
-    suite_uuid = parse_uuid(test_suite_id, "test_suite_id")
+    suite = resolve_test_suite(test_suite_id)
     validate_page(page)
     validate_limit(limit, 200)
     test_type_code = resolve_test_type(test_type) if test_type else None
     perms = get_project_permissions()
 
     items, total = TestDefinition.list_for_suite(
-        test_suite_id=suite_uuid,
+        test_suite_id=suite.id,
         project_codes=perms.allowed_codes,
         table_name=table_name,
         test_type=test_type_code,
