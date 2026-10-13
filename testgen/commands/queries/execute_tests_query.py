@@ -8,6 +8,7 @@ import pandas as pd
 
 from testgen.common import read_template_sql_file
 from testgen.common.clean_sql import concat_columns, null_if_empty, parse_value_list, strip_trailing_semicolons
+from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import (
     fetch_dict_from_db,
     get_flavor_service,
@@ -84,6 +85,8 @@ class TestExecutionDef(InputParameters):
     column_general_types: list[str] | None = None
     # Runtime attributes
     column_type: str = None
+    column_chars: ColumnChars | None = None
+    key_column_chars: ColumnChars | None = None
     measure_expression: str = None
     condition_expression: str = None
     errors: list[str] = dataclasses.field(default_factory=list)
@@ -456,6 +459,7 @@ class TestExecutionSQL:
             })
 
             params.update(self._freshness_exclusion_params(test_def))
+            params.update(self.flavor_service.value_hash_params(test_def.column_chars, test_def.key_column_chars))
 
             # After every user-supplied parameter, since any of them may contain {DATA_SCHEMA}
             params["DATA_SCHEMA"] = test_def.schema_name

@@ -16,6 +16,7 @@
  * @property {number?} profiling_delay_days
  * @property {boolean?} profile_flag_cdes
  * @property {boolean?} profile_flag_pii
+ * @property {boolean?} profile_table_comparison
  * @property {boolean?} include_in_dashboard
  * @property {boolean?} add_scorecard_definition
  * @property {boolean?} profile_use_sampling
@@ -53,6 +54,7 @@
  * @property {string?} sqlFlavor
  * @property {string?} sqlFlavorCode
  * @property {string?} schemaLabel
+ * @property {boolean?} supportsValueHash
  * @property {boolean?} disablePiiFlag
  * @property {(tg: TableGroup, state: FormState) => void} onChange
  */
@@ -207,6 +209,7 @@ const TableGroupForm = (props) => {
     const profileFlagCdes = van.state(tableGroup.profile_flag_cdes ?? true);
     const profileFlagPii = van.state(tableGroup.profile_flag_pii ?? true);
     const profileExcludeXde = van.state(tableGroup.profile_exclude_xde ?? true);
+    const profileTableComparison = van.state(tableGroup.profile_table_comparison ?? false);
     const includeInDashboard = van.state(tableGroup.include_in_dashboard ?? true);
     const addScorecardDefinition = van.state(tableGroup.add_scorecard_definition ?? true);
     const profileUseSampling = van.state(tableGroup.profile_use_sampling ?? false);
@@ -259,6 +262,12 @@ const TableGroupForm = (props) => {
         return SAMPLE_SKIPS_VIEWS_FLAVORS.includes(flavor);
     });
 
+    const supportsValueHash = van.derive(() => {
+        const connections = getValue(props.connections) ?? [];
+        const selected = connections.find(c => c.connection_id === tableGroupConnectionId.val);
+        return selected?.flavor?.supports_value_hash ?? getValue(props.supportsValueHash) ?? true;
+    });
+
     const updatedTableGroup = van.derive(() => {
         return {
             id: tableGroup.id,
@@ -275,6 +284,7 @@ const TableGroupForm = (props) => {
             profile_flag_cdes: profileFlagCdes.val,
             profile_flag_pii: profileFlagPii.val,
             profile_exclude_xde: profileExcludeXde.val,
+            profile_table_comparison: profileTableComparison.val,
             include_in_dashboard: includeInDashboard.val,
             add_scorecard_definition: addScorecardDefinition.val,
             profile_use_sampling: profileUseSampling.val,
@@ -364,11 +374,17 @@ const TableGroupForm = (props) => {
             TablesForm(declarationRows, flavorCode),
         ),
         SettingsForm(
-            { editMode: !!tableGroup.id, disablePiiFlag: getValue(props.disablePiiFlag) ?? false, setValidity: setFieldValidity },
+            {
+                editMode: !!tableGroup.id,
+                disablePiiFlag: getValue(props.disablePiiFlag) ?? false,
+                supportsValueHash,
+                setValidity: setFieldValidity,
+            },
             profilingDelayDays,
             profileFlagCdes,
             profileFlagPii,
             profileExcludeXde,
+            profileTableComparison,
             includeInDashboard,
             addScorecardDefinition,
         ),
@@ -639,6 +655,7 @@ const SettingsForm = (
     profileFlagCdes,
     profileFlagPii,
     profileExcludeXde,
+    profileTableComparison,
     includeInDashboard,
     addScorecardDefinition,
 ) => {
@@ -666,6 +683,16 @@ const SettingsForm = (
                 checked: profileExcludeXde,
                 onChange: (value) => profileExcludeXde.val = value,
             }),
+            div(
+                { style: () => options.supportsValueHash.val ? '' : 'display: none;' },
+                Checkbox({
+                    name: 'profile_table_comparison',
+                    label: 'Profile for table comparison',
+                    help: 'Collects value hashes during profiling, which Table Comparison test generation needs for tests that detect changed, moved, or swapped values. Adds profiling time.',
+                    checked: profileTableComparison,
+                    onChange: (value) => profileTableComparison.val = value,
+                }),
+            ),
             Checkbox({
                 name: 'include_in_dashboard',
                 label: 'Include table group in Project Dashboard',

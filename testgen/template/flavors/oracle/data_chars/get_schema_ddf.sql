@@ -44,7 +44,8 @@ SELECT
         ELSE 'X'
     END AS general_type,
     CASE
-        WHEN c.data_type = 'NUMBER' AND c.data_scale > 0 THEN 1
+        -- A NUMBER declared without a scale holds fractions
+        WHEN c.data_type = 'NUMBER' AND (c.data_scale IS NULL OR c.data_scale > 0) THEN 1
         ELSE 0
     END AS is_decimal,
     CASE WHEN t.table_name IS NOT NULL THEN 'TABLE'

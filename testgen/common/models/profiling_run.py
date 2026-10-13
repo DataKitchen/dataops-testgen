@@ -35,7 +35,7 @@ from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup
 from testgen.utils import is_uuid4
 
-ProgressKey = Literal["data_chars", "col_profiling", "freq_analysis", "hygiene_issues"]
+ProgressKey = Literal["data_chars", "col_profiling", "freq_analysis", "hygiene_issues", "keyed_hash"]
 PROGRESS_KEYS: frozenset[str] = frozenset(get_args(ProgressKey))
 ProgressStatus = Literal["Pending", "Running", "Completed", "Warning"]
 
@@ -480,11 +480,14 @@ class ProfilingRun(Entity):
                 total += len(ids)
         return total
 
-    def init_progress(self) -> None:
+    def init_progress(self, table_comparison: bool) -> None:
         """Prepare the progress steps, keeping whatever an earlier process already recorded.
 
         A run that resumes skips the steps it finished, so their recorded state is the only
         account of them there will be.
+
+        Args:
+            table_comparison: Whether the run prepares table comparison, which adds its step.
         """
         self._progress = {
             "data_chars": {"label": "Refreshing data catalog"},
@@ -492,6 +495,8 @@ class ProfilingRun(Entity):
             "freq_analysis": {"label": "Running frequency analysis"},
             "hygiene_issues": {"label": "Detecting hygiene issues"},
         }
+        if table_comparison:
+            self._progress["keyed_hash"] = {"label": "Preparing table comparison"}
         for key in self._progress:
             self._progress[key].update({"key": key, "status": "Pending"})
         for step in self.progress or []:
@@ -499,6 +504,9 @@ class ProfilingRun(Entity):
                 self._progress[step["key"]].update(step)
 
     def set_progress(self, key: ProgressKey, status: ProgressStatus, detail: str | None = None, error: str | None = None) -> None:
+        # A step without a row in this run's progress, such as table comparison when it is off, reports nothing
+        if key not in self._progress:
+            return
         self._progress[key]["status"] = status
         if detail:
             self._progress[key]["detail"] = detail

@@ -32,7 +32,7 @@ def _make_td(**overrides) -> TestExecutionDef:
         "run_type": "CAT",
         "test_scope": "column",
         "template": "",
-        "measure": "",
+        "measure": "COUNT(*)",
         "test_operator": "=",
         "test_condition": "",
         "baseline_ct": "",
@@ -127,6 +127,13 @@ def test_collect_groupby_names():
     identifiers, schemas, errors = collect_test_identifiers([td], '"')
     assert ("public", "orders", "region") in identifiers
     assert ("public", "orders", "country") in identifiers
+
+
+def test_collect_cat_type_without_a_measure_for_the_flavor_errors():
+    td = _make_td(measure=None)
+    identifiers, _schemas, errors = collect_test_identifiers([td], '"')
+    assert errors[td.id] == ["Invalid test: test type not available for this connection type"]
+    assert not identifiers
 
 
 def test_collect_referential_window_date_column():

@@ -1,5 +1,6 @@
+import re
 from abc import abstractmethod
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypedDict
 from urllib.parse import quote_plus
@@ -129,6 +130,55 @@ def resolve_connection_params(
     )
 
 
+def base_type_name(type_name: str | None) -> str:
+    """Return a catalog type name lowercased, with any precision or length removed."""
+    return re.sub(r"\s*\([^)]*\)", "", type_name or "").strip().lower()
+
+
+def exact_float_canonical(
+    column_ref: str,
+    double_type: str,
+    integer_type: str,
+    quotient: Callable[[str, str], str],
+    bigint_type: str = "BIGINT",
+) -> str:
+    """Return the SQL expression for a binary float's canonical number, computed from its exact value.
+
+    The magnitude splits exactly into a multiple of 2^40, a whole remainder and a fraction, and the
+    fraction into two 45-bit integers, so integer arithmetic sees the exact binary value. The value
+    rounds half away from zero to nine decimal places, and then to six, as ``value_hash.canonical_text``
+    does. Exact for every magnitude below 10^29 and at least 2^-38; a smaller value rounds to zero.
+
+    Args:
+        column_ref: The quoted column reference.
+        double_type: The engine's double-precision type.
+        integer_type: An exact integer or decimal type that holds 10^38.
+        quotient: Builds the engine's truncating division of two non-negative integers of that type.
+        bigint_type: An integer type that holds every whole number below 2^63.
+
+    Returns:
+        The value rounded to six decimal places, times 10^6, as an integer of ``integer_type``.
+    """
+
+    def exact(expr: str) -> str:
+        # Every operand is a whole number below 2^63, so the cast is exact
+        return f"CAST(CAST({expr} AS {bigint_type}) AS {integer_type})"
+
+    def power(exponent: int) -> str:
+        return f"CAST({2**exponent} AS {double_type})"
+
+    magnitude = f"ABS(CAST({column_ref} AS {double_type}))"
+    high = f"FLOOR({magnitude} / {power(40)})"
+    low = f"({magnitude} - {high} * {power(40)})"
+    fraction_high = f"FLOOR(({low} - FLOOR({low})) * {power(45)})"
+    fraction_low = f"((({low} - FLOOR({low})) * {power(45)} - {fraction_high}) * {power(45)})"
+    whole = f"({exact(high)} * {2**40} + {exact(f'FLOOR({low})')})"
+    fraction_bits = f"({exact(fraction_high)} * {2**45} + {exact(fraction_low)})"
+    nanos = quotient(f"{fraction_bits} * 1000000000 + {2**89}", str(2**90))
+    micros = f"{whole} * 1000000 + {quotient(f'{nanos} + 500', '1000')}"
+    return f"(CASE WHEN {column_ref} < 0 THEN -1 ELSE 1 END) * ({micros})"
+
+
 class FlavorConnectionError(Exception):
     """A connection failure whose message is written for the user rather than the log.
 
@@ -177,6 +227,20 @@ class FlavorService:
     # exact sum for: floating-point types the catalog marks decimal, or types with no cast to decimal
     exact_sum_excluded_types: frozenset[str] = frozenset()
 
+    # Whether profiling and the comparison tests hash values on this engine. A flavor that sets it
+    # implements the value-hash primitives: hex_to_wide_decimal, utc_timestamp, format_timestamp and
+    # epoch_seconds. A flavor that can hash text only on some versions also gives a probe query.
+    supports_value_hash = False
+    text_hash_probe: str | None = None
+
+    # Base names (lowercase, without precision) of the engine's binary floating-point types, whose
+    # values are cast to a decimal before their canonical text so they hash like the same decimals
+    float_types: frozenset[str] = frozenset()
+    # Floats are widened to this type before the cast, so a single-precision value converts exactly
+    double_type = "DOUBLE PRECISION"
+
+    wide_decimal_type = "DECIMAL(38,0)"
+
     def qualifies_table_refs_with_schema(self, sql_flavor_code: str) -> bool:  # noqa: ARG002
         """Whether generated SQL names a table as ``schema.table`` rather than ``table``.
 
@@ -224,6 +288,142 @@ class FlavorService:
             plain numbers or apply arithmetic functions to.
         """
         return column_ref
+
+    def is_float(self, column: ColumnChars) -> bool:
+        """Whether a column's catalog type is one of the engine's binary floating-point types."""
+        return base_type_name(column.db_data_type or column.column_type) in self.float_types
+
+    def value_hash_params(self, column: ColumnChars | None, key_column: ColumnChars | None = None) -> dict[str, str]:
+        """Return the template parameters that compute a column's value hashes.
+
+        Args:
+            column: The column's catalog characteristics.
+            key_column: The catalog characteristics of its table's key column, if it has one.
+
+        Returns:
+            ``MULTISET_HASH_TERM``; ``EPOCH_SUM_TERM`` for a date column; ``KEYED_HASH_TERM`` when
+            ``key_column`` is given. Empty when the flavor does not hash values or there is no column.
+        """
+        if not (self.supports_value_hash and column):
+            return {}
+        quote = self.quote_character
+        column_ref = f"{quote}{column.column_name}{quote}"
+        params = {"MULTISET_HASH_TERM": self.multiset_hash_term(column_ref, column)}
+        if column.general_type == "D":
+            params["EPOCH_SUM_TERM"] = self.epoch_sum_term(column_ref, column)
+        if key_column:
+            key_ref = f"{quote}{key_column.column_name}{quote}"
+            params["KEYED_HASH_TERM"] = self.keyed_hash_term(key_ref, key_column, column_ref, column)
+        return params
+
+    def multiset_hash_term(self, column_ref: str, column: ColumnChars) -> str:
+        """Return the SQL expression for one value's term in the column's multiset hash sum.
+
+        Args:
+            column_ref: The quoted column reference.
+            column: The column's catalog characteristics.
+
+        Returns:
+            The first 56 bits of the MD5 of the value's canonical text, as the wide decimal type, or
+            NULL for a value ``hashable_condition`` excludes.
+        """
+        hashed = self.hash_integer(self.canonical_text(column_ref, column))
+        return f"CASE WHEN {self.hashable_condition(column_ref, column)} THEN {hashed} END"
+
+    def keyed_hash_term(self, key_ref: str, key_column: ColumnChars, column_ref: str, column: ColumnChars) -> str:
+        """Return the SQL expression for one row's term in a column's keyed hash sum.
+
+        The hashed text joins the MD5 hex of the key's and the value's canonical texts. Both digests
+        have a fixed width, so two different key and value pairs never produce the same text. A row
+        with a NULL value contributes NULL.
+        """
+        key_hex = self.md5_hex(self.canonical_text(key_ref, key_column))
+        value_hex = self.md5_hex(self.canonical_text(column_ref, column))
+        hashed = self.hash_integer(f"{key_hex} {self.concat_operator} {value_hex}")
+        condition = f"{self.hashable_condition(column_ref, column)} AND {self.hashable_condition(key_ref, key_column)}"
+        return f"CASE WHEN {condition} THEN {hashed} END"
+
+    def hashable_condition(self, column_ref: str, column: ColumnChars) -> str:
+        """Return the SQL condition under which a value contributes to the column's hashes.
+
+        A NULL never contributes. Neither does a number too large for the decimal its canonical text
+        is computed in: 10^29 or more in magnitude for a binary float, and for another number one that
+        rounds to 10^32 or more at six places. An infinite or NaN value fails the same comparison.
+        """
+        # Guarded explicitly: some engines hash NULL or concatenate it as an empty string
+        if column.general_type == "N" and self.is_float(column):
+            return f"{column_ref} IS NOT NULL AND ABS({column_ref}) < 1E29"
+        if column.general_type == "N":
+            # Compared as whole numbers: a float bound rounds a decimal near it, and some engines cast
+            # a decimal bound to the column's own type, which may not hold it. No ABS, which overflows
+            # on an integer type's minimum value.
+            below = f"CAST(FLOOR({column_ref}) AS {self.wide_decimal_type}) < {10**32}"
+            above = f"CAST(CEIL({column_ref}) AS {self.wide_decimal_type}) > {-(10**32)}"
+            return f"{column_ref} IS NOT NULL AND {below} AND {above}"
+        return f"{column_ref} IS NOT NULL"
+
+    def epoch_sum_term(self, column_ref: str, column: ColumnChars) -> str:
+        """Return the SQL expression for one date value in seconds since 1970-01-01 UTC, truncated."""
+        seconds = f"CAST({self.epoch_seconds(self.utc_timestamp(column_ref, column))} AS {self.wide_decimal_type})"
+        return f"CASE WHEN {self.hashable_condition(column_ref, column)} THEN {seconds} END"
+
+    def canonical_text(self, column_ref: str, column: ColumnChars) -> str:
+        """Return the SQL expression for a value's canonical text, which renders identical values
+        identically on every engine.
+
+        Text is the value as read by ``text_value``. A number is its value rounded half away from zero
+        to six decimal places, times 10^6, as integer text; a binary float is first rounded to nine
+        places, which absorbs its representation error. A date or timestamp is ``YYYY-MM-DD HH24:MI:SS`` in UTC,
+        truncated to the second.
+        """
+        if column.general_type == "N":
+            return self.canonical_number(column_ref, self.is_float(column))
+        if column.general_type == "D":
+            return self.format_timestamp(self.utc_timestamp(column_ref, column))
+        return self.text_value(column_ref, column.column_type)
+
+    def canonical_number(self, column_ref: str, is_float: bool) -> str:
+        exact = self.float_to_decimal(column_ref) if is_float else column_ref
+        rounded = f"CAST(ROUND({exact}, 6) AS DECIMAL(38,6))"
+        # Scaled in two parts: multiplying the decimal by 10^6 keeps its scale on some engines and overflows past 10^26.
+        # Split from the magnitude: FLOOR takes a negative value just above -10^32 to a 33-digit whole part.
+        magnitude = f"ABS({rounded})"
+        whole = f"CAST(FLOOR({magnitude}) AS {self.wide_decimal_type}) * 1000000"
+        fraction = f"CAST(({magnitude} - FLOOR({magnitude})) * 1000000 AS {self.wide_decimal_type})"
+        sign = f"CAST(SIGN({rounded}) AS {self.wide_decimal_type})"
+        return f"CAST({sign} * ({whole} + {fraction}) AS {self.varchar_type})"
+
+    def float_to_decimal(self, column_ref: str) -> str:
+        """Return the SQL expression converting a binary float to ``DECIMAL(38,9)``."""
+        return f"CAST(CAST({column_ref} AS {self.double_type}) AS DECIMAL(38,9))"
+
+    def md5_hex(self, text_expr: str) -> str:
+        """Return the SQL expression for the lowercase hex MD5 of the UTF-8 bytes of ``text_expr``."""
+        return f"MD5({text_expr})"
+
+    def hash_integer(self, text_expr: str) -> str:
+        """Return the SQL expression for the first 56 bits of the MD5 of ``text_expr``, as the wide
+        decimal type. 56 bits fit a signed 64-bit integer as a positive value on every engine.
+        """
+        return self.hex_to_wide_decimal(f"SUBSTRING({self.md5_hex(text_expr)}, 1, 14)")
+
+    def hex_to_wide_decimal(self, hex_expr: str) -> str:
+        """Return the SQL expression converting 14 lowercase hex digits to the wide decimal type."""
+        raise NotImplementedError
+
+    def utc_timestamp(self, column_ref: str, column: ColumnChars) -> str:
+        """Return the SQL expression for a date or timestamp value as a timestamp without time zone,
+        holding the UTC wall-clock time when the value is time-zone aware.
+        """
+        raise NotImplementedError
+
+    def format_timestamp(self, timestamp_expr: str) -> str:
+        """Return the SQL expression rendering a timestamp as ``YYYY-MM-DD HH24:MI:SS``, truncated."""
+        raise NotImplementedError
+
+    def epoch_seconds(self, timestamp_expr: str) -> str:
+        """Return the SQL expression for a timestamp's whole seconds since 1970-01-01, truncated."""
+        raise NotImplementedError
 
     def get_schema_columns(self, _params: ResolvedConnectionParams, _schema: str) -> list[ColumnChars] | None:
         """Return column metadata without querying information_schema.
