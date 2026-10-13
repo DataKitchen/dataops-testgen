@@ -33,6 +33,10 @@ EXEMPT_METHODS = {
         "reads the version its caller names rather than the one the suite resolves to; that "
         "predicate is asserted in test_test_definition_version_stamping.py"
     ),
+    "resolve_writable": (
+        "a write router — maps named rows across versions onto the writable one, deciding from the "
+        "rows' own versions; covered by test_contract_write_guard.py"
+    ),
     "resolve_write_target": (
         "a write — opens the draft a write lands on; it reads suite_versions, and the term "
         "copy it performs is exercised as copy_to_version"
@@ -49,6 +53,10 @@ EXEMPT_METHODS = {
     "editable_fields": "derives a field list from the test type; issues no statement",
     "validate": "checks fields already in memory; issues no statement",
     "version_clause": "builds the predicate the reads apply; issues no statement itself",
+    "any_contract_version_clause": (
+        "builds the predicate a read applies to address a contract's rows in any version; issues no "
+        "statement itself, and the reads that apply it are covered in test_suite_type_widening.py"
+    ),
     "mint_term_id": (
         "takes no suite and reads no terms — its taken-check narrows by an explicit version_id, "
         "which is stricter than the resolved-version predicate rather than a bypass of it"

@@ -36,7 +36,7 @@ def _escape_table_cell(value: str) -> str:
     return _TABLE_CELL_RE.sub(r"\\\1", value)
 
 
-def _format_dt(value: object) -> str | None:
+def format_datetime(value: object) -> str | None:
     """Return 'YYYY-MM-DD HH:MM UTC' for datetime objects and ISO strings, else None."""
     if isinstance(value, datetime):
         return value.strftime("%Y-%m-%d %H:%M") + " UTC"
@@ -48,7 +48,7 @@ def _format_part(value: object) -> str:
     """Format a single value for text() parts — datetime-aware, no escaping."""
     if value is None:
         return "\u2014"
-    return dt_str if (dt_str := _format_dt(value)) else str(value)
+    return dt_str if (dt_str := format_datetime(value)) else str(value)
 
 
 def format_boolean(value: object) -> str | None:
@@ -206,7 +206,7 @@ class MdDoc:
     def _format_field_value(value: object, *, code: bool = False) -> str:
         if value is None:
             return "\u2014"
-        if dt_str := _format_dt(value):
+        if dt_str := format_datetime(value):
             return MdDoc.code(dt_str) if code else dt_str
         if bool_str := format_boolean(value):
             return MdDoc.code(bool_str) if code else bool_str
@@ -217,7 +217,7 @@ class MdDoc:
     def _format_cell(value: object, null_display: str) -> str:
         if value is None:
             return null_display
-        if dt_str := _format_dt(value):
+        if dt_str := format_datetime(value):
             return dt_str
         s = str(value).replace("\n", " ")
         return _escape_table_cell(s)

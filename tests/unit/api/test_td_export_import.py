@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.engine.result import result_tuple
 from sqlalchemy.sql.dml import Delete
 
@@ -17,7 +18,7 @@ from testgen.api.deps import db_session, get_authorized_user
 from testgen.api.schemas import ErrorResponse, ImportRequest, ImportStrictError
 from testgen.api.test_definitions import router
 from testgen.common.enums import SuiteType
-from testgen.common.models.suite_version import FrozenVersionError
+from testgen.common.models.suite_version import FrozenVersionError, SuiteVersion
 from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.test_definition_export_import_service import (
     _EXISTING_TD_COLUMNS,
@@ -51,9 +52,9 @@ ENDPOINT_MODULE = "testgen.api.test_definitions"
 
 @pytest.fixture(autouse=True)
 def _route_the_write_guards_session_through_the_mocked_one():
-    """``assert_version_writable`` resolves its own session through ``test_definition.py``'s
-    own import of ``get_current_session``, and the frozen-version predicate it delegates to
-    through ``suite_version.py``'s -- different names than the one these tests patch on the
+    """The model methods the service calls resolve their own session through
+    ``test_definition.py``'s own import of ``get_current_session``, and the frozen-version
+    predicate through ``suite_version.py``'s -- different names than the one these tests patch on the
     service module. Forward both at call time so they resolve to whatever session a given
     test has mocked, without every test needing to patch all three names itself.
     """
@@ -72,6 +73,23 @@ def _route_the_write_guards_session_through_the_mocked_one():
 
 
 # --- Fixtures ---
+
+
+@pytest.fixture(autouse=True)
+def _writes_land_on_the_resolved_version():
+    """Route an import's writes onto the version the suite resolves to, each row onto itself.
+
+    How a contract's frozen version is routed to its draft is covered by
+    test_contract_write_guard.py and test_import_routes_to_draft.py.
+    """
+    service = importlib.import_module(SERVICE_MODULE)
+
+    def resolve_writable(test_suite_id, row_ids=()):
+        version_id = service.get_current_session().scalar(select(SuiteVersion.resolved_for(test_suite_id)))
+        return version_id, {row_id: row_id for row_id in row_ids}
+
+    with patch.object(TestDefinition, "resolve_writable", side_effect=resolve_writable):
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -141,7 +159,7 @@ def _patched_td_class():
     with patch(f"{SERVICE_MODULE}.TestDefinition") as mock_td_cls:
         for attribute in (
             "version_clause", "id", "test_suite_id", "last_auto_gen_date", "external_id",
-            "assert_version_writable",
+            "resolve_writable",
         ):
             setattr(mock_td_cls, attribute, getattr(TestDefinition, attribute))
         yield mock_td_cls
@@ -288,6 +306,8 @@ class Test_export_definitions:
 
         ts = _make_test_suite()
         session.scalars.return_value.all.return_value = []
+        # The version the suite resolves to, then the frozen check, which finds it writable.
+        session.scalar.side_effect = [uuid4(), None]
 
         from testgen.common.test_definition_export_import_service import export_definitions
 
@@ -423,7 +443,6 @@ class Test_import_matching:
 
         with (
             patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")),
-            patch.object(TestDefinition, "assert_version_writable"),
             patch.object(TestDefinition, "assign_missing_term_ids") as sweep,
         ):
             result = import_definitions(ts, config, _make_payload(td))
@@ -1725,6 +1744,7 @@ class Test_version_scoping:
         mock_session_fn.return_value = session
         mock_tg_cls.get.return_value = _make_table_group()
         session.scalars.return_value.all.return_value = []
+        session.scalar.side_effect = [uuid4(), None]
 
         from testgen.common.test_definition_export_import_service import export_definitions
 
@@ -1759,9 +1779,7 @@ class Test_version_scoping:
         mock_tg_cls.get.return_value = _make_table_group()
         mock_dt_cls.select_table_names.return_value = ["t1"]
         session.execute.return_value.all.return_value = []
-        # First scalar call resolves the version; the second is the write guard's own
-        # frozen-and-suite-owned check, which must find nothing for this write to proceed.
-        session.scalar.side_effect = [resolved, None]
+        session.scalar.return_value = resolved
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
@@ -1810,22 +1828,21 @@ class Test_version_scoping:
     @patch(f"{SERVICE_MODULE}.DataTable")
     @patch(f"{SERVICE_MODULE}.TableGroup")
     @patch(f"{SERVICE_MODULE}.get_current_session")
-    def test_import_refuses_to_write_into_a_frozen_version(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
-        """A fifth write path into test_definitions; the guard must fire here before any
-        INSERT, UPDATE or DELETE is emitted, exactly as it does on save/move/copy."""
-        resolved = uuid4()
+    def test_an_import_the_write_router_refuses_writes_nothing(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
+        """A fifth write path into test_definitions; the refusal must come before any INSERT,
+        UPDATE or DELETE is emitted, exactly as it does on save/move/copy."""
         session = MagicMock()
         mock_session_fn.return_value = session
         mock_tg_cls.get.return_value = _make_table_group()
         mock_dt_cls.select_table_names.return_value = ["t1"]
         session.execute.return_value.all.return_value = []
-        # First scalar call resolves the version; the second is assert_version_writable's own
-        # frozen-and-suite-owned check, which finds a matching row and must raise.
-        session.scalar.side_effect = [resolved, resolved]
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
+        with (
+            patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")),
+            patch.object(TestDefinition, "resolve_writable", side_effect=FrozenVersionError(uuid4())),
+        ):
             with pytest.raises(FrozenVersionError):
                 import_definitions(
                     _make_test_suite(),
@@ -1834,6 +1851,7 @@ class Test_version_scoping:
                 )
 
         session.add.assert_not_called()
+        assert len(session.execute.call_args_list) == 1, "the import wrote after the refusal"
 
 
 class Test_import_reference_schema:
@@ -1865,6 +1883,15 @@ class Test_import_reference_schema:
     def _set_clause(session) -> str:
         update_stmt = session.execute.call_args[0][0]
         return str(update_stmt.compile(compile_kwargs={"literal_binds": True})).split("SET")[1]
+
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_update_scopes_to_a_version(self, mock_session_fn):
+        session = mock_session_fn.return_value
+        target = _make_existing_row(match_table_name="customers", match_schema_name="reference")
+
+        _update_td(_make_import_td(threshold_value="99"), target, _make_table_group(), True)
+
+        assert scopes_to_a_version(session.execute.call_args[0][0])
 
     @patch(f"{SERVICE_MODULE}.get_current_session")
     def test_update_without_reference_fields_leaves_them_untouched(self, mock_session_fn):

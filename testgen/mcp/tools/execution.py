@@ -5,14 +5,24 @@ from typing import Annotated
 from pydantic import Field
 from sqlalchemy import select
 
-from testgen.common.enums import JOB_STATUS_LABEL, JobKey, JobSource
+from testgen.common.enums import JOB_STATUS_LABEL, JobKey, JobSource, SuiteType
 from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import EXTERNAL_URL_MAX_LENGTH, JobExecution, validate_caller_metadata
+from testgen.common.models.suite_version import SuiteVersion, VersionState, version_state
 from testgen.common.models.table_group import validate_schema_name
+from testgen.common.models.test_definition import TestDefinition
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
-from testgen.mcp.tools.common import DocGroup, parse_uuid, resolve_table_group, resolve_test_suite
+from testgen.mcp.tools.common import (
+    MCP_SUITE_TYPES,
+    DocGroup,
+    format_version,
+    parse_uuid,
+    resolve_contract_version,
+    resolve_table_group,
+    resolve_test_suite,
+)
 
 _DOC_GROUP = DocGroup.TRIGGER
 from testgen.mcp.tools.markdown import MdDoc
@@ -45,6 +55,13 @@ def run_tests(
             "bytes. Stored with the run and shown on the test results page.",
         ),
     ] = None,
+    version: Annotated[
+        int | None,
+        Field(
+            description="Contract version number to run, e.g. from ``list_contract_versions``. Defaults to the "
+            "version in force, or the draft when none is frozen yet. Contracts only.",
+        ),
+    ] = None,
 ) -> str:
     """Submit a test run for a test suite. Returns immediately with a job_execution_id;
     use ``list_test_runs`` to track status.
@@ -58,6 +75,23 @@ def run_tests(
     if error := validate_caller_metadata(metadata):
         raise MCPUserError(f"metadata {error}.")
 
+    target = resolve_contract_version(suite, version)
+    version_label = None
+    note = None
+    if suite.suite_type == SuiteType.CONTRACT:
+        target = target or SuiteVersion.get(get_current_session().scalar(select(SuiteVersion.for_run(suite.id))))
+        _, term_total = TestDefinition.list_for_suite(
+            suite.id, test_active=True, version_id=target.id, limit=1, suite_types=MCP_SUITE_TYPES
+        )
+        state = version_state(target.frozen_at, SuiteVersion.is_active(target.id, suite.id))
+        version_label = format_version(target.version, state)
+        if term_total == 0:
+            raise MCPUserError(f"{version_label} of contract `{suite.test_suite}` has no active tests to run.")
+        kwargs["version_id"] = str(target.id)
+        if state == VersionState.DRAFT:
+            note = "This run previews a version that is not frozen, so it will not count as the contract's status."
+        elif state == VersionState.SUPERSEDED:
+            note = "This run checks a superseded version, so it will not count as the contract's status."
     job = JobExecution.submit(
         job_key=JobKey.run_tests,
         kwargs=kwargs,
@@ -66,7 +100,9 @@ def run_tests(
         external_url=external_url,
         caller_metadata=metadata,
     )
-    return _render_submission("Test run", suite.test_suite, "Test suite", job, "list_test_runs")
+    return _render_submission(
+        "Test run", suite.test_suite, "Test suite", job, "list_test_runs", version=version_label, note=note
+    ).render()
 
 
 @with_database_session
@@ -90,7 +126,7 @@ def run_profiling(
     )
     return _render_submission(
         "Profiling run", table_group.table_groups_name, "Table group", job, "list_profiling_summaries"
-    )
+    ).render()
 
 
 @with_database_session
@@ -125,6 +161,12 @@ def generate_tests(
     except ValueError as error:
         raise MCPUserError(str(error)) from error
 
+    version_label = None
+    if suite.suite_type == SuiteType.CONTRACT:
+        writable, _ = TestDefinition.resolve_writable(suite.id)
+        draft = SuiteVersion.get(writable)
+        version_label = format_version(draft.version, VersionState.DRAFT) if draft else None
+
     job = JobExecution.submit(
         job_key=JobKey.run_test_generation,
         kwargs={"test_suite_id": str(suite.id), "generation_sets": resolved_sets},
@@ -138,7 +180,8 @@ def generate_tests(
         job,
         "list_tests",
         poll_hint="to verify the new definitions appear",
-    )
+        version=version_label,
+    ).render()
 
 
 @with_database_session
@@ -190,14 +233,20 @@ def _render_submission(
     job: JobExecution,
     poll_tool: str,
     poll_hint: str = "to track status",
-) -> str:
+    version: str | None = None,
+    note: str | None = None,
+) -> MdDoc:
     doc = MdDoc()
     doc.heading(1, f"{kind} submitted for `{scope_name}`")
     doc.field(kind.title(), job.id, code=True)
     doc.field(scope_label, scope_name)
     doc.field("Status", "Pending")
+    if version:
+        doc.field("Version", version)
+    if note:
+        doc.text(note)
     doc.text(f"Use `{poll_tool}` {poll_hint}.")
-    return doc.render()
+    return doc
 
 
 def _render_cancel(job: JobExecution, kind: str, poll_tool: str) -> str:

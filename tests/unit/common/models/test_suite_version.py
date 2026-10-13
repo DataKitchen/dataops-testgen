@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models.custom_types import NullIfEmptyString
-from testgen.common.models.suite_version import SuiteVersion
+from testgen.common.models.suite_version import SuiteVersion, VersionState, version_state
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_run import TestRun
 from testgen.utils import is_uuid4
@@ -362,3 +362,15 @@ def test_for_number_returns_none_when_the_suite_has_no_version_at_that_number():
     session.scalars.return_value.first.return_value = None
     with patch("testgen.common.models.suite_version.get_current_session", return_value=session):
         assert SuiteVersion.for_number(uuid4(), 99) is None
+
+
+def test_an_unfrozen_version_is_a_draft_even_when_flagged_active():
+    assert version_state(None, is_active=True) is VersionState.DRAFT
+
+
+def test_a_frozen_version_in_force_is_active():
+    assert version_state(datetime(2026, 9, 12, tzinfo=UTC), is_active=True) is VersionState.ACTIVE
+
+
+def test_a_frozen_version_not_in_force_is_superseded():
+    assert version_state(datetime(2026, 9, 12, tzinfo=UTC), is_active=False) is VersionState.SUPERSEDED

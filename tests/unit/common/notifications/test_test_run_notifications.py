@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.sql import operators
 from sqlalchemy.sql.elements import BooleanClauseList
 
-from testgen.common.enums import JobStatus
+from testgen.common.enums import TEST_SUITE_TYPES, JobStatus
 from testgen.common.models.notification_settings import TestRunNotificationSettings, TestRunNotificationTrigger
 from testgen.common.models.test_result import TestResultStatus
 from testgen.common.models.test_run import TestRun
@@ -268,3 +268,21 @@ def test_the_change_diff_still_finds_runs_written_before_versioning_existed(
     branches = clause.clauses if isinstance(clause, BooleanClauseList) else [clause]
     assert clause.operator is operators.or_
     assert any(is_null_conjunct(branch, "version_id", "test_runs") for branch in branches)
+
+
+def test_the_run_summary_reads_contract_runs_too(
+    get_prev_mock, diff_mock, ns_select_patched, db_session_mock, send_mock
+):
+    test_run = TestRun(
+        id="tr-id", test_suite_id="ts-id", version_id=uuid.uuid4(), failed_ct=0, warning_ct=0, error_ct=0
+    )
+    test_run.job_execution = make_job_execution(JobStatus.COMPLETED)
+    get_prev_mock.return_value = None
+    diff_mock.return_value = []
+
+    with patch(
+        "testgen.common.notifications.test_run.TestRun.select_summary", return_value=([Mock()], 1)
+    ) as select_summary:
+        send_test_run_notifications(test_run)
+
+    assert select_summary.call_args.kwargs["suite_types"] == TEST_SUITE_TYPES

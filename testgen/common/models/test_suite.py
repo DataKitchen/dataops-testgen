@@ -1,5 +1,5 @@
 import enum
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -67,6 +67,7 @@ class TestSuiteSummary(EntityMinimal):
     id: UUID
     project_code: str
     test_suite: str
+    suite_type: str
     connection_name: str
     table_groups_id: UUID
     table_groups_name: str
@@ -216,7 +217,14 @@ class TestSuite(Entity):
         return [TestSuiteMinimal(**row) for row in results]
 
     @classmethod
-    def select_summary(cls, project_code: str, table_group_id: str | UUID | None = None, test_suite_name: str | None = None) -> Iterable[TestSuiteSummary]:
+    def select_summary(
+        cls,
+        project_code: str,
+        table_group_id: str | UUID | None = None,
+        test_suite_name: str | None = None,
+        *,
+        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+    ) -> Iterable[TestSuiteSummary]:
         if table_group_id and not is_uuid4(table_group_id):
             return []
 
@@ -233,6 +241,7 @@ class TestSuite(Entity):
             suites.id,
             suites.project_code,
             suites.test_suite,
+            suites.suite_type,
             connections.connection_name,
             suites.table_groups_id,
             groups.table_groups_name,
@@ -260,13 +269,13 @@ class TestSuite(Entity):
             ON (connections.connection_id = suites.connection_id)
         LEFT JOIN table_groups AS groups
             ON (groups.id = suites.table_groups_id)
-        WHERE suites.suite_type = 'regular'
+        WHERE suites.suite_type IN :suite_types
             AND suites.project_code = :project_code
             {"AND suites.table_groups_id = :table_group_id" if table_group_id else ""}
             {"AND suites.test_suite ILIKE :test_suite_name" if test_suite_name else ""}
         ORDER BY LOWER(suites.test_suite);
         """
-        params = {"project_code": project_code, "table_group_id": table_group_id, "test_suite_name": f"%{test_suite_name}%" if test_suite_name else None}
+        params = {"project_code": project_code, "suite_types": tuple(t.value for t in suite_types), "table_group_id": table_group_id, "test_suite_name": f"%{test_suite_name}%" if test_suite_name else None}
         db_session = get_current_session()
         results = db_session.execute(text(query), params).mappings().all()
         return [TestSuiteSummary(**row) for row in results]

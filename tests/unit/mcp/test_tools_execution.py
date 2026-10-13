@@ -1,8 +1,12 @@
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
+from testgen.common.enums import SuiteType
+from testgen.common.models.suite_version import SuiteVersion
+from testgen.common.models.test_definition import TestDefinition
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
@@ -37,6 +41,98 @@ def _patch_job_lookup(job):
     session = MagicMock()
     session.scalars.return_value.first.return_value = job
     return patch("testgen.mcp.tools.execution.get_current_session", return_value=session)
+
+
+# --- run_tests on contracts --------------------------------------------------
+
+
+def _contract_suite():
+    suite = _mock_test_suite(name="Orders")
+    suite.suite_type = SuiteType.CONTRACT
+    return suite
+
+
+def _run(suite, version=None, *, target=None, loaded=None, term_total=3, active=True):
+    from testgen.mcp.tools.execution import run_tests
+
+    with (
+        patch("testgen.mcp.tools.execution.resolve_test_suite", return_value=suite),
+        patch("testgen.mcp.tools.execution.resolve_contract_version", return_value=target),
+        patch("testgen.mcp.tools.execution.get_current_session") as session,
+        patch.object(SuiteVersion, "get", return_value=loaded),
+        patch.object(SuiteVersion, "is_active", return_value=active),
+        patch("testgen.mcp.tools.execution.TestDefinition.list_for_suite", return_value=([], term_total)),
+        patch("testgen.mcp.tools.execution.JobExecution.submit", return_value=MagicMock(id=uuid4())) as submit,
+    ):
+        session.return_value.scalar.return_value = uuid4()
+        return run_tests(str(suite.id), version=version), submit
+
+
+def test_running_a_contract_without_a_version_stamps_the_run_version(db_session_mock):
+    v3 = SuiteVersion(id=uuid4(), version=3, frozen_at=datetime(2026, 9, 12, tzinfo=UTC))
+    out, submit = _run(_contract_suite(), target=None, loaded=v3)
+    assert submit.call_args.kwargs["kwargs"]["version_id"] == str(v3.id)
+    assert "**Version:** v3 active" in out
+    assert "will not count" not in out
+
+
+def test_running_the_draft_says_it_will_not_count(db_session_mock):
+    draft = SuiteVersion(id=uuid4(), version=4)
+    out, submit = _run(_contract_suite(), version=4, target=draft)
+    assert submit.call_args.kwargs["kwargs"]["version_id"] == str(draft.id)
+    assert "**Version:** v4 draft" in out
+    assert "will not count as the contract's status" in out
+    assert out.index("**Version:**") < out.index("will not count") < out.index("Use `list_test_runs`")
+
+
+def test_running_a_superseded_version_says_it_will_not_count(db_session_mock):
+    v2 = SuiteVersion(id=uuid4(), version=2, frozen_at=datetime(2026, 1, 1, tzinfo=UTC))
+    out, _ = _run(_contract_suite(), version=2, target=v2, active=False)
+    assert "v2 superseded" in out
+    assert "will not count" in out
+
+
+def test_running_a_version_with_no_active_tests_is_refused(db_session_mock):
+    draft = SuiteVersion(id=uuid4(), version=4)
+    with pytest.raises(MCPUserError, match="v4 draft of contract `Orders` has no active tests to run"):
+        _run(_contract_suite(), version=4, target=draft, term_total=0)
+
+
+def test_only_active_tests_count_toward_a_runnable_version(db_session_mock):
+    draft = SuiteVersion(id=uuid4(), version=4)
+    with patch("testgen.mcp.tools.execution.TestDefinition.list_for_suite", return_value=([], 3)) as listing:
+        from testgen.mcp.tools.execution import run_tests
+
+        with (
+            patch("testgen.mcp.tools.execution.resolve_test_suite", return_value=_contract_suite()),
+            patch("testgen.mcp.tools.execution.resolve_contract_version", return_value=draft),
+            patch.object(SuiteVersion, "is_active", return_value=False),
+            patch("testgen.mcp.tools.execution.JobExecution.submit", return_value=MagicMock(id=uuid4())),
+        ):
+            run_tests(str(uuid4()), version=4)
+    assert listing.call_args.kwargs["test_active"] is True
+
+
+def test_running_a_regular_suite_is_unchanged(db_session_mock):
+    suite = _contract_suite()
+    suite.suite_type = SuiteType.REGULAR
+    out, submit = _run(suite)
+    assert submit.call_args.kwargs["kwargs"] == {"test_suite_id": str(suite.id)}
+    assert "Version" not in out
+
+
+def test_running_a_version_of_a_regular_suite_is_refused(db_session_mock):
+    from testgen.mcp.tools.execution import run_tests
+
+    suite = _mock_test_suite()
+    suite.suite_type = SuiteType.REGULAR
+    with (
+        patch("testgen.mcp.tools.execution.resolve_test_suite", return_value=suite),
+        patch("testgen.mcp.tools.execution.JobExecution.submit") as submit,
+        pytest.raises(MCPUserError, match="is not a contract, so it keeps no versions"),
+    ):
+        run_tests(str(suite.id), version=2)
+    submit.assert_not_called()
 
 
 # --- run_tests --------------------------------------------------------------
@@ -284,6 +380,47 @@ def test_generate_tests_suite_not_found_or_inaccessible(mock_suite_cls, mock_job
     with pytest.raises(MCPResourceNotAccessible, match="Test suite .* not found or not accessible"):
         generate_tests(str(uuid4()))
     mock_job_exec.submit.assert_not_called()
+
+
+def _generate(suite, *, draft=None):
+    from testgen.mcp.tools.execution import generate_tests
+
+    events = []
+    with (
+        patch("testgen.mcp.tools.execution.resolve_test_suite", return_value=suite),
+        patch("testgen.mcp.tools.execution.resolve_generation_sets", return_value=["Standard"]),
+        patch.object(
+            TestDefinition,
+            "resolve_writable",
+            side_effect=lambda *_: events.append("open draft") or (draft.id, {}),
+        ) as route,
+        patch.object(SuiteVersion, "get", side_effect=lambda version_id: draft if version_id == draft.id else None),
+        patch(
+            "testgen.mcp.tools.execution.JobExecution.submit",
+            side_effect=lambda **_: events.append("submit") or MagicMock(id=uuid4()),
+        ) as submit,
+    ):
+        out = generate_tests(str(suite.id))
+    return out, route, submit, events
+
+
+def test_generating_for_a_frozen_only_contract_opens_the_draft_before_submitting(db_session_mock):
+    suite = _contract_suite()
+    draft = SuiteVersion(id=uuid4(), version=4)
+    out, route, submit, events = _generate(suite, draft=draft)
+    assert route.call_args.args == (suite.id,)
+    assert events == ["open draft", "submit"]
+    assert submit.call_args.kwargs["kwargs"]["test_suite_id"] == str(suite.id)
+    assert "**Version:** v4 draft" in out
+
+
+def test_generating_for_a_regular_suite_opens_no_draft_and_names_no_version(db_session_mock):
+    suite = _mock_test_suite()
+    suite.suite_type = SuiteType.REGULAR
+    out, route, submit, _ = _generate(suite, draft=SuiteVersion(id=uuid4(), version=1))
+    route.assert_not_called()
+    submit.assert_called_once()
+    assert "Version" not in out
 
 
 # --- decorator-level denial (no edit on any project) -----------------------

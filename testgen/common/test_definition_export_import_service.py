@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
@@ -301,17 +302,20 @@ def export_definitions(
     origin: Origin,
     table_name: str | None,
     test_type: str | None,
+    version_id: UUID | None = None,
 ) -> ExportDocument:
     session = get_current_session()
     table_group = TableGroup.get(test_suite.table_groups_id)
+    version_predicate = TestDefinition.version_id == version_id if version_id else TestDefinition.version_clause()
+    exported_version = version_id or session.scalar(select(SuiteVersion.resolved_for(test_suite.id)))
 
     # Assign external_id to manual TDs that don't have one yet (idempotent)
-    if origin in (Origin.manual, Origin.both):
+    if origin in (Origin.manual, Origin.both) and not SuiteVersion.is_frozen_agreement(exported_version):
         session.execute(
             update(TestDefinition)
             .where(
                 TestDefinition.test_suite_id == test_suite.id,
-                TestDefinition.version_clause(),
+                version_predicate,
                 TestDefinition.last_auto_gen_date.is_(None),
                 TestDefinition.external_id.is_(None),
             )
@@ -319,7 +323,7 @@ def export_definitions(
         )
 
     # Build filter clauses
-    clauses = [TestDefinition.test_suite_id == test_suite.id, TestDefinition.version_clause()]
+    clauses = [TestDefinition.test_suite_id == test_suite.id, version_predicate]
     if origin == Origin.auto:
         clauses.append(TestDefinition.last_auto_gen_date.isnot(None))
     elif origin == Origin.manual:
@@ -475,7 +479,7 @@ class _PlannedAction:
     reason: ImportReason
     idx: int | None  # None for absence deletes (target-only, not in the file)
     td_import: TestDefinitionExport | None  # None for absence deletes
-    target: Any  # Row or TestDefinition (after create flush), None for unmatched creates
+    target: Any  # Row (re-pointed at the writable version), TestDefinition after create flush, or None
 
 
 def _load_test_types() -> dict[str, TestType]:
@@ -539,10 +543,22 @@ def _apply_actions(
     table_group: TableGroup,
     config: ImportConfig,
 ) -> None:
+    writes = [planned for planned in actions if planned.action != ImportAction.skip]
+    if not writes:
+        return
+    version_id, counterparts = TestDefinition.resolve_writable(
+        test_suite.id, [planned.target.id for planned in writes if planned.target is not None]
+    )
+    for planned in writes:
+        if planned.target is None:
+            continue
+        if planned.target.id not in counterparts:
+            raise ValueError(f"Test definition {planned.target.id} no longer exists.")
+        if counterparts[planned.target.id] != planned.target.id:
+            planned.target = SimpleNamespace(**{**planned.target._asdict(), "id": counterparts[planned.target.id]})
+
     session = get_current_session()
     now = datetime.now(UTC)
-    version_id = session.scalar(select(SuiteVersion.resolved_for(test_suite.id)))
-    TestDefinition.assert_version_writable(version_id)
     # Resolved before either loop: a lookup inside pass 1 would autoflush the pending INSERTs.
     qualifies_table_refs = table_group_qualifies_table_refs(table_group.id)
 
@@ -653,7 +669,9 @@ def _update_td(
     values["last_manual_update"] = datetime.now(UTC)
 
     session.execute(
-        update(TestDefinition).where(TestDefinition.id == target.id).values(**values)
+        update(TestDefinition)
+        .where(TestDefinition.id == target.id, TestDefinition.version_clause())
+        .values(**values)
     )
 
 

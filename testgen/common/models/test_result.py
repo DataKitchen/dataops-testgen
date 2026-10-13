@@ -1,5 +1,6 @@
 import enum
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Self
@@ -262,10 +263,12 @@ class TestResult(Entity):
         project_codes: list[str] | None = None,
         limit: int = 50,
         offset: int = 0,
+        *,
+        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
     ) -> list[Self]:
         """Paginated results for a single run, with optional status/table/type filters.
 
-        Monitor suites and dismissed/inactive results are always filtered out.
+        Only suites of ``suite_types`` are read; dismissed/inactive results are always filtered out.
         Project-level access is enforced when ``project_codes`` is set.
         """
         clauses = [
@@ -281,7 +284,7 @@ class TestResult(Entity):
         query = (
             select(cls)
             .join(TestSuite, cls.test_suite_id == TestSuite.id)
-            .where(*clauses, TestSuite.suite_type == SuiteType.REGULAR)
+            .where(*clauses, TestSuite.suite_type.in_(suite_types))
         )
         if project_codes is not None:
             query = query.where(TestSuite.project_code.in_(project_codes))
@@ -295,10 +298,11 @@ class TestResult(Entity):
         *clauses,
         page: int = 1,
         limit: int = 20,
+        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
     ) -> tuple[list[TestRunResultRow], int]:
         """Paginated individual results for a single run, scoped by caller-supplied WHERE clauses.
 
-        Monitor suites are always filtered out.
+        Only suites of ``suite_types`` are read.
         """
         query = (
             select(
@@ -317,7 +321,7 @@ class TestResult(Entity):
             )
             .join(TestSuite, cls.test_suite_id == TestSuite.id)
             .outerjoin(TestType, TestType.test_type == cls.test_type)
-            .where(cls.test_run_id == test_run_id, TestSuite.suite_type == SuiteType.REGULAR, *clauses)
+            .where(cls.test_run_id == test_run_id, TestSuite.suite_type.in_(suite_types), *clauses)
             .order_by(cls.status, cls.table_name, cls.column_names, cls.id)
         )
         return cls._paginate(query, page=page, limit=limit, data_class=TestRunResultRow)
@@ -331,10 +335,11 @@ class TestResult(Entity):
         test_run_id: UUID | None = None,
         since: date | None = None,
         group_by: str = "test_type",
+        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
     ) -> list[tuple]:
         """Failed/Warning counts scoped by run, suite, or date, grouped by test_type, table, or column.
 
-        Monitor suites and dismissed/inactive results are always filtered out.
+        Only suites of `suite_types` are read; dismissed and inactive results are always filtered out.
         Project-level access is enforced when ``project_codes`` is set.
         """
         allowed = {"test_type", "table_name", "column_names"}
@@ -365,7 +370,7 @@ class TestResult(Entity):
         query = (
             select(*group_cols, func.count().label("failure_count"))
             .join(TestSuite, cls.test_suite_id == TestSuite.id)
-            .where(*where, TestSuite.suite_type == SuiteType.REGULAR)
+            .where(*where, TestSuite.suite_type.in_(suite_types))
         )
         if project_codes is not None:
             query = query.where(TestSuite.project_code.in_(project_codes))
@@ -399,16 +404,18 @@ class TestResult(Entity):
         project_codes: list[str] | None = None,
         limit: int = 20,
         offset: int = 0,
+        *,
+        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
     ) -> list[Self]:
         """Historical results for a test definition, newest first.
 
-        Monitor suites are always filtered out.
+        Only suites of ``suite_types`` are read.
         Project-level access is enforced when ``project_codes`` is set.
         """
         query = (
             select(cls)
             .join(TestSuite, cls.test_suite_id == TestSuite.id)
-            .where(cls.test_definition_id == test_definition_id, TestSuite.suite_type == SuiteType.REGULAR)
+            .where(cls.test_definition_id == test_definition_id, TestSuite.suite_type.in_(suite_types))
         )
         if project_codes is not None:
             query = query.where(TestSuite.project_code.in_(project_codes))
@@ -443,10 +450,11 @@ class TestResult(Entity):
         *clauses,
         page: int = 1,
         limit: int = 50,
+        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
     ) -> tuple[list[TestResultSearchRow], int]:
         """Paginated cross-run search over test results, scoped by caller-supplied WHERE clauses.
 
-        Monitor suites and dismissed/inactive results are always filtered out. All other
+        Only suites of ``suite_types`` are read; dismissed/inactive results are always filtered out. All other
         scoping is up to the caller.
         """
         # TestRun has its own top-level import of TestResult, so we import it here to avoid the cycle.
@@ -473,7 +481,7 @@ class TestResult(Entity):
             .join(TestRun, cls.test_run_id == TestRun.id)
             .outerjoin(TestType, cls.test_type == TestType.test_type)
             .where(
-                TestSuite.suite_type == SuiteType.REGULAR,
+                TestSuite.suite_type.in_(suite_types),
                 func.coalesce(cls.disposition, "Confirmed") == "Confirmed",
                 *clauses,
             )
@@ -488,6 +496,7 @@ class TestResult(Entity):
         start_date: date,
         end_date: date,
         bucket: BucketInterval = BucketInterval.DAY,
+        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
     ) -> list[TrendBucket]:
         """Time-series of test result counts per bucket, scoped by caller-supplied WHERE clauses.
 
@@ -499,7 +508,7 @@ class TestResult(Entity):
         buckets step back in 7-day increments. The oldest bucket is dropped if it would be
         incomplete — i.e. its 7-day window is not fully inside ``start_date``.
 
-        Monitor suites and dismissed/inactive results are always filtered out.
+        Only suites of ``suite_types`` are read; dismissed/inactive results are always filtered out.
         """
         # Naive midnight — matches the naive TIMESTAMP column so Postgres compares in the session's TZ
         # without any implicit UTC-based conversion.
@@ -515,7 +524,7 @@ class TestResult(Entity):
             )
             .join(TestSuite, cls.test_suite_id == TestSuite.id)
             .where(
-                TestSuite.suite_type == SuiteType.REGULAR,
+                TestSuite.suite_type.in_(suite_types),
                 cls.test_time >= start_date,
                 cls.test_time < upper_bound,
                 func.coalesce(cls.disposition, "Confirmed") == "Confirmed",

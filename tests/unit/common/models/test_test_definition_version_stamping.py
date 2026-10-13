@@ -4,6 +4,8 @@ A row whose version is not the one its suite resolves to is invisible to every r
 creation or a move that leaves the version behind produces a row nobody can see.
 """
 
+from collections import namedtuple
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -11,10 +13,13 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models import test_definition as test_definition_module
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote
 from tests.unit.sql_assertions import conjuncts, equality_conjunct, scopes_to_a_version
 
 pytestmark = pytest.mark.unit
+
+PersistedRow = namedtuple("PersistedRow", "id version_id contract_term_id")
 
 
 @pytest.fixture(autouse=True)
@@ -173,10 +178,14 @@ def test_saving_a_new_definition_keeps_an_explicit_version():
 
 
 def test_updating_an_existing_definition_does_not_restamp_the_version():
-    session = _session_mock()
+    persisted_version = uuid4()
+    session = _session_mock(resolved_version=persisted_version)
 
     definition = TestDefinition(test_suite_id=uuid4(), test_type="Volume_Trend")
     definition.id = uuid4()
+    session.execute.return_value.all.return_value = [
+        PersistedRow(definition.id, persisted_version, None)
+    ]
 
     entity_patch, model_patch = _patched(session)
     with entity_patch, model_patch:
@@ -186,8 +195,7 @@ def test_updating_an_existing_definition_does_not_restamp_the_version():
     # must not happen is the SET clause restamping it, which the compiled text cannot tell apart.
     statement = session.execute.call_args.args[0]
     assert "version_id" not in {column.key for column in statement._values}
-    resolutions = [call for call in session.scalar.call_args_list if "coalesce" in str(call.args[0]).lower()]
-    assert resolutions == [], "updating an existing definition should not resolve a new version"
+    assert definition.version_id == persisted_version, "the update moved the row off its own version"
 
 
 def test_move_takes_only_the_rows_of_their_resolved_version():
@@ -326,3 +334,113 @@ def test_a_version_with_no_terms_issues_no_note_query():
         call.args[0].get_final_froms()[0].name for call in session.scalars.call_args_list
     ]
     assert "test_definition_notes" not in queried
+
+
+def test_a_new_manual_term_of_a_suite_owned_version_is_stamped_with_an_external_id():
+    term = TestDefinition(test_suite_id=uuid4(), version_id=uuid4(), test_type="Row_Ct", last_auto_gen_date=None)
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=MagicMock()),
+        patch("testgen.common.models.entity.get_current_session", return_value=MagicMock()),
+        patch.object(TestDefinition, "_route_to_writable_version"),
+        patch.object(TestDefinition, "mint_term_id", return_value="term"),
+        patch.object(SuiteVersion, "is_suite_owned", return_value=True),
+    ):
+        term.save()
+    assert isinstance(term.external_id, UUID)
+
+
+def test_a_new_manual_term_of_the_placeholder_version_is_not_stamped():
+    term = TestDefinition(test_suite_id=uuid4(), version_id=uuid4(), test_type="Row_Ct", last_auto_gen_date=None)
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=MagicMock()),
+        patch("testgen.common.models.entity.get_current_session", return_value=MagicMock()),
+        patch.object(TestDefinition, "_route_to_writable_version"),
+        patch.object(SuiteVersion, "is_suite_owned", return_value=False),
+    ):
+        term.save()
+    assert term.external_id is None
+
+
+def test_a_new_generated_term_is_not_stamped():
+    term = TestDefinition(
+        test_suite_id=uuid4(), version_id=uuid4(), test_type="Row_Ct", last_auto_gen_date=datetime(2026, 1, 1)
+    )
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=MagicMock()),
+        patch("testgen.common.models.entity.get_current_session", return_value=MagicMock()),
+        patch.object(TestDefinition, "_route_to_writable_version"),
+        patch.object(SuiteVersion, "is_suite_owned", return_value=False),
+    ):
+        term.save()
+    assert term.external_id is None
+
+
+def test_a_new_manual_term_keeps_the_external_id_it_carries():
+    carried = uuid4()
+    term = TestDefinition(test_suite_id=uuid4(), version_id=uuid4(), test_type="Row_Ct", external_id=carried)
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=MagicMock()),
+        patch("testgen.common.models.entity.get_current_session", return_value=MagicMock()),
+        patch.object(TestDefinition, "_route_to_writable_version"),
+        patch.object(SuiteVersion, "is_suite_owned", return_value=False),
+    ):
+        term.save()
+    assert term.external_id == carried
+
+
+def test_an_update_of_a_manual_term_stamps_it_only_when_it_has_none():
+    session = MagicMock()
+    term = TestDefinition(id=uuid4(), test_suite_id=uuid4(), version_id=uuid4(), test_type="Row_Ct")
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch.object(TestDefinition, "_route_to_writable_version"),
+        patch.object(SuiteVersion, "is_suite_owned", return_value=True),
+    ):
+        term.save()
+    sql = " ".join(str(session.execute.call_args.args[0].compile(dialect=postgresql.dialect())).split())
+    assert (
+        "external_id=CASE WHEN (test_definitions.last_auto_gen_date IS NULL) "
+        "THEN coalesce(test_definitions.external_id, gen_random_uuid()) "
+        "ELSE test_definitions.external_id END"
+    ) in sql
+
+
+def test_an_update_on_the_placeholder_version_leaves_the_external_id_alone():
+    session = MagicMock()
+    term = TestDefinition(id=uuid4(), test_suite_id=uuid4(), version_id=uuid4(), test_type="Row_Ct")
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch.object(TestDefinition, "_route_to_writable_version"),
+        patch.object(SuiteVersion, "is_suite_owned", return_value=False),
+    ):
+        term.save()
+    sql = " ".join(str(session.execute.call_args.args[0].compile(dialect=postgresql.dialect())).split())
+    assert "external_id" not in sql
+
+
+def test_copy_gives_each_copy_a_fresh_external_id():
+    session = _session_mock()
+
+    entity_patch, model_patch = _patched(session)
+    with entity_patch, model_patch:
+        TestDefinition.copy([str(uuid4())], uuid4(), uuid4(), target_schema="public", qualifies_table_refs=True)
+
+    sql = _emitted_sql(session)
+    assert "gen_random_uuid() AS external_id" in sql, "copy carries the source's external_id onto the copy"
+
+
+def test_copy_to_version_stamps_a_manual_copy_that_has_no_external_id():
+    stamped = uuid4()
+    manual = TestDefinition(id=uuid4(), version_id=uuid4(), test_type="Row_Ct", last_auto_gen_date=None)
+    kept = TestDefinition(id=uuid4(), version_id=manual.version_id, test_type="Row_Ct", external_id=stamped)
+    generated = TestDefinition(
+        id=uuid4(), version_id=manual.version_id, test_type="Row_Ct", last_auto_gen_date=datetime(2026, 1, 1)
+    )
+    session = _session_returning_terms([manual, kept, generated])
+    with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
+        TestDefinition.copy_to_version(manual.version_id, uuid4())
+    copies = [c.args[0] for c in session.add.call_args_list]
+    assert isinstance(copies[0].external_id, UUID)
+    assert copies[1].external_id == stamped
+    assert copies[2].external_id is None
+    assert manual.external_id is None

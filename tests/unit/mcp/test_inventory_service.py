@@ -1,7 +1,10 @@
+import ast
+import inspect
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 
 def _get_inventory(**kwargs):
@@ -491,3 +494,25 @@ def test_get_inventory_names_the_data_space_for_a_data_360_connection(mock_selec
 
     assert "data space: `sales`" in result
     assert "schema:" not in result
+
+
+def test_get_inventory_lists_contract_suites_and_drops_monitor_suites(session_mock):
+    session_mock.execute.return_value.all.return_value = []
+
+    _get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+
+    statement = session_mock.execute.call_args.args[0]
+    sql = str(statement.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    assert "test_suites.suite_type IN ('regular', 'contract')" in sql
+    assert "monitor" not in sql
+
+
+def test_the_inventory_service_does_not_depend_on_the_tools_layer():
+    from testgen.mcp.services import inventory_service
+
+    imported = {
+        node.module
+        for node in ast.walk(ast.parse(inspect.getsource(inventory_service)))
+        if isinstance(node, ast.ImportFrom) and node.module
+    }
+    assert not any(module.startswith("testgen.mcp.tools") for module in imported)
