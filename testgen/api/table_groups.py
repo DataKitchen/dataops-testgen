@@ -15,6 +15,7 @@ from testgen.api.deps import (
 from testgen.api.schemas import (
     CatalogTags,
     ErrorResponse,
+    FileDeclaration,
     TableGroupCreate,
     TableGroupCreateResponse,
     TableGroupItem,
@@ -30,11 +31,12 @@ from testgen.common.database.table_group_service import (
     catalog_membership,
     is_duplicate_name_error,
     move_table_group_schema,
-    schema_label_for_table_group,
     update_catalog_for_edit,
     validate_table_group_fields,
+    validate_table_naming,
     write_table_group_catalog,
 )
+from testgen.common.file_declaration_schema import declarations_from_payload
 from testgen.common.flavors import declares_files, reports_table_group_schema
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
@@ -124,7 +126,7 @@ def get_table_group(table_group: TableGroup = resolve_table_group("view")):  # n
     responses={
         400: {
             "model": ErrorResponse,
-            "description": "One entry per field that failed validation, or a connection whose tables are files",
+            "description": "One entry per field or file declaration that failed validation",
         },
         409: {"model": ErrorResponse, "description": "A table group with this name already exists in the project"},
     },
@@ -138,30 +140,34 @@ def create_table_group(
     The response carries the new ``table_group_id``, which profiling, test generation
     and test runs take as input.
 
+    The request names the table group's tables the way its connection holds them: by
+    ``schema_name`` on a database connection, optionally narrowed by ``table_set`` and the
+    masks, or by ``file_declarations`` on a file connection.
+
     The table group's data catalog is read from the target before the response returns, so tests
     can be imported into it right away. ``catalog_error`` says why when the target could not be read.
-
-    A connection whose tables are files is not supported: its tables are declared
-    file by file rather than found in a schema.
     """
-    if declares_files(connection.sql_flavor_code):
-        raise api_error(
-            400,
-            "unsupported_connection",
-            "Table groups on a Files connection declare their tables file by file, which this endpoint"
-            " does not accept. Create the table group in the TestGen UI.",
-        )
+    if errors := validate_table_naming(
+        connection,
+        schema=body.schema_name,
+        file_declarations=body.file_declarations,
+        criteria=(body.table_set, body.include_masks, body.exclude_masks),
+    ):
+        raise api_errors(400, "invalid_table_group", errors)
 
     table_group = TableGroup(
         project_code=connection.project_code,
         connection_id=connection.connection_id,
         table_groups_name=body.table_group_name,
         table_group_schema=body.schema_name,
+        file_declarations=(
+            [declaration.to_payload() for declaration in body.file_declarations] if body.file_declarations else None
+        ),
         **table_group_defaults(),
     )
     fields = body.model_dump(
         exclude_none=True,
-        exclude={"table_group_name", "schema_name", "catalog_tags", "add_scorecard"},
+        exclude={"table_group_name", "schema_name", "file_declarations", "catalog_tags", "add_scorecard"},
     )
     for name, value in fields.items():
         if name in _LIST_COLUMNS:
@@ -187,18 +193,16 @@ def create_table_group(
 
     catalog_error = write_table_group_catalog(table_group, connection)
     get_current_session().refresh(table_group)
-    return TableGroupCreateResponse(**_to_response(table_group).model_dump(), catalog_error=catalog_error)
+    return TableGroupCreateResponse(**_to_response(table_group, connection).model_dump(), catalog_error=catalog_error)
 
 
-def _to_response(table_group: TableGroup) -> TableGroupResponse:
+def _to_response(table_group: TableGroup, connection: Connection | None = None) -> TableGroupResponse:
+    connection = connection or Connection.get_by_table_group(table_group.id)
+    flavor_code = connection.sql_flavor_code if connection else None
     return TableGroupResponse(
         table_group_id=table_group.id,
         table_group_name=table_group.table_groups_name,
-        schema_name=(
-            table_group.table_group_schema
-            if schema_label_for_table_group(table_group.id)
-            else None
-        ),
+        schema_name=table_group.table_group_schema if reports_table_group_schema(flavor_code) else None,
         project_code=table_group.project_code,
         connection_id=table_group.connection_id,
         default_test_suite_id=table_group.default_test_suite_id,
@@ -206,6 +210,11 @@ def _to_response(table_group: TableGroup) -> TableGroupResponse:
         table_set=split_criteria(table_group.profiling_table_set),
         include_masks=split_criteria(table_group.profiling_include_mask),
         exclude_masks=split_criteria(table_group.profiling_exclude_mask),
+        file_declarations=(
+            declarations_from_payload(table_group.file_declarations, FileDeclaration)
+            if declares_files(flavor_code)
+            else None
+        ),
         profile_id_column_mask=table_group.profile_id_column_mask,
         profile_sk_column_mask=table_group.profile_sk_column_mask,
         profile_use_sampling=table_group.profile_use_sampling,

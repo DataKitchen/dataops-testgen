@@ -37,6 +37,7 @@ from testgen.api.enums import (
     TableState,
 )
 from testgen.common.enums import JobSource, JobStatus, PublicJobKey
+from testgen.common.file_declaration_schema import HEADER_DESCRIPTION, FileDeclarationShape, FileDeclarationSpec
 from testgen.common.models.job_execution import EXTERNAL_URL_MAX_LENGTH, validate_caller_metadata
 from testgen.common.models.table_group import (
     SCHEMA_NAME_MAX_LENGTH,
@@ -80,8 +81,8 @@ class TableGroupUpdateRequest(BaseModel):
         pattern=SCHEMA_NAME_PATTERN,
         max_length=SCHEMA_NAME_MAX_LENGTH,
         description=(
-            "Schema to read the table group's tables from. When it changes, profiling, test "
-            "generation, monitors, and test runs read the new schema, and tests keep their history. "
+            "Database connections only. Schema to read the table group's tables from. When it changes, "
+            "profiling, test generation, monitors, and test runs read the new schema, and tests keep their history. "
             "Referential tests keep the schema of their second table."
         ),
     )
@@ -963,7 +964,11 @@ class TableGroupItem(BaseModel):
 
     table_group_id: UUID
     table_group_name: str
-    schema_name: SchemaName
+    schema_name: str | None = Field(
+        default=None,
+        description="Database connections only. The schema that holds the tables, or the data space on Salesforce "
+        "Data 360. Null on a file connection.",
+    )
     project_code: str
     connection_id: int
     connection_name: str | None = None
@@ -1006,12 +1011,31 @@ class CatalogTags(BaseModel):
     data_classification: str | None = None
 
 
+class FileDeclaration(FileDeclarationShape):
+    """One table on a file connection, named by the path its rows come from."""
+
+
+class FileDeclarationCreate(FileDeclarationSpec):
+    """One table to declare on a file connection, named by the path its rows come from.
+
+    Unknown fields are rejected.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    header: StrictBool | None = Field(default=None, description=HEADER_DESCRIPTION)
+
+
 class TableGroupResponse(BaseModel):
     """A table group's full configuration."""
 
     table_group_id: UUID
     table_group_name: str
-    schema_name: SchemaName
+    schema_name: str | None = Field(
+        default=None,
+        description="Database connections only. The schema that holds the tables, or the data space on Salesforce "
+        "Data 360. Null on a file connection.",
+    )
     project_code: str
     connection_id: int
     default_test_suite_id: UUID | None = None
@@ -1019,13 +1043,21 @@ class TableGroupResponse(BaseModel):
 
     table_set: list[str] = Field(
         default_factory=list,
-        description="Table names the group is restricted to. Empty when the group is defined by masks alone.",
+        description="Database connections only. Table names the group is restricted to. Empty when the group is "
+        "defined by masks alone, and on a file connection.",
     )
     include_masks: list[str] = Field(
-        default_factory=list, description="SQL LIKE patterns a table must match to be included."
+        default_factory=list,
+        description="Database connections only. SQL LIKE patterns a table must match to be included.",
     )
     exclude_masks: list[str] = Field(
-        default_factory=list, description="SQL LIKE patterns that exclude a matching table."
+        default_factory=list,
+        description="Database connections only. SQL LIKE patterns that exclude a matching table.",
+    )
+    file_declarations: list[FileDeclaration] | None = Field(
+        default=None,
+        description="File connections only. The table group's tables, one per file or pattern. Null on a database "
+        "connection.",
     )
     profile_id_column_mask: str | None = Field(default=None, description="SQL LIKE pattern marking ID columns.")
     profile_sk_column_mask: str | None = Field(
@@ -1075,22 +1107,32 @@ class TableGroupCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     table_group_name: str = Field(description="Unique within the project; 3 to 40 characters.")
-    schema_name: str = Field(description="The schema on the connection that holds the tables.")
+    schema_name: str | None = Field(
+        default=None,
+        description="Database connections only, and required there. The schema that holds the tables, or the data "
+        "space on Salesforce Data 360.",
+    )
+    file_declarations: list[FileDeclarationCreate] | None = Field(
+        default=None,
+        description="File connections only, and required there. The table group's tables, one per file or pattern.",
+    )
     description: str | None = None
 
     table_set: list[str] | None = Field(
         default=None,
-        description="Table names to restrict the group to. Omit to define the group by masks alone.",
+        description="Database connections only. Table names to restrict the group to. Omit to define the group by "
+        "masks alone.",
     )
     include_masks: list[str] | None = Field(
         default=None,
-        description="SQL LIKE patterns a table must match to be included. Omit for the default include mask.",
+        description="Database connections only. SQL LIKE patterns a table must match to be included. Omit for the "
+        "default include mask.",
     )
     exclude_masks: list[str] | None = Field(
         default=None,
         description=(
-            "SQL LIKE patterns that exclude a matching table, including one named in ``table_set``."
-            " Omit for the default exclude mask; send an empty list to exclude nothing."
+            "Database connections only. SQL LIKE patterns that exclude a matching table, including one named in"
+            " ``table_set``. Omit for the default exclude mask; send an empty list to exclude nothing."
         ),
     )
     profile_id_column_mask: str | None = Field(

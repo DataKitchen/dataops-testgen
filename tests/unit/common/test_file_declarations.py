@@ -10,7 +10,9 @@ from testgen.common.database.database_service import set_target_db_params
 from testgen.common.database.file_declarations import (
     NAME_DUPLICATE,
     NAME_INVALID,
+    NAME_MAX_LENGTH,
     NAME_REQUIRED,
+    NAME_TOO_LONG,
     NO_DECLARATIONS,
     PATH_OUTSIDE_BASE_PATH,
     URI_HAS_CREDENTIALS,
@@ -104,6 +106,15 @@ def test_a_name_that_is_not_an_identifier_is_rejected(base_path, name):
 @pytest.mark.parametrize("name", ["claims", "_claims", "Claims2024", "a"])
 def test_an_identifier_name_is_accepted(base_path, name):
     assert validate([{"name": name, "uri": "claims_*.csv"}], base_path) == []
+
+
+def test_a_name_longer_than_a_table_name_column_is_rejected(base_path):
+    name = "c" * (NAME_MAX_LENGTH + 1)
+    assert validate([{"name": name, "uri": "claims_*.csv"}], base_path) == [f"{name}: {NAME_TOO_LONG}"]
+
+
+def test_a_name_as_long_as_a_table_name_column_is_accepted(base_path):
+    assert validate([{"name": "c" * NAME_MAX_LENGTH, "uri": "claims_*.csv"}], base_path) == []
 
 
 @pytest.mark.parametrize("second_name", ["claims", "Claims"])

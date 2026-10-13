@@ -1149,15 +1149,16 @@ def test_create_table_group_stores_the_declared_tables(mock_resolve, mock_tg_cls
 
     mock_tg_cls.side_effect = construct
 
-    from testgen.mcp.tools.table_groups import FileDeclaration, create_table_group
+    from testgen.common.file_declaration_schema import FileDeclarationSpec
+    from testgen.mcp.tools.table_groups import create_table_group
 
     with _patch_perms():
         create_table_group(
             connection_id=42,
             table_group_name="Files TG",
             file_declarations=[
-                FileDeclaration(name="orders", uri="sales/orders_*.csv", format="csv", delimiter="|"),
-                FileDeclaration(name="products", uri="catalog/products.json", format="json"),
+                FileDeclarationSpec(name="orders", uri="sales/orders_*.csv", format="csv", delimiter="|"),
+                FileDeclarationSpec(name="products", uri="catalog/products.json", format="json"),
             ],
         )
 
@@ -1184,14 +1185,15 @@ def test_create_table_group_on_a_files_connection_needs_declarations(mock_resolv
 def test_a_files_connection_has_no_schema_to_choose(mock_resolve, db_session_mock):
     mock_resolve.return_value = _files_connection()
 
-    from testgen.mcp.tools.table_groups import FileDeclaration, create_table_group
+    from testgen.common.file_declaration_schema import FileDeclarationSpec
+    from testgen.mcp.tools.table_groups import create_table_group
 
     with _patch_perms(), pytest.raises(MCPUserError, match="no schema to choose"):
         create_table_group(
             connection_id=42,
             table_group_name="Files TG",
             schema="public",
-            file_declarations=[FileDeclaration(name="orders", uri="orders.csv", format="csv")],
+            file_declarations=[FileDeclarationSpec(name="orders", uri="orders.csv", format="csv")],
         )
 
 
@@ -1199,14 +1201,15 @@ def test_a_files_connection_has_no_schema_to_choose(mock_resolve, db_session_moc
 def test_declarations_are_refused_on_a_database_connection(mock_resolve, db_session_mock):
     mock_resolve.return_value = _mock_connection()
 
-    from testgen.mcp.tools.table_groups import FileDeclaration, create_table_group
+    from testgen.common.file_declaration_schema import FileDeclarationSpec
+    from testgen.mcp.tools.table_groups import create_table_group
 
     with _patch_perms(), pytest.raises(MCPUserError, match="only to a connection whose tables are files"):
         create_table_group(
             connection_id=42,
             table_group_name="Sample TG",
             schema="public",
-            file_declarations=[FileDeclaration(name="orders", uri="orders.csv", format="csv")],
+            file_declarations=[FileDeclarationSpec(name="orders", uri="orders.csv", format="csv")],
         )
 
 
@@ -1229,12 +1232,13 @@ def test_update_table_group_replaces_the_declared_tables(mock_resolve_tg, mock_c
     mock_resolve_tg.return_value = table_group
     mock_conn_cls.get.return_value = _files_connection()
 
-    from testgen.mcp.tools.table_groups import FileDeclaration, update_table_group
+    from testgen.common.file_declaration_schema import FileDeclarationSpec
+    from testgen.mcp.tools.table_groups import update_table_group
 
     with _patch_perms():
         update_table_group(
             table_group_id=str(table_group.id),
-            file_declarations=[FileDeclaration(name="orders", uri="orders.csv", format="csv")],
+            file_declarations=[FileDeclarationSpec(name="orders", uri="orders.csv", format="csv")],
         )
 
     assert table_group.file_declarations == [
@@ -1256,12 +1260,13 @@ def test_update_table_group_reports_the_declared_tables_as_changed(
     mock_resolve_tg.return_value = table_group
     mock_conn_cls.get.return_value = _files_connection()
 
-    from testgen.mcp.tools.table_groups import FileDeclaration, update_table_group
+    from testgen.common.file_declaration_schema import FileDeclarationSpec
+    from testgen.mcp.tools.table_groups import update_table_group
 
     with _patch_perms():
         output = update_table_group(
             table_group_id=str(table_group.id),
-            file_declarations=[FileDeclaration(name="orders", uri="orders.csv", format="csv")],
+            file_declarations=[FileDeclarationSpec(name="orders", uri="orders.csv", format="csv")],
         )
 
     assert "No fields changed" not in output
@@ -1281,12 +1286,13 @@ def test_update_table_group_sees_a_path_change_on_the_same_table_names(
     mock_resolve_tg.return_value = table_group
     mock_conn_cls.get.return_value = _files_connection()
 
-    from testgen.mcp.tools.table_groups import FileDeclaration, update_table_group
+    from testgen.common.file_declaration_schema import FileDeclarationSpec
+    from testgen.mcp.tools.table_groups import update_table_group
 
     with _patch_perms():
         output = update_table_group(
             table_group_id=str(table_group.id),
-            file_declarations=[FileDeclaration(name="orders", uri="new.csv", format="csv")],
+            file_declarations=[FileDeclarationSpec(name="orders", uri="new.csv", format="csv")],
         )
 
     assert "No fields changed" not in output
@@ -1319,33 +1325,34 @@ def test_get_table_group_lists_the_declared_tables(mock_resolve_tg, mock_resolve
 def test_create_table_group_rejects_table_filters_on_a_files_connection(mock_resolve, db_session_mock):
     mock_resolve.return_value = _files_connection()
 
-    from testgen.mcp.tools.table_groups import FileDeclaration, create_table_group
+    from testgen.common.file_declaration_schema import FileDeclarationSpec
+    from testgen.mcp.tools.table_groups import create_table_group
 
     with _patch_perms(), pytest.raises(MCPUserError, match="table_set"):
         create_table_group(
             connection_id="1",
             table_group_name="Files TG",
-            file_declarations=[FileDeclaration(name="orders", uri="orders.csv", format="csv")],
+            file_declarations=[FileDeclarationSpec(name="orders", uri="orders.csv", format="csv")],
             table_set=["orders"],
         )
 
 
 def test_a_declaration_rejects_csv_settings_on_another_format():
     """The fields are documented CSV-only, and a stored value for another format is dropped."""
-    from testgen.mcp.tools.table_groups import FileDeclaration
+    from testgen.common.file_declaration_schema import FileDeclarationSpec
 
     with pytest.raises(ValidationError, match="delimiter"):
-        FileDeclaration(name="orders", uri="orders.parquet", format="parquet", delimiter="|")
+        FileDeclarationSpec(name="orders", uri="orders.parquet", format="parquet", delimiter="|")
 
 
 def test_a_declaration_rejects_a_multi_character_quote():
     """DuckDB caps quote and escape at one byte, and the view fails to build without saying why."""
-    from testgen.mcp.tools.table_groups import FileDeclaration
+    from testgen.common.file_declaration_schema import FileDeclarationSpec
 
     with pytest.raises(ValidationError):
-        FileDeclaration(name="orders", uri="orders.csv", format="csv", quote="ab")
+        FileDeclarationSpec(name="orders", uri="orders.csv", format="csv", quote="ab")
 
-    FileDeclaration(name="orders", uri="orders.csv", format="csv", delimiter="||")
+    FileDeclarationSpec(name="orders", uri="orders.csv", format="csv", delimiter="||")
 
 
 @patch(f"{MODULE}.preview_table_group_service")
@@ -1577,13 +1584,14 @@ def test_create_table_group_reports_the_declared_tables_not_a_schema(
 
     mock_tg_cls.side_effect = construct
 
-    from testgen.mcp.tools.table_groups import FileDeclaration, create_table_group
+    from testgen.common.file_declaration_schema import FileDeclarationSpec
+    from testgen.mcp.tools.table_groups import create_table_group
 
     with _patch_perms():
         output = create_table_group(
             connection_id="1",
             table_group_name="Files TG",
-            file_declarations=[FileDeclaration(name="orders", uri="orders.csv", format="csv", header=True)],
+            file_declarations=[FileDeclarationSpec(name="orders", uri="orders.csv", format="csv", header=True)],
         )
 
     assert "Declared tables" in output
