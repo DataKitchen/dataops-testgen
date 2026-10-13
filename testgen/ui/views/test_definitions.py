@@ -13,7 +13,10 @@ from sqlalchemy import and_, asc, case, desc, func, or_, tuple_
 from testgen.common import date_service
 from testgen.common.custom_test_validation import validate_custom_query, validate_metric_query
 from testgen.common.database.database_service import get_flavor_service
-from testgen.common.database.table_group_service import apply_test_definition_flavor_rules
+from testgen.common.database.table_group_service import (
+    apply_test_definition_flavor_rules,
+    table_group_qualifies_table_refs,
+)
 from testgen.common.enums import JobSource, SuiteType
 from testgen.common.flavors import TableGroupSchemaLabel, table_group_schema_label
 from testgen.common.models import database_session, with_database_session
@@ -460,9 +463,6 @@ class TestDefinitionsPage(Page):
                 TestDefinition.set_status_attribute(attribute, all_ids, value)
                 st.cache_data.clear()
 
-        def _resolve_target_project(target_tg_id: str) -> str | None:
-            target_tg = TableGroup.get_minimal(target_tg_id)
-            return target_tg.project_code if target_tg else None
 
         @with_database_session
         def on_copy_confirmed(payload: dict) -> None:
@@ -471,15 +471,23 @@ class TestDefinitionsPage(Page):
             target_ts_id = payload["target_test_suite_id"]
             target_table = payload.get("target_table_name")
             target_col = payload.get("target_column_name")
-            target_project = _resolve_target_project(target_tg_id)
-            if not target_project or not session.auth.user_has_permission("edit", target_project):
+            target_tg = TableGroup.get_minimal(target_tg_id)
+            if not target_tg or not session.auth.user_has_permission("edit", target_tg.project_code):
                 LOG.warning("Refusing copy to table group %s — user lacks edit permission", target_tg_id)
                 st.toast("You do not have edit permission for the target project.", icon=":material/error:")
                 return
             overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
             if overwrite_ids:
                 TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
-            TestDefinition.copy(ids, target_tg_id, target_ts_id, target_table, target_col)
+            TestDefinition.copy(
+                ids,
+                target_tg_id,
+                target_ts_id,
+                target_table,
+                target_col,
+                target_schema=target_tg.table_group_schema,
+                qualifies_table_refs=table_group_qualifies_table_refs(target_tg_id),
+            )
             st.cache_data.clear()
             get_test_suite_columns.clear()
             st.session_state.pop(TD_COPY_MOVE_DIALOG_KEY, None)
@@ -493,15 +501,23 @@ class TestDefinitionsPage(Page):
             target_ts_id = payload["target_test_suite_id"]
             target_table = payload.get("target_table_name")
             target_col = payload.get("target_column_name")
-            target_project = _resolve_target_project(target_tg_id)
-            if not target_project or not session.auth.user_has_permission("edit", target_project):
+            target_tg = TableGroup.get_minimal(target_tg_id)
+            if not target_tg or not session.auth.user_has_permission("edit", target_tg.project_code):
                 LOG.warning("Refusing move to table group %s — user lacks edit permission", target_tg_id)
                 st.toast("You do not have edit permission for the target project.", icon=":material/error:")
                 return
             overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
             if overwrite_ids:
                 TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
-            TestDefinition.move(ids, target_tg_id, target_ts_id, target_table, target_col)
+            TestDefinition.move(
+                ids,
+                target_tg_id,
+                target_ts_id,
+                target_table,
+                target_col,
+                target_schema=target_tg.table_group_schema,
+                qualifies_table_refs=table_group_qualifies_table_refs(target_tg_id),
+            )
             st.cache_data.clear()
             get_test_suite_columns.clear()
             st.session_state.pop(TD_COPY_MOVE_DIALOG_KEY, None)
