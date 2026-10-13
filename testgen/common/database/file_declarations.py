@@ -29,9 +29,13 @@ LOG = logging.getLogger("testgen")
 BASE_PATH_PARAMETER = "base_path"
 
 NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# The narrowest ``table_name`` column a declared name lands in: ``test_definitions`` and ``test_results``
+# (030_initialize_new_schema_structure.sql).
+NAME_MAX_LENGTH = 100
 
 NAME_REQUIRED = "Name is required."
 NAME_INVALID = "Name must start with a letter or underscore and contain only letters, numbers and underscores."
+NAME_TOO_LONG = f"Name must be at most {NAME_MAX_LENGTH} characters."
 NAME_DUPLICATE = "Name is already used by another table in this table group."
 URI_REQUIRED = "File or Pattern is required."
 URI_HAS_CREDENTIALS = "File or Pattern cannot contain credentials. Credentials are configured on the connection."
@@ -137,6 +141,8 @@ def validate_file_declarations(raw: list[dict[str, Any]] | None, base_path: str)
             errors.append(f"{label}: {NAME_REQUIRED}")
         elif not NAME_PATTERN.match(name):
             errors.append(f"{label}: {NAME_INVALID}")
+        elif len(name) > NAME_MAX_LENGTH:
+            errors.append(f"{label}: {NAME_TOO_LONG}")
         # DuckDB folds identifiers even when quoted, so names that differ only in case collide.
         elif name.casefold() in seen:
             errors.append(f"{label}: {NAME_DUPLICATE}")

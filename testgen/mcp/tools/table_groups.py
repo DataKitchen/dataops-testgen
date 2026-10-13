@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import Field
 from sqlalchemy.exc import IntegrityError
 
 from testgen.common.database.table_group_service import (
@@ -20,12 +20,13 @@ from testgen.common.database.table_group_service import (
     move_table_group_schema,
     update_catalog_for_edit,
     validate_table_group_fields,
+    validate_table_naming,
     write_table_group_catalog,
 )
 from testgen.common.database.table_group_service import (
     preview_table_group as preview_table_group_service,
 )
-from testgen.common.enums import FileFormat
+from testgen.common.file_declaration_schema import FileDeclarationSpec
 from testgen.common.flavors import declares_files, table_group_schema_label
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
@@ -60,93 +61,10 @@ _PII_FLAG_DENIED_MESSAGE = (
     "Changing PII detection requires permission to view PII. "
     "Leave this setting unchanged or contact your administrator."
 )
-_DECLARATIONS_REQUIRED_MESSAGE = (
-    "Tables on this connection are declared one file or pattern at a time. Supply `file_declarations`."
-)
-_DECLARATIONS_UNSUPPORTED_MESSAGE = (
-    "`file_declarations` applies only to a connection whose tables are files. Use `schema` and the "
-    "table filters instead."
-)
-_SCHEMA_UNSUPPORTED_MESSAGE = "Tables on this connection are files, so it has no schema to choose."
-# Only on create. Telling an update to supply the declarations invites it to send a partial list,
-# and the field replaces the whole one.
-_SCHEMA_UNSUPPORTED_ON_CREATE_MESSAGE = f"{_SCHEMA_UNSUPPORTED_MESSAGE} Supply `file_declarations`."
-_CRITERIA_UNSUPPORTED_MESSAGE = (
-    "Tables on this connection are files, so `table_set`, `include_mask` and `exclude_mask` do not "
-    "apply. Name the tables to read with `file_declarations`."
-)
 
 
-def _schema_required_message(label: str | None) -> str:
-    """The refusal for a connection whose table group must name the schema it reads."""
-    names = f" It names the {label.lower()} holding the tables." if label else ""
-    return f"`schema` is required for this connection.{names}"
-
-
-class FileDeclaration(BaseModel):
+class FileDeclaration(FileDeclarationSpec):
     """One table on a file connection, named by the path its rows come from."""
-
-    name: Annotated[
-        str,
-        Field(
-            description="Name for this table in TestGen. Must start with a letter or underscore and contain only "
-            "letters, numbers and underscores. Unique within the table group.",
-        ),
-    ]
-    uri: Annotated[
-        str,
-        Field(
-            description="Path to the data, relative to the connection's base path, base URI or container. Name one "
-            "file (``sales/orders.csv``) or a glob pattern (``sales/*.csv``, or ``sales/**/*.csv`` to include "
-            "subfolders). A pattern is one table whose rows span every file it matches. A bare folder is rejected.",
-        ),
-    ]
-    format: Annotated[FileFormat, Field(description="Format TestGen reads the files as.")]
-    delimiter: Annotated[
-        str | None,
-        Field(description="CSV only. Character between fields, e.g. ``,`` or ``|``. Autodetected when omitted."),
-    ] = None
-    header: Annotated[
-        bool | None,
-        Field(description="CSV only. Whether the first row holds column names. Autodetected when omitted."),
-    ] = None
-    quote: Annotated[
-        str | None,
-        Field(
-            description="CSV only. Character wrapping a field that contains the delimiter or a line break, e.g. "
-            '``"``. Autodetected when omitted.',
-            max_length=1,
-        ),
-    ] = None
-    escape: Annotated[
-        str | None,
-        Field(
-            description="CSV only. Character that escapes a quote inside a quoted field, e.g. ``\\`` or a second "
-            '``"``. Autodetected when omitted.',
-            max_length=1,
-        ),
-    ] = None
-
-    @model_validator(mode="after")
-    def _reject_settings_for_another_format(self) -> FileDeclaration:
-        if self.format is FileFormat.CSV:
-            return self
-        supplied = [
-            name
-            for name, value in (
-                ("delimiter", self.delimiter),
-                ("header", self.header),
-                ("quote", self.quote),
-                ("escape", self.escape),
-            )
-            if value is not None
-        ]
-        if supplied:
-            raise ValueError(
-                f"{', '.join(supplied)} applies to a CSV file. "
-                f"Table {self.name!r} is declared as {self.format}."
-            )
-        return self
 
 
 def _verify_table_naming(
@@ -157,49 +75,17 @@ def _verify_table_naming(
     criteria: tuple[object, ...] = (),
     require: bool = True,
 ) -> None:
-    """Raise ``MCPUserError`` when the arguments name tables in a way this connection does not use.
-
-    A connection's tables are either files, declared one at a time, or a schema the target
-    database already holds. ``require`` additionally rejects supplying neither.
-    """
-    if declares_files(connection.sql_flavor_code):
-        if schema is not None:
-            raise MCPUserError(
-                _SCHEMA_UNSUPPORTED_ON_CREATE_MESSAGE if require else _SCHEMA_UNSUPPORTED_MESSAGE
-            )
-        if any(value is not None for value in criteria):
-            raise MCPUserError(_CRITERIA_UNSUPPORTED_MESSAGE)
-        if require and not file_declarations:
-            raise MCPUserError(_DECLARATIONS_REQUIRED_MESSAGE)
-        return
-
-    if file_declarations is not None:
-        raise MCPUserError(_DECLARATIONS_UNSUPPORTED_MESSAGE)
-    if require and not schema:
-        raise MCPUserError(_schema_required_message(table_group_schema_label(connection.sql_flavor_code)))
-
-
-def _declaration_payloads(declarations: list[FileDeclaration]) -> list[dict[str, Any]]:
-    """The stored JSONB shape for each declaration, with the CSV settings gathered into options."""
-    payloads = []
-    for declaration in declarations:
-        options = {
-            key: value
-            for key, value in (
-                ("delimiter", declaration.delimiter),
-                ("header", declaration.header),
-                ("quote", declaration.quote),
-                ("escape", declaration.escape),
-            )
-            if value is not None
-        }
-        payloads.append({
-            "name": declaration.name,
-            "uri": declaration.uri,
-            "format": str(declaration.format),
-            "options": options if declaration.format is FileFormat.CSV else {},
-        })
-    return payloads
+    """Raise ``MCPUserError`` when the arguments name tables in a way this connection does not use."""
+    errors = validate_table_naming(
+        connection,
+        schema=schema,
+        file_declarations=file_declarations,
+        criteria=criteria,
+        require=require,
+        field_names=_FIELD_NAMES,
+    )
+    if errors:
+        raise MCPUserError(errors[0])
 
 
 @with_database_session
@@ -489,7 +375,9 @@ def create_table_group(
         connection_id=connection.connection_id,
         table_groups_name=table_group_name,
         table_group_schema=schema,
-        file_declarations=_declaration_payloads(file_declarations) if file_declarations else None,
+        file_declarations=(
+            [declaration.to_payload() for declaration in file_declarations] if file_declarations else None
+        ),
         **table_group_defaults(),
     )
     _apply_args_to_table_group(
@@ -975,7 +863,7 @@ def _apply_args_to_table_group(
     if schema is not None:
         table_group.table_group_schema = schema
     if file_declarations is not None:
-        table_group.file_declarations = _declaration_payloads(file_declarations)
+        table_group.file_declarations = [declaration.to_payload() for declaration in file_declarations]
     if description is not None:
         table_group.description = description
     if table_set is not None:

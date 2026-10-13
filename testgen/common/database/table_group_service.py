@@ -3,6 +3,8 @@ any future caller:
 
 * ``validate_table_group_fields`` — required-field + format checks. Callers
   surface the returned bullets verbatim.
+* ``validate_table_naming`` — whether a table group names its tables the way its
+  connection does: by schema, or by file declarations.
 * ``is_duplicate_name_error`` — recognizes the name-uniqueness violation.
 * ``preview_table_group`` — schema-introspection preview. Returns
   ``(preview, data_chars, sql_generator)``; the ``save_data_chars`` callback
@@ -16,7 +18,7 @@ rules are form-shaped per-flavor logic, not model invariants.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TypedDict
@@ -169,6 +171,66 @@ def validate_table_group_fields(
     elif min_count > _BIGINT_MAX:
         errors.append(f"{field('profile_sample_min_count')} must be at most {_BIGINT_MAX}.")
 
+    return errors
+
+
+def validate_table_naming(
+    connection: Connection,
+    *,
+    schema: str | None,
+    file_declarations: Sequence[object] | None,
+    criteria: tuple[object, ...] = (),
+    require: bool = True,
+    field_names: Mapping[str, str] | None = None,
+) -> list[str]:
+    """Return every way the arguments name tables differently from how this connection does.
+
+    A connection's tables are either files, declared one at a time, or a schema the target
+    database already holds.
+
+    Args:
+        connection: The table group's connection.
+        schema: The schema supplied, or None.
+        file_declarations: The declarations supplied, or None.
+        criteria: The table set, include mask and exclude mask supplied, each None when omitted.
+        require: Also reject supplying neither a schema nor declarations.
+        field_names: Name to show for a model attribute in the messages, as for
+            ``validate_table_group_fields``.
+    """
+    names = {**_PUBLIC_FIELD_NAMES, **(field_names or {})}
+
+    def field(attr: str) -> str:
+        return f"`{names.get(attr, attr)}`"
+
+    declarations = field("file_declarations")
+    errors: list[str] = []
+    if declares_files(connection.sql_flavor_code):
+        if schema is not None:
+            no_schema = "Tables on this connection are files, so it has no schema to choose."
+            # Only on create. Telling an update to supply the declarations invites it to send a
+            # partial list, and the field replaces the whole one.
+            errors.append(f"{no_schema} Supply {declarations}." if require else no_schema)
+        if any(value is not None for value in criteria):
+            errors.append(
+                f"Tables on this connection are files, so {field('profiling_table_set')}, "
+                f"{field('profiling_include_mask')} and {field('profiling_exclude_mask')} do not apply. "
+                f"Name the tables to read with {declarations}."
+            )
+        if require and not file_declarations:
+            errors.append(
+                f"Tables on this connection are declared one file or pattern at a time. Supply {declarations}."
+            )
+        return errors
+
+    if file_declarations is not None:
+        errors.append(
+            f"{declarations} applies only to a connection whose tables are files. "
+            f"Use {field('table_group_schema')} and the table filters instead."
+        )
+    if require and not schema:
+        label = table_group_schema_label(connection.sql_flavor_code)
+        holding = f" It names the {label.lower()} holding the tables." if label else ""
+        errors.append(f"{field('table_group_schema')} is required for this connection.{holding}")
     return errors
 
 
