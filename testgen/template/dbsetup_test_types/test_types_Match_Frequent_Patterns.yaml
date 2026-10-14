@@ -11,7 +11,7 @@ test_types:
   measure_uom_description: null
   selection_criteria: |-
     general_type = 'A' AND frequent_patterns IS NOT NULL
-    AND sample_ratio IS NULL
+  exact_measures: [frequent_patterns]
   generation_template: null
   dq_score_prevalence_formula: |-
     1

@@ -5,7 +5,7 @@ from testgen.common import read_template_sql_file
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import get_flavor_service, process_conditionals, replace_params
 from testgen.common.models.connection import DEFAULT_MAX_QUERY_CHARS, Connection
-from testgen.common.models.profile_result import PercentileMethod
+from testgen.common.models.profile_result import PercentileMethod, ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.common.read_file import replace_templated_functions
@@ -63,6 +63,7 @@ class HygieneIssueType:
     detail_expression: str
     dq_score_prevalence_formula: str
     dq_score_risk_factor: str
+    exact_measures: list[str] | None
 
 
 class ProfilingSQL:
@@ -215,7 +216,9 @@ class ProfilingSQL:
         extra_params = {
             "ANOMALY_ID": issue_type.id,
             "DETAIL_EXPRESSION": issue_type.detail_expression,
-            "ANOMALY_CRITERIA": issue_type.anomaly_criteria,
+            "ANOMALY_CRITERIA": ProfileResult.apply_exact_measures(
+                issue_type.anomaly_criteria, issue_type.exact_measures
+            ),
         }
 
         match issue_type.data_object:

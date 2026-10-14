@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 import testgen
+from testgen.common.models.profile_result import ProfileResult
 
 pytestmark = pytest.mark.unit
 
@@ -16,7 +17,8 @@ NO_NULLS = "record_ct = value_ct AND record_ct > 10"
 
 
 def _criteria(test_type: str) -> str:
-    return yaml.safe_load((YAML_DIR / f"test_types_{test_type}.yaml").read_text())["test_types"]["selection_criteria"]
+    test_type = yaml.safe_load((YAML_DIR / f"test_types_{test_type}.yaml").read_text())["test_types"]
+    return ProfileResult.apply_exact_measures(test_type["selection_criteria"], test_type.get("exact_measures"))
 
 
 def test_required_and_required_no_placeholder_partition_the_no_null_columns():

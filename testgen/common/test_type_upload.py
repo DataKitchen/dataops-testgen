@@ -21,6 +21,7 @@ from testgen.common.enums import HealthDimension, ImpactDimension, QualityDimens
 from testgen.common.flavors import FLAVOR_FAMILIES
 from testgen.common.models import database_session
 from testgen.common.models.data_column import GENERAL_TYPE_CODE_TO_LABEL
+from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.test_definition import (
     Severity,
     StatisticalTechnique,
@@ -49,7 +50,7 @@ _PARENT_FIELDS: frozenset[str] = frozenset({
     "health_dimension", "algorithm", "statistical_technique",
     "threshold_description", "result_visualization", "result_visualization_params",
     "usage_notes", "active", "overrides", "ai_redact_values", "null_measure_fails",
-    "column_general_types",
+    "column_general_types", "exact_measures",
 })
 
 # Parent fields stored as a real boolean rather than a string.
@@ -181,6 +182,7 @@ def validate_test_type_yaml(content: str | bytes) -> ValidationResult:
     _check_required_parent_fields(parent, errors)
     _check_parent_boolean_fields(parent, errors)
     _check_column_general_types(parent, errors)
+    _check_exact_measures(parent, errors)
     _check_parent_enum_values(parent, errors)
     _check_parent_specials(parent, errors)
     _check_parent_lengths(parent, errors)
@@ -254,6 +256,28 @@ def _check_column_general_types(parent: dict[str, Any], errors: list[str]) -> No
         errors.append(f"column_general_types: must be a list of general type codes ({valid_codes}).")
     elif parent.get("test_scope") != "column":
         errors.append("column_general_types: applies only to test_scope column.")
+
+
+def _check_exact_measures(parent: dict[str, Any], errors: list[str]) -> None:
+    value = parent.get("exact_measures")
+    criteria = parent.get("selection_criteria")
+    if value is not None:
+        if not isinstance(value, list) or not all(isinstance(measure, str) for measure in value):
+            errors.append("exact_measures: must be a list of profiling measure names.")
+        elif not value:
+            errors.append("exact_measures: must name at least one profiling measure.")
+        elif criteria in (None, "", "TEMPLATE"):
+            errors.append("exact_measures: applies only to test types generated from selection_criteria.")
+        else:
+            try:
+                ProfileResult.exact_clause(value)
+            except ValueError as error:
+                errors.append(f"exact_measures: {error}.")
+    if isinstance(criteria, str) and criteria not in ("", "TEMPLATE"):
+        try:
+            ProfileResult.apply_exact_measures(criteria, None)
+        except ValueError as error:
+            errors.append(f"selection_criteria: {error}.")
 
 
 def _check_required_parent_fields(parent: dict[str, Any], errors: list[str]) -> None:
@@ -469,6 +493,7 @@ def _emit_apply_statements(session, parsed: ParsedTestType, current_version: str
         "ai_redact_values": True,
         "null_measure_fails": False,
         "column_general_types": None,
+        "exact_measures": None,
         **parsed.parent,
         "uploaded_version": current_version,
     }

@@ -11,7 +11,7 @@ test_types:
   measure_uom_description: null
   selection_criteria: |-
     general_type = 'A' AND distinct_value_hash IS NOT NULL
-    AND sample_ratio IS NULL
+  exact_measures: [distinct_value_hash]
   generation_template: null
   dq_score_prevalence_formula: |-
     1

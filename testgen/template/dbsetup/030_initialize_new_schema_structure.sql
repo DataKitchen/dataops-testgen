@@ -397,7 +397,8 @@ CREATE TABLE profile_anomaly_types (
    dq_score_prevalence_formula TEXT,
    dq_score_risk_factor        TEXT,
    dq_dimension        VARCHAR(50),
-   impact_dimension    VARCHAR(20)
+   impact_dimension    VARCHAR(20),
+   exact_measures      VARCHAR[]
 );
 
 CREATE TABLE profile_anomaly_results (
@@ -620,7 +621,8 @@ CREATE TABLE test_types (
    uploaded_version              VARCHAR(20),
    ai_redact_values              BOOLEAN NOT NULL DEFAULT FALSE,
    null_measure_fails            BOOLEAN NOT NULL DEFAULT FALSE,
-   column_general_types          VARCHAR[]
+   column_general_types          VARCHAR[],
+   exact_measures                VARCHAR[]
 );
 
 CREATE TABLE test_templates (
