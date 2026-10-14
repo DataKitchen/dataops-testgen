@@ -10,6 +10,17 @@ from collections.abc import Iterable
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Context, Decimal
 
+# Test types generated only from a profile that computed value hashes
+VALUE_HASH_TEST_TYPES = frozenset({
+    "Match_Hash_Text",
+    "Match_Hash_Num",
+    "Match_Hash_Date",
+    "Match_Keyed_Hash_Text",
+    "Match_Keyed_Hash_Num",
+    "Match_Keyed_Hash_Date",
+    "Match_Epoch_Sum",
+})
+
 # The least magnitude whose canonical number, rounded to six places, reaches 10^32
 DECIMAL_BOUND = Decimal("99999999999999999999999999999999.9999995")
 

@@ -21,9 +21,9 @@ test_types:
   default_parm_columns: threshold_value,custom_query
   default_parm_values: null
   default_parm_prompts: |-
-    Threshold Error Count,Custom SQL Expression (TRUE on error)
+    Threshold Failure Count,Custom SQL Expression (TRUE on failure)
   default_parm_help: |-
-    The number of errors that are acceptable before test fails.|Expression should evaluate to TRUE to register an error or FALSE if no error. An expression can reference only columns in the selected table.
+    The number of failing records that are acceptable before the test fails.|Expression should evaluate to TRUE for a failing record or FALSE for a passing record. An expression can reference only columns in the selected table.
   default_parm_required: N,Y
   default_severity: Fail
   run_type: CAT
@@ -36,7 +36,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    Custom Condition is a business-rule test for a user-defined error condition based on the value of one or more columns. The condition is applied to each record within the table, and the count of records failing the condition is added up. If that count exceeds a threshold of errors, the test as a whole is failed. This test is ideal for error conditions that TestGen cannot automatically infer, and any condition that involves the values of more than one column in the same record. Performance of this test is fast, since it is performed together with other aggregate tests. Interpretation is based on the user-defined meaning of the test.
+    Custom Condition is a business-rule test for a user-defined failure condition based on the value of one or more columns. The condition is applied to each record within the table, and the count of records failing the condition is added up. If that count exceeds a threshold of failing records, the test as a whole is failed. This test is ideal for failure conditions that TestGen cannot automatically infer, and any condition that involves the values of more than one column in the same record. Performance of this test is fast, since it is performed together with other aggregate tests. Interpretation is based on the user-defined meaning of the test.
   active: Y
   ai_redact_values: false
   algorithm: Custom SQL

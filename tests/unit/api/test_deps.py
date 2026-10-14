@@ -2,6 +2,8 @@
 
 import asyncio
 import base64
+import itertools
+import threading
 import time
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, call, patch
@@ -14,7 +16,7 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel
 
 from testgen.api.deps import db_session, fields_to_change, get_authorized_user
-from testgen.common.models import get_current_session
+from testgen.common.models import POOL_MAX_OVERFLOW, POOL_SIZE, get_current_session
 
 JWT_KEY = base64.b64encode(b"test-secret-key-for-jwt-signing!").decode("ascii")
 
@@ -177,8 +179,11 @@ def test_every_request_sees_its_own_open_session_under_concurrency():
     """FastAPI runs sync dependencies and endpoints on worker threads other than the one that set the
     session up, so a session stored per thread reaches the wrong request, or none."""
 
+    serials = itertools.count()
+
     class FakeSession:
         def __init__(self):
+            self.serial = next(serials)
             self.closed = False
 
         def commit(self):
@@ -193,7 +198,7 @@ def test_every_request_sees_its_own_open_session_under_concurrency():
     def seen_by(name):
         def dependency():
             current = get_current_session()
-            return None if current is None or current.closed else id(current)
+            return None if current is None or current.closed else current.serial
 
         dependency.__name__ = name
         return dependency
@@ -205,7 +210,7 @@ def test_every_request_sees_its_own_open_session_under_concurrency():
     def endpoint(n: int, from_dependency=Depends(auth_dependency)):  # noqa: B008
         time.sleep(0.002)
         current = get_current_session()
-        return {"endpoint": None if current is None or current.closed else id(current), "dependency": from_dependency}
+        return {"endpoint": None if current is None or current.closed else current.serial, "dependency": from_dependency}
 
     async def burst():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
@@ -217,6 +222,54 @@ def test_every_request_sees_its_own_open_session_under_concurrency():
     seen = [response.json() for response in responses]
     assert all(entry["endpoint"] is not None and entry["endpoint"] == entry["dependency"] for entry in seen)
     assert len({entry["endpoint"] for entry in seen}) == len(seen)
+
+
+def test_a_burst_larger_than_the_pool_does_not_starve_it():
+    """A request takes a connection on its first sync hop and holds it through two more. If excess requests
+    wait for a connection on worker threads, the holders cannot get a thread to finish, and the pool times out."""
+    pool = threading.BoundedSemaphore(POOL_SIZE + POOL_MAX_OVERFLOW)
+
+    class PooledSession:
+        def __init__(self):
+            self.connected = False
+
+        def connect(self):
+            if not self.connected:
+                if not pool.acquire(timeout=2):
+                    raise TimeoutError("pool exhausted")
+                self.connected = True
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            if self.connected:
+                pool.release()
+
+    def auth():
+        get_current_session().connect()
+
+    def resolver(_=Depends(auth)):  # noqa: B008
+        time.sleep(0.001)
+
+    app = FastAPI()
+
+    @app.get("/{n}", dependencies=[Depends(db_session, scope="function")])
+    def endpoint(n: int, _=Depends(resolver)):  # noqa: B008
+        time.sleep(0.001)
+        return n
+
+    async def burst():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            return await asyncio.gather(*(client.get(f"/{n}") for n in range(150)))
+
+    with patch("testgen.api.deps.Session", PooledSession):
+        responses = asyncio.run(burst())
+
+    assert [response.status_code for response in responses] == [200] * 150
 
 
 def test_every_router_commits_before_it_responds():

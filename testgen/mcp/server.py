@@ -4,6 +4,7 @@ import time
 from enum import StrEnum
 from urllib.parse import urlparse
 
+import anyio
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
@@ -14,6 +15,7 @@ from starlette.applications import Starlette
 from testgen import settings
 from testgen.common.auth import AuthError, decode_jwt_token
 from testgen.common.mixpanel_service import MixpanelService
+from testgen.common.models import POOL_MAX_OVERFLOW, POOL_SIZE, session_limiter
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPUserError
 from testgen.mcp.permissions import get_mcp_username, set_mcp_token, set_mcp_username
 from testgen.mcp.services.source_data_protection import (
@@ -208,6 +210,26 @@ def _instrument(fn, kind: HandlerKind):
     return wrapper
 
 
+@functools.cache
+def _mcp_limiter() -> anyio.CapacityLimiter:
+    """Limit on concurrent MCP handlers: two fewer than the shared session limit, which REST requests also use."""
+    return anyio.CapacityLimiter(POOL_SIZE + POOL_MAX_OVERFLOW - 2)
+
+
+def _run_on_worker_thread(fn):
+    """Wrap a sync MCP handler to run on a worker thread, once a database session is free for it.
+
+    The caller's context, which carries the authenticated user, is copied to the thread.
+    """
+
+    @functools.wraps(fn)
+    async def wrapper(*args, **kwargs):
+        async with _mcp_limiter(), session_limiter():
+            return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
+
+    return wrapper
+
+
 def build_mcp_server(
     api_base_url: str,
     server_url: str | None = None,
@@ -394,13 +416,13 @@ def build_mcp_server(
     _configure_mcp_logging()
 
     def tool_wrapper(fn):
-        mcp.tool()(mcp_error_handler(_instrument(fn, HandlerKind.TOOL)))
+        mcp.tool()(_run_on_worker_thread(mcp_error_handler(_instrument(fn, HandlerKind.TOOL))))
 
     def safe_resource(uri, fn):
-        mcp.resource(uri)(mcp_error_handler(_instrument(fn, HandlerKind.RESOURCE)))
+        mcp.resource(uri)(_run_on_worker_thread(mcp_error_handler(_instrument(fn, HandlerKind.RESOURCE))))
 
     def safe_prompt(fn):
-        mcp.prompt()(mcp_error_handler(_instrument(fn, HandlerKind.PROMPT)))
+        mcp.prompt()(_run_on_worker_thread(mcp_error_handler(_instrument(fn, HandlerKind.PROMPT))))
 
     # Tools
     tool_wrapper(get_data_inventory)

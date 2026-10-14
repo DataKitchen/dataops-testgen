@@ -21,7 +21,7 @@ test_types:
   default_parm_columns: subset_condition,groupby_names,having_condition,match_schema_name,match_table_name,match_column_names,match_subset_condition,match_groupby_names,match_having_condition,skip_errors
   default_parm_values: null
   default_parm_prompts: |-
-    Record Subset Condition,Grouping Columns,Group Subset Condition,Matching Schema Name,Matching Table Name,Matching Aggregate Expression,Matching Record Subset Condition,Matching Grouping Columns,Matching Group Subset Condition,Threshold Error Count
+    Record Subset Condition,Grouping Columns,Group Subset Condition,Matching Schema Name,Matching Table Name,Matching Aggregate Expression,Matching Record Subset Condition,Matching Grouping Columns,Matching Group Subset Condition,Threshold Failure Count
   default_parm_help: |-
     Condition defining a subset of records in main table, written like a condition within a SQL WHERE clause - OPTIONAL|Category columns in main table separated by commas (e.g. GROUP BY columns)|Condition defining a subset of aggregate records in main table (e.g. HAVING clause) - OPTIONAL|Schema location of reference table|Reference table name|Aggregate column expression in reference table (e.g. `SUM(sales)`)|Condition defining a subset of records in reference table, written like a condition within a SQL WHERE clause - OPTIONAL|Category columns in reference table separated by commas (e.g. GROUP BY columns)|Condition defining a subset of aggregate records in reference table (e.g. HAVING clause) - OPTIONAL|The number of mismatched groups that are acceptable before the test fails.
   default_parm_required: N,Y,N,Y,Y,Y,N,Y,N,N
@@ -36,7 +36,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    This test compares sums or counts of a column rolled up to one or more category combinations, but requires a match or increase in the aggregate value, rather than an exact match, across two different tables. Both tables must be accessible at the same time. Use this to confirm that aggregate values have not dropped for any set of categories, even if some values may rise. This test is useful to compare an older and newer version of a cumulative dataset. An error here means that one or more values per category set fail to match or exceed the prior dataset. New categories or combinations are allowed (but can be restricted independently with a Combo_Match test). Both tables must be present to run this test.
+    This test compares sums or counts of a column rolled up to one or more category combinations, but requires a match or increase in the aggregate value, rather than an exact match, across two different tables. Both tables must be accessible at the same time. Use this to confirm that aggregate values have not dropped for any set of categories, even if some values may rise. This test is useful to compare an older and newer version of a cumulative dataset. A failure here means that one or more values per category set fail to match or exceed the prior dataset. New categories or combinations are allowed (but can be restricted independently with a Combo_Match test). Both tables must be present to run this test.
   active: Y
   ai_redact_values: false
   algorithm: Aggregate reconciliation
@@ -337,20 +337,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-             CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                          )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Mismatched measures: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
       FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
                FROM
@@ -386,20 +373,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-             CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                          )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Mismatched measures: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
       FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
                FROM
@@ -435,20 +409,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-             CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                          )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Mismatched measures: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
       FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
                FROM
@@ -484,20 +445,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-             CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                          )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Mismatched measures: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
       FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
                FROM
@@ -533,20 +481,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-             CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                          )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Mismatched measures: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
       FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
                FROM
@@ -582,20 +517,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-             CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                          )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Mismatched measures: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
       FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
                FROM
@@ -631,20 +553,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-             CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                          )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Mismatched measures: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
       FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
                FROM
@@ -680,15 +589,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CAST(COUNT(*) AS {VARCHAR_TYPE}) || ' error(s) identified, ' ||
-                     CASE
-                       WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                       ELSE 'within limit of '
-                     END || '{SKIP_ERRORS}.'
-              ELSE 'No errors found.'
-             END AS result_message,
+             'Mismatched measures: ' || CAST(COUNT(*) AS {VARCHAR_TYPE}) || ', Threshold: {SKIP_ERRORS}' AS result_message,
              COUNT(*) as result_measure
       FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
                FROM
@@ -724,15 +625,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CAST(COUNT(*) AS {VARCHAR_TYPE}) || ' error(s) identified, ' ||
-                     CASE
-                       WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                       ELSE 'within limit of '
-                     END || '{SKIP_ERRORS}.'
-              ELSE 'No errors found.'
-             END AS result_message,
+             'Mismatched measures: ' || CAST(COUNT(*) AS {VARCHAR_TYPE}) || ', Threshold: {SKIP_ERRORS}' AS result_message,
              COUNT(*) as result_measure
       FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
                FROM
@@ -768,20 +661,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-             CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                          )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Mismatched measures: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
       FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
                FROM
@@ -817,20 +697,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-             CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                          )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Mismatched measures: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
       FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
                FROM

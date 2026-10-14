@@ -88,8 +88,14 @@ class SnowflakeFlavorService(FlavorService):
 
         return connection_url
 
-    def get_pre_connection_queries(self, params: ResolvedConnectionParams) -> list[tuple[str, dict | None]]:  # noqa: ARG002
-        return [
+    def get_pre_connection_queries(self, params: ResolvedConnectionParams) -> list[tuple[str, dict | None]]:
+        queries: list[tuple[str, dict | None]] = [
             ("ALTER SESSION SET MULTI_STATEMENT_COUNT = 0;", None),
             ("ALTER SESSION SET WEEK_START = 7;", None),
         ]
+        # A connection from fields carries the table group's schema in its URL. A user-supplied URL does not,
+        # so an unqualified table in a custom query would not resolve in the table group's schema.
+        if params.connect_by_url and params.dbschema:
+            quoted_schema = params.dbschema.replace('"', '""')
+            queries.append((f'USE SCHEMA "{quoted_schema}";', None))
+        return queries
