@@ -133,6 +133,8 @@ def _reinitialize_orm_engine(base_uri: str | None = None) -> None:
     models.engine = create_engine(
         url=uri,
         echo=False,
+        pool_size=models.POOL_SIZE,
+        max_overflow=models.POOL_MAX_OVERFLOW,
         connect_args={
             "application_name": platform.node(),
             # Keep in sync with models/__init__.py — UTC avoids silent tz shifts on TIMESTAMP inserts.

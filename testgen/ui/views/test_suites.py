@@ -18,6 +18,7 @@ from testgen.common.models.notification_settings import TestRunNotificationSetti
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.value_hash import VALUE_HASH_TEST_TYPES
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
@@ -31,7 +32,11 @@ from testgen.ui.services.query_cache import (
     select_table_groups_minimal_where,
 )
 from testgen.ui.session import session
-from testgen.ui.views.dialogs.generate_tests_dialog import get_test_suite_refresh_warning, lock_edited_tests
+from testgen.ui.views.dialogs.generate_tests_dialog import (
+    get_test_suite_refresh_warning,
+    get_value_hash_warning,
+    lock_edited_tests,
+)
 from testgen.ui.views.test_runs import TestRunNotificationSettingsDialog, TestRunScheduleDialog
 
 PAGE_ICON = "rule"
@@ -152,6 +157,8 @@ class TestSuitesPage(Page):
                 "generation_set_test_types": get_generation_set_members(),
                 "overriding_test_types": get_overriding_test_types(),
                 "refresh_warning": get_test_suite_refresh_warning(str(generate_ts.id)),
+                "value_hash_test_types": sorted(VALUE_HASH_TEST_TYPES),
+                "value_hash_warning": get_value_hash_warning(str(generate_ts.table_groups_id)),
                 "lock_result": st.session_state.get(GENERATE_TESTS_LOCK_RESULT_KEY),
                 "result": st.session_state.get(GENERATE_TESTS_RESULT_KEY),
             }

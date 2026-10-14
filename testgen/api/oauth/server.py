@@ -29,6 +29,10 @@ LOG = logging.getLogger("testgen")
 
 CLIENT_AUTH_METHODS = [method.value for method in OAuth2ClientAuthMethod]
 
+# A client refreshing from two places at once, or retrying after a lost response, presents a refresh
+# token that was rotated moments ago. Within this window that reuse is refused without revoking the chain.
+REFRESH_REUSE_GRACE_SECONDS = 60
+
 
 class S256CodeChallenge(CodeChallenge):
     DEFAULT_CODE_CHALLENGE_METHOD = "S256"
@@ -86,8 +90,8 @@ class AuthorizationCodeGrant(grants.AuthorizationCodeGrant):
 
 class RefreshTokenGrant(grants.RefreshTokenGrant):
     """Refresh token grant. Public clients get a rotated refresh token on every refresh, and
-    presenting an already-rotated refresh token revokes its whole chain; confidential clients
-    keep reusing theirs until it expires.
+    presenting an already-rotated refresh token revokes its whole chain, unless it was rotated within
+    ``REFRESH_REUSE_GRACE_SECONDS``; confidential clients keep reusing theirs until it expires.
     """
 
     TOKEN_ENDPOINT_AUTH_METHODS: ClassVar[list[str]] = CLIENT_AUTH_METHODS
@@ -113,7 +117,13 @@ class RefreshTokenGrant(grants.RefreshTokenGrant):
         if item.is_refresh_token_active():
             return item
         if item.refresh_token_revoked_at and self._rotates_refresh_token() and item.check_client(self.request.client):
-            self._revoke_refresh_chain(item)
+            if item.refresh_token_revoked_at >= int(time.time()) - REFRESH_REUSE_GRACE_SECONDS:
+                LOG.info(
+                    f"Recently rotated refresh token presented again: refused without revoking its chain "
+                    f"(client_id={item.client_id}, user_id={item.user_id})"
+                )
+            else:
+                self._revoke_refresh_chain(item)
         return None
 
     def _revoke_refresh_chain(self, credential: OAuth2Token) -> None:

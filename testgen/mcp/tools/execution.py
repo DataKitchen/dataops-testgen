@@ -113,6 +113,11 @@ def generate_tests(
     Generation sets scope which test types are created. Omit them to use the test suite's stored
     generation sets. Read ``testgen://generation-sets`` for the available sets and the test types
     each one covers. Test types outside the selected sets are deleted unless they are locked.
+
+    The value hash test types (Match Text, Numeric and Date Hash, their Keyed variants, and Match
+    Epoch Sum, in the Table Comparison set) are generated only from a profiling run that computed
+    value hashes. That needs ``profile_table_comparison`` on the table group (see ``get_table_group``)
+    and a profiling run since it was turned on; otherwise they are not generated.
     """
     suite = resolve_test_suite(test_suite_id)
     try:

@@ -1,7 +1,6 @@
 """FastAPI dependencies for API endpoints."""
 
-import functools
-from collections.abc import Callable, Collection
+from collections.abc import Collection
 from typing import Any
 from uuid import UUID
 
@@ -13,7 +12,7 @@ from sqlalchemy import select
 
 from testgen.common.auth import AuthError, authorize_token, decode_jwt_token
 from testgen.common.enums import PublicJobKey
-from testgen.common.models import Session, bound_session, get_current_session
+from testgen.common.models import Session, bound_session, get_current_session, session_limiter
 from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.monitor import Monitor
@@ -33,29 +32,21 @@ async def db_session():
     Async so that it runs in the request's own context. FastAPI runs sync dependencies and endpoints
     on worker threads, each given a copy of that context, so all of them see this session. Under
     ``scope="function"`` the commit lands before the response is sent.
+
+    No more requests hold a session than the connection pool has connections. The rest wait here, on
+    the event loop, rather than on worker threads blocked in pool checkout.
     """
-    session = Session()
-    try:
-        with bound_session(session):
-            yield session
-        await _end_session(session.commit)
-    except Exception:
-        await _end_session(session.rollback)
-        raise
-    finally:
-        await _end_session(session.close)
-
-
-@functools.cache
-def _session_end_limiter() -> anyio.CapacityLimiter:
-    # Built on first use, because a limiter can only be created inside a running event loop.
-    return anyio.CapacityLimiter(16)
-
-
-async def _end_session(step: Callable[[], None]) -> None:
-    # Off the threads that run endpoints. A request holding a connection must always be able to commit
-    # and release it, or a burst of endpoints waiting on the pool takes every thread and the pool times out.
-    await anyio.to_thread.run_sync(step, limiter=_session_end_limiter())
+    async with session_limiter():
+        session = Session()
+        try:
+            with bound_session(session):
+                yield session
+            await anyio.to_thread.run_sync(session.commit)
+        except Exception:
+            await anyio.to_thread.run_sync(session.rollback)
+            raise
+        finally:
+            await anyio.to_thread.run_sync(session.close)
 
 
 _bearer_scheme = HTTPBearer()

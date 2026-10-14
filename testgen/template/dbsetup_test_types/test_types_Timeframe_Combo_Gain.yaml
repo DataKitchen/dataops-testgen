@@ -8,7 +8,7 @@ test_types:
     Tests that column values in most recent time window include at least same as prior time window.
   except_message: |-
     Column values in most recent time window do not include all values in prior time window.
-  measure_uom: Mismatched values
+  measure_uom: Missing value combinations
   measure_uom_description: null
   selection_criteria: null
   generation_template: null
@@ -22,7 +22,7 @@ test_types:
   default_parm_columns: window_date_column,window_days,subset_condition,skip_errors
   default_parm_values: null
   default_parm_prompts: |-
-    Date Column for Time Windows,Time Window in Days,Record Subset Condition,Threshold Error Count
+    Date Column for Time Windows,Time Window in Days,Record Subset Condition,Threshold Failure Count
   default_parm_help: |-
     The date column used to define the time windows. This must be a DATE or DATETIME type.|Length in days of the time window. The test will compare the most recent period of days to the prior period of the same duration.|Condition defining a subset of records in main table to evaluate, written like a condition within a SQL WHERE clause - OPTIONAL|The number of mismatched value combinations that are acceptable before the test fails.
   default_parm_required: Y,Y,N,N
@@ -281,17 +281,7 @@ test_types:
           '{INPUT_PARAMETERS}' AS input_parameters,
           NULL as result_signal,
           CASE WHEN COUNT(*) > {SKIP_ERRORS} THEN 0 ELSE 1 END AS result_code,
-          CASE
-            WHEN COUNT(*) > 0 THEN CONCAT(
-              CAST(COUNT(*) AS STRING), ' error(s) identified, ',
-              CASE
-                WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                ELSE 'within limit of '
-              END,
-              '{SKIP_ERRORS}.'
-            )
-            ELSE 'No errors found.'
-          END AS result_message,
+          CONCAT(CONCAT('Missing value combinations: ', CAST(COUNT(*) AS STRING)), ', Threshold: {SKIP_ERRORS}') AS result_message,
           COUNT(*) AS result_measure
           FROM (
             SELECT {COLUMN_NAME_NO_QUOTES}
@@ -324,20 +314,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
              CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-                            CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                                   )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Missing value combinations: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
       FROM (
             SELECT {COLUMN_NAME_NO_QUOTES}
@@ -370,20 +347,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
              CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-                            CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                                   )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Missing value combinations: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
       FROM (
             SELECT {COLUMN_NAME_NO_QUOTES}
@@ -416,20 +380,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
              CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS VARCHAR), ' error(s) identified, ' ),
-                            CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                                   )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Missing value combinations: ', CAST(COUNT(*) AS VARCHAR)), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
       FROM (
             SELECT {COLUMN_NAME_NO_QUOTES}
@@ -462,20 +413,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
              CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-                            CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                                   )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Missing value combinations: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
       FROM (
             SELECT {COLUMN_NAME_NO_QUOTES}
@@ -508,20 +446,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
              CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-                            CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                                   )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Missing value combinations: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
       FROM (
             SELECT {COLUMN_NAME_NO_QUOTES}
@@ -554,20 +479,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
              CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-                            CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                                   )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Missing value combinations: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
       FROM (
             SELECT {COLUMN_NAME_NO_QUOTES}
@@ -600,15 +512,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
              CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CAST(COUNT(*) AS VARCHAR2(20)) || ' error(s) identified, ' ||
-                     CASE
-                       WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                       ELSE 'within limit of '
-                     END || '{SKIP_ERRORS}.'
-              ELSE 'No errors found.'
-             END AS result_message,
+             'Missing value combinations: ' || CAST(COUNT(*) AS VARCHAR2(20)) || ', Threshold: {SKIP_ERRORS}' AS result_message,
              COUNT(*) as result_measure
       FROM (
             SELECT {COLUMN_NAME_NO_QUOTES}
@@ -641,15 +545,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
              CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CAST(COUNT(*) AS VARCHAR(20)) || ' error(s) identified, ' ||
-                     CASE
-                       WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                       ELSE 'within limit of '
-                     END || '{SKIP_ERRORS}.'
-              ELSE 'No errors found.'
-             END AS result_message,
+             'Missing value combinations: ' || CAST(COUNT(*) AS VARCHAR(20)) || ', Threshold: {SKIP_ERRORS}' AS result_message,
              COUNT(*) as result_measure
       FROM (
             SELECT {COLUMN_NAME_NO_QUOTES}
@@ -682,20 +578,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
              CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS VARCHAR), ' error(s) identified, ' ),
-                            CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                                   )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Missing value combinations: ', CAST(COUNT(*) AS VARCHAR)), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
       FROM (
             SELECT {COLUMN_NAME_NO_QUOTES}
@@ -728,20 +611,7 @@ test_types:
              '{INPUT_PARAMETERS}' as input_parameters,
              NULL as result_signal,
              CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS VARCHAR), ' error(s) identified, ' ),
-                            CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                                   )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Missing value combinations: ', CAST(COUNT(*) AS VARCHAR)), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
       FROM (
             SELECT {COLUMN_NAME_NO_QUOTES}

@@ -19,9 +19,9 @@ test_types:
   default_parm_columns: lower_tolerance,upper_tolerance,threshold_value
   default_parm_values: null
   default_parm_prompts: |-
-    Minimum Length,Maximum Length,Threshold Error Count
+    Minimum Length,Maximum Length,Threshold Failure Count
   default_parm_help: |-
-    The minimum acceptable length of a value. Leave blank for no minimum.|The maximum acceptable length of a value. Leave blank for no maximum.|The number of errors that are acceptable before test fails.
+    The minimum acceptable length of a value. Leave blank for no minimum.|The maximum acceptable length of a value. Leave blank for no maximum.|The number of failing records that are acceptable before the test fails.
   default_parm_required: A,A,N
   default_severity: Fail
   run_type: CAT
