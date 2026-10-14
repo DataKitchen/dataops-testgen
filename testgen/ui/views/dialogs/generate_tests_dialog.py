@@ -5,6 +5,7 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
+from testgen.common.sampling_requirements import sampled_profile_gaps
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
 
 
@@ -51,6 +52,17 @@ def get_test_suite_refresh_warning(test_suite_id: str) -> dict | None:
         "unlocked_edits_ct": totals.unlocked_edits_ct or 0,
         "unlocked_counts_by_type": {row.test_type: row.test_ct for row in per_type},
     }
+
+
+@with_database_session
+def get_sampled_unavailable_test_types(table_group_id: str) -> dict[str, str]:
+    """Test type code to short name of each test type not generated on a sampled column, when the profiling
+    run that test generation uses for the table group sampled any column. Empty otherwise.
+    """
+    profile_run_id = resolve_generation_profile_run(TableGroup.get(table_group_id))
+    if profile_run_id is None or not ProfileResult.run_sampled(profile_run_id):
+        return {}
+    return sampled_profile_gaps().test_types
 
 
 @with_database_session

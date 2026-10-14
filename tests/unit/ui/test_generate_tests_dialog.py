@@ -71,3 +71,25 @@ def test_names_the_minimum_profiling_age_a_new_run_must_reach(db_session_mock, p
 )
 def test_no_warning(db_session_mock, overrides):
     assert _warning(**overrides) is None
+
+
+def _sampled_unavailable(*, profile_run_id="run-1", run_sampled=True):
+    with (
+        patch.object(dialog.TableGroup, "get"),
+        patch.object(dialog, "resolve_generation_profile_run", return_value=profile_run_id),
+        patch.object(dialog.ProfileResult, "run_sampled", return_value=run_sampled),
+        patch.object(dialog, "sampled_profile_gaps", return_value=MagicMock(test_types={"LOV_Match": "Value Match"})),
+    ):
+        return dialog.get_sampled_unavailable_test_types.__wrapped__("tg-1")
+
+
+def test_lists_the_test_types_a_sampled_profile_cannot_support(db_session_mock):
+    assert _sampled_unavailable() == {"LOV_Match": "Value Match"}
+
+
+def test_lists_nothing_when_the_profile_generation_uses_was_not_sampled(db_session_mock):
+    assert _sampled_unavailable(run_sampled=False) == {}
+
+
+def test_lists_nothing_when_there_is_no_profile_to_generate_from(db_session_mock):
+    assert _sampled_unavailable(profile_run_id=None) == {}

@@ -19,6 +19,7 @@
  * @property {string[]} selected_generation_sets
  * @property {Object.<string, string[]>} generation_set_test_types
  * @property {Object.<string, string[]>} overriding_test_types
+ * @property {Object.<string, string>?} sampled_unavailable_test_types
  * @property {RefreshWarning?} refresh_warning
  * @property {string[]} value_hash_test_types
  * @property {string?} value_hash_warning
@@ -31,6 +32,7 @@ import { Button } from '/app/static/js/components/button.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { Alert } from '/app/static/js/components/alert.js';
 import { Select } from '/app/static/js/components/select.js';
+import { SampledProfileGapsHelp } from '/app/static/js/components/sampled_profile_gaps.js';
 import { getValue, loadStylesheet } from '/app/static/js/utils.js';
 
 const { div, span, strong } = van.tags;
@@ -61,6 +63,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
     const overridingTypes = getValue(props.overriding_test_types) ?? {};
     const valueHashTypes = new Set(getValue(props.value_hash_test_types) ?? []);
     const valueHashWarning = getValue(props.value_hash_warning);
+    const sampledUnavailable = getValue(props.sampled_unavailable_test_types) ?? {};
     const selectedSets = van.state(storedSets.filter((s) => generationSets.includes(s)));
     const submitDisabled = van.derive(() => selectedSets.val.length === 0);
 
@@ -79,6 +82,23 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
         () => valueHashWarning && selectedSets.val.some(s => (setMembers[s] ?? []).some(t => valueHashTypes.has(t)))
             ? Alert({ type: 'warn' }, span(valueHashWarning))
             : '',
+        () => {
+            const selectedTypes = new Set(selectedSets.val.flatMap(s => setMembers[s] ?? []));
+            const names = Object.entries(sampledUnavailable)
+                .filter(([testType]) => selectedTypes.has(testType))
+                .map(([, name]) => name)
+                .sort();
+            if (!names.length) return '';
+            const verb = names.length === 1 ? 'is' : 'are';
+            return Alert(
+                { type: 'warn' },
+                div(
+                    { class: 'flex-row fx-align-center fx-gap-1' },
+                    span(`On tables profiled from a sample, ${names.length} of the selected test types ${verb} not generated.`),
+                    SampledProfileGapsHelp({ testTypes: names }),
+                ),
+            );
+        },
         () => {
             const warning = getValue(props.refresh_warning);
             if (!warning || !warning.test_ct) return '';

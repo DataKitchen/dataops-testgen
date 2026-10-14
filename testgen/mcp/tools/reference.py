@@ -15,6 +15,7 @@ from testgen.common.generation_set_service import get_generation_set_members
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssueType
 from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES, TestType
+from testgen.common.sampling_requirements import requires_exact_label
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.tools.common import (
     DocGroup,
@@ -60,6 +61,8 @@ def get_test_type(
         doc.field("Scope", tt.test_scope)
     if tt.except_message:
         doc.field("Exception Message", tt.except_message)
+    if requires_exact := requires_exact_label(tt.exact_measures):
+        doc.field("Requires Exact Profiling", f"{requires_exact}. Not generated on a column profiled from a sample.")
 
     _append_type_parameters(doc, tt)
 
@@ -87,7 +90,7 @@ def _append_type_parameters(doc: MdDoc, tt: TestType) -> None:
 def test_types_resource() -> str:
     """Reference table of all test types.
 
-    Covers the description and data quality dimensions of each type.
+    Covers the description, data quality dimensions, and exact-profiling requirement of each type.
     """
     test_types = TestType.select_where(TestType.active == "Y", TestType.is_public())
 
@@ -96,10 +99,18 @@ def test_types_resource() -> str:
 
     doc = MdDoc()
     doc.heading(1, "TestGen Test Types Reference")
+    doc.text("A test type that requires exact profiling is not generated on a column profiled from a sample.")
     doc.table(
-        headers=["Test Type", "Impact Dimension", "Quality Dimension", "Scope", "Description"],
+        headers=["Test Type", "Impact Dimension", "Quality Dimension", "Scope", "Description", "Requires Exact Profiling"],
         rows=[
-            [tt.test_name_short, tt.impact_dimension, tt.dq_dimension, tt.test_scope, tt.test_description]
+            [
+                tt.test_name_short,
+                tt.impact_dimension,
+                tt.dq_dimension,
+                tt.test_scope,
+                tt.test_description,
+                requires_exact_label(tt.exact_measures),
+            ]
             for tt in test_types
         ],
     )
@@ -140,7 +151,7 @@ def generation_sets_resource() -> str:
 def hygiene_issue_types_resource() -> str:
     """Reference table of all hygiene issue types.
 
-    Covers the data quality dimension, description, and suggested action of each type.
+    Covers the data quality dimension, description, suggested action, and exact-profiling requirement of each type.
     """
     issue_types = HygieneIssueType.select_where(order_by=(HygieneIssueType.name,))
 
@@ -149,10 +160,27 @@ def hygiene_issue_types_resource() -> str:
 
     doc = MdDoc()
     doc.heading(1, "TestGen Hygiene Issue Types Reference")
+    doc.text("A hygiene issue type that requires exact profiling is not detected on a column profiled from a sample.")
     doc.table(
-        headers=["Issue Type", "Impact Dimension", "Quality Dimension", "Likelihood", "Description", "Suggested Action"],
+        headers=[
+            "Issue Type",
+            "Impact Dimension",
+            "Quality Dimension",
+            "Likelihood",
+            "Description",
+            "Suggested Action",
+            "Requires Exact Profiling",
+        ],
         rows=[
-            [it.name, it.impact_dimension, it.dq_dimension, it.likelihood, it.description, it.suggested_action]
+            [
+                it.name,
+                it.impact_dimension,
+                it.dq_dimension,
+                it.likelihood,
+                it.description,
+                it.suggested_action,
+                requires_exact_label(it.exact_measures),
+            ]
             for it in issue_types
         ],
     )

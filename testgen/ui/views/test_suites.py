@@ -33,6 +33,7 @@ from testgen.ui.services.query_cache import (
 )
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.generate_tests_dialog import (
+    get_sampled_unavailable_test_types,
     get_test_suite_refresh_warning,
     get_value_hash_warning,
     lock_edited_tests,
@@ -156,6 +157,7 @@ class TestSuitesPage(Page):
                 "selected_generation_sets": resolve_generation_sets(TestSuite.get(generate_ts.id), None),
                 "generation_set_test_types": get_generation_set_members(),
                 "overriding_test_types": get_overriding_test_types(),
+                "sampled_unavailable_test_types": get_sampled_unavailable_test_types(str(generate_ts.table_groups_id)),
                 "refresh_warning": get_test_suite_refresh_warning(str(generate_ts.id)),
                 "value_hash_test_types": sorted(VALUE_HASH_TEST_TYPES),
                 "value_hash_warning": get_value_hash_warning(str(generate_ts.table_groups_id)),
