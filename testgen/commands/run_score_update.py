@@ -55,18 +55,23 @@ def run_project_score_refresh(
 ) -> None:
     """Roll up the table groups' scores, then refresh the project's scorecards that can include them.
 
+    A table group whose rollup fails is logged and skipped, and the scorecards are refreshed regardless.
+    The error is raised once every table group has been tried.
+
     :param project_code: Project whose scorecards are refreshed.
     :param profile_table_group_ids: Table groups whose profiling scores are rolled up.
     :param test_table_group_ids: Table groups whose test scores are rolled up.
     :param refresh_date: ISO date of the history entry added to each refreshed scorecard.
     """
-    _rollup_table_groups(profile_table_group_ids, test_table_group_ids)
+    failed = _rollup_table_groups(profile_table_group_ids, test_table_group_ids)
     run_refresh_score_cards_results(
         project_code=project_code,
         add_history_entry=True,
         refresh_date=datetime.datetime.fromisoformat(refresh_date) if refresh_date else None,
         table_group_ids={*profile_table_group_ids, *test_table_group_ids},
     )
+    if failed:
+        raise RuntimeError(f"Score rollup failed for table groups: {', '.join(failed)}")
 
 
 def run_score_update(parent_job_id: str, parent_job_key: str) -> None:
@@ -126,10 +131,19 @@ def _rollup_test_run(parent_je_id: UUID) -> _RolledUpRun | None:
     return run
 
 
-def _rollup_table_groups(profile_table_group_ids: list[str], test_table_group_ids: list[str]) -> None:
-    for table_group_id in profile_table_group_ids:
-        LOG.info("Rolling up profiling scores for table group %s", table_group_id)
-        execute_rollup_queries(RollupScoresSQL(None, table_group_id).rollup_profiling_table_group())
-    for table_group_id in test_table_group_ids:
-        LOG.info("Rolling up test scores for table group %s", table_group_id)
-        execute_rollup_queries(RollupScoresSQL(None, table_group_id).rollup_test_table_group())
+def _rollup_table_groups(profile_table_group_ids: list[str], test_table_group_ids: list[str]) -> list[str]:
+    """Roll up each table group's scores, returning a label for each rollup that failed."""
+    failed: list[str] = []
+    for kind, table_group_ids, queries_method in (
+        ("profiling", profile_table_group_ids, "rollup_profiling_table_group"),
+        ("test", test_table_group_ids, "rollup_test_table_group"),
+    ):
+        for table_group_id in table_group_ids:
+            LOG.info("Rolling up %s scores for table group %s", kind, table_group_id)
+            try:
+                execute_rollup_queries(getattr(RollupScoresSQL(None, table_group_id), queries_method)())
+            except Exception:
+                LOG.exception("Rolling up %s scores for table group %s failed", kind, table_group_id)
+                get_current_session().rollback()
+                failed.append(f"{table_group_id} ({kind})")
+    return failed

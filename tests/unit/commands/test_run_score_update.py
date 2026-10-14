@@ -93,6 +93,37 @@ def test_a_project_refresh_rolls_up_each_table_group_then_refreshes_their_scorec
     )
 
 
+def test_one_failing_table_group_does_not_cost_the_rest_of_the_refresh(session):
+    def execute(queries):
+        if queries == ["tg-1 test"]:
+            raise RuntimeError("statement timeout")
+
+    rollups = MagicMock(
+        side_effect=lambda _, table_group_id: MagicMock(
+            rollup_profiling_table_group=lambda: [f"{table_group_id} profiling"],
+            rollup_test_table_group=lambda: [f"{table_group_id} test"],
+        )
+    )
+    with (
+        patch.object(module, "RollupScoresSQL", rollups),
+        patch.object(module, "execute_rollup_queries", side_effect=execute) as execute_rollup_queries,
+        patch.object(module, "run_refresh_score_cards_results") as refresh,
+        pytest.raises(RuntimeError, match=r"tg-1 \(test\)"),
+    ):
+        module.run_project_score_refresh(
+            "DEFAULT",
+            profile_table_group_ids=["tg-2"],
+            test_table_group_ids=["tg-1", "tg-3"],
+            refresh_date=None,
+        )
+
+    assert [queries.args[0] for queries in execute_rollup_queries.call_args_list] == [
+        ["tg-2 profiling"], ["tg-1 test"], ["tg-3 test"],
+    ]
+    session.rollback.assert_called_once()
+    refresh.assert_called_once()
+
+
 def test_inline_score_update_rolls_up_the_run_and_refreshes_its_table_group(session):
     table_group_id, started = uuid4(), datetime(2026, 10, 1, 12, 0)
     session.execute.return_value.first.return_value = MagicMock(

@@ -35,7 +35,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    This test runs a query you write and checks the single value it returns against a minimum, a maximum, or both. Use it for any metric that can be computed by a query, such as the number of orders awaiting shipment or the hours since the last load, when the acceptable range is known in advance. The query must return exactly one row with one numeric column. A query that returns more than one row or column, a value that is not numeric, or no value at all ends the test with an error rather than a failure, because it does not produce a metric to check. The query runs separately from other tests, so its performance depends largely on how efficiently it is written.
+    This test runs a query you write and checks the single value it returns against a minimum, a maximum, or both. Use it for any metric that can be computed by a query, such as the number of orders awaiting shipment or the hours since the last load, when the acceptable range is known in advance. The query must return exactly one row with one numeric column. A query that returns more than one row or column, a value that is not numeric, or no value at all ends the test with the Error status rather than Failed, because it does not produce a metric to check. The query runs separately from other tests, so its performance depends largely on how efficiently it is written.
   active: Y
   ai_redact_values: true
   algorithm: Custom SQL

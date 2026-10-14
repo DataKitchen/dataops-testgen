@@ -23,9 +23,9 @@ test_types:
               FROM JSONB_ARRAY_ELEMENTS(COALESCE(frequent_values -> 'values', '[]'::JSONB))
                    WITH ORDINALITY AS t(entry, rank)) || ')',0
   default_parm_prompts: |-
-    List of Expected Values,Threshold Error Count
+    List of Expected Values,Threshold Failure Count
   default_parm_help: |-
-    List of values expected, in form ('Val1','Val2')|The number of errors that are acceptable before test fails.
+    List of values expected, in form ('Val1','Val2')|The number of failing records that are acceptable before the test fails.
   default_parm_required: Y,N
   default_severity: Fail
   run_type: CAT

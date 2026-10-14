@@ -12,7 +12,7 @@ from sqlalchemy import and_, asc, case, desc, func, or_, tuple_
 
 from testgen.common import date_service
 from testgen.common.custom_test_validation import validate_custom_query, validate_metric_query
-from testgen.common.database.database_service import get_flavor_service
+from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
     table_group_qualifies_table_refs,
@@ -1383,7 +1383,7 @@ def validate_test(test_definition: dict, table_group: TableGroupMinimal) -> None
     connection = get_connection(table_group.connection_id)
 
     if test_definition["test_type"] == "Condition_Flag":
-        condition = test_definition["custom_query"]
+        condition = replace_params(test_definition["custom_query"], {"DATA_SCHEMA": schema})
         flavor_service = get_flavor_service(connection.sql_flavor)
         concat_operator = flavor_service.concat_operator
         table_ref = flavor_service.get_table_ref(schema, table_name, connection.sql_flavor_code)

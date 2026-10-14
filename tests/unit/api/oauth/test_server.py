@@ -19,6 +19,7 @@ from testgen import settings
 from testgen.api.deps import db_session
 from testgen.api.oauth import routes
 from testgen.api.oauth.server import (
+    REFRESH_REUSE_GRACE_SECONDS,
     AuthorizationCodeGrant,
     RefreshTokenGrant,
     S256CodeChallenge,
@@ -165,7 +166,7 @@ def test_refresh_token_replay_from_public_client_revokes_its_chain(mock_get_sess
     mock_session = MagicMock()
     mock_get_session.return_value = mock_session
     mock_session.execute.return_value.rowcount = 1
-    token = _stored_token(refresh_revoked_at=int(time.time()) - 60)
+    token = _stored_token(refresh_revoked_at=int(time.time()) - REFRESH_REUSE_GRACE_SECONDS - 1)
     mock_session.scalars.return_value.first.return_value = token
     grant = _refresh_grant("pub", OAuth2ClientAuthMethod.NONE)
 
@@ -193,9 +194,10 @@ def test_refresh_token_replay_from_public_client_revokes_its_chain(mock_get_sess
 @pytest.mark.parametrize(
     ("auth_method", "request_client_id", "refresh_revoked_at"),
     [
-        pytest.param(OAuth2ClientAuthMethod.CLIENT_SECRET_BASIC, "pub", 1, id="confidential-client"),
-        pytest.param(OAuth2ClientAuthMethod.NONE, "other", 1, id="other-client"),
-        pytest.param(OAuth2ClientAuthMethod.NONE, "pub", 0, id="expired-not-revoked"),
+        pytest.param(OAuth2ClientAuthMethod.CLIENT_SECRET_BASIC, "pub", lambda _: 1, id="confidential-client"),
+        pytest.param(OAuth2ClientAuthMethod.NONE, "other", lambda _: 1, id="other-client"),
+        pytest.param(OAuth2ClientAuthMethod.NONE, "pub", lambda _: 0, id="expired-not-revoked"),
+        pytest.param(OAuth2ClientAuthMethod.NONE, "pub", lambda now: now - 5, id="rotated-within-grace"),
     ],
 )
 @patch("testgen.api.oauth.server.get_current_session")
@@ -204,7 +206,7 @@ def test_refresh_token_rejection_leaves_chain_alone(
 ):
     mock_session = MagicMock()
     mock_get_session.return_value = mock_session
-    token = _stored_token(refresh_revoked_at=refresh_revoked_at)
+    token = _stored_token(refresh_revoked_at=refresh_revoked_at(int(time.time())))
     token.refresh_token_chain_issued_at = int(time.time()) - settings.REFRESH_TOKEN_EXPIRES_IN - 60
     mock_session.scalars.return_value.first.return_value = token
     grant = _refresh_grant(request_client_id, auth_method)

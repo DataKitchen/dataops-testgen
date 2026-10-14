@@ -5,11 +5,15 @@ import platform
 import threading
 import urllib.parse
 
+import anyio
 from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from sqlalchemy.orm import Session as SQLAlchemySession
 
 from testgen import settings
+
+POOL_SIZE = 5
+POOL_MAX_OVERFLOW = 10
 
 engine = create_engine(
     url=(
@@ -17,6 +21,8 @@ engine = create_engine(
         f"@{settings.DATABASE_HOST}:{settings.DATABASE_PORT}/{settings.DATABASE_NAME}"
     ),
     echo=False,
+    pool_size=POOL_SIZE,
+    max_overflow=POOL_MAX_OVERFLOW,
     connect_args={
         "application_name": platform.node(),
         # TimeZone=UTC so TIMESTAMP (no-tz) columns store aware UTC datetimes as-is.
@@ -26,6 +32,14 @@ engine = create_engine(
         **settings.DATABASE_SSL_CONNECT_ARGS,
     },
 )
+
+
+@functools.cache
+def session_limiter() -> anyio.CapacityLimiter:
+    """Process-wide limit on the async requests that hold a database session at once, sized to the pool."""
+    # Built on first use, because a limiter can only be created inside a running event loop.
+    return anyio.CapacityLimiter(POOL_SIZE + POOL_MAX_OVERFLOW)
+
 
 class Base(DeclarativeBase):
     # Allow legacy Column() + type-hint patterns without Mapped[].

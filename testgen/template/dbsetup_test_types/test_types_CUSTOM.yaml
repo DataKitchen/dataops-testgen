@@ -4,12 +4,12 @@ test_types:
   test_name_short: Custom Test
   test_name_long: Custom-defined business rule
   test_description: |-
-    Custom SQL Query Test. A highly flexible business-rule test covering any error state that can be expressed by a SQL query against one or more tables in the database.
+    Custom SQL Query Test. A highly flexible business-rule test covering any rule that can be checked by a SQL query against one or more tables in the database.
   except_message: |-
-    Errors were detected according to test definition.
-  measure_uom: Errors found
+    Records failed the test definition.
+  measure_uom: Failing records
   measure_uom_description: |-
-    Count of errors identified by query
+    Count of failing records returned by the query
   selection_criteria: null
   generation_template: null
   dq_score_prevalence_formula: |-
@@ -22,9 +22,9 @@ test_types:
   default_parm_columns: custom_query,match_column_names,skip_errors
   default_parm_values: null
   default_parm_prompts: |-
-    Custom SQL Query Returning Error Records,PII Redactable Columns,Threshold Error Count
+    Custom SQL Query Returning Failing Records,PII Redactable Columns,Threshold Failure Count
   default_parm_help: |-
-    Query should return records indicating one or more errors. The test passes if no records are returned. Results of the query will be shown when you click `Review Source Data` for a failed test, so be sure to include enough data in your results to follow-up. A query can refer to any tables in the database. You must hard-code the schema or use `{DATA_SCHEMA}` to represent the schema defined for the Table Group.|Comma-separated list of result column names that contain PII data and should be redacted for users without PII viewing permissions. Leave blank if no columns need redacting.|The number of error records the query can return before the test fails.
+    Query should return the records that fail the test. The test passes if no records are returned. Results of the query will be shown when you click `Review Source Data` for a failed test, so be sure to include enough data in your results to follow-up. A query can refer to any tables in the database. You must hard-code the schema or use `{DATA_SCHEMA}` to represent the schema defined for the Table Group.|Comma-separated list of result column names that contain PII data and should be redacted for users without PII viewing permissions. Leave blank if no columns need redacting.|The number of failing records the query can return before the test fails.
   default_parm_required: Y,N,N
   default_severity: Fail
   run_type: QUERY
@@ -33,11 +33,11 @@ test_types:
   impact_dimension: Conformance
   health_dimension: Data Drift
   threshold_description: |-
-    Expected count of errors found by custom query
+    Expected count of failing records returned by the custom query
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    This business-rule test is highly flexible, covering any error state that can be expressed by a SQL query against one or more tables in the database. In operation, the user-defined query is embedded within a parent query returning the count of error rows identified. Any row returned by the query is interpreted as a single error condition in the test. Note that this query is run independently of other tests, and that performance will be slower, depending in large part on the efficiency of the query you write. Interpretation is based on the user-defined meaning of the test. Your query might be written to return errors in individual rows identified by joining tables. Or it might return an error based on a multi-column aggregate condition returning a single row if an error is found. This query is run separately when you click `Review Source Data` from Test Results, so be sure to include enough data in your results to follow-up.
+    This business-rule test is highly flexible, covering any rule that can be checked by a SQL query against one or more tables in the database. In operation, the user-defined query is embedded within a parent query returning the count of failing records identified. Any row returned by the query is interpreted as a single failing record in the test. Note that this query is run independently of other tests, and that performance will be slower, depending in large part on the efficiency of the query you write. Interpretation is based on the user-defined meaning of the test. Your query might be written to return failing records in individual rows identified by joining tables. Or it might return a failing row based on a multi-column aggregate condition, returning a single row if the condition fails. This query is run separately when you click `Review Source Data` from Test Results, so be sure to include enough data in your results to follow-up.
   active: Y
   ai_redact_values: true
   algorithm: Custom SQL
@@ -65,20 +65,7 @@ test_types:
           'Skip_Errors={SKIP_ERRORS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-                            CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                                   )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Failing records: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
         FROM (
               {CUSTOM_QUERY}
@@ -104,20 +91,7 @@ test_types:
           'Skip_Errors={SKIP_ERRORS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-                            CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                                   )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Failing records: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
         FROM (
               {CUSTOM_QUERY}
@@ -143,20 +117,7 @@ test_types:
           'Skip_Errors={SKIP_ERRORS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-                            CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                                   )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Failing records: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
         FROM (
               {CUSTOM_QUERY}
@@ -182,20 +143,7 @@ test_types:
           'Skip_Errors={SKIP_ERRORS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-                            CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                                   )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Failing records: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
         FROM (
               {CUSTOM_QUERY}
@@ -221,20 +169,7 @@ test_types:
           'Skip_Errors={SKIP_ERRORS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-                            CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                                   )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Failing records: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
         FROM (
               {CUSTOM_QUERY}
@@ -260,20 +195,7 @@ test_types:
           'Skip_Errors={SKIP_ERRORS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-                            CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                                   )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Failing records: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
         FROM (
               {CUSTOM_QUERY}
@@ -299,20 +221,7 @@ test_types:
           'Skip_Errors={SKIP_ERRORS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-                            CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                                   )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Failing records: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
         FROM (
               {CUSTOM_QUERY}
@@ -338,15 +247,7 @@ test_types:
           'Skip_Errors={SKIP_ERRORS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CAST(COUNT(*) AS {VARCHAR_TYPE}) || ' error(s) identified, ' ||
-                     CASE
-                       WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                       ELSE 'within limit of '
-                     END || '{SKIP_ERRORS}.'
-              ELSE 'No errors found.'
-             END AS result_message,
+             'Failing records: ' || CAST(COUNT(*) AS {VARCHAR_TYPE}) || ', Threshold: {SKIP_ERRORS}' AS result_message,
              COUNT(*) as result_measure
         FROM (
               {CUSTOM_QUERY}
@@ -372,15 +273,7 @@ test_types:
           'Skip_Errors={SKIP_ERRORS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CAST(COUNT(*) AS {VARCHAR_TYPE}) || ' error(s) identified, ' ||
-                     CASE
-                       WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                       ELSE 'within limit of '
-                     END || '{SKIP_ERRORS}.'
-              ELSE 'No errors found.'
-             END AS result_message,
+             'Failing records: ' || CAST(COUNT(*) AS {VARCHAR_TYPE}) || ', Threshold: {SKIP_ERRORS}' AS result_message,
              COUNT(*) as result_measure
         FROM (
               {CUSTOM_QUERY}
@@ -406,20 +299,7 @@ test_types:
           'Skip_Errors={SKIP_ERRORS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-                            CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                                   )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Failing records: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
         FROM (
               {CUSTOM_QUERY}
@@ -445,20 +325,7 @@ test_types:
           'Skip_Errors={SKIP_ERRORS}' as input_parameters,
              NULL as result_signal,
           CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
-             CASE
-              WHEN COUNT(*) > 0 THEN
-                     CONCAT(
-                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
-                            CONCAT(
-                                   CASE
-                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
-                                                                              ELSE 'within limit of '
-                                   END,
-                                   '{SKIP_ERRORS}.'
-                                   )
-                            )
-              ELSE 'No errors found.'
-             END AS result_message,
+             CONCAT(CONCAT('Failing records: ', CAST(COUNT(*) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COUNT(*) as result_measure
         FROM (
               {CUSTOM_QUERY}

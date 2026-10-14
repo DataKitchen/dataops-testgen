@@ -7,7 +7,7 @@ import queue
 import re
 import threading
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from contextlib import suppress
+from contextlib import nullcontext, suppress
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generic, Literal, NotRequired, TypedDict, TypeVar, cast
 from urllib.parse import quote_plus
@@ -68,6 +68,8 @@ class TargetDbParams:
 # Initialize variables global to this script
 target_db_params: TargetDbParams | None = None
 engine_cache = EngineCache()
+# Serializes creating the cached app-db engine, so threads that need it first do not each build one.
+_app_db_engine_lock = threading.Lock()
 
 
 def quote_csv_items(csv_row: str, quote_character: str = '"') -> str:
@@ -528,40 +530,41 @@ def _init_app_db_connection(
     is_admin = user_type == "database_admin" or user_type == "schema_admin"
 
     engine = None
-    if user_type == "normal":
-        engine = engine_cache.app_db
+    with _app_db_engine_lock if user_type == "normal" else nullcontext():
+        if user_type == "normal":
+            engine = engine_cache.app_db
 
-    if not engine:
-        if is_standalone_mode():
-            connection_string = get_standalone_connection_string(database_name)
-        else:
-            user = user_override if is_admin else get_tg_username()
-            password = password_override if (is_admin or password_override is not None) else get_tg_password()
+        if not engine:
+            if is_standalone_mode():
+                connection_string = get_standalone_connection_string(database_name)
+            else:
+                user = user_override if is_admin else get_tg_username()
+                password = password_override if (is_admin or password_override is not None) else get_tg_password()
 
-            # STANDARD FORMAT: flavor://username:password@host:port/database
-            connection_string = (
-                f"postgresql://{user}:{quote_plus(password)}@{get_tg_host()}:{get_tg_port()}/{database_name}"
-            )
-        try:
-            engine: Engine = create_engine(
-                connection_string,
-                connect_args={
-                    "connect_timeout": 3600,
-                    # Force UTC so TIMESTAMP-without-tz inserts aren't silently shifted.
-                    "options": "-c TimeZone=UTC",
-                    **settings.DATABASE_SSL_CONNECT_ARGS,
-                },
-                # Admin operations (schema_admin / database_admin) are one-shot.
-                # NullPool closes the connection on `.close()` instead of parking
-                # it in a pool we never dispose — avoids leaking idle PG
-                # connections across a long CLI run.
-                poolclass=None if user_type == "normal" else NullPool,
-            )
-            if user_type == "normal":
-                engine_cache.app_db = engine
+                # STANDARD FORMAT: flavor://username:password@host:port/database
+                connection_string = (
+                    f"postgresql://{user}:{quote_plus(password)}@{get_tg_host()}:{get_tg_port()}/{database_name}"
+                )
+            try:
+                engine: Engine = create_engine(
+                    connection_string,
+                    connect_args={
+                        "connect_timeout": 3600,
+                        # Force UTC so TIMESTAMP-without-tz inserts aren't silently shifted.
+                        "options": "-c TimeZone=UTC",
+                        **settings.DATABASE_SSL_CONNECT_ARGS,
+                    },
+                    # Admin operations (schema_admin / database_admin) are one-shot.
+                    # NullPool closes the connection on `.close()` instead of parking
+                    # it in a pool we never dispose — avoids leaking idle PG
+                    # connections across a long CLI run.
+                    poolclass=None if user_type == "normal" else NullPool,
+                )
+                if user_type == "normal":
+                    engine_cache.app_db = engine
 
-        except SQLAlchemyError as e:
-            raise ValueError(f"Failed to create engine for App database '{database_name}' (User type = {user_type})") from e
+            except SQLAlchemyError as e:
+                raise ValueError(f"Failed to create engine for App database '{database_name}' (User type = {user_type})") from e
 
     try:
         schema_name = "public" if is_admin else get_tg_schema()

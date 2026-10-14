@@ -92,8 +92,8 @@ const PARAMETER_CONFIG = {
     custom_query: { type: 'textarea' },
     lower_tolerance: { type: 'number' },
     upper_tolerance: { type: 'number' },
-    threshold_value: { placeholder: 'Defaults to 0 (any error fails)' },
-    skip_errors: { type: 'number', step: 1, placeholder: 'Defaults to 0 (any error fails)' },
+    threshold_value: { placeholder: 'Defaults to 0' },
+    skip_errors: { type: 'number', step: 1, placeholder: 'Defaults to 0 (any failing record fails the test)' },
     subset_condition: { placeholder: 'No filter — applies to all rows' },
 };
 

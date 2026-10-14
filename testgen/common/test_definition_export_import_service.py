@@ -417,11 +417,13 @@ def import_definitions(
             )
             continue
 
-        if not _is_profiled(td_import, profiled_tables):
+        table_name = _value_as_saved(td_import, target, "table_name")
+        column_name = _value_as_saved(td_import, target, "column_name")
+        if table_name is not None and table_name not in profiled_tables:
             actions.append(_PlannedAction(ImportAction.skip, ImportReason.invalid_table, idx, td_import, target))
             continue
 
-        if not _is_column_profiled(td_import, test_types[td_import.test_type], profiled_columns):
+        if not _is_column_profiled(table_name, column_name, test_types[td_import.test_type], profiled_columns):
             actions.append(_PlannedAction(ImportAction.skip, ImportReason.invalid_column, idx, td_import, target))
             continue
 
@@ -481,21 +483,14 @@ def _load_test_types() -> dict[str, TestType]:
     return {tt.test_type: tt for tt in session.scalars(select(TestType).where(TestType.active == "Y")).all()}
 
 
-def _is_profiled(td_import: TestDefinitionExport, profiled_tables: set[str]) -> bool:
-    """Check that the TD's table exists in profiled data."""
-    if td_import.table_name is None:
-        return True
-    return td_import.table_name in profiled_tables
-
-
 def _is_column_profiled(
-    td_import: TestDefinitionExport, test_type: TestType, profiled_columns: set[tuple[str, str]]
+    table_name: str | None, column_name: str | None, test_type: TestType, profiled_columns: set[tuple[str, str]]
 ) -> bool:
-    """Check that the TD's column exists in profiled data. Only column-scope test types are validated:
+    """Check that the column exists in profiled data. Only column-scope test types are validated:
     the other scopes can hold an expression (e.g. SUM(col)) rather than a physical column name."""
-    if test_type.test_scope != TestScope.COLUMN or not td_import.table_name or not td_import.column_name:
+    if test_type.test_scope != TestScope.COLUMN or not table_name or not column_name:
         return True
-    return (td_import.table_name, td_import.column_name) in profiled_columns
+    return (table_name, column_name) in profiled_columns
 
 
 def _check_duplicate_keys(incoming: list[TestDefinitionExport]) -> None:

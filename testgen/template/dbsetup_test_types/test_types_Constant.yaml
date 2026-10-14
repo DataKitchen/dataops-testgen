@@ -20,9 +20,9 @@ test_types:
   default_parm_columns: baseline_value,threshold_value
   default_parm_values: null
   default_parm_prompts: |-
-    Constant Value at Baseline,Threshold Error Count
+    Constant Value at Baseline,Threshold Failure Count
   default_parm_help: |-
-    The single, unchanging value of the column, per baseline|The number of errors that are acceptable before test fails.
+    The single, unchanging value of the column, per baseline|The number of failing records that are acceptable before the test fails.
   default_parm_required: Y,N
   default_severity: Fail
   run_type: CAT

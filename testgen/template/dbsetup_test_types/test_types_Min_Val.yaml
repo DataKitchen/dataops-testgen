@@ -21,7 +21,7 @@ test_types:
   default_parm_values: |-
     min_value,0
   default_parm_prompts: |-
-    Minimum Value at Baseline,Threshold Error Count
+    Minimum Value at Baseline,Threshold Failure Count
   default_parm_help: null
   default_parm_required: Y,N
   default_severity: Fail

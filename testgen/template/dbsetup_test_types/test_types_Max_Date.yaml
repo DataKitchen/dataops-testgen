@@ -19,7 +19,7 @@ test_types:
   default_parm_columns: baseline_value,threshold_value
   default_parm_values: null
   default_parm_prompts: |-
-    Maximum Date at Baseline,Threshold Error Count
+    Maximum Date at Baseline,Threshold Failure Count
   default_parm_help: |-
     The latest date allowed. The comparison is exact, so on a timestamp column a date entered without a time means midnight at the start of that day, and later times on that day count as after it.|The number of dates after the maximum that the test allows.
   default_parm_required: Y,N

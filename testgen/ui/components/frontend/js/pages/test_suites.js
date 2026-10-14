@@ -237,7 +237,7 @@ const TestSuites = (/** @type Properties */ props) => {
                             { class: 'flex-row fx-justify-space-between fx-flex-align-content' },
                             div(
                                 { class: 'flex-column' },
-                                Link({ emit, 
+                                Link({ emit,
                                     href: 'test-suites:definitions',
                                     params: { test_suite_id: testSuite.id, project_code: projectSummary.project_code },
                                     label: `View ${testSuite.test_ct ?? 0} test definitions`,
@@ -587,6 +587,8 @@ const TestSuites = (/** @type Properties */ props) => {
                         selected_generation_sets: info.selected_generation_sets ?? [],
                         generation_set_test_types: info.generation_set_test_types ?? {},
                         overriding_test_types: info.overriding_test_types ?? {},
+                        value_hash_test_types: info.value_hash_test_types ?? [],
+                        value_hash_warning: info.value_hash_warning,
                         refresh_warning: _dialogProps.refresh_warning,
                         lock_result: _dialogProps.lock_result,
                         result: _dialogProps.result,
@@ -694,7 +696,7 @@ const ConditionalEmptyState = (
         };
     }
 
-    return EmptyState({ emit, 
+    return EmptyState({ emit,
         icon: 'rule',
         label: 'No test suites yet',
         ...args,

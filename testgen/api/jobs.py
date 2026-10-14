@@ -93,6 +93,11 @@ def submit_test_generation(
 
     Generates from the test suite's stored generation sets when none are given,
     falling back to Standard.
+
+    The value hash test types (Match Text, Numeric and Date Hash, their Keyed variants, and Match
+    Epoch Sum, in the Table Comparison set) are generated only from a profiling run that computed
+    value hashes. That needs ``profile_table_comparison`` on the table group and a profiling run
+    since it was turned on; otherwise they are not generated.
     """
     try:
         generation_sets = resolve_generation_sets(test_suite, body.generation_sets if body else None)

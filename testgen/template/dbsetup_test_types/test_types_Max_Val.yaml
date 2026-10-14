@@ -19,7 +19,7 @@ test_types:
   default_parm_columns: baseline_value,threshold_value
   default_parm_values: null
   default_parm_prompts: |-
-    Maximum Value at Baseline,Threshold Error Count
+    Maximum Value at Baseline,Threshold Failure Count
   default_parm_help: null
   default_parm_required: Y,N
   default_severity: Fail

@@ -21,7 +21,9 @@ from sqlalchemy import (
     case,
     delete,
     desc,
+    exists,
     func,
+    or_,
     select,
 )
 from sqlalchemy.dialects import postgresql
@@ -384,6 +386,20 @@ class ProfileResult(Entity):
         for a column that has since gone would otherwise outlive the column."""
         result = get_current_session().execute(delete(cls).where(cls.profile_run_id == profile_run_id))
         return result.rowcount or 0
+
+    @classmethod
+    def has_value_hashes(cls, profile_run_id: UUID) -> bool:
+        """Whether a profiling run computed value hashes for any column."""
+        return bool(
+            get_current_session().scalar(
+                select(
+                    exists().where(
+                        cls.profile_run_id == profile_run_id,
+                        or_(cls.multiset_hash.is_not(None), cls.epoch_sum.is_not(None)),
+                    )
+                )
+            )
+        )
 
     @classmethod
     def list_keyed_hash_columns(cls, profile_run_id: UUID) -> dict[str, tuple[str, list[str]]]:

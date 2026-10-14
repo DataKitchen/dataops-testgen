@@ -8,6 +8,7 @@ import testgen
 from testgen.commands.queries.execute_tests_query import TestExecutionSQL
 from testgen.common.models.profile_result import MeasureAcquisition, ProfileResult
 from testgen.common.models.test_definition import StatisticalTechnique, TestAlgorithm
+from testgen.common.value_hash import VALUE_HASH_TEST_TYPES
 
 YAML_DIR = Path(testgen.__file__).parent / "template" / "dbsetup_test_types"
 
@@ -95,7 +96,7 @@ def test_templates_sharing_a_result_header_agree_on_their_columns():
 
 @pytest.mark.unit
 def test_test_types_comparing_to_skip_errors_declare_it_as_a_parameter():
-    """The form offers Threshold Error Count only through default_parm_columns, so a test type
+    """The form offers Threshold Failure Count only through default_parm_columns, so a test type
     whose templates compare a result to {SKIP_ERRORS} must declare it, and one that never does
     must not offer it."""
     for filename, tt in _test_type_docs():
@@ -162,9 +163,19 @@ def test_column_general_types_include_every_general_type_generation_selects():
 @pytest.mark.unit
 def test_value_hash_types_redact_their_measures():
     # An epoch sum carries the column's dates, and a hash sum of few values can be matched by hashing guesses.
-    value_hash_types = {
-        "Match_Hash_Text", "Match_Hash_Num", "Match_Hash_Date", "Match_Epoch_Sum",
-        "Match_Keyed_Hash_Text", "Match_Keyed_Hash_Num", "Match_Keyed_Hash_Date",
+    found = {
+        tt["test_type"]: tt.get("ai_redact_values")
+        for _, tt in _test_type_docs()
+        if tt["test_type"] in VALUE_HASH_TEST_TYPES
     }
-    found = {tt["test_type"]: tt.get("ai_redact_values") for _, tt in _test_type_docs() if tt["test_type"] in value_hash_types}
-    assert found == dict.fromkeys(value_hash_types, True)
+    assert found == dict.fromkeys(VALUE_HASH_TEST_TYPES, True)
+
+
+@pytest.mark.unit
+def test_value_hash_types_are_the_types_generated_from_value_hashes():
+    generated_from_hashes = {
+        tt["test_type"]
+        for _, tt in _test_type_docs()
+        if re.search(r"\b(multiset_hash|epoch_sum|keyed_hash)\b", tt.get("selection_criteria") or "")
+    }
+    assert generated_from_hashes == VALUE_HASH_TEST_TYPES

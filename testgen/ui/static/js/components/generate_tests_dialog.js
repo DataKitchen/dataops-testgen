@@ -20,6 +20,8 @@
  * @property {Object.<string, string[]>} generation_set_test_types
  * @property {Object.<string, string[]>} overriding_test_types
  * @property {RefreshWarning?} refresh_warning
+ * @property {string[]} value_hash_test_types
+ * @property {string?} value_hash_warning
  * @property {string?} lock_result
  * @property {Result?} result
  * @property {Function?} onClose
@@ -57,6 +59,8 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
     const storedSets = getValue(props.selected_generation_sets) ?? [];
     const setMembers = getValue(props.generation_set_test_types) ?? {};
     const overridingTypes = getValue(props.overriding_test_types) ?? {};
+    const valueHashTypes = new Set(getValue(props.value_hash_test_types) ?? []);
+    const valueHashWarning = getValue(props.value_hash_warning);
     const selectedSets = van.state(storedSets.filter((s) => generationSets.includes(s)));
     const submitDisabled = van.derive(() => selectedSets.val.length === 0);
 
@@ -71,6 +75,9 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                 options: generationSets.map(s => ({ value: s, label: s })),
                 portalClass: 'generate-tests--select',
             })
+            : '',
+        () => valueHashWarning && selectedSets.val.some(s => (setMembers[s] ?? []).some(t => valueHashTypes.has(t)))
+            ? Alert({ type: 'warn' }, span(valueHashWarning))
             : '',
         () => {
             const warning = getValue(props.refresh_warning);

@@ -1040,6 +1040,34 @@ class Test_import_partial_update_validation:
 
         assert _reasons(result, ImportAction.skip) == set()
 
+    @pytest.mark.parametrize(
+        ("existing_table", "catalog", "reason"),
+        [
+            pytest.param("t1", {("t1", "c1")}, ImportReason.invalid_column, id="unknown_column_on_stored_table"),
+            pytest.param("t9", {("t9", "c2")}, ImportReason.invalid_table, id="stored_table_not_in_catalog"),
+        ],
+    )
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_an_omitted_table_is_checked_against_the_catalog_as_stored(
+        self, mock_session_fn, mock_tg_cls, mock_dt_cls, column_catalog, existing_table, catalog, reason
+    ):
+        column_catalog.select_column_names.return_value = catalog
+        external_id = uuid4()
+        existing = _make_existing_row(
+            test_type="Thresholded",
+            table_name=existing_table,
+            last_auto_gen_date=None,
+            external_id=external_id,
+            threshold_value="5",
+        )
+        td = TestDefinitionExport(test_type="Thresholded", external_id=external_id, column_name="c2")
+
+        result = self._import(mock_session_fn, mock_tg_cls, mock_dt_cls, existing, td, self.THRESHOLDED)
+
+        assert _reasons(result, ImportAction.skip) == {reason}
+
 
 class Test_import_strict_mode:
 
