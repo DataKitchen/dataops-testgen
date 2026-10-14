@@ -14,7 +14,7 @@ from testgen.common.contract_service import InvalidContractDocumentError
 from testgen.common.enums import JobStatus
 from testgen.common.models.suite_version import SuiteVersion, SuiteVersionListItem
 from testgen.common.odcs.render import OrphanedTermError
-from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, UnmappedFlavorError
+from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 from testgen.mcp.tools.contracts import (
@@ -181,10 +181,9 @@ def test_a_document_that_validates_reports_no_problems(db_session_mock):
     "error",
     [
         OrphanedTermError("term names a table this document does not declare"),
-        UnmappedFlavorError("no server type for flavor"),
         ValueError("test type is excluded from contract rendering"),
     ],
-    ids=["orphaned-term", "unmapped-flavor", "excluded-type"],
+    ids=["orphaned-term", "excluded-type"],
 )
 def test_a_render_failure_reaches_the_caller_as_a_user_error(error, db_session_mock):
     with patch("testgen.common.odcs.render.render_document", side_effect=error):

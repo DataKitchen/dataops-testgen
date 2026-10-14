@@ -368,7 +368,7 @@ def import_definitions(
             ImportErrorCode.unsupported_version,
             f"Unsupported export document version {payload.version}; supported version: {EXPORT_FORMAT_VERSION}",
         )
-    _check_duplicate_keys(incoming)
+    _check_duplicate_keys(incoming, test_types)
 
     # --- Phase 2: Matching ---
     session = get_current_session()
@@ -482,6 +482,11 @@ class _PlannedAction:
     target: Any  # Row (re-pointed at the writable version), TestDefinition after create flush, or None
 
 
+def _test_type_name(test_types: dict[str, TestType], code: str) -> str:
+    test_type = test_types.get(code)
+    return (test_type.test_name_short if test_type else None) or code
+
+
 def _load_test_types() -> dict[str, TestType]:
     session = get_current_session()
     return {tt.test_type: tt for tt in session.scalars(select(TestType).where(TestType.active == "Y")).all()}
@@ -497,7 +502,7 @@ def _is_column_profiled(
     return (table_name, column_name) in profiled_columns
 
 
-def _check_duplicate_keys(incoming: list[TestDefinitionExport]) -> None:
+def _check_duplicate_keys(incoming: list[TestDefinitionExport], test_types: dict[str, TestType]) -> None:
     auto_keys: set[tuple[str, str | None, str | None]] = set()
     manual_keys: set[UUID] = set()
 
@@ -507,7 +512,8 @@ def _check_duplicate_keys(incoming: list[TestDefinitionExport]) -> None:
             if key in auto_keys:
                 raise InvalidImportPayload(
                     ImportErrorCode.duplicate_natural_key,
-                    f"Duplicate auto-gen key at index {idx}: ({td.test_type}, {td.table_name}, {td.column_name})",
+                    f"Duplicate auto-gen key at index {idx}: "
+                    f"({_test_type_name(test_types, td.test_type)}, {td.table_name}, {td.column_name})",
                 )
             auto_keys.add(key)
         else:

@@ -16,7 +16,7 @@ from testgen.common.flavors import SqlFlavorCode
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.odcs import render, serialize
-from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND
+from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, CustomServerReason, ServerBlock, ServerType
 from testgen.common.odcs.validation import validate_document
 from tests.unit.sql_assertions import equality_conjunct
 
@@ -187,12 +187,12 @@ def test_the_validators_own_messages_reach_the_caller():
 
 
 def test_freezing_a_document_declaring_an_unbundled_api_version_is_refused_not_crashed():
-    """The standard allows eight api versions and we bundle one, so a document may legally
+    """The standard allows eight api versions and we bundle those from v3.1.0 on, so a document may legally
     declare a version we have no schema for. That is a document we cannot check, and the
     caller is documented to receive InvalidContractDocumentError for exactly that."""
     suite = _suite()
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
-    document = {"version": "1.0.0", "apiVersion": "v3.1.0", "kind": ODCS_KIND, "id": "c1"}
+    document = {"version": "1.0.0", "apiVersion": "v3.0.2", "kind": ODCS_KIND, "id": "c1"}
     with (
         patch.object(SuiteVersion, "draft_for", return_value=draft),
         patch.object(contract_service.render, "render_document", return_value=document),
@@ -201,7 +201,7 @@ def test_freezing_a_document_declaring_an_unbundled_api_version_is_refused_not_c
         with pytest.raises(contract_service.InvalidContractDocumentError) as excinfo:
             contract_service.freeze_version(suite)
 
-    assert any("v3.1.0" in problem for problem in excinfo.value.problems)
+    assert any("v3.0.2" in problem for problem in excinfo.value.problems)
 
 
 def test_exporting_checks_the_document_against_the_version_it_declares():
@@ -211,12 +211,12 @@ def test_exporting_checks_the_document_against_the_version_it_declares():
     suite = _suite()
     version = SuiteVersion(
         id=uuid4(), test_suite_id=suite.id, version=1, odcs_api_version=ODCS_API_VERSION,
-        frozen_document=f"apiVersion: v3.1.0\nkind: {ODCS_KIND}\nid: c1\nversion: '1.0.0'\n",
+        frozen_document=f"apiVersion: v3.0.2\nkind: {ODCS_KIND}\nid: c1\nversion: '1.0.0'\n",
     )
 
     exported = contract_service.export_version(version)
 
-    assert any("v3.1.0" in problem for problem in exported.problems)
+    assert any("v3.0.2" in problem for problem in exported.problems)
 
 
 def test_discarding_without_a_draft_is_refused():
@@ -349,7 +349,7 @@ def test_initializing_a_contract_creates_a_first_draft_with_the_prefilled_docume
     with (
         patch.object(SuiteVersion, "next_version_for", return_value=1),
         patch("testgen.common.contract_service.get_current_session", return_value=session),
-        patch("testgen.common.contract_service.build_server_block", return_value={"type": "postgres"}),
+        patch("testgen.common.contract_service.build_server_block", return_value=ServerBlock({"type": "postgres"})),
     ):
         contract_service.initialize_contract(suite, table_group=MagicMock(), connection=MagicMock())
 
@@ -360,13 +360,30 @@ def test_initializing_a_contract_creates_a_first_draft_with_the_prefilled_docume
     assert draft.metadata_document["name"] == "Orders contract"
 
 
+def test_initializing_a_contract_returns_why_its_server_entry_is_custom():
+    suite = _suite()
+    reason = CustomServerReason(server_type=ServerType.BIGQUERY, missing_fields=("project",))
+    with (
+        patch.object(SuiteVersion, "next_version_for", return_value=1),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+        patch(
+            "testgen.common.contract_service.build_server_block",
+            return_value=ServerBlock({"server": "bq", "type": "custom"}, reason),
+        ),
+    ):
+        initialized = contract_service.initialize_contract(suite, table_group=MagicMock(), connection=MagicMock())
+
+    assert initialized.custom_server_reason == reason
+    assert initialized.draft.metadata_document["servers"] == [{"server": "bq", "type": "custom"}]
+
+
 def test_initializing_a_contract_records_the_contract_generation_set():
     suite = _suite()
     suite.test_suite = "Orders contract"
     with (
         patch.object(SuiteVersion, "next_version_for", return_value=1),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
-        patch("testgen.common.contract_service.build_server_block", return_value={}),
+        patch("testgen.common.contract_service.build_server_block", return_value=ServerBlock({})),
     ):
         contract_service.initialize_contract(suite, table_group=MagicMock(), connection=MagicMock())
 
@@ -381,7 +398,7 @@ def test_initializing_a_contract_passes_the_connection_and_table_group_to_the_se
     with (
         patch.object(SuiteVersion, "next_version_for", return_value=1),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
-        patch("testgen.common.contract_service.build_server_block", return_value={}) as build,
+        patch("testgen.common.contract_service.build_server_block", return_value=ServerBlock({})) as build,
     ):
         contract_service.initialize_contract(suite, table_group=table_group, connection=connection)
 
@@ -394,7 +411,7 @@ def test_initializing_a_contract_stamps_the_supplied_username():
     with (
         patch.object(SuiteVersion, "next_version_for", return_value=1),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()) as get_session,
-        patch("testgen.common.contract_service.build_server_block", return_value={}),
+        patch("testgen.common.contract_service.build_server_block", return_value=ServerBlock({})),
     ):
         contract_service.initialize_contract(
             suite, table_group=MagicMock(), connection=MagicMock(), username="tester"
@@ -756,7 +773,7 @@ def test_initializing_a_contract_refuses_a_suite_that_keeps_no_versions():
     with (
         patch.object(SuiteVersion, "next_version_for", return_value=1),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
-        patch("testgen.common.contract_service.build_server_block", return_value={}),
+        patch("testgen.common.contract_service.build_server_block", return_value=ServerBlock({})),
     ):
         with pytest.raises(ValueError):
             contract_service.initialize_contract(suite, table_group=MagicMock(), connection=MagicMock())
@@ -769,7 +786,7 @@ def test_the_prefilled_document_carries_every_field_odcs_requires():
     with (
         patch.object(SuiteVersion, "next_version_for", return_value=1),
         patch("testgen.common.contract_service.get_current_session", return_value=session),
-        patch("testgen.common.contract_service.build_server_block", return_value={"type": "postgres"}),
+        patch("testgen.common.contract_service.build_server_block", return_value=ServerBlock({"type": "postgres"})),
     ):
         contract_service.initialize_contract(suite, table_group=MagicMock(), connection=MagicMock())
 
@@ -789,7 +806,7 @@ def test_the_prefilled_document_records_the_api_version_it_was_authored_against(
     with (
         patch.object(SuiteVersion, "next_version_for", return_value=1),
         patch("testgen.common.contract_service.get_current_session", return_value=session),
-        patch("testgen.common.contract_service.build_server_block", return_value={}),
+        patch("testgen.common.contract_service.build_server_block", return_value=ServerBlock({})),
     ):
         contract_service.initialize_contract(suite, table_group=MagicMock(), connection=MagicMock())
 
@@ -803,7 +820,7 @@ def test_the_documents_contract_version_tracks_the_suite_version():
     with (
         patch.object(SuiteVersion, "next_version_for", return_value=4),
         patch("testgen.common.contract_service.get_current_session", return_value=session),
-        patch("testgen.common.contract_service.build_server_block", return_value={}),
+        patch("testgen.common.contract_service.build_server_block", return_value=ServerBlock({})),
     ):
         contract_service.initialize_contract(suite, table_group=MagicMock(), connection=MagicMock())
 
@@ -826,7 +843,7 @@ def test_a_new_contracts_prefilled_document_validates():
     with (
         patch.object(SuiteVersion, "next_version_for", return_value=1),
         patch("testgen.common.contract_service.get_current_session", return_value=session),
-        patch("testgen.common.contract_service.build_server_block", return_value=server_block),
+        patch("testgen.common.contract_service.build_server_block", return_value=ServerBlock(server_block)),
     ):
         contract_service.initialize_contract(suite, table_group=MagicMock(), connection=MagicMock())
 

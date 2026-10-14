@@ -41,7 +41,7 @@ from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition, TestType, slugify_term_id
 from testgen.common.odcs import render, serialize
 from testgen.common.odcs.quality_rules import CatCondition, project_rule
-from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, ServerType
+from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND
 from testgen.common.odcs.validation import validate_document
 from testgen.common.read_file import get_template_files
 
@@ -160,7 +160,7 @@ def _term(test_type: str, table_name: str, column_name: str | None, **overrides)
 
 def _terms() -> list[TestDefinition]:
     return [
-        _term("Required", "orders", "total_amount", threshold_value="0"),
+        _term("Required", "orders", "total_amount", threshold_value="1"),
         _term("Row_Ct", "orders", None, threshold_value="1000"),
         _term("LOV_Match", "orders", "status", baseline_value="('NEW','SHIPPED','CANCELED')", threshold_value="0"),
         _term(
@@ -339,7 +339,7 @@ def test_a_custom_rule_with_an_object_implementation_validates_in_strict_mode():
         except_message="Difference is over the threshold.",
         threshold_description="Standardized Difference Measure",
     )
-    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
     assert isinstance(rule["implementation"], dict)
     document = {
         "version": "1.0.0",
@@ -361,7 +361,7 @@ def test_a_custom_rule_from_a_term_with_no_parameter_values_validates_in_strict_
         test_name_long="Freshness",
         default_parm_columns=None,
     )
-    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
     assert rule["implementation"] == {}
     document = {
         "version": "1.0.0",

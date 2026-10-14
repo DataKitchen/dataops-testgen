@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 from testgen.common.clean_sql import parse_value_list
+from testgen.common.flavors import SqlFlavorCode
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition, TestType
@@ -25,7 +26,7 @@ from testgen.common.odcs.quality_rules import (
     resolve_rule,
 )
 from testgen.common.odcs.render import render_document
-from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, ServerType
+from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND
 from testgen.common.odcs.validation import validate_document
 from testgen.common.read_file import get_template_files
 
@@ -60,7 +61,11 @@ def _test_type(code: str) -> TestType:
     )
 
 
-_METADATA = {"odcs": {"name": "Agreed check", "tags": ["finance"], "businessImpact": "operational"}, "owner": "ops"}
+_METADATA = {
+    "odcs": {"name": "Agreed check", "description": "Agreed with finance.", "tags": ["finance"],
+             "businessImpact": "operational"},
+    "owner": "ops",
+}
 
 # Every routed and declared type, plus the variants that fall back to custom (a tolerant bound, a date Constant,
 # a cleared threshold or baseline) or declare one bound; each term sits on its own column so no two declare the same field.
@@ -156,12 +161,12 @@ def _resolve(document: dict) -> dict[str, ResolvedTerm]:
     resolved: list[ResolvedTerm | None] = []
     for table in document["schema"]:
         resolved += [
-            resolve_rule(rule, RuleScope.TABLE, known, server_type=ServerType.POSTGRES)
+            resolve_rule(rule, RuleScope.TABLE, known, flavor=SqlFlavorCode.POSTGRESQL)
             for rule in table.get("quality", [])
         ]
         for prop in table.get("properties", []):
             resolved += [
-                resolve_rule(rule, RuleScope.COLUMN, known, prop["name"], server_type=ServerType.POSTGRES)
+                resolve_rule(rule, RuleScope.COLUMN, known, prop["name"], flavor=SqlFlavorCode.POSTGRESQL)
                 for rule in prop.get("quality", [])
             ]
             resolved += resolve_declarations(prop, known)
@@ -174,7 +179,11 @@ def _resolve(document: dict) -> dict[str, ResolvedTerm]:
 def _declared_parameters(term: TestDefinition) -> dict:
     """The term's values for the parameters its type declares, as ``test_definitions`` holds them."""
     names = [name.strip() for name in (_CATALOGUE[term.test_type].get("default_parm_columns") or "").split(",")]
-    return {name: getattr(term, name) for name in names if getattr(term, name) not in (None, "")}
+    parameters = {name: getattr(term, name) for name in names if getattr(term, name) not in (None, "")}
+    if term.test_type in DECLARATION_TEST_TYPES and "threshold_value" not in parameters:
+        # A declaration admits no exceptions, which an unset threshold also means, and states it as 0.
+        parameters["threshold_value"] = "0"
+    return parameters
 
 
 def _comparable(test_type: str, name: str, value: object) -> object:
@@ -238,7 +247,7 @@ def test_a_declared_term_keeps_the_metadata_its_rule_would_carry(round_trip):
 
     declared_metadata = resolved[declared.contract_term_id].metadata
     ruled_metadata = resolved[ruled.contract_term_id].metadata
-    for key in ("name", "tags", "businessImpact", "customProperties"):
+    for key in ("name", "description", "tags", "businessImpact", "customProperties"):
         assert declared_metadata[key] == ruled_metadata[key], key
 
 
@@ -315,7 +324,7 @@ def test_a_marked_rule_whose_argument_was_edited_is_declined(code, fields, edit)
     rule = _rendered_rule(code, column="c_constant" if code == "Constant" else "c_rule", **fields)
     edited = {**rule, "arguments": edit}
     assert (
-        resolve_rule(edited, RuleScope.COLUMN, frozenset(_CATALOGUE), "c_rule", server_type=ServerType.POSTGRES)
+        resolve_rule(edited, RuleScope.COLUMN, frozenset(_CATALOGUE), "c_rule", flavor=SqlFlavorCode.POSTGRESQL)
         is None
     )
 
@@ -326,7 +335,7 @@ def test_a_marked_rule_whose_argument_was_edited_is_declined(code, fields, edit)
 def test_a_sql_metric_rule_with_a_bound_its_projection_never_writes_is_declined(bound):
     rule = _rendered_rule("SQL_Metric", column=None, custom_query="SELECT 1", lower_tolerance="1", upper_tolerance="5")
     edited = {key: value for key, value in rule.items() if not key.startswith("must")} | bound
-    assert resolve_rule(edited, RuleScope.TABLE, frozenset(_CATALOGUE), server_type=ServerType.POSTGRES) is None
+    assert resolve_rule(edited, RuleScope.TABLE, frozenset(_CATALOGUE), flavor=SqlFlavorCode.POSTGRESQL) is None
 
 
 def test_an_unquoted_yaml_date_resolves_as_the_date_it_names():
