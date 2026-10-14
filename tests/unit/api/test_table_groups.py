@@ -2,6 +2,7 @@
 
 import re
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -105,6 +106,7 @@ def _table_group(**overrides):
         "transform_level": "Curated",
         "data_product": "Sales Mart",
         "data_classification": "Internal",
+        "file_declarations": None,
     }
     return MagicMock(**{**defaults, **overrides})
 
@@ -932,15 +934,18 @@ UI_STORED = [
 ]
 
 
-@patch(f"{MODULE}.move_table_group_schema")
 @patch("testgen.api.deps.has_project_permission", return_value=True)
 @patch("testgen.api.deps.TableGroup")
-def test_a_declaration_the_ui_stored_reads_back_through_get_and_patch(mock_cls, _perm, mock_move, target_connection):
+def test_a_declaration_the_ui_stored_reads_back_through_get_and_patch(mock_cls, _perm, base_path, target_connection):
     target_connection.sql_flavor_code = "files"
+    target_connection.parameters = {"base_path": str(base_path)}
     mock_cls.get.return_value = _table_group(table_group_schema="main", file_declarations=UI_STORED)
 
     got = _client().get(f"/api/v1/table-groups/{TG_ID}")
-    patched = _client().patch(f"/api/v1/table-groups/{TG_ID}", json={"schema_name": "main"})
+    patched = _patch(
+        {"include_in_dashboard": False},
+        table_group=_table_group(table_group_schema="main", file_declarations=UI_STORED),
+    ).resp
 
     assert got.status_code == 200, got.text
     assert patched.status_code == 200, patched.text
@@ -949,7 +954,6 @@ def test_a_declaration_the_ui_stored_reads_back_through_get_and_patch(mock_cls, 
             ("orders", '""', True),
             ("products", None, None),
         ]
-    mock_move.assert_not_called()
 
 
 def test_create_rejects_a_declaration_name_longer_than_a_table_name_column(base_path):
@@ -1108,6 +1112,9 @@ def test_detail_reports_no_schema_for_a_type_that_has_none(target_connection):
 
 # --- PATCH /table-groups/{id} ---
 
+UPDATE_URL = f"/api/v1/table-groups/{TG_ID}"
+DUPLICATE_NAME = 'duplicate key value violates unique constraint "table_groups_name_unique"'
+
 
 def _move(previous="public", schema="onboard_2026_09_16", missing=None, repointed=3):
     return SchemaMove(
@@ -1118,53 +1125,271 @@ def _move(previous="public", schema="onboard_2026_09_16", missing=None, repointe
     )
 
 
-@patch(f"{RULES_MODULE}.apply_schema_move")
-@patch(f"{MODULE}.move_table_group_schema")
-@patch("testgen.api.deps.has_project_permission", return_value=True)
-@patch("testgen.api.deps.TableGroup")
-def test_update_table_group_moves_the_schema_and_reports_what_moved(
-    mock_cls, _perm, mock_move, mock_apply,
-):
-    """The caller needs the tables the new schema lacks: their tests fail validation on the next test run."""
-    mock_cls.get.return_value = _table_group()
-    mock_move.return_value = _move(missing=["archive"])
+def _patch(body: dict, *, table_group=None, can_view_pii: bool = True, move=None, move_error=None):
+    """PATCH the table group, returning the response and the mocks a test asserts against."""
+    table_group = table_group if table_group is not None else _table_group()
+    with (
+        patch("testgen.api.deps.has_project_permission", return_value=True),
+        patch("testgen.api.deps.TableGroup") as mock_cls,
+        patch(f"{MODULE}.has_project_permission", return_value=can_view_pii) as mock_pii,
+        patch(f"{MODULE}.move_table_group_schema", return_value=move, side_effect=move_error) as mock_move,
+        patch(f"{RULES_MODULE}.apply_schema_move") as mock_apply,
+        patch(f"{MODULE}.get_current_session"),
+    ):
+        mock_cls.get.return_value = table_group
+        resp = _client().patch(UPDATE_URL, json=body)
+    return SimpleNamespace(resp=resp, table_group=table_group, move=mock_move, apply=mock_apply, pii=mock_pii)
 
-    resp = _client().patch(
-        f"/api/v1/table-groups/{TG_ID}", json={"schema_name": "onboard_2026_09_16"}
+
+def test_update_table_group_applies_every_field():
+    tags = {name: f"{name} value" for name in CatalogTags.model_fields}
+    body = {
+        "table_group_name": "sales_v2",
+        "description": "Sales, rebuilt",
+        "table_set": ["orders", "customers"],
+        "include_masks": ["ord%"],
+        "exclude_masks": ["%_bak", "%_tmp"],
+        "profile_id_column_mask": "%_key",
+        "profile_sk_column_mask": "%_skey",
+        "profile_use_sampling": False,
+        "profile_sample_percent": 10,
+        "profile_sample_min_count": 500,
+        "profiling_delay_days": 2,
+        "profile_flag_cdes": False,
+        "profile_flag_pii": False,
+        "profile_exclude_xde": False,
+        "profile_table_comparison": True,
+        "include_in_dashboard": False,
+        "catalog_tags": tags,
+    }
+
+    result = _patch(body)
+
+    assert result.resp.status_code == 200, result.resp.text
+    stored = result.table_group
+    assert stored.table_groups_name == "sales_v2"
+    assert stored.profiling_table_set == "orders,customers"
+    assert stored.profiling_include_mask == "ord%"
+    assert stored.profiling_exclude_mask == "%_bak,%_tmp"
+    stored.save.assert_called_once_with()
+    response = result.resp.json()
+    for name, value in body.items():
+        assert response[name] == value, name
+
+
+def test_update_table_group_leaves_omitted_fields_and_tags_unchanged():
+    result = _patch({"catalog_tags": {"data_source": "ERP"}})
+
+    assert result.resp.status_code == 200, result.resp.text
+    response = result.resp.json()
+    assert response["catalog_tags"]["data_source"] == "ERP"
+    assert response["catalog_tags"]["source_system"] == "Salesforce"
+    assert response["description"] == "Sales tables"
+    assert response["include_masks"] == ["sales_%", "orders_%"]
+    assert response["profile_sample_percent"] == 30
+
+
+def test_update_table_group_clears_fields_sent_empty(catalog_write):
+    result = _patch(
+        {
+            "description": "",
+            "include_masks": [],
+            "exclude_masks": [],
+            "profile_id_column_mask": "",
+            "profile_sk_column_mask": "",
+            "catalog_tags": {"data_source": ""},
+        }
     )
 
-    assert resp.status_code == 200
-    body = resp.json()
+    assert result.resp.status_code == 200, result.resp.text
+    stored = result.table_group
+    assert stored.description == ""
+    assert (stored.profiling_include_mask, stored.profiling_exclude_mask) == ("", "")
+    assert (stored.profile_id_column_mask, stored.profile_sk_column_mask) == ("", "")
+    assert stored.data_source == ""
+    catalog_write.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("body", "named"),
+    [
+        ({"schema_name": None}, "schema_name"),
+        ({"description": None, "table_set": None}, "description, table_set"),
+        ({"catalog_tags": None}, "catalog_tags"),
+        ({"catalog_tags": {"data_source": "ERP", "business_domain": None}}, "catalog_tags.business_domain"),
+    ],
+)
+def test_update_table_group_rejects_an_explicit_null(body, named):
+    """Null reads as "clear it"; omitting the field is how you leave it alone."""
+    result = _patch(body)
+
+    assert result.resp.status_code == 422
+    assert _error_entries(result.resp) == [
+        {"code": "null_field", "detail": f"{named} cannot be null. Omit a field to leave it unchanged."}
+    ]
+    result.table_group.save.assert_not_called()
+
+
+@pytest.mark.parametrize("body", [{}, {"catalog_tags": {}}])
+def test_update_table_group_rejects_a_body_with_nothing_to_change(body):
+    """An empty patch would report success having changed nothing."""
+    result = _patch(body)
+
+    assert result.resp.status_code == 422
+    assert _error_entries(result.resp)[0]["code"] == "no_fields"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [{"connection_id": 4}, {"project_code": "other"}, {"add_scorecard": True}, {"catalog_tags": {"owner": "me"}}],
+)
+def test_update_table_group_rejects_an_unknown_field(body):
+    """A field the endpoint does not take would otherwise be dropped silently, and the response
+    is the whole table group, so the caller sees its old value and no error."""
+    assert _patch(body).resp.status_code == 422
+
+
+@pytest.mark.parametrize("body", [{"profile_use_sampling": "yes"}, {"profile_sample_percent": "10"}])
+def test_update_table_group_rejects_a_value_of_the_wrong_type(body):
+    assert _patch(body).resp.status_code == 422
+
+
+def test_update_table_group_saves_nothing_when_one_field_fails():
+    result = _patch({"description": "fine", "table_group_name": "ab", "profile_sample_percent": 0})
+
+    assert result.resp.status_code == 400
+    assert _error_entries(result.resp) == [
+        {"code": "invalid_table_group", "detail": "`table_group_name` must be between 3 and 40 characters."},
+        {"code": "invalid_table_group", "detail": "`profile_sample_percent` must be between 1 and 100."},
+    ]
+    result.table_group.save.assert_not_called()
+
+
+def test_update_table_group_returns_409_on_a_duplicate_name():
+    table_group = _table_group()
+    table_group.save.side_effect = _integrity_error(DUPLICATE_NAME)
+
+    result = _patch({"table_group_name": "orders"}, table_group=table_group)
+
+    assert result.resp.status_code == 409
+    assert _error_entries(result.resp) == [
+        {
+            "code": "duplicate_table_group_name",
+            "detail": "A table group with this name already exists in the project.",
+        }
+    ]
+
+
+def test_update_table_group_returns_409_on_a_duplicate_name_flushed_by_the_schema_move():
+    result = _patch(
+        {"table_group_name": "orders", "schema_name": "onboard_2026_09_16"},
+        move_error=_integrity_error(DUPLICATE_NAME),
+    )
+
+    assert result.resp.status_code == 409
+    assert _error_entries(result.resp)[0]["code"] == "duplicate_table_group_name"
+
+
+# PII detection
+
+
+def test_update_table_group_refuses_a_pii_change_without_view_pii():
+    result = _patch({"description": "fine", "profile_flag_pii": False}, can_view_pii=False)
+
+    assert result.resp.status_code == 400
+    assert _error_entries(result.resp) == [
+        {
+            "code": "invalid_table_group",
+            "detail": "Changing PII detection requires permission to view PII. "
+            "Leave this setting unchanged or contact your administrator.",
+        }
+    ]
+    result.table_group.save.assert_not_called()
+    assert result.pii.call_args.args[1:] == ("demo", "view_pii")
+
+
+def test_update_table_group_lets_a_user_without_view_pii_change_other_fields():
+    result = _patch({"description": "fine"}, can_view_pii=False)
+
+    assert result.resp.status_code == 200, result.resp.text
+    result.table_group.save.assert_called_once()
+
+
+def test_update_table_group_lets_a_user_without_view_pii_resend_the_current_pii_flag():
+    result = _patch({"profile_flag_pii": True}, can_view_pii=False)
+
+    assert result.resp.status_code == 200, result.resp.text
+
+
+# Data catalog
+
+
+def test_update_table_group_rewrites_the_catalog_when_the_filters_change(catalog_write):
+    catalog_write.return_value = "permission denied for schema public"
+
+    result = _patch({"exclude_masks": ["%_archive"]})
+
+    assert result.resp.status_code == 200, result.resp.text
+    catalog_write.assert_called_once()
+    result.table_group.save.assert_called_once()
+    assert result.resp.json()["catalog_error"] == "permission denied for schema public"
+
+
+def test_update_table_group_leaves_the_catalog_alone_when_the_tables_do_not_change(catalog_write):
+    result = _patch({"description": "Sales tables, renamed", "catalog_tags": {"data_source": "ERP"}})
+
+    assert result.resp.status_code == 200, result.resp.text
+    catalog_write.assert_not_called()
+    assert result.resp.json()["catalog_error"] is None
+
+
+# Schema move
+
+
+def test_update_table_group_moves_the_schema_and_reports_what_moved():
+    """The caller needs the tables the new schema lacks: their tests fail validation on the next test run."""
+    result = _patch({"schema_name": "onboard_2026_09_16"}, move=_move(missing=["archive"]))
+
+    assert result.resp.status_code == 200
+    body = result.resp.json()
     assert body["schema_change"]["previous_schema_name"] == "public"
     assert body["schema_change"]["missing_tables"] == ["archive"]
     assert body["schema_change"]["definitions_repointed"] == 3
-    mock_apply.assert_called_once()
+    result.apply.assert_called_once()
 
 
-@patch(f"{RULES_MODULE}.apply_schema_move")
-@patch(f"{MODULE}.move_table_group_schema")
-@patch("testgen.api.deps.has_project_permission", return_value=True)
-@patch("testgen.api.deps.TableGroup")
-def test_update_table_group_resending_the_current_schema_moves_nothing(
-    mock_cls, _perm, mock_move, mock_apply,
-):
-    mock_cls.get.return_value = _table_group(table_group_schema="public")
+def test_update_table_group_resending_the_current_schema_moves_nothing():
+    result = _patch({"schema_name": "public"})
 
-    resp = _client().patch(f"/api/v1/table-groups/{TG_ID}", json={"schema_name": "public"})
-
-    assert resp.status_code == 200
-    assert resp.json()["schema_change"] is None
-    mock_move.assert_not_called()
-    mock_apply.assert_not_called()
+    assert result.resp.status_code == 200
+    assert result.resp.json()["schema_change"] is None
+    result.move.assert_not_called()
+    result.apply.assert_not_called()
 
 
-@patch("testgen.api.deps.has_project_permission", return_value=True)
-@patch("testgen.api.deps.TableGroup")
-def test_update_table_group_rejects_an_empty_body(mock_cls, _perm):
-    """An empty patch would report success having changed nothing."""
-    mock_cls.get.return_value = _table_group()
+def test_update_table_group_probes_the_new_schema_with_the_new_filters():
+    """A move and a filter change in one request: the move must find the tables the edited filters select."""
+    seen = {}
 
-    assert _client().patch(f"/api/v1/table-groups/{TG_ID}", json={}).status_code == 422
+    def refuse(table_group, schema, **_kwargs):
+        seen["include"] = table_group.profiling_include_mask
+        raise SchemaMoveRefused("schema_empty", f"No tables in {schema} match this table group's table filters.")
+
+    result = _patch(
+        {"schema_name": "onboard_2026_09_16", "include_masks": ["invoices%"]}, move_error=refuse
+    )
+
+    assert seen == {"include": "invoices%"}
+    assert result.resp.status_code == 422
+    assert _error_entries(result.resp)[0]["code"] == "schema_empty"
+    result.table_group.save.assert_not_called()
+
+
+def test_update_table_group_does_not_move_when_another_field_fails():
+    result = _patch({"schema_name": "onboard_2026_09_16", "profile_sample_percent": 0})
+
+    assert result.resp.status_code == 400
+    result.move.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -1177,52 +1402,116 @@ def test_update_table_group_rejects_an_empty_body(mock_cls, _perm):
         ("invalid_schema_name", 422),
     ],
 )
-@patch(f"{MODULE}.move_table_group_schema")
-@patch("testgen.api.deps.has_project_permission", return_value=True)
-@patch("testgen.api.deps.TableGroup")
-def test_update_table_group_maps_each_refusal_to_its_status(
-    mock_cls, _perm, mock_move, reason, status,
-):
+def test_update_table_group_maps_each_refusal_to_its_status(reason, status):
     """A job still running is a conflict the caller can retry; the rest are the request's fault."""
-    mock_cls.get.return_value = _table_group()
-    mock_move.side_effect = SchemaMoveRefused(reason, "nope")
+    result = _patch({"schema_name": "onboard_2026_09_16"}, move_error=SchemaMoveRefused(reason, "nope"))
 
-    resp = _client().patch(
-        f"/api/v1/table-groups/{TG_ID}", json={"schema_name": "onboard_2026_09_16"}
-    )
-
-    assert resp.status_code == status
+    assert result.resp.status_code == status
+    result.table_group.save.assert_not_called()
 
 
 @pytest.mark.parametrize("schema_name", ['x" OR 1=1--', "x`y", "a'b", "a\nb", "a" * 51])
-@patch("testgen.api.deps.has_project_permission", return_value=True)
-@patch("testgen.api.deps.TableGroup")
-def test_update_table_group_rejects_a_schema_that_would_end_the_quoting(mock_cls, _perm, schema_name):
-    mock_cls.get.return_value = _table_group()
-
-    resp = _client().patch(f"/api/v1/table-groups/{TG_ID}", json={"schema_name": schema_name})
-
-    assert resp.status_code == 422
+def test_update_table_group_rejects_a_schema_that_would_end_the_quoting(schema_name):
+    assert _patch({"schema_name": schema_name}).resp.status_code == 422
 
 
-@patch("testgen.api.deps.has_project_permission", return_value=True)
-@patch("testgen.api.deps.TableGroup")
-def test_update_table_group_rejects_an_unknown_field(mock_cls, _perm):
-    """A field this endpoint does not take yet would otherwise be dropped silently, and the
-    response is the whole table group, so the caller sees its old value and no error."""
-    mock_cls.get.return_value = _table_group()
-
-    resp = _client().patch(f"/api/v1/table-groups/{TG_ID}", json={"description": "moved"})
-
-    assert resp.status_code == 422
+# How a connection names its tables
 
 
-@patch("testgen.api.deps.has_project_permission", return_value=True)
-@patch("testgen.api.deps.TableGroup")
-def test_update_table_group_rejects_an_explicit_null(mock_cls, _perm):
-    """Null reads as "clear it"; omitting the field is how you leave it alone."""
-    mock_cls.get.return_value = _table_group()
+def test_update_table_group_on_a_database_connection_rejects_file_declarations():
+    result = _patch({"file_declarations": [ORDERS]})
 
-    resp = _client().patch(f"/api/v1/table-groups/{TG_ID}", json={"schema_name": None})
+    assert result.resp.status_code == 400
+    assert _error_entries(result.resp) == [
+        {
+            "code": "invalid_table_group",
+            "detail": "`file_declarations` applies only to a connection whose tables are files. Use `schema_name` "
+            "and the table filters instead.",
+        }
+    ]
 
-    assert resp.status_code == 422
+
+@pytest.fixture
+def files_table_group(base_path, target_connection):
+    target_connection.sql_flavor_code = "files"
+    target_connection.parameters = {"base_path": str(base_path)}
+    return _table_group(
+        table_group_schema="main",
+        profiling_include_mask=None,
+        profiling_exclude_mask=None,
+        file_declarations=[{"name": "orders", "uri": "sales/*.csv", "format": "csv", "options": {}}],
+    )
+
+
+@pytest.mark.parametrize(
+    ("body", "detail"),
+    [
+        ({"schema_name": "main"}, "Tables on this connection are files, so it has no schema to choose."),
+        (
+            {"table_set": ["orders"]},
+            "Tables on this connection are files, so `table_set`, `include_masks` and `exclude_masks` do not "
+            "apply. Name the tables to read with `file_declarations`.",
+        ),
+    ],
+)
+def test_update_table_group_on_a_file_connection_rejects_naming_tables_another_way(files_table_group, body, detail):
+    result = _patch(body, table_group=files_table_group)
+
+    assert result.resp.status_code == 400
+    assert _error_entries(result.resp) == [{"code": "invalid_table_group", "detail": detail}]
+    result.table_group.save.assert_not_called()
+
+
+def test_update_table_group_replaces_the_file_declarations(files_table_group, catalog_write):
+    products = {"name": "products", "uri": "sales/orders_2025.csv", "format": "csv", "header": True}
+
+    result = _patch({"file_declarations": [products]}, table_group=files_table_group)
+
+    assert result.resp.status_code == 200, result.resp.text
+    assert result.table_group.file_declarations == [
+        {"name": "products", "uri": "sales/orders_2025.csv", "format": "csv", "options": {"header": True}}
+    ]
+    assert [d["name"] for d in result.resp.json()["file_declarations"]] == ["products"]
+    catalog_write.assert_called_once()
+
+
+def test_update_table_group_refuses_an_invalid_declaration_with_the_create_message(files_table_group):
+    result = _patch({"file_declarations": [{**ORDERS, "uri": "sales"}]}, table_group=files_table_group)
+
+    assert result.resp.status_code == 400
+    assert [entry["detail"] for entry in _error_entries(result.resp)] == [
+        "orders: File or Pattern names a folder. Use a pattern to read the files in it, such as sales/*.csv."
+    ]
+    result.table_group.save.assert_not_called()
+
+
+# Request schema
+
+
+def test_update_request_takes_every_create_field_but_the_scorecard():
+    components = _client().app.openapi()["components"]["schemas"]
+    create = components["TableGroupCreate"]["properties"]
+    update = components["TableGroupUpdateRequest"]["properties"]
+
+    assert set(update) == set(create) - {"add_scorecard"}
+    assert components["TableGroupUpdateRequest"]["additionalProperties"] is False
+
+
+def test_update_request_says_which_lists_replace_the_stored_one():
+    update = _client().app.openapi()["components"]["schemas"]["TableGroupUpdateRequest"]["properties"]
+
+    replacing = {name for name, prop in update.items() if "Replaces the whole list." in prop.get("description", "")}
+    assert replacing == {"table_set", "include_masks", "exclude_masks", "file_declarations"}
+
+
+def test_update_request_shares_each_create_field_description():
+    """Each create description is the shared one plus what omitting does there; the update adds what
+    clearing does instead, so the shared part must appear in both."""
+    components = _client().app.openapi()["components"]["schemas"]
+    create = components["TableGroupCreate"]["properties"]
+    update = components["TableGroupUpdateRequest"]["properties"]
+
+    for name, prop in update.items():
+        shared = create[name].get("description", "").removeprefix("Database connections only, and required there. ")
+        shared = shared.removeprefix("File connections only, and required there. ").split(" Omit ")[0]
+        assert shared in prop.get("description", ""), name

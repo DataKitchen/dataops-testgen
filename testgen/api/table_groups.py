@@ -8,6 +8,8 @@ from testgen.api.deps import (
     api_errors,
     db_session,
     fields_to_change,
+    get_authorized_user,
+    has_project_permission,
     resolve_connection,
     resolve_project_code,
     resolve_table_group,
@@ -41,6 +43,7 @@ from testgen.common.flavors import declares_files, reports_table_group_schema
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup, split_criteria, table_group_defaults
+from testgen.common.models.user import User
 
 _error_responses = {404: {"model": ErrorResponse, "description": "Not found"}}
 
@@ -230,6 +233,11 @@ def _to_response(table_group: TableGroup, connection: Connection | None = None) 
     )
 
 
+_PII_FLAG_DENIED = (
+    "Changing PII detection requires permission to view PII. "
+    "Leave this setting unchanged or contact your administrator."
+)
+
 _REFUSAL_STATUS = {
     "job_in_flight": 409,
     "invalid_schema_name": 422,
@@ -244,39 +252,107 @@ _REFUSAL_STATUS = {
     response_model=TableGroupUpdateResponse,
     summary="Update a table group",
     responses={
-        409: {"model": ErrorResponse, "description": "A job for this table group is still running"},
+        400: {
+            "model": ErrorResponse,
+            "description": "One entry per field or file declaration that failed validation",
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "A job for this table group is still running, or another table group in the project "
+            "has this name",
+        },
         422: {"model": ErrorResponse, "description": "A supplied field cannot be applied"},
     },
 )
 def update_table_group(
     table_group: TableGroup = resolve_table_group("edit"),  # noqa: B008
     body: TableGroupUpdateRequest = Body(...),  # noqa: B008
+    user: User = Depends(get_authorized_user),  # noqa: B008
 ) -> TableGroupUpdateResponse:
-    """Change a table group's configuration. Omitted fields are left as they are.
+    """Change a table group's configuration. Omitted fields are left as they are, and nothing is saved
+    when any field is refused.
+
+    `table_set`, the masks and `file_declarations` replace the stored list. Catalog tags are merged:
+    a tag the request does not name is left as it is.
 
     When `schema_name` changes, profiling, test generation, monitors, and test runs read the new
     schema, and tests keep their history. Referential tests keep the schema of their second table.
-
     The change is refused when the schema cannot be read or no table in it matches the table group's
-    table filters. Tables the new schema does not have are listed under `schema_change.missing_tables`.
+    table filters, as edited by the same request. Tables the new schema does not have are listed under
+    `schema_change.missing_tables`.
+
+    When the update changes which tables belong to the table group, its data catalog is rewritten from
+    the target before the response returns. `catalog_error` says why when the target could not be read.
     """
-    fields_to_change(body)
+    sent = fields_to_change(body)
+    tags = body.catalog_tags.model_dump(exclude_unset=True) if body.catalog_tags else {}
+    if nulled := sorted(f"catalog_tags.{name}" for name, value in tags.items() if value is None):
+        raise api_error(
+            422,
+            "null_field",
+            f"{', '.join(nulled)} cannot be null. Omit a field to leave it unchanged.",
+        )
+    if sent.keys() == {"catalog_tags"} and not tags:
+        raise api_error(422, "no_fields", "No fields supplied to update.")
+
+    connection = Connection.get_by_table_group(table_group.id)
+    errors = []
+    if connection is not None:
+        errors = validate_table_naming(
+            connection,
+            schema=body.schema_name,
+            file_declarations=body.file_declarations,
+            criteria=(body.table_set, body.include_masks, body.exclude_masks),
+            require=False,
+        )
+    if (
+        body.profile_flag_pii is not None
+        and body.profile_flag_pii != table_group.profile_flag_pii
+        and not has_project_permission(user, table_group.project_code, "view_pii")
+    ):
+        errors.append(_PII_FLAG_DENIED)
 
     membership_before = catalog_membership(table_group)
+    for name, value in sent.items():
+        if name == "table_group_name":
+            table_group.table_groups_name = value
+        elif name in _LIST_COLUMNS:
+            setattr(table_group, _LIST_COLUMNS[name], ",".join(value))
+        elif name == "file_declarations":
+            table_group.file_declarations = [declaration.to_payload() for declaration in value]
+        elif name not in ("schema_name", "catalog_tags"):
+            setattr(table_group, name, value)
+    for name, value in tags.items():
+        setattr(table_group, name, value)
+
+    apply_table_group_flavor_rules(table_group, connection)
+    errors.extend(validate_table_group_fields(table_group, connection))
+    if errors:
+        raise api_errors(400, "invalid_table_group", errors)
+
     move = None
-    if body.schema_name is not None and body.schema_name != table_group.table_group_schema:
-        try:
-            move = move_table_group_schema(table_group, body.schema_name)
-        except SchemaMoveRefused as refusal:
+    # The move's queries autoflush the edited name, so a duplicate can surface there as well as on save.
+    try:
+        if body.schema_name is not None and body.schema_name != table_group.table_group_schema:
+            try:
+                move = move_table_group_schema(table_group, body.schema_name, connection=connection)
+            except SchemaMoveRefused as refusal:
+                raise api_error(
+                    _REFUSAL_STATUS.get(refusal.reason, 422), refusal.reason, refusal.message
+                ) from refusal
+        table_group.save()
+    except IntegrityError as err:
+        if is_duplicate_name_error(err):
             raise api_error(
-                _REFUSAL_STATUS.get(refusal.reason, 422), refusal.reason, refusal.message
-            ) from refusal
-    # The request takes no table filter fields, so only a schema move can change the tables, and a
-    # move's catalog write logs a failure rather than returning it.
-    update_catalog_for_edit(table_group, membership_before, move)
+                409, "duplicate_table_group_name", "A table group with this name already exists in the project."
+            ) from err
+        raise
+
+    catalog_error = update_catalog_for_edit(table_group, membership_before, move, connection)
+    get_current_session().refresh(table_group)
 
     return TableGroupUpdateResponse(
-        **_to_response(table_group).model_dump(),
+        **_to_response(table_group, connection).model_dump(),
         schema_change=TableGroupSchemaChange(
             previous_schema_name=move.previous_schema,
             schema_name=move.schema,
@@ -285,4 +361,5 @@ def update_table_group(
         )
         if move
         else None,
+        catalog_error=catalog_error,
     )

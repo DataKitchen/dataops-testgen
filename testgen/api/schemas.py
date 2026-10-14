@@ -70,24 +70,6 @@ class JobSubmittedResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class TableGroupUpdateRequest(BaseModel):
-    """Fields to change on a table group. Omitted fields are left unchanged. A field sent as `null`,
-    a body with nothing to change, and unknown fields are rejected."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    schema_name: str | None = Field(
-        default=None,
-        pattern=SCHEMA_NAME_PATTERN,
-        max_length=SCHEMA_NAME_MAX_LENGTH,
-        description=(
-            "Database connections only. Schema to read the table group's tables from. When it changes, "
-            "profiling, test generation, monitors, and test runs read the new schema, and tests keep their history. "
-            "Referential tests keep the schema of their second table."
-        ),
-    )
-
-
 class TableGroupSchemaChange(BaseModel):
     """What changing the schema did, present only when the request changed it."""
 
@@ -1081,6 +1063,14 @@ class TableGroupUpdateResponse(TableGroupResponse):
     """The table group as it now stands, plus what a schema change did."""
 
     schema_change: TableGroupSchemaChange | None = None
+    catalog_error: str | None = Field(
+        default=None,
+        description=(
+            "Set when the update changed which tables belong to the table group and the data catalog could not "
+            "be read from the target. The update is saved, and the catalog keeps the tables it had before until "
+            "the table group is profiled or tested."
+        ),
+    )
 
 
 class TableGroupCreateResponse(TableGroupResponse):
@@ -1097,6 +1087,43 @@ class TableGroupCreateResponse(TableGroupResponse):
 
 _TABLE_GROUP_DEFAULTS = table_group_defaults()
 
+# Descriptions shared by the create and update requests, which each add what omitting or clearing a field does.
+_TG_DESCRIPTIONS = {
+    "table_group_name": "Unique within the project; 3 to 40 characters.",
+    "schema_name": "The schema that holds the tables, or the data space on Salesforce Data 360.",
+    "file_declarations": "The table group's tables, one per file or pattern.",
+    "table_set": "Database connections only. Table names to restrict the group to.",
+    "include_masks": "Database connections only. SQL LIKE patterns a table must match to be included.",
+    "exclude_masks": (
+        "Database connections only. SQL LIKE patterns that exclude a matching table, including one named in"
+        " ``table_set``."
+    ),
+    "profile_id_column_mask": "SQL LIKE pattern marking ID columns.",
+    "profile_sk_column_mask": "SQL LIKE pattern marking surrogate key columns.",
+    "profile_use_sampling": (
+        "Base pattern and character analysis, and the list of frequent values, on a sample of each table's rows."
+        " Record counts, distinct values, minimums, maximums, and average lengths and values always cover the"
+        " full table."
+    ),
+    "profile_sample_percent": "Percent of rows to sample, from 1 to 100, unless that falls below the sample minimum.",
+    "profile_sample_min_count": "Minimum number of rows in any sample, when the table has that many.",
+    "profiling_delay_days": "Days to wait before new profiling results are used to generate tests.",
+    "profile_flag_cdes": "Flag likely critical data elements during profiling.",
+    "profile_flag_pii": "Flag columns that likely hold personally identifiable information during profiling.",
+    "profile_exclude_xde": "Skip columns marked as excluded data elements when profiling.",
+    "profile_table_comparison": (
+        "Collect value hashes during profiling, which Table Comparison test generation needs for tests that"
+        " detect changed, moved, or swapped values. Adds profiling time. Has no effect on SAP HANA and"
+        " Salesforce Data 360 connections."
+    ),
+    "include_in_dashboard": "Show the table group on the project dashboard.",
+}
+_REPLACES_LIST = "Replaces the whole list. Send every entry to keep, not only the ones that changed."
+
+
+def _create_setting(name: str) -> Any:
+    return Field(default=_TABLE_GROUP_DEFAULTS[name], description=_TG_DESCRIPTIONS[name])
+
 
 class TableGroupCreate(BaseModel):
     """A table group to create on a connection.
@@ -1107,91 +1134,109 @@ class TableGroupCreate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    table_group_name: str = Field(description="Unique within the project; 3 to 40 characters.")
+    table_group_name: str = Field(description=_TG_DESCRIPTIONS["table_group_name"])
     schema_name: str | None = Field(
         default=None,
-        description="Database connections only, and required there. The schema that holds the tables, or the data "
-        "space on Salesforce Data 360.",
+        description=f"Database connections only, and required there. {_TG_DESCRIPTIONS['schema_name']}",
     )
     file_declarations: list[FileDeclarationCreate] | None = Field(
         default=None,
-        description="File connections only, and required there. The table group's tables, one per file or pattern.",
+        description=f"File connections only, and required there. {_TG_DESCRIPTIONS['file_declarations']}",
     )
     description: str | None = None
 
     table_set: list[str] | None = Field(
         default=None,
-        description="Database connections only. Table names to restrict the group to. Omit to define the group by "
-        "masks alone.",
+        description=f"{_TG_DESCRIPTIONS['table_set']} Omit to define the group by masks alone.",
     )
     include_masks: list[str] | None = Field(
         default=None,
-        description="Database connections only. SQL LIKE patterns a table must match to be included. Omit for the "
-        "default include mask.",
+        description=f"{_TG_DESCRIPTIONS['include_masks']} Omit for the default include mask.",
     )
     exclude_masks: list[str] | None = Field(
         default=None,
         description=(
-            "Database connections only. SQL LIKE patterns that exclude a matching table, including one named in"
-            " ``table_set``. Omit for the default exclude mask; send an empty list to exclude nothing."
+            f"{_TG_DESCRIPTIONS['exclude_masks']} Omit for the default exclude mask; send an empty list to exclude"
+            " nothing."
         ),
     )
-    profile_id_column_mask: str | None = Field(
-        default=_TABLE_GROUP_DEFAULTS["profile_id_column_mask"], description="SQL LIKE pattern marking ID columns."
-    )
-    profile_sk_column_mask: str | None = Field(
-        default=_TABLE_GROUP_DEFAULTS["profile_sk_column_mask"],
-        description="SQL LIKE pattern marking surrogate key columns.",
-    )
+    profile_id_column_mask: str | None = _create_setting("profile_id_column_mask")
+    profile_sk_column_mask: str | None = _create_setting("profile_sk_column_mask")
 
-    profile_use_sampling: StrictBool | None = Field(
-        default=_TABLE_GROUP_DEFAULTS["profile_use_sampling"],
-        description=(
-            "Base pattern and character analysis, and the list of frequent values, on a sample of each table's rows."
-            " Record counts, distinct values, minimums, maximums, and average lengths and values always cover the"
-            " full table."
-        ),
-    )
-    profile_sample_percent: StrictInt | None = Field(
-        default=_TABLE_GROUP_DEFAULTS["profile_sample_percent"],
-        description="Percent of rows to sample, from 1 to 100, unless that falls below the sample minimum.",
-    )
-    profile_sample_min_count: StrictInt | None = Field(
-        default=_TABLE_GROUP_DEFAULTS["profile_sample_min_count"],
-        description="Minimum number of rows in any sample, when the table has that many.",
-    )
-    profiling_delay_days: StrictInt | None = Field(
-        default=_TABLE_GROUP_DEFAULTS["profiling_delay_days"],
-        description="Days to wait before new profiling results are used to generate tests.",
-    )
-    profile_flag_cdes: StrictBool | None = Field(
-        default=_TABLE_GROUP_DEFAULTS["profile_flag_cdes"],
-        description="Flag likely critical data elements during profiling.",
-    )
-    profile_flag_pii: StrictBool | None = Field(
-        default=_TABLE_GROUP_DEFAULTS["profile_flag_pii"],
-        description="Flag columns that likely hold personally identifiable information during profiling.",
-    )
-    profile_exclude_xde: StrictBool | None = Field(
-        default=_TABLE_GROUP_DEFAULTS["profile_exclude_xde"],
-        description="Skip columns marked as excluded data elements when profiling.",
-    )
-    profile_table_comparison: StrictBool | None = Field(
-        default=_TABLE_GROUP_DEFAULTS["profile_table_comparison"],
-        description=(
-            "Collect value hashes during profiling, which Table Comparison test generation needs for tests that"
-            " detect changed, moved, or swapped values. Adds profiling time. Has no effect on SAP HANA and"
-            " Salesforce Data 360 connections."
-        ),
-    )
-    include_in_dashboard: StrictBool | None = Field(
-        default=_TABLE_GROUP_DEFAULTS["include_in_dashboard"],
-        description="Show the table group on the project dashboard.",
-    )
+    profile_use_sampling: StrictBool | None = _create_setting("profile_use_sampling")
+    profile_sample_percent: StrictInt | None = _create_setting("profile_sample_percent")
+    profile_sample_min_count: StrictInt | None = _create_setting("profile_sample_min_count")
+    profiling_delay_days: StrictInt | None = _create_setting("profiling_delay_days")
+    profile_flag_cdes: StrictBool | None = _create_setting("profile_flag_cdes")
+    profile_flag_pii: StrictBool | None = _create_setting("profile_flag_pii")
+    profile_exclude_xde: StrictBool | None = _create_setting("profile_exclude_xde")
+    profile_table_comparison: StrictBool | None = _create_setting("profile_table_comparison")
+    include_in_dashboard: StrictBool | None = _create_setting("include_in_dashboard")
 
     catalog_tags: CatalogTags | None = None
     add_scorecard: StrictBool = Field(
         default=True, description="Also add a scorecard for the table group to the Quality Dashboard."
+    )
+
+
+def _update_field(name: str, then: str = "") -> Any:
+    return Field(default=None, description=f"{_TG_DESCRIPTIONS[name]} {then}".strip())
+
+
+class TableGroupUpdateRequest(BaseModel):
+    """Fields to change on a table group. Omitted fields are left unchanged.
+
+    Clear a field by sending it empty: `""` for text, `[]` for a list. A field sent as `null`, a catalog
+    tag sent as `null`, a body with nothing to change, and unknown fields are rejected. The connection
+    and project cannot be changed.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    table_group_name: str | None = _update_field("table_group_name")
+    schema_name: str | None = Field(
+        default=None,
+        pattern=SCHEMA_NAME_PATTERN,
+        max_length=SCHEMA_NAME_MAX_LENGTH,
+        description=(
+            f"Database connections only. {_TG_DESCRIPTIONS['schema_name']} When it changes, profiling, test "
+            "generation, monitors, and test runs read the new schema, and tests keep their history. Referential "
+            "tests keep the schema of their second table."
+        ),
+    )
+    file_declarations: list[FileDeclarationCreate] | None = Field(
+        default=None,
+        description=f"File connections only. {_TG_DESCRIPTIONS['file_declarations']} {_REPLACES_LIST}",
+    )
+    description: str | None = Field(default=None, description='Send `""` to clear it.')
+
+    table_set: list[str] | None = _update_field(
+        "table_set", f"{_REPLACES_LIST} Send `[]` to define the group by masks alone."
+    )
+    include_masks: list[str] | None = _update_field(
+        "include_masks", f"{_REPLACES_LIST} Send `[]` to include every table in the schema."
+    )
+    exclude_masks: list[str] | None = _update_field(
+        "exclude_masks", f"{_REPLACES_LIST} Send `[]` to exclude nothing."
+    )
+    profile_id_column_mask: str | None = _update_field("profile_id_column_mask", 'Send `""` to mark no columns.')
+    profile_sk_column_mask: str | None = _update_field("profile_sk_column_mask", 'Send `""` to mark no columns.')
+
+    profile_use_sampling: StrictBool | None = _update_field("profile_use_sampling")
+    profile_sample_percent: StrictInt | None = _update_field("profile_sample_percent")
+    profile_sample_min_count: StrictInt | None = _update_field("profile_sample_min_count")
+    profiling_delay_days: StrictInt | None = _update_field("profiling_delay_days")
+    profile_flag_cdes: StrictBool | None = _update_field("profile_flag_cdes")
+    profile_flag_pii: StrictBool | None = _update_field(
+        "profile_flag_pii", "Changing it requires permission to view PII."
+    )
+    profile_exclude_xde: StrictBool | None = _update_field("profile_exclude_xde")
+    profile_table_comparison: StrictBool | None = _update_field("profile_table_comparison")
+    include_in_dashboard: StrictBool | None = _update_field("include_in_dashboard")
+
+    catalog_tags: CatalogTags | None = Field(
+        default=None,
+        description='Merged tag by tag: a tag that is omitted is left unchanged. Send a tag as `""` to clear it.',
     )
 
 
