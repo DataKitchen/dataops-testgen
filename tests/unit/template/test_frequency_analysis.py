@@ -1,4 +1,4 @@
-"""The secondary profiling query's distinct-value hash and frequent-value ranking, run on DuckDB."""
+"""The frequency analysis query's distinct-value hash and frequent-value ranking, run on DuckDB."""
 
 import hashlib
 
@@ -15,7 +15,7 @@ VALUES = ["b", "B", "a", "A", "é", "e", "", " ", "  x", "Z", "z", "a", "a", "B"
 
 
 def _run(values: list[str | None]) -> list[dict]:
-    sql = read_template_sql_file("project_secondary_profiling_query.sql", "flavors/duckdb/profiling")
+    sql = read_template_sql_file("frequency_analysis.sql", "flavors/duckdb/profiling")
     sql = replace_params(
         process_conditionals(sql, {"do_sample_bool": False}),
         {"DATA_SCHEMA": "main", "DATA_TABLE": "t", "COL_NAME": "col"},

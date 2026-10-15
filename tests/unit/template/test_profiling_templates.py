@@ -46,7 +46,7 @@ def _percentile_methods(flavor: str) -> tuple[bool, ...]:
     """The percentile methods a flavor renders, as ``use_approx_percentile`` values: exact when the
     template has an exact branch, approximate when the service declares the function. Data 360 has
     no exact percentile and renders approximately whatever it is asked."""
-    template = (TEMPLATE_ROOT / "flavors" / flavor / "profiling" / "project_profiling_query.sql").read_text()
+    template = (TEMPLATE_ROOT / "flavors" / flavor / "profiling" / "column_profiling.sql").read_text()
     methods = []
     if "is_N_exact_pctile" in template:
         methods.append(False)
@@ -106,7 +106,7 @@ def _aliases(query: str) -> set[str]:
 
 
 def test_no_flavor_pads_its_query_with_null_placeholders():
-    templates = list(TEMPLATE_ROOT.glob("flavors/*/profiling/project_profiling_query.sql"))
+    templates = list(TEMPLATE_ROOT.glob("flavors/*/profiling/column_profiling.sql"))
     assert len(templates) == len(FLAVORS)
     padded = [path.parts[-3] for path in templates if PLACEHOLDER.search(path.read_text())]
     assert padded == []
