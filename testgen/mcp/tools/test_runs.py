@@ -7,7 +7,7 @@ from testgen.common.enums import JobKey, JobStatus
 from testgen.common.models import with_database_session
 from testgen.common.models.job_execution import QUEUED_MESSAGE, JobExecution
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY
-from testgen.common.models.suite_version import version_state
+from testgen.common.models.suite_version import format_version, version_state
 from testgen.common.models.test_run import TestRun, TestRunSummary
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
@@ -18,7 +18,6 @@ from testgen.mcp.tools.common import (
     format_page_footer,
     format_page_info,
     format_run_duration,
-    format_version,
     next_scheduled_run,
     parse_run_status_filter,
     parse_uuid,

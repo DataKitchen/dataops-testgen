@@ -352,6 +352,11 @@ def version_state(frozen_at: datetime | None, is_active: bool) -> VersionState:
     return VersionState.ACTIVE if is_active else VersionState.SUPERSEDED
 
 
+def format_version(number: int, state: VersionState) -> str:
+    """A contract version as every surface names it, e.g. ``v3 active``."""
+    return f"v{number} {state.value}"
+
+
 class FrozenVersionError(Exception):
     """Raised when a write targets a frozen version of a contract."""
 

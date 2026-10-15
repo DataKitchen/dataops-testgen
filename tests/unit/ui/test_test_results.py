@@ -70,7 +70,7 @@ def _referential_definition() -> MagicMock:
 
 def _definition_data(qualifies_table_refs: bool) -> dict:
     with (
-        patch(f"{MODULE}.get_test_definition", return_value=_referential_definition()),
+        patch(f"{MODULE}.TestDefinition.get_for_project", return_value=_referential_definition()),
         patch(f"{MODULE}.table_group_qualifies_table_refs", return_value=qualifies_table_refs),
         patch(f"{MODULE}.schema_label_for_table_group", return_value=None),
     ):

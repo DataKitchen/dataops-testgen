@@ -32,6 +32,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.sql import visitors
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.expression import case, literal
 
@@ -1128,8 +1129,18 @@ class TestDefinition(Entity):
 
     @classmethod
     def delete_where(cls, *clauses: ColumnElement[bool]) -> int:
+        """Delete the rows the clauses select, landing on a contract's draft rather than a frozen version.
+
+        A draft copy is spared when a column the clauses name holds a different value on it than on the
+        selected row. Returns the number of rows deleted. Raises ``FrozenVersionError`` when the clauses select a
+        contract's superseded rows, and ``RemovedInDraftError`` for rows its draft no longer holds.
+        """
         cls._assert_no_managed_definitions(*clauses)
-        return super().delete_where(*clauses)
+        selected = get_current_session().execute(select(cls.id).where(*clauses)).scalars().all()
+        id_map = cls._writable_id_map(selected)
+        drifted = cls._drifted_copies(id_map, clauses)
+        targets = [target for target in dict.fromkeys(id_map.values()) if target not in drifted]
+        return super().delete_where(cls.id.in_(targets), cls.version_clause())
 
     @classmethod
     def _assert_no_managed_definitions(cls, *clauses: ColumnElement[bool]) -> None:
@@ -1140,21 +1151,50 @@ class TestDefinition(Entity):
             raise ManagedTestDefinitionError
 
     @classmethod
-    def _assert_batch_writable(cls, test_definition_ids: list[str | UUID]) -> None:
-        """Raise if any of the given rows belongs to a contract's frozen version.
+    def _writable_ids(cls, row_ids: Iterable[UUID | str]) -> list[UUID]:
+        """The rows a write to the named rows lands on, resolving each row's suite through ``resolve_writable``.
 
-        A batch can span more than one suite and more than one version, so every distinct
-        version the rows themselves carry is checked — not the version their suites would
-        resolve a fresh write to, which for a contract with an open draft is writable
-        whichever version the rows belong to.
+        A row of a regular or monitor suite maps to itself. A row of a contract's frozen version maps to
+        its counterpart in the draft, which is opened when there is none.
         """
-        versions = get_current_session().scalars(
-            select(cls.version_id)
-            .where(cls.id.in_([UUID(str(identifier)) for identifier in test_definition_ids]))
-            .distinct()
-        ).all()
-        for version_id in versions:
-            cls.assert_version_writable(version_id)
+        return list(dict.fromkeys(cls._writable_id_map(row_ids).values()))
+
+    @classmethod
+    def _writable_id_map(cls, row_ids: Iterable[UUID | str]) -> dict[UUID, UUID]:
+        """Each named row's id mapped to the id of the row a write to it lands on, as ``_writable_ids`` resolves it."""
+        ids = [UUID(str(row_id)) for row_id in row_ids]
+        if not ids:
+            return {}
+        ids_by_suite: dict[UUID, list[UUID]] = {}
+        for row_id, suite_id in get_current_session().execute(
+            select(cls.id, cls.test_suite_id).where(cls.id.in_(ids))
+        ).all():
+            ids_by_suite.setdefault(suite_id, []).append(row_id)
+        writable: dict[UUID, UUID] = {}
+        for suite_id, suite_row_ids in ids_by_suite.items():
+            writable.update(cls.resolve_writable(suite_id, suite_row_ids)[1])
+        return writable
+
+    @classmethod
+    def _drifted_copies(cls, id_map: dict[UUID, UUID], clauses: Sequence[ColumnElement[bool]]) -> set[UUID]:
+        """The draft copies in ``id_map`` holding a different value than their source row in a column the clauses name."""
+        copies = {source: target for source, target in id_map.items() if source != target}
+        identity = {cls.id.key, cls.version_id.key}
+        columns = {
+            element.key: element
+            for clause in clauses
+            for element in visitors.iterate(clause)
+            if isinstance(element, Column) and element.table is cls.__table__ and element.key not in identity
+        }
+        if not copies or not columns:
+            return set()
+        values = {
+            row[0]: tuple(row[1:])
+            for row in get_current_session().execute(
+                select(cls.id, *columns.values()).where(cls.id.in_([*copies, *copies.values()]))
+            )
+        }
+        return {target for source, target in copies.items() if values.get(source) != values.get(target)}
 
     @classmethod
     def _scoped_select(
@@ -1496,7 +1536,9 @@ class TestDefinition(Entity):
         test_definition_ids: list[str | UUID],
         value: bool,
     ) -> None:
-        cls._assert_batch_writable(test_definition_ids)
+        writable_ids = cls._writable_ids(test_definition_ids)
+        if not writable_ids:
+            return
 
         query = f"""
         WITH selected AS (
@@ -1511,7 +1553,7 @@ class TestDefinition(Entity):
             AND td.version_id = {SuiteVersion.resolved_for_sql("td.test_suite_id")};
         """
         params = {
-            "test_definition_ids": test_definition_ids,
+            "test_definition_ids": [str(row_id) for row_id in writable_ids],
             "value": YNString().process_bind_param(value, None) if status_type in cls._yn_columns else value,
         }
 
@@ -1569,11 +1611,9 @@ class TestDefinition(Entity):
         target_version = db_session.scalar(select(SuiteVersion.resolved_for(target_test_suite_id)))
         cls.assert_version_writable(target_version)
         cls._assert_no_managed_definitions(cls.id.in_([UUID(str(identifier)) for identifier in test_definition_ids]))
+        writable_ids = cls._writable_ids(test_definition_ids)
         scoped_ids = db_session.scalars(
-            select(cls.id).where(
-                cls.id.in_([UUID(str(identifier)) for identifier in test_definition_ids]),
-                cls.version_clause(),
-            )
+            select(cls.id).where(cls.id.in_(writable_ids), cls.version_clause())
         ).all()
 
         values: dict[str, object] = {
@@ -1581,6 +1621,7 @@ class TestDefinition(Entity):
             "table_groups_id": target_table_group_id,
             "test_suite_id": target_test_suite_id,
             "version_id": target_version,
+            "contract_term_id": None,
         }
         if target_table_name:
             values["table_name"] = target_table_name
@@ -1593,6 +1634,7 @@ class TestDefinition(Entity):
             .values(values)
             .execution_options(synchronize_session=False)
         )
+        cls.assign_missing_term_ids(target_version)
 
     @classmethod
     def copy(

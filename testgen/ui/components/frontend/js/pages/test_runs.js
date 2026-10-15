@@ -599,7 +599,7 @@ const ConditionalEmptyState = (
                 params: { project_code: projectSummary.project_code, connection_id: projectSummary.default_connection_id },
             },
         };
-    } else if (projectSummary.test_suite_count <= 0 || projectSummary.test_definition_count <= 0) {
+    } else if ((projectSummary.test_suite_count + projectSummary.contract_count) <= 0 || projectSummary.test_definition_count <= 0) {
         args = {
             message: EMPTY_STATE_MESSAGE.testSuite,
             link: {

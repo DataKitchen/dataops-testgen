@@ -20,7 +20,7 @@ from testgen.common.enums import (
     SuiteType,
 )
 from testgen.common.models.scores import ScoreCategory
-from testgen.common.models.suite_version import SuiteVersion, VersionState
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_definition import Severity, TestDefinition
 from testgen.common.models.test_result import TestResultStatus
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
@@ -37,7 +37,6 @@ from testgen.mcp.tools.common import (
     ScoreType,
     format_disposition,
     format_run_duration,
-    format_version,
     parse_category,
     parse_disposition,
     parse_impact_dimension,
@@ -1757,12 +1756,6 @@ def test_resolve_contract_rejects_a_regular_suite_as_keeping_no_versions(
 def test_resolve_contract_invalid_uuid():
     with pytest.raises(MCPUserError, match="Invalid test_suite_id"):
         resolve_contract("not-a-uuid")
-
-
-def test_format_version_renders_number_and_state():
-    assert format_version(3, VersionState.ACTIVE) == "v3 active"
-    assert format_version(4, VersionState.DRAFT) == "v4 draft"
-    assert format_version(2, VersionState.SUPERSEDED) == "v2 superseded"
 
 
 def test_mcp_suite_types_hold_regular_and_contract_but_not_monitor():

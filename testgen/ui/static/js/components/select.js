@@ -289,6 +289,55 @@ const MultiSelect = (props) => {
             .join(', ');
     });
 
+    const optionsFilter = van.state('');
+    const filteredOptions = van.derive(() => {
+        const allOptions = getValue(options);
+        const filterTerm = getValue(optionsFilter);
+        if (getValue(props.filterable) && filterTerm.length) {
+            return allOptions.filter((option) => (option.rawLabel ?? option.label).toLowerCase().includes(filterTerm.toLowerCase()));
+        }
+        return allOptions;
+    });
+
+    const inputEl = getValue(props.filterable) ? input({
+        id: `tg-select--field--${domId.val}`,
+        value: displayLabel.val,
+        disabled: () => !!getValue(props.disabled),
+        oninput: (/** @type InputEvent */ event) => optionsFilter.val = event.target.value,
+        onkeydown: (/** @type KeyboardEvent */ event) => {
+            if (event.key === 'Enter' || event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                if (event.key === 'Escape') {
+                    opened.val = false;
+                }
+            }
+        },
+        onclick: (/** @type Event */ event) => {
+            event.stopPropagation();
+            if (!opened.val && !getValue(props.disabled)) {
+                opened.val = true;
+            }
+        },
+    }) : null;
+
+    if (inputEl) {
+        van.derive(() => {
+            if (opened.val) {
+                setTimeout(() => { inputEl.focus(); inputEl.select(); }, 0);
+            } else {
+                optionsFilter.val = '';
+                inputEl.value = displayLabel.rawVal;
+            }
+        });
+        van.derive(() => {
+            const label = displayLabel.val;
+            if (!opened.rawVal) {
+                inputEl.value = label;
+            }
+        });
+    }
+
     const toggleOption = (optionValue) => {
         const current = [...(getValue(selectedValues) ?? [])];
         const index = current.indexOf(optionValue);
@@ -328,7 +377,10 @@ const MultiSelect = (props) => {
                 style: () => getValue(props.height) ? `height: ${getValue(props.height)}px;` : '',
                 'data-testid': 'select-input',
             },
-            () => {
+            inputEl ? div(
+                { class: 'tg-select--field--content', 'data-testid': 'select-input-display' },
+                inputEl,
+            ) : () => {
                 // Hack to display value again when closed
                 // For some reason, it goes away when opened
                 opened.val;
@@ -350,7 +402,7 @@ const MultiSelect = (props) => {
                     class: () => `tg-select--options-wrapper mt-1 ${getValue(props.portalClass) ?? ''}`,
                     'data-testid': 'select-options',
                 },
-                getValue(options).map(option => {
+                getValue(filteredOptions).map(option => {
                     const isSelected = van.derive(() => (getValue(selectedValues) ?? []).includes(option.value));
                     return div(
                         {
