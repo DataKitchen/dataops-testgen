@@ -2,23 +2,31 @@ from typing import Annotated
 
 from pydantic import Field
 
+from testgen.common.enums import JobStatus, SuiteType
 from testgen.common.generation_set_service import list_generation_sets
 from testgen.common.models import with_database_session
 from testgen.common.models.data_table import DataTable
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
+from testgen.common.models.suite_version import ContractState, SuiteVersion, VersionState
+from testgen.common.models.test_result import TestResultStatus
+from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
+    MCP_SUITE_TYPES,
     DocGroup,
     format_flavor_label,
+    format_version,
+    parse_suite_type,
     resolve_connection,
     resolve_table_group,
     resolve_test_suite,
     validate_limit,
     validate_page,
 )
-from testgen.mcp.tools.markdown import MdDoc
+from testgen.mcp.tools.markdown import MdDoc, format_datetime
 
 _DOC_GROUP = DocGroup.DISCOVER
 
@@ -115,23 +123,33 @@ def get_project(
 @mcp_permission("view")
 def list_test_suites(
     project_code: Annotated[str, Field(description="The project code to list test suites for.")],
+    suite_type: Annotated[
+        str | None,
+        Field(description="Optional suite type to narrow to: `Regular` or `Contract`. Omit to list both."),
+    ] = None,
 ) -> str:
-    """List all test suites for a project with their latest run statistics."""
+    """List a project's test suites and contracts with their latest run statistics."""
     if not project_code:
         return "Missing required parameter `project_code`."
 
     perms = get_project_permissions()
     perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
 
-    summaries = TestSuite.select_summary(project_code)
+    suite_types = (parse_suite_type(suite_type),) if suite_type else MCP_SUITE_TYPES
+    summaries = TestSuite.select_summary(project_code, suite_types=suite_types)
 
     if not summaries:
         return f"No test suites found for project `{project_code}`."
+
+    contract_ids = [s.id for s in summaries if s.suite_type == SuiteType.CONTRACT]
+    states = SuiteVersion.states_for(contract_ids) if contract_ids else {}
 
     doc = MdDoc()
     doc.heading(1, f"Test Suites for `{project_code}`")
     for s in summaries:
         doc.heading(2, f"{s.test_suite} (id: `{s.id}`)")
+        if s.suite_type == SuiteType.CONTRACT:
+            doc.field("Type", _contract_state_label(states.get(s.id)))
         doc.field("Connection", s.connection_name)
         doc.field("Table Group", s.table_groups_name)
         if s.test_suite_description:
@@ -156,6 +174,15 @@ def list_test_suites(
             doc.text("_No completed runs._")
 
     return doc.render()
+
+
+def _contract_state_label(state: ContractState | None) -> str:
+    parts = ["Contract"]
+    if state and state.active:
+        parts.append(format_version(state.active.version, VersionState.ACTIVE))
+    if state and state.draft:
+        parts.append(format_version(state.draft.version, VersionState.DRAFT))
+    return " · ".join(parts)
 
 
 @with_database_session
@@ -209,7 +236,72 @@ def get_test_suite(
         rows = [[type_label, count] for type_label, count in stats.counts_by_type.items()]
         doc.table(["Test", "Count"], rows)
 
+    if suite.suite_type == SuiteType.CONTRACT:
+        _render_contract_block(doc, suite)
+
     return doc.render()
+
+
+def _render_contract_block(doc: MdDoc, suite: TestSuite) -> None:
+    """Append the contract's active and draft versions and its latest verification verdict to ``doc``."""
+    state = SuiteVersion.states_for([suite.id]).get(suite.id) or ContractState(active=None, draft=None)
+    active, draft = state.active, state.draft
+    doc.heading(2, "Contract")
+    if active:
+        label = f' — "{active.label}"' if active.label else ""
+        doc.field(
+            "Active version",
+            f"{format_version(active.version, VersionState.ACTIVE)}{label} (frozen {format_datetime(active.frozen_at)})",
+        )
+    else:
+        doc.field("Active version", "None yet")
+    doc.field("Draft", format_version(draft.version, VersionState.DRAFT) if draft else "None")
+    counted = draft or active
+    if counted:
+        doc.field(
+            "Tests counted from",
+            format_version(counted.version, VersionState.DRAFT if draft else VersionState.ACTIVE),
+        )
+
+    if active is None:
+        doc.text("Verification unavailable: no version has been frozen yet, so runs of the draft are previews.")
+        return
+    active_label = format_version(active.version, VersionState.ACTIVE)
+    run = TestRun.latest_verification(active)
+    summaries, _ = (
+        TestRun.select_summary(test_run_ids=[run.id], suite_types=MCP_SUITE_TYPES) if run else ([], 0)
+    )
+    if not summaries:
+        doc.text(f"Verification unavailable: {active_label} has not run since it was frozen.")
+        return
+    summary = summaries[0]
+    unfinished = None
+    if summary.status != JobStatus.COMPLETED:
+        unfinished = f"(`{run.id}`) is {summary.status_label}."
+        run = TestRun.latest_verification(active, JobExecution.status == JobStatus.COMPLETED)
+        summaries, _ = (
+            TestRun.select_summary(test_run_ids=[run.id], suite_types=MCP_SUITE_TYPES) if run else ([], 0)
+        )
+        if not summaries:
+            doc.text(f"Verification unavailable: the latest run of {active_label} {unfinished}")
+            return
+        summary = summaries[0]
+    if summary.failed_ct:
+        verdict = TestResultStatus.Failed
+    elif summary.error_ct:
+        verdict = TestResultStatus.Error
+    elif summary.warning_ct:
+        verdict = TestResultStatus.Warning
+    else:
+        verdict = TestResultStatus.Passed
+    doc.field(
+        "Latest verification",
+        f"{verdict.value} — run `{run.id}` (started {format_datetime(summary.started_at)}); "
+        f"{summary.test_ct or 0} tests: {summary.passed_ct or 0} passed, {summary.failed_ct or 0} failed, "
+        f"{summary.warning_ct or 0} warnings, {summary.error_ct or 0} errors",
+    )
+    if unfinished:
+        doc.text(f"A newer run of {active_label} {unfinished}")
 
 
 @with_database_session

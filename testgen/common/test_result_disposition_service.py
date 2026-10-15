@@ -7,6 +7,7 @@ other value — or clearing the disposition — reactivates and unlocks it. Pass
 test results are never dispositioned. Used by both the Streamlit UI
 (test_results page) and the MCP tools. Must not import Streamlit.
 """
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -16,6 +17,7 @@ from sqlalchemy import func, select, update
 
 from testgen.common.enums import Disposition
 from testgen.common.models import get_current_session
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_result import TestResult, TestResultStatus
 
@@ -86,16 +88,44 @@ def set_test_results_disposition(
     matched = session.execute(tr_stmt).rowcount
 
     test_active, lock_refresh = coupled_test_definition_state(disposition)
-    affected_td_ids = select(TestResult.test_definition_id).where(*non_passed)
-    td_stmt = (
-        update(TestDefinition)
-        .where(TestDefinition.id.in_(affected_td_ids))
-        .values(
-            test_active=test_active,
-            lock_refresh=lock_refresh,
-            last_manual_update=datetime.now(UTC).replace(tzinfo=None),
+    td_ids_by_suite: dict[UUID, list[UUID]] = defaultdict(list)
+    changing_by_suite: dict[UUID, list[UUID]] = defaultdict(list)
+    for row in session.execute(
+        select(
+            TestResult.test_suite_id,
+            TestResult.test_definition_id,
+            TestDefinition.test_active,
+            TestDefinition.lock_refresh,
         )
-    )
-    session.execute(td_stmt)
+        .outerjoin(TestDefinition, TestDefinition.id == TestResult.test_definition_id)
+        .where(*non_passed)
+        .distinct()
+    ).all():
+        if row.test_definition_id is not None:
+            td_ids_by_suite[row.test_suite_id].append(row.test_definition_id)
+            if (row.test_active, row.lock_refresh) != (test_active, lock_refresh):
+                changing_by_suite[row.test_suite_id].append(row.test_definition_id)
+
+    # A contract's frozen version is never written: the coupling lands on the draft's copy, and a
+    # definition with no writable counterpart keeps its result disposition without the coupling.
+    # Where the write would open a draft, a definition already in the coupled state needs none.
+    writable_td_ids: set[UUID] = set()
+    for suite_id, td_ids in td_ids_by_suite.items():
+        if SuiteVersion.is_frozen_agreement(session.scalar(select(SuiteVersion.resolved_for(suite_id)))):
+            td_ids = changing_by_suite[suite_id]
+            if not td_ids:
+                continue
+        writable_td_ids.update(TestDefinition.resolve_writable(suite_id, td_ids, skip_unwritable=True)[1].values())
+
+    if writable_td_ids:
+        session.execute(
+            update(TestDefinition)
+            .where(TestDefinition.id.in_(writable_td_ids), TestDefinition.version_clause())
+            .values(
+                test_active=test_active,
+                lock_refresh=lock_refresh,
+                last_manual_update=datetime.now(UTC).replace(tzinfo=None),
+            )
+        )
 
     return DispositionUpdate(matched=matched, passed_skipped=passed_skipped)

@@ -5,17 +5,26 @@ from typing import Annotated, NoReturn
 from uuid import UUID
 
 from pydantic import Field, ValidationError
-from sqlalchemy import update
+from sqlalchemy import select, update
 
+from testgen.common import contract_service
 from testgen.common.custom_test_validation import validate_custom_query
 from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
     schema_label_for_table_group,
     table_group_qualifies_table_refs,
 )
-from testgen.common.enums import ImpactDimension, QualityDimension
+from testgen.common.enums import ImpactDimension, QualityDimension, SuiteType
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.suite_version import (
+    FrozenVersionError,
+    RemovedInDraftError,
+    SuiteVersion,
+    UnmatchedInDraftError,
+    VersionState,
+    version_state,
+)
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import (
     NON_PUBLIC_TEST_TYPES,
@@ -28,6 +37,7 @@ from testgen.common.models.test_definition import (
     TestType,
 )
 from testgen.common.models.test_result import TestResult
+from testgen.common.models.test_suite import TestSuite
 from testgen.common.test_definition_export_import_service import (
     IMPORT_ACTION_LABELS,
     IMPORT_REASON_LABELS,
@@ -53,15 +63,18 @@ from testgen.mcp.services.source_data_protection import (
     mcp_source_data_protected,
 )
 from testgen.mcp.tools.common import (
+    MCP_SUITE_TYPES,
     DocGroup,
     format_flavor_label,
     format_page_footer,
     format_page_info,
+    format_version,
     parse_enum,
     parse_impact_dimension,
     parse_quality_dimension,
     parse_uuid,
     raise_validation_error,
+    resolve_contract_version,
     resolve_test_definition,
     resolve_test_note,
     resolve_test_suite,
@@ -80,6 +93,80 @@ _VALID_SCOPES = {"column", "table", "referential", "custom"}
 class BulkAction(StrEnum):
     ENABLE = "enable"
     DISABLE = "disable"
+
+
+def resolved_version(suite: TestSuite) -> SuiteVersion | None:
+    """The contract version a read defaults to: its draft, else its version in force. ``None`` for
+    a suite that is not a contract."""
+    if suite.suite_type != SuiteType.CONTRACT:
+        return None
+    try:
+        return contract_service.version_for_export(suite)
+    except ValueError as error:
+        raise MCPUserError(str(error)) from error
+
+
+def _version_field(doc: MdDoc, suite: TestSuite, version: SuiteVersion | None) -> None:
+    """Add the ``Version`` field naming a contract version; nothing for any other suite."""
+    if suite.suite_type != SuiteType.CONTRACT or version is None:
+        return
+    doc.field("Version", _version_label(suite, version))
+
+
+def _version_label(suite: TestSuite, version: SuiteVersion) -> str:
+    return format_version(version.version, version_state(
+        version.frozen_at, SuiteVersion.is_active(version.id, suite.id),
+    ))
+
+
+def _frozen_version_error(error: FrozenVersionError, suite: TestSuite, row_ids: list[UUID]) -> MCPUserError:
+    """The refusal for a write naming rows of a version that can no longer be edited.
+
+    When several rows are named, only those belonging to the refused version are listed.
+    """
+    if isinstance(error, UnmatchedInDraftError):
+        names = ", ".join(f"`{row_id}`" for row_id in error.row_ids)
+        draft = format_version(SuiteVersion.get(error.draft_id).version, VersionState.DRAFT)
+        return MCPUserError(
+            f"Test {names} in {_version_label(suite, SuiteVersion.get(error.version_id))} of contract "
+            f"`{suite.test_suite}` cannot be matched to its copy in {draft}, so it cannot be edited. "
+            "Use `list_tests` to find the draft's tests."
+        )
+    if len(row_ids) > 1:
+        row_ids = get_current_session().scalars(
+            select(TestDefinition.id).where(
+                TestDefinition.id.in_(row_ids), TestDefinition.version_id == error.version_id
+            )
+        ).all()
+    names = ", ".join(f"`{row_id}`" for row_id in row_ids)
+    label = _version_label(suite, SuiteVersion.get(error.version_id))
+    return MCPUserError(
+        f"Test {names} belongs to {label} of contract `{suite.test_suite}`, which can no longer be edited. "
+        "Use `list_tests` to find its current ID."
+    )
+
+
+def _removed_in_draft(error: RemovedInDraftError, suite: TestSuite) -> MCPUserError:
+    """The refusal for a write naming rows of the version in force that the draft has removed."""
+    draft = format_version(SuiteVersion.get(error.version_id).version, VersionState.DRAFT)
+    names = ", ".join(f"`{row_id}`" for row_id in error.row_ids)
+    return MCPUserError(f"Test {names} was removed in {draft} of contract `{suite.test_suite}`.")
+
+
+def _resolve_writable(suite: TestSuite, row_ids: list[UUID]) -> tuple[UUID, dict[UUID, UUID]]:
+    """Map the suite's rows onto the version a write lands in, as user-facing refusals."""
+    try:
+        return TestDefinition.resolve_writable(suite.id, row_ids)
+    except FrozenVersionError as error:
+        raise _frozen_version_error(error, suite, row_ids) from error
+    except RemovedInDraftError as error:
+        raise _removed_in_draft(error, suite) from error
+
+
+_VERSION_ARG_DESCRIPTION = (
+    "Contract version number to read, e.g. from `list_contract_versions`. Defaults to the draft where one "
+    "exists, otherwise the version in force. Contracts only."
+)
 
 
 def _reject_non_public_test_type(tt: TestType) -> None:
@@ -102,12 +189,14 @@ def list_tests(
     ] = None,
     limit: Annotated[int, Field(description="Maximum number of tests per page (default 50, max 200).")] = 50,
     page: Annotated[int, Field(description="Page number, starting from 1 (default 1).")] = 1,
+    version: Annotated[int | None, Field(description=_VERSION_ARG_DESCRIPTION)] = None,
 ) -> str:
     """List test definitions in a test suite."""
     suite = resolve_test_suite(test_suite_id)
     validate_page(page)
     validate_limit(limit, 200)
     test_type_code = resolve_test_type(test_type) if test_type else None
+    target = resolve_contract_version(suite, version) or resolved_version(suite)
     perms = get_project_permissions()
 
     items, total = TestDefinition.list_for_suite(
@@ -118,6 +207,8 @@ def list_tests(
         test_active=test_active,
         page=page,
         limit=limit,
+        suite_types=MCP_SUITE_TYPES,
+        version_id=target.id if version is not None else None,
     )
 
     if not items:
@@ -156,6 +247,7 @@ def list_tests(
 
     doc = MdDoc()
     doc.heading(1, f"Test Definitions for suite `{test_suite_id}`")
+    _version_field(doc, suite, target)
     doc.text(format_page_info(total, page, limit))
     doc.table(headers, rows, code=[1, 2, 9])
     footer = format_page_footer(total, page, limit)
@@ -176,7 +268,7 @@ def get_test(
     def_uuid = parse_uuid(test_definition_id, "test_definition_id")
     perms = get_project_permissions()
 
-    td = TestDefinition.get_for_project(def_uuid, perms.allowed_codes)
+    td = TestDefinition.get_for_project(def_uuid, perms.allowed_codes, suite_types=MCP_SUITE_TYPES)
     if td is None:
         return f"Test definition `{test_definition_id}` not found."
 
@@ -188,6 +280,7 @@ def get_test(
         test_definition_id=def_uuid,
         project_codes=perms.allowed_codes,
         limit=1,
+        suite_types=MCP_SUITE_TYPES,
     )
     doc.heading(2, "Last Result")
     if results:
@@ -222,8 +315,11 @@ def _append_td_summary(doc: MdDoc, td: TestDefinitionSummary) -> None:
 
     schema_label = schema_label_for_table_group(td.table_groups_id)
     qualifies = table_group_qualifies_table_refs(td.table_groups_id)
+    suite = TestSuite.get(td.test_suite_id)
 
     doc.field("ID", td.id, code=True)
+    if suite and suite.suite_type == SuiteType.CONTRACT:
+        _version_field(doc, suite, SuiteVersion.get(td.version_id))
     doc.field("Test Type", test_name)
     doc.field("Table", td.table_name, code=True)
     if td.column_name:
@@ -245,9 +341,6 @@ def _append_td_summary(doc: MdDoc, td: TestDefinitionSummary) -> None:
         doc.field("Severity", severity)
     doc.field("Locked", "Yes" if td.lock_refresh else "No")
     if td.export_to_observability is None:
-        from testgen.common.models.test_suite import TestSuite
-
-        suite = TestSuite.get(td.test_suite_id)
         inherited = suite.export_to_observability if suite else None
         doc.field("Export to Observability", f"{'Yes' if inherited else 'No'} (inherited from suite)")
     else:
@@ -299,7 +392,7 @@ def list_test_notes(
     def_uuid = parse_uuid(test_definition_id, "test_definition_id")
     perms = get_project_permissions()
 
-    td = TestDefinition.get_for_project(def_uuid, perms.allowed_codes)
+    td = TestDefinition.get_for_project(def_uuid, perms.allowed_codes, suite_types=MCP_SUITE_TYPES)
     if td is None:
         return f"Test definition `{test_definition_id}` not found."
 
@@ -351,7 +444,7 @@ def create_test_note(
     note = TestDefinitionNote.add_note(td.id, body, username)
 
     perms = get_project_permissions()
-    summary = TestDefinition.get_for_project(td.id, perms.allowed_codes)
+    summary = TestDefinition.get_for_project(td.id, perms.allowed_codes, suite_types=MCP_SUITE_TYPES)
 
     doc = MdDoc()
     doc.text(f"**Note added** to {_note_parent_label(summary)}.")
@@ -382,7 +475,7 @@ def update_test_note(
     TestDefinitionNote.update_note(note.id, body)
 
     perms = get_project_permissions()
-    summary = TestDefinition.get_for_project(note.test_definition_id, perms.allowed_codes)
+    summary = TestDefinition.get_for_project(note.test_definition_id, perms.allowed_codes, suite_types=MCP_SUITE_TYPES)
 
     doc = MdDoc()
     doc.text(f"**Note updated** on {_note_parent_label(summary)}.")
@@ -410,7 +503,7 @@ def delete_test_note(
     TestDefinitionNote.delete_note(note.id)
 
     perms = get_project_permissions()
-    summary = TestDefinition.get_for_project(td_id, perms.allowed_codes)
+    summary = TestDefinition.get_for_project(td_id, perms.allowed_codes, suite_types=MCP_SUITE_TYPES)
 
     doc = MdDoc()
     doc.text(f"**Note deleted** from {_note_parent_label(summary)}.")
@@ -656,7 +749,7 @@ def create_test(
     # The joined test-type metadata (param_fields, default_severity, dq_dimension, ...)
     # is only present on the Summary dataclass, so re-fetch for rendering.
     perms = get_project_permissions()
-    summary = TestDefinition.get_for_project(td.id, perms.allowed_codes)
+    summary = TestDefinition.get_for_project(td.id, perms.allowed_codes, suite_types=MCP_SUITE_TYPES)
 
     doc = MdDoc()
     doc.text(f"**Created** in suite `{suite.test_suite}`.")
@@ -694,28 +787,49 @@ def update_test(
         )
         raise MCPUserError(f"Update rejected. No changes saved.\n\n{bullets}")
 
-    before: dict = {key: getattr(td, key, None) for key in fields}
-    for key, value in fields.items():
-        setattr(td, key, value)
-    td.last_manual_update = datetime.now(UTC)
+    suite = TestSuite.get(td.test_suite_id)
+    is_contract = suite is not None and suite.suite_type == SuiteType.CONTRACT
+    old_id = td.id
+    old_label = _version_label(suite, SuiteVersion.get(td.version_id)) if is_contract else None
+    if is_contract:
+        writable_id = _resolve_writable(suite, [td.id])[1].get(td.id)
+        if writable_id is not None and writable_id != td.id:
+            td = resolve_test_definition(str(writable_id))
 
-    update_table_group = TableGroup.get(td.table_groups_id)
-    if update_table_group is not None:
-        apply_test_definition_flavor_rules(
-            td,
-            update_table_group,
-            qualifies_table_refs=table_group_qualifies_table_refs(update_table_group.id),
-        )
+    before: dict = {key: getattr(td, key, None) for key in fields}
+    # An edit to a row of a frozen version must not reach the database before save() moves it
+    # to the draft's copy, so the queries below must not autoflush it.
+    with get_current_session().no_autoflush:
+        for key, value in fields.items():
+            setattr(td, key, value)
+        td.last_manual_update = datetime.now(UTC)
+
+        update_table_group = TableGroup.get(td.table_groups_id)
+        if update_table_group is not None:
+            apply_test_definition_flavor_rules(
+                td,
+                update_table_group,
+                qualifies_table_refs=table_group_qualifies_table_refs(update_table_group.id),
+            )
+
+        try:
+            td.validate(tt)
+        except InvalidTestDefinitionFields as e:
+            _raise_validation_errors(e, "Update rejected. No changes saved.")
 
     try:
-        td.validate(tt)
-    except InvalidTestDefinitionFields as e:
-        _raise_validation_errors(e, "Update rejected. No changes saved.")
-
-    td.save()
+        td.save()
+    except FrozenVersionError as e:
+        raise _frozen_version_error(e, suite, [old_id]) from e
+    except RemovedInDraftError as e:
+        raise _removed_in_draft(e, suite) from e
 
     doc = MdDoc()
     doc.heading(1, f"Test definition `{td.id}` updated")
+    if is_contract:
+        if str(td.id) != str(old_id):
+            doc.field("ID", f"`{td.id}` (was `{old_id}`, in {old_label} — use the new ID from now on)")
+        _version_field(doc, suite, SuiteVersion.get(td.version_id))
     # The Before column reads back stored values, including the calibration fields the
     # parameters section omits — writing one field would otherwise disclose its prior
     # value. Blanked per field rather than dropping the column, so the caller can still
@@ -841,10 +955,6 @@ def bulk_update_tests(
     if tt_code:
         where_clauses.append(TestDefinition.test_type == tt_code)
 
-    stmt = update(TestDefinition).where(*where_clauses).values(**values)
-    session = get_current_session()
-    count = session.execute(stmt).rowcount
-
     verb = "Enabled" if target else "Disabled"
     filters = []
     if table_name:
@@ -853,15 +963,26 @@ def bulk_update_tests(
         filters.append(f"test_type=`{test_type}`")
     filter_str = ", ".join(filters) if filters else "no filter"
 
+    session = get_current_session()
+    matched = session.scalars(select(TestDefinition.id).where(*where_clauses)).all()
     doc = MdDoc()
-    if count == 0:
+    if not matched:
         doc.heading(1, "No tests matched")
         doc.text(
             f"No tests in suite `{suite.test_suite}` matched the filter ({filter_str}). Nothing changed."
         )
         return doc.render()
 
-    doc.heading(1, f"{verb} {count} test(s) in suite `{suite.test_suite}`")
+    version_id, mapping = _resolve_writable(suite, matched)
+    session.execute(
+        update(TestDefinition)
+        .where(TestDefinition.id.in_(list(mapping.values())), TestDefinition.version_clause())
+        .values(**values)
+    )
+
+    doc.heading(1, f"{verb} {len(mapping)} tests in suite `{suite.test_suite}`")
+    if suite.suite_type == SuiteType.CONTRACT:
+        _version_field(doc, suite, SuiteVersion.get(version_id))
     doc.field("Filter", filter_str)
     return doc.render()
 
@@ -898,7 +1019,7 @@ def _resolve_named_tests(test_definition_ids: list[str]) -> list[TestDefinitionM
             parsed.append(td_uuid)
 
     perms = get_project_permissions()
-    resolved = TestDefinition.list_for_ids(parsed, perms.allowed_codes)
+    resolved = TestDefinition.list_for_ids(parsed, perms.allowed_codes, suite_types=MCP_SUITE_TYPES)
     found = {td.id for td in resolved}
     unresolved = [str(td_uuid) for td_uuid in parsed if td_uuid not in found]
 
@@ -932,18 +1053,26 @@ def _describe_filter_scope(suite_name: str, table_name: str | None, test_type: s
     return f"tests in suite `{suite_name}` matching {_describe_filters(table_name, test_type)}"
 
 
-def _render_deleted(scope: str, deleted: list[TestDefinitionMinimal], note_count: int) -> str:
-    """Render the scope acted on, the count, and the deleted tests themselves."""
+def _render_deleted(
+    scope: str,
+    deleted: list[tuple[TestDefinitionMinimal, UUID]],
+    note_count: int,
+    suite: TestSuite | None,
+    version: SuiteVersion | None,
+) -> str:
+    """Render the scope acted on, the count, the version written, and the deleted tests by the IDs removed."""
     doc = MdDoc()
     doc.heading(1, f"Deleted {len(deleted)} tests")
     doc.field("Scope", scope)
+    if suite is not None:
+        _version_field(doc, suite, version)
     if note_count:
         doc.field("Notes deleted", note_count)
 
     listed = deleted[:_DELETED_LISTING_LIMIT]
     rows = [
-        [td.test_name_short or td.test_type, td.table_name, td.column_name or None, str(td.id)]
-        for td in listed
+        [td.test_name_short or td.test_type, td.table_name, td.column_name or None, str(deleted_id)]
+        for td, deleted_id in listed
     ]
     doc.table(["Test Type", "Table", "Column", "ID"], rows, code=[1, 2, 3])
     if len(deleted) > len(listed):
@@ -952,18 +1081,39 @@ def _render_deleted(scope: str, deleted: list[TestDefinitionMinimal], note_count
 
 
 def _delete_resolved_tests(scope: str, selected: list[TestDefinitionMinimal]) -> str:
-    """Delete the already-resolved tests by ID and render what went.
+    """Delete the already-resolved tests from the version each suite writes to, and render what went.
 
-    Deleting by ID rather than by the selecting filter keeps the response exact: a row
-    inserted after the selection is not swept up in the delete unreported.
+    Every suite's rows are mapped onto its writable version before anything is deleted, so a
+    refusal for any of them deletes nothing. Deleting by ID rather than by the selecting filter
+    keeps the response exact: a row inserted after the selection is not swept up in the delete
+    unreported.
     """
-    ids = [td.id for td in selected]
+    ids_by_suite: dict[UUID, list[UUID]] = {}
+    for td in selected:
+        ids_by_suite.setdefault(td.test_suite_id, []).append(td.id)
+    writes: list[tuple[TestSuite, UUID]] = []
+    routed: dict[UUID, UUID] = {}
+    for suite_id, row_ids in ids_by_suite.items():
+        suite = TestSuite.get(suite_id)
+        version_id, mapping = _resolve_writable(suite, row_ids)
+        writes.append((suite, version_id))
+        routed.update(mapping)
+
+    deleted_by_id: dict[UUID, TestDefinitionMinimal] = {}
+    for td in selected:
+        if td.id in routed:
+            deleted_by_id.setdefault(routed[td.id], td)
+    deleted = [(td, deleted_id) for deleted_id, td in deleted_by_id.items()]
+    ids = [deleted_id for _, deleted_id in deleted]
     note_counts = TestDefinitionNote.get_notes_count_by_ids([str(td_id) for td_id in ids])
     try:
         TestDefinition.delete_where(TestDefinition.id.in_(ids), TestDefinition.version_clause())
     except ManagedTestDefinitionError as error:
         raise MCPUserError(str(error)) from error
-    return _render_deleted(scope, selected, sum(note_counts.values()))
+
+    suite, version_id = writes[0] if len(writes) == 1 else (None, None)
+    version = SuiteVersion.get(version_id) if suite is not None and suite.suite_type == SuiteType.CONTRACT else None
+    return _render_deleted(scope, deleted, sum(note_counts.values()), suite, version)
 
 
 @with_database_session
@@ -1113,6 +1263,7 @@ def export_tests(
         str | None,
         Field(description="Optional test type name filter, e.g. ``Alpha Truncation``."),
     ] = None,
+    version: Annotated[int | None, Field(description=_VERSION_ARG_DESCRIPTION)] = None,
 ) -> str:
     """Export test definitions from a test suite as a portable JSON document.
 
@@ -1125,7 +1276,11 @@ def export_tests(
     table_name = table_name or None
     test_type_code = resolve_test_type(test_type) if test_type else None
 
-    export = export_definitions(suite, origin_enum, table_name, test_type_code)
+    target = resolve_contract_version(suite, version) or resolved_version(suite)
+
+    export = export_definitions(
+        suite, origin_enum, table_name, test_type_code, version_id=target.id if version is not None else None
+    )
 
     filters = []
     if origin_enum is not Origin.both:
@@ -1137,6 +1292,7 @@ def export_tests(
 
     doc = MdDoc()
     doc.heading(1, f"Test Definition Export from suite `{suite.test_suite}`")
+    _version_field(doc, suite, target)
     doc.field("Project", export.source.project_code, code=True)
     doc.field("Table Group", export.source.table_group)
     if schema_label := schema_label_for_table_group(suite.table_groups_id):
@@ -1218,6 +1374,17 @@ def import_tests(
         result = import_definitions(suite, config, parsed_payload)
     except InvalidImportPayload as err:
         raise MCPUserError(str(err)) from err
+    except UnmatchedInDraftError as err:
+        raise MCPUserError(f"{_frozen_version_error(err, suite, err.row_ids)} Nothing was applied.") from err
+    except FrozenVersionError as err:
+        label = _version_label(suite, SuiteVersion.get(err.version_id))
+        raise MCPUserError(
+            f"{label} of contract `{suite.test_suite}` can no longer be edited. Nothing was applied."
+        ) from err
+    except RemovedInDraftError as err:
+        raise _removed_in_draft(err, suite) from err
+    except ValueError as err:
+        raise MCPUserError(f"{err} Nothing was applied.") from err
     except ImportStrictViolation as err:
         breakdown = MdDoc()
         _append_import_result(breakdown, err.result, preview=True)
@@ -1234,5 +1401,11 @@ def import_tests(
         doc.text("Preview only — no changes were persisted. Re-run with `mode='apply'` to persist.")
     else:
         doc.heading(1, f"Test Definition Import into suite `{suite.test_suite}`")
+    if suite.suite_type == SuiteType.CONTRACT:
+        version = resolved_version(suite)
+        if preview and version is not None and version.frozen_at is not None:
+            doc.field("Version", format_version(version.version + 1, VersionState.DRAFT))
+        else:
+            _version_field(doc, suite, version)
     _append_import_result(doc, result, preview=preview)
     return doc.render()

@@ -1,6 +1,9 @@
 import copy
 import re
+from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from typing import Any, Self
 from uuid import UUID, uuid4
 
@@ -10,10 +13,14 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    column,
+    desc,
     func,
     literal_column,
     select,
+    table,
     text,
+    true,
 )
 from sqlalchemy.dialects import postgresql
 
@@ -22,6 +29,30 @@ from testgen.common.models.custom_types import NullIfEmptyString
 from testgen.common.models.entity import Entity
 
 _QUALIFIED_COLUMN = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\.[A-Za-z_][A-Za-z0-9_]*\Z")
+
+_test_definitions = table("test_definitions", column("id"), column("version_id"))
+_test_runs = table("test_runs", column("id"), column("test_suite_id"), column("version_id"), column("test_starttime"))
+_job_executions = table("job_executions", column("id"), column("status"))
+
+
+@dataclass
+class ContractState:
+    active: "SuiteVersion | None"
+    draft: "SuiteVersion | None"
+
+
+@dataclass
+class SuiteVersionListItem:
+    id: UUID
+    version: int
+    label: str | None
+    created_by: str | None
+    frozen_at: datetime | None
+    term_count: int
+    run_count: int
+    latest_run_id: UUID | None
+    latest_run_status: str | None
+    latest_run_started_at: datetime | None
 
 
 class SuiteVersion(Entity):
@@ -253,6 +284,53 @@ class SuiteVersion(Entity):
         ).first()
 
     @classmethod
+    def states_for(cls, suite_ids: Iterable[UUID]) -> dict[UUID, ContractState]:
+        """Each suite's open draft and highest frozen version. Suites with no versions are absent."""
+        versions = get_current_session().scalars(
+            select(cls).where(cls.test_suite_id.in_(list(suite_ids))).order_by(cls.version)
+        ).all()
+        states: dict[UUID, ContractState] = {}
+        for version in versions:
+            state = states.setdefault(version.test_suite_id, ContractState(active=None, draft=None))
+            if version.frozen_at is None:
+                state.draft = version
+            else:
+                state.active = version
+        return states
+
+    @classmethod
+    def list_for_suite(cls, suite_id: UUID, *, page: int, limit: int) -> tuple[list[SuiteVersionListItem], int]:
+        """A suite's versions, newest first, each with its term count, run count and latest run."""
+        term_count = (
+            select(func.count()).select_from(_test_definitions)
+            .where(_test_definitions.c.version_id == cls.id).scalar_subquery()
+        )
+        run_count = (
+            select(func.count()).select_from(_test_runs)
+            .where(_test_runs.c.test_suite_id == suite_id, _test_runs.c.version_id == cls.id).scalar_subquery()
+        )
+        latest = (
+            select(_test_runs.c.id, _test_runs.c.test_starttime, _job_executions.c.status)
+            .join(_job_executions, _job_executions.c.id == _test_runs.c.id)
+            .where(_test_runs.c.test_suite_id == suite_id, _test_runs.c.version_id == cls.id)
+            .order_by(desc(_test_runs.c.test_starttime))
+            .limit(1)
+            .lateral()
+        )
+        query = (
+            select(
+                cls.id, cls.version, cls.label, cls.created_by, cls.frozen_at,
+                term_count.label("term_count"), run_count.label("run_count"),
+                latest.c.id.label("latest_run_id"), latest.c.status.label("latest_run_status"),
+                latest.c.test_starttime.label("latest_run_started_at"),
+            )
+            .outerjoin(latest, true())
+            .where(cls.test_suite_id == suite_id)
+            .order_by(cls.version.desc())
+        )
+        return cls._paginate(query, page=page, limit=limit, data_class=SuiteVersionListItem)
+
+    @classmethod
     def next_version_for(cls, suite_id) -> int:
         """One past the suite's highest version number, or 1 when it has none."""
         highest = get_current_session().scalar(
@@ -261,9 +339,41 @@ class SuiteVersion(Entity):
         return (highest or 0) + 1
 
 
+class VersionState(StrEnum):
+    DRAFT = "draft"
+    ACTIVE = "active"
+    SUPERSEDED = "superseded"
+
+
+def version_state(frozen_at: datetime | None, is_active: bool) -> VersionState:
+    """The state of a suite-owned version: draft until frozen, then active or superseded."""
+    if frozen_at is None:
+        return VersionState.DRAFT
+    return VersionState.ACTIVE if is_active else VersionState.SUPERSEDED
+
+
 class FrozenVersionError(Exception):
     """Raised when a write targets a frozen version of a contract."""
 
     def __init__(self, version_id) -> None:
         super().__init__(f"Version {version_id} is frozen and cannot be written.")
         self.version_id = version_id
+
+
+class UnmatchedInDraftError(FrozenVersionError):
+    """Raised when a write names terms of the version in force that carry no contract identity to
+    find their copy by in the open draft."""
+
+    def __init__(self, version_id, draft_id, row_ids: list[UUID]) -> None:
+        super().__init__(version_id)
+        self.draft_id = draft_id
+        self.row_ids = row_ids
+
+
+class RemovedInDraftError(Exception):
+    """Raised when a write names terms of the version in force that the open draft has removed."""
+
+    def __init__(self, version_id, row_ids: list[UUID]) -> None:
+        super().__init__(f"Draft {version_id} no longer holds terms {', '.join(map(str, row_ids))}.")
+        self.version_id = version_id
+        self.row_ids = row_ids

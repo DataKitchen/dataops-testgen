@@ -3,22 +3,26 @@ from typing import Annotated
 
 from pydantic import Field
 
-from testgen.common.enums import JobKey, JobStatus, SuiteType
+from testgen.common.enums import JobKey, JobStatus
 from testgen.common.models import with_database_session
 from testgen.common.models.job_execution import QUEUED_MESSAGE, JobExecution
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY
+from testgen.common.models.suite_version import version_state
 from testgen.common.models.test_run import TestRun, TestRunSummary
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
+    MCP_SUITE_TYPES,
     DocGroup,
     format_page_footer,
     format_page_info,
     format_run_duration,
+    format_version,
     next_scheduled_run,
     parse_run_status_filter,
     parse_uuid,
+    resolve_contract_version,
     resolve_table_group,
     run_status_filter_options,
     target_db_error_text,
@@ -62,6 +66,13 @@ def list_test_runs(
         str | None,
         Field(description=f"Optional run status filter. One of: {run_status_filter_options(JobKey.run_tests)}."),
     ] = None,
+    version: Annotated[
+        int | None,
+        Field(
+            description="Contract version number, e.g. from `list_contract_versions`. Requires `test_suite`. "
+            "Returns only that version's runs.",
+        ),
+    ] = None,
     limit: Annotated[int, Field(description="Page size (default 10, max 100).")] = 10,
     page: Annotated[int, Field(description="Page number starting at 1 (default 1).")] = 1,
 ) -> str:
@@ -77,6 +88,8 @@ def list_test_runs(
 
     if not project_code and not table_group_id:
         raise MCPUserError("Provide either `project_code` or `table_group_id`.")
+    if version is not None and not test_suite:
+        raise MCPUserError("`version` needs `test_suite`: a version number belongs to one contract.")
 
     perms = get_project_permissions()
     test_suite_id = None
@@ -99,11 +112,15 @@ def list_test_runs(
         suites = TestSuite.select_minimal_where(
             TestSuite.project_code == project_code,
             TestSuite.test_suite == test_suite,
-            TestSuite.suite_type == SuiteType.REGULAR,
+            TestSuite.suite_type.in_(MCP_SUITE_TYPES),
         )
         if not suites:
             raise MCPResourceNotAccessible("Test suite", test_suite)
         test_suite_id = str(suites[0].id)
+
+    target = None
+    if version is not None:
+        target = resolve_contract_version(TestSuite.get(test_suite_id), version)
 
     summaries, total = TestRun.select_summary(
         project_code=project_code,
@@ -113,6 +130,8 @@ def list_test_runs(
         statuses=statuses,
         page=page,
         page_size=limit,
+        suite_types=MCP_SUITE_TYPES,
+        version_id=str(target.id) if target else None,
     )
 
     # Queued/claimed JEs that don't yet have a test_runs row are invisible to suite/TG-scoped
@@ -125,6 +144,7 @@ def list_test_runs(
             table_group_id=str(table_group.id) if table_group else None,
             schedule_id=schedule_id,
             statuses=statuses,
+            version_id=str(target.id) if target else None,
         )
 
     scope_descriptor = _scope_descriptor(project_code, test_suite, table_group_id, schedule_id, status)
@@ -177,7 +197,9 @@ def get_test_run(
     parse_uuid(job_execution_id, "job_execution_id")
     perms = get_project_permissions()
 
-    summaries, _ = TestRun.select_summary(job_execution_id=job_execution_id, page_size=1)
+    summaries, _ = TestRun.select_summary(
+        job_execution_id=job_execution_id, page_size=1, suite_types=MCP_SUITE_TYPES
+    )
     summary = summaries[0] if summaries else None
     if summary is None or summary.project_code not in perms.allowed_codes:
         raise MCPResourceNotAccessible("Test run", job_execution_id)
@@ -259,7 +281,7 @@ def _next_test_run(
             for s in TestSuite.select_minimal_where(
                 TestSuite.project_code == project_code,
                 TestSuite.table_groups_id == table_group_id,
-                TestSuite.suite_type == SuiteType.REGULAR,
+                TestSuite.suite_type.in_(MCP_SUITE_TYPES),
             )
         ]
         candidates = [
@@ -278,6 +300,7 @@ def _select_pending_test_jes(
     table_group_id: str | None,
     schedule_id: str | None,
     statuses,
+    version_id: str | None = None,
 ) -> list[JobExecution]:
     """Find queued/in-flight test-run JEs for a given suite or table group scope. For a
     table-group scope, expands to the non-monitor suites in the group so monitor runs stay
@@ -291,7 +314,7 @@ def _select_pending_test_jes(
             for s in TestSuite.select_minimal_where(
                 TestSuite.project_code == project_code,
                 TestSuite.table_groups_id == table_group_id,
-                TestSuite.suite_type == SuiteType.REGULAR,
+                TestSuite.suite_type.in_(MCP_SUITE_TYPES),
             )
         ]
         if not suite_ids:
@@ -299,11 +322,14 @@ def _select_pending_test_jes(
     else:
         return []
     clauses = [JobExecution.job_schedule_id == schedule_id] if schedule_id else []
+    kwargs_match: dict[str, str | list[str]] = {"test_suite_id": suite_ids}
+    if version_id:
+        kwargs_match["version_id"] = version_id
     return JobExecution.select_active_by_kwargs(
         *clauses,
         project_code=project_code,
         job_key=RUN_TESTS_JOB_KEY,
-        kwargs_match={"test_suite_id": suite_ids},
+        kwargs_match=kwargs_match,
         statuses=statuses,
     )
 
@@ -334,6 +360,11 @@ def _render_test_run_section(doc: MdDoc, run: TestRunSummary) -> None:
     doc.field("Submitted", run.created_at)
     doc.field("Started", run.started_at or "—")
     doc.field("Ended", run.completed_at or "In progress")
+    if run.version_number is not None:
+        state = version_state(run.version_frozen_at, run.version_number == run.active_version_number)
+        doc.field("Version", format_version(run.version_number, state))
+        if run.is_preview:
+            doc.field("Preview", "Yes")
     duration = format_run_duration(run.active_seconds, run.status)
     if duration:
         doc.field("Duration", duration)

@@ -6,7 +6,7 @@ from testgen.mcp.tools.markdown import (
     MdDoc,
     _escape_inline,
     _escape_table_cell,
-    _format_dt,
+    format_datetime,
 )
 
 # --- _escape_inline ---
@@ -59,32 +59,32 @@ def test_escape_table_cell_asterisk_not_escaped():
     assert _escape_table_cell("a*b") == "a*b"
 
 
-# --- _format_dt ---
+# --- format_datetime ---
 
 
-def test_format_dt_datetime_object():
+def test_format_datetime_datetime_object():
     dt = datetime(2025, 3, 15, 10, 30, 45)
-    assert _format_dt(dt) == "2025-03-15 10:30 UTC"
+    assert format_datetime(dt) == "2025-03-15 10:30 UTC"
 
 
-def test_format_dt_iso_string_with_t():
-    assert _format_dt("2025-03-15T10:30:45") == "2025-03-15 10:30 UTC"
+def test_format_datetime_iso_string_with_t():
+    assert format_datetime("2025-03-15T10:30:45") == "2025-03-15 10:30 UTC"
 
 
-def test_format_dt_iso_string_with_space():
-    assert _format_dt("2025-03-15 10:30:45") == "2025-03-15 10:30 UTC"
+def test_format_datetime_iso_string_with_space():
+    assert format_datetime("2025-03-15 10:30:45") == "2025-03-15 10:30 UTC"
 
 
-def test_format_dt_non_datetime_string():
-    assert _format_dt("just a string") is None
+def test_format_datetime_non_datetime_string():
+    assert format_datetime("just a string") is None
 
 
-def test_format_dt_none():
-    assert _format_dt(None) is None
+def test_format_datetime_none():
+    assert format_datetime(None) is None
 
 
-def test_format_dt_integer():
-    assert _format_dt(42) is None
+def test_format_datetime_integer():
+    assert format_datetime(42) is None
 
 
 # --- MdDoc.heading ---

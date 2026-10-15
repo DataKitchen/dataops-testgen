@@ -4,14 +4,19 @@ Raw SQL cannot use the ORM expression, so it interpolates this rendering. The ru
 defined once: what this renders has to be what the ORM applies.
 """
 
+from datetime import UTC, datetime
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import literal_column, select
 from sqlalchemy.dialects import postgresql
 
+from testgen.common.enums import JobStatus
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_definition import TestDefinition
+from testgen.common.models.test_run import TestRun
 
 pytestmark = pytest.mark.unit
 
@@ -103,3 +108,89 @@ def test_the_rendering_does_not_depend_on_the_column_name():
 
     assert first != second
     assert first.replace("a.", "").replace(str(uuid4()), "") == second.replace("b.", "").replace(str(uuid4()), "")
+
+
+@pytest.fixture
+def session_mock():
+    with (
+        patch("testgen.common.models.suite_version.get_current_session") as suite_version_session,
+        patch("testgen.common.models.test_run.get_current_session", new=suite_version_session),
+    ):
+        yield suite_version_session.return_value
+
+
+def test_list_for_suite_orders_newest_first_and_counts_per_version():
+    with patch.object(SuiteVersion, "_paginate", return_value=([], 0)) as paginate:
+        SuiteVersion.list_for_suite(uuid4(), page=1, limit=20)
+    sql = _compile(paginate.call_args.args[0])
+    assert "ORDER BY suite_versions.version DESC" in sql
+    assert "test_definitions.version_id = suite_versions.id" in sql
+    assert "test_runs.version_id = suite_versions.id" in sql
+
+
+def test_list_for_suite_narrows_both_run_subqueries_to_the_suite():
+    suite_id = uuid4()
+    with patch.object(SuiteVersion, "_paginate", return_value=([], 0)) as paginate:
+        SuiteVersion.list_for_suite(suite_id, page=1, limit=20)
+    sql = _compile(paginate.call_args.args[0])
+    assert sql.count(f"test_runs.test_suite_id = '{suite_id}'") == 2
+
+
+def test_list_for_suite_latest_run_is_the_most_recent_of_that_version():
+    with patch.object(SuiteVersion, "_paginate", return_value=([], 0)) as paginate:
+        SuiteVersion.list_for_suite(uuid4(), page=1, limit=20)
+    sql = _compile(paginate.call_args.args[0])
+    assert "ORDER BY test_runs.test_starttime DESC" in sql
+    assert "LIMIT 1" in sql
+
+
+def test_states_for_reads_every_suite_in_one_query(session_mock):
+    session_mock.scalars.return_value.all.return_value = []
+    assert SuiteVersion.states_for([uuid4()]) == {}
+    assert session_mock.scalars.call_count == 1
+    sql = _compile(session_mock.scalars.call_args.args[0])
+    assert "suite_versions.test_suite_id IN" in sql
+
+
+def test_states_for_picks_the_draft_and_the_highest_frozen_version(session_mock):
+    suite_id = uuid4()
+    v2 = SuiteVersion(id=uuid4(), test_suite_id=suite_id, version=2, frozen_at=datetime(2026, 1, 1, tzinfo=UTC))
+    v3 = SuiteVersion(id=uuid4(), test_suite_id=suite_id, version=3, frozen_at=datetime(2026, 2, 1, tzinfo=UTC))
+    v4 = SuiteVersion(id=uuid4(), test_suite_id=suite_id, version=4)
+    session_mock.scalars.return_value.all.return_value = [v2, v3, v4]
+    state = SuiteVersion.states_for([suite_id])[suite_id]
+    assert state.active is v3
+    assert state.draft is v4
+
+
+def test_latest_verification_excludes_runs_started_before_the_freeze(session_mock):
+    version = SuiteVersion(id=uuid4(), version=3, frozen_at=datetime(2026, 9, 12, tzinfo=UTC))
+    TestRun.latest_verification(version)
+    sql = _compile(session_mock.scalars.call_args.args[0])
+    assert "test_runs.test_starttime >= '2026-09-12" in sql
+    assert f"test_runs.version_id = '{version.id}'" in sql
+    assert "ORDER BY test_runs.test_starttime DESC" in sql
+
+
+def test_latest_verification_narrows_to_the_versions_suite(session_mock):
+    version = SuiteVersion(
+        id=uuid4(), test_suite_id=uuid4(), version=3, frozen_at=datetime(2026, 9, 12, tzinfo=UTC)
+    )
+    TestRun.latest_verification(version)
+    sql = _compile(session_mock.scalars.call_args.args[0])
+    assert f"test_runs.test_suite_id = '{version.test_suite_id}'" in sql
+
+
+def test_latest_verification_narrows_by_the_clauses_given(session_mock):
+    version = SuiteVersion(
+        id=uuid4(), test_suite_id=uuid4(), version=3, frozen_at=datetime(2026, 9, 12, tzinfo=UTC)
+    )
+    TestRun.latest_verification(version, JobExecution.status == JobStatus.COMPLETED)
+    sql = _compile(session_mock.scalars.call_args.args[0])
+    assert "JOIN job_executions ON test_runs.id = job_executions.id" in sql
+    assert "job_executions.status = 'completed'" in sql
+
+
+def test_latest_verification_of_a_draft_is_none_without_a_query(session_mock):
+    assert TestRun.latest_verification(SuiteVersion(id=uuid4(), version=4)) is None
+    session_mock.scalars.assert_not_called()

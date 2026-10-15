@@ -1,5 +1,6 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import ClassVar, Literal, NamedTuple, Self, TypedDict
 from uuid import UUID
 
@@ -9,12 +10,13 @@ from sqlalchemy.orm import foreign, relationship
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import case
 
-from testgen.common.enums import JOB_STATUS_LABEL, JobStatus
+from testgen.common.enums import JOB_STATUS_LABEL, JobStatus, SuiteType
 from testgen.common.models import database_session, get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_result import TestResult, TestResultStatus
 from testgen.common.models.test_suite import TestSuite
@@ -71,8 +73,23 @@ class TestRunSummary(EntityMinimal):
     dismissed_ct: int | None
     dq_score_testing: float | None
     total_count: int
+    version_number: int | None = None
+    version_frozen_at: datetime | None = None
+    active_version_number: int | None = None
+    test_starttime: datetime | None = None
 
     STATUS_LABEL: ClassVar[dict[str, str]] = JOB_STATUS_LABEL
+
+    @property
+    def is_preview(self) -> bool:
+        """Whether the run checked a version before it was frozen."""
+        if self.version_number is None:
+            return False
+        if self.version_frozen_at is None:
+            return True
+        if self.test_starttime is None:
+            return False
+        return self.test_starttime.replace(tzinfo=UTC) < self.version_frozen_at
 
     @property
     def status_label(self) -> str:
@@ -162,6 +179,24 @@ class TestRun(Entity):
         return TestRunMinimal(**result) if result else None
 
     @classmethod
+    def latest_verification(cls, version: SuiteVersion, *clauses) -> "TestRun | None":
+        """The latest run of a frozen version that started after it was frozen, narrowed by ``clauses``, if any."""
+        if version.frozen_at is None:
+            return None
+        return get_current_session().scalars(
+            select(cls)
+            .join(JobExecution, cls.id == JobExecution.id)
+            .where(
+                cls.test_suite_id == version.test_suite_id,
+                cls.version_id == version.id,
+                cls.test_starttime >= version.frozen_at,
+                *clauses,
+            )
+            .order_by(desc(cls.test_starttime))
+            .limit(1)
+        ).first()
+
+    @classmethod
     def get_latest_run(cls, project_code: str) -> LatestTestRun | None:
         query = (
             select(TestRun.id, JobExecution.started_at.label("run_time"))
@@ -214,6 +249,9 @@ class TestRun(Entity):
         statuses: list[JobStatus] | None = None,
         page: int = 1,
         page_size: int = 20,
+        *,
+        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        version_id: UUID | str | None = None,
     ) -> tuple[list[TestRunSummary], int]:
         if (
             (table_group_id and not is_uuid4(table_group_id))
@@ -268,19 +306,26 @@ class TestRun(Entity):
             rr.log_ct,
             rr.dismissed_ct,
             tr.dq_score_test_run AS dq_score_testing,
-            COUNT(*) OVER() AS total_count
+            COUNT(*) OVER() AS total_count,
+            sv.version AS version_number,
+            sv.frozen_at AS version_frozen_at,
+            (SELECT MAX(av.version) FROM suite_versions av
+                WHERE av.test_suite_id = ts.id AND av.frozen_at IS NOT NULL) AS active_version_number,
+            tr.test_starttime
         FROM job_executions je
             LEFT JOIN test_runs tr ON tr.id = je.id
+            LEFT JOIN suite_versions sv ON sv.id = tr.version_id AND sv.test_suite_id IS NOT NULL
             LEFT JOIN test_suites ts ON ts.id = tr.test_suite_id
             LEFT JOIN table_groups tg ON tg.id = ts.table_groups_id
             LEFT JOIN projects p ON p.project_code = je.project_code
             LEFT JOIN run_results rr ON rr.test_run_id = tr.id
         WHERE je.job_key = 'run-tests'
-            AND (ts.suite_type = 'regular' OR ts.id IS NULL)
+            AND (ts.suite_type IN :suite_types OR ts.id IS NULL)
             {" AND je.project_code = :project_code" if project_code else ""}
             {" AND ts.table_groups_id = :table_group_id" if table_group_id else ""}
             {" AND ts.id = :test_suite_id" if test_suite_id else ""}
             {" AND tr.id IN :test_run_ids" if test_run_ids else ""}
+            {" AND tr.version_id = :version_id" if version_id else ""}
             {" AND je.id = :job_execution_id" if job_execution_id else ""}
             {" AND je.job_schedule_id = :schedule_id" if schedule_id else ""}
             {" AND je.status IN :statuses" if statuses else ""}
@@ -289,9 +334,11 @@ class TestRun(Entity):
         """
         params = {
             "project_code": project_code,
+            "suite_types": tuple(t.value for t in suite_types),
             "table_group_id": table_group_id,
             "test_suite_id": test_suite_id,
             "test_run_ids": tuple(test_run_ids or []),
+            "version_id": str(version_id) if version_id else None,
             "job_execution_id": str(job_execution_id) if job_execution_id else None,
             "schedule_id": schedule_id,
             "statuses": tuple(statuses) if statuses else (),

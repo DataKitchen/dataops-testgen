@@ -7,13 +7,23 @@ from pydantic import Field
 
 from testgen import settings
 from testgen.common import contract_service
+from testgen.common.contract_service import InvalidContractDocumentError
+from testgen.common.enums import JOB_STATUS_LABEL
 from testgen.common.models import with_database_session
-from testgen.common.models.suite_version import SuiteVersion
+from testgen.common.models.suite_version import SuiteVersion, VersionState, version_state
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import mcp_permission
 from testgen.mcp.services.source_data_protection import mcp_source_data_only
-from testgen.mcp.tools.common import DocGroup, resolve_contract
-from testgen.mcp.tools.markdown import MdDoc
+from testgen.mcp.tools.common import (
+    DocGroup,
+    format_page_footer,
+    format_page_info,
+    format_version,
+    resolve_contract,
+    validate_limit,
+    validate_page,
+)
+from testgen.mcp.tools.markdown import MdDoc, format_datetime
 
 _DOC_GROUP = DocGroup.CONTRACTS
 
@@ -86,12 +96,7 @@ def export_contract(
         # test type excluded from contracts -- each of which names what to fix.
         raise MCPUserError(str(e)) from e
 
-    if target.frozen_at is None:
-        state = "draft"
-    elif SuiteVersion.is_active(target.id, suite.id):
-        state = "active"
-    else:
-        state = "superseded"
+    state = version_state(target.frozen_at, SuiteVersion.is_active(target.id, suite.id))
 
     pieces = split_document(exported.text, settings.MCP_CONTRACT_EXPORT_CHUNK_BYTES)
     if not 1 <= chunk <= len(pieces):
@@ -99,7 +104,7 @@ def export_contract(
 
     doc = MdDoc()
     doc.heading(1, f"Contract `{suite.test_suite}`")
-    doc.field("Version", f"v{target.version} {state}")
+    doc.field("Version", format_version(target.version, state))
     if len(pieces) > 1:
         size = len(exported.text.encode()) // 1024
         doc.field("Document", f"{size} KB in {len(pieces)} chunks, of which this is chunk {chunk} of {len(pieces)}")
@@ -111,4 +116,112 @@ def export_contract(
         doc.text(f"Call `export_contract` again with `chunk={chunk + 1}`, appending each piece in order.")
     doc.code_block(pieces[chunk - 1], language="yaml")
 
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("view")
+def list_contract_versions(
+    test_suite_id: Annotated[str, Field(description="UUID of the contract, e.g. from `list_test_suites`.")],
+    limit: Annotated[int, Field(description="Maximum number of versions per page (default 20, max 100).")] = 20,
+    page: Annotated[int, Field(description="Page number, starting from 1 (default 1).")] = 1,
+) -> str:
+    """List a contract's versions, newest first.
+
+    Each version shows its state, label, author, freeze time, how many tests it holds, how many
+    times it has run and its latest run. Use `list_test_runs` with `version` for a version's
+    full run history.
+    """
+    validate_page(page)
+    validate_limit(limit, 100)
+    suite = resolve_contract(test_suite_id)
+    items, total = SuiteVersion.list_for_suite(suite.id, page=page, limit=limit)
+    in_force = SuiteVersion.in_force_for(suite.id)
+    active_number = in_force.version if in_force else None
+
+    doc = MdDoc()
+    doc.heading(1, f"Versions of contract `{suite.test_suite}`")
+    doc.text(format_page_info(total, page, limit))
+    rows = []
+    for item in items:
+        state = version_state(item.frozen_at, item.version == active_number)
+        latest = None
+        if item.latest_run_id:
+            status = JOB_STATUS_LABEL.get(item.latest_run_status, item.latest_run_status)
+            started = format_datetime(item.latest_run_started_at)
+            latest = f"`{item.latest_run_id}` {status} {started}" if started else f"`{item.latest_run_id}` {status}"
+        rows.append([
+            format_version(item.version, state), item.label, item.created_by, item.frozen_at,
+            item.term_count, item.run_count, latest,
+        ])
+    doc.table(["Version", "Label", "Author", "Frozen", "Tests", "Runs", "Latest Run"], rows)
+    if footer := format_page_footer(total, page, limit):
+        doc.text(footer)
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("edit")
+def freeze_contract_version(
+    test_suite_id: Annotated[str, Field(description="UUID of the contract, e.g. from `list_test_suites`.")],
+    label: Annotated[str | None, Field(description="Optional name for the version being frozen.")] = None,
+) -> str:
+    """Freeze a contract's draft, making it the version in force.
+
+    A frozen version cannot be changed or unfrozen. Later edits open a new draft.
+    """
+    suite = resolve_contract(test_suite_id)
+    previous = SuiteVersion.in_force_for(suite.id)
+    if SuiteVersion.draft_for(suite.id) is None:
+        detail = (
+            f" {format_version(previous.version, VersionState.ACTIVE)} is already frozen; "
+            "edit a test to open a new draft."
+            if previous else ""
+        )
+        raise MCPUserError(f"Contract `{suite.test_suite}` has no draft to freeze.{detail}")
+    try:
+        frozen = contract_service.freeze_version(suite, label=label)
+    except InvalidContractDocumentError as e:
+        raise MCPUserError(
+            "The draft cannot be frozen because its document does not validate:\n"
+            + "\n".join(f"- {problem}" for problem in e.problems)
+        ) from e
+    except ValueError as e:
+        raise MCPUserError(str(e)) from e
+
+    doc = MdDoc()
+    doc.heading(1, f"Froze v{frozen.version} of contract `{suite.test_suite}`")
+    doc.field("Version", format_version(frozen.version, VersionState.ACTIVE))
+    if frozen.label:
+        doc.field("Label", frozen.label)
+    if previous:
+        doc.field("Previous version", format_version(previous.version, VersionState.SUPERSEDED))
+    doc.text(
+        f"Runs of this contract now run v{frozen.version} by default. A frozen version cannot be "
+        "changed or unfrozen; edits open a new draft."
+    )
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("edit")
+def discard_contract_draft(
+    test_suite_id: Annotated[str, Field(description="UUID of the contract, e.g. from `list_test_suites`.")],
+) -> str:
+    """Discard a contract's draft and the tests on it.
+
+    The contract returns to its version in force.
+    """
+    suite = resolve_contract(test_suite_id)
+    draft = SuiteVersion.draft_for(suite.id)
+    try:
+        removed = contract_service.discard_draft(suite)
+    except ValueError as e:
+        raise MCPUserError(str(e)) from e
+    now_at = SuiteVersion.in_force_for(suite.id)
+
+    doc = MdDoc()
+    doc.heading(1, f"Discarded {format_version(draft.version, VersionState.DRAFT)} of contract `{suite.test_suite}`")
+    doc.field("Tests removed", removed)
+    doc.field("Contract is now at", format_version(now_at.version, VersionState.ACTIVE))
     return doc.render()

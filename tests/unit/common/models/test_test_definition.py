@@ -411,6 +411,7 @@ def _make_summary_row(table_name: str = "my_table") -> dict:
         "profile_run_id": uuid4(),
         "test_type": "CUSTOM",
         "test_suite_id": uuid4(),
+        "version_id": uuid4(),
         "test_description": None,
         "schema_name": "public",
         "table_name": table_name,

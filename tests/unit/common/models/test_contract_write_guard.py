@@ -1,14 +1,22 @@
+from collections import namedtuple
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql import operators
 from sqlalchemy.sql.elements import BinaryExpression
+from sqlalchemy.sql.expression import Update
 
 from testgen.common.models import test_definition as test_definition_module
-from testgen.common.models.suite_version import FrozenVersionError, SuiteVersion
+from testgen.common.models.suite_version import (
+    FrozenVersionError,
+    RemovedInDraftError,
+    SuiteVersion,
+    UnmatchedInDraftError,
+)
 from testgen.common.models.test_definition import MissingTestDefinitionError, TestDefinition
-from tests.unit.sql_assertions import conjuncts, is_not_null_conjunct, scopes_to_a_version
+from tests.unit.sql_assertions import conjuncts, equality_conjunct, is_not_null_conjunct, scopes_to_a_version
 
 pytestmark = pytest.mark.unit
 
@@ -126,26 +134,78 @@ def test_set_status_attribute_refuses_when_any_version_in_the_batch_is_frozen_an
     session.execute.assert_not_called()
 
 
-def test_save_of_a_term_the_draft_did_not_copy_is_refused():
-    """A draft carries a copy of every term the version in force held, so a row on a frozen
-    version that the draft has no copy of is one the draft already superseded. Rewriting it
-    would resurrect a term the contract dropped.
-    """
-    frozen_version_id = uuid4()
-    term = TestDefinition(id=uuid4(), version_id=frozen_version_id)
+def test_save_of_an_active_row_with_a_draft_open_lands_on_the_drafts_copy():
+    active, draft, copy_id = uuid4(), uuid4(), uuid4()
+    active_id = uuid4()
+    term = TestDefinition(id=active_id, test_suite_id=uuid4(), version_id=active, test_type="Row_Ct")
     with (
-        patch(
-            "testgen.common.models.test_definition.get_current_session",
-            return_value=_session_returning(frozen_version_id),
-        ),
-        patch.object(SuiteVersion, "in_force_for", return_value=MagicMock(id=frozen_version_id)),
-        patch.object(
-            TestDefinition, "resolve_write_target",
-            return_value=(uuid4(), {}),
-        ),
+        patch("testgen.common.models.test_definition.get_current_session", return_value=MagicMock()),
+        patch.object(TestDefinition, "resolve_writable", return_value=(draft, {active_id: copy_id})) as route,
     ):
-        with pytest.raises(FrozenVersionError):
-            term.save()
+        term.save()
+    route.assert_called_once_with(term.test_suite_id, [active_id])
+    assert (term.id, term.version_id) == (copy_id, draft)
+
+
+def _session_reading_the_loaded_row(**stored):
+    """A session whose SELECT of the row an edit was loaded from returns ``stored``."""
+    session = MagicMock()
+    loaded_row = MagicMock(**stored)
+    session.execute.side_effect = lambda statement: (
+        MagicMock() if isinstance(statement, Update) else MagicMock(one=MagicMock(return_value=loaded_row))
+    )
+    return session
+
+
+def _update_values(session) -> dict:
+    (update,) = (call.args[0] for call in session.execute.call_args_list if isinstance(call.args[0], Update))
+    return {column.key: value for column, value in update._values.items()}
+
+
+def test_save_routed_onto_the_drafts_copy_writes_only_what_the_edit_changed():
+    active, draft, copy_id, active_id = uuid4(), uuid4(), uuid4(), uuid4()
+    suite_id = uuid4()
+    stored = {
+        column.key: None for column in TestDefinition.__table__.columns
+    } | {"id": active_id, "test_suite_id": suite_id, "version_id": active, "test_type": "Row_Ct",
+         "severity": "Fail", "threshold_value": "5"}
+    term = TestDefinition(**{**stored, "severity": "Warning"})
+    session = _session_reading_the_loaded_row(**stored)
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch.object(TestDefinition, "resolve_writable", return_value=(draft, {active_id: copy_id})),
+        patch.object(SuiteVersion, "is_suite_owned", return_value=False),
+    ):
+        term.save()
+
+    written = _update_values(session)
+    assert "severity" in written
+    assert "threshold_value" not in written, "the edit reverts a value the draft's copy may have changed"
+
+
+def test_save_of_a_row_that_stays_put_reads_nothing_back():
+    row_id = uuid4()
+    term = TestDefinition(id=row_id, test_suite_id=uuid4(), version_id=uuid4(), test_type="Row_Ct", severity="Fail")
+    session = _session_reading_the_loaded_row()
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch.object(TestDefinition, "resolve_writable", return_value=(term.version_id, {row_id: row_id})),
+        patch.object(SuiteVersion, "is_suite_owned", return_value=False),
+    ):
+        term.save()
+
+    assert [call for call in session.execute.call_args_list if not isinstance(call.args[0], Update)] == []
+    assert "threshold_value" in _update_values(session)
+
+
+def test_save_of_a_row_that_no_longer_exists_is_refused():
+    term = TestDefinition(id=uuid4(), test_suite_id=uuid4(), version_id=uuid4(), test_type="Row_Ct")
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=MagicMock()),
+        patch.object(TestDefinition, "resolve_writable", return_value=(uuid4(), {})),
+        pytest.raises(ValueError, match="no longer exists"),
+    ):
+        term.save()
 
 
 def test_a_new_term_on_a_frozen_only_contract_is_inserted_into_the_draft():
@@ -197,6 +257,19 @@ def test_copy_refuses_a_frozen_suite_owned_target_version():
     session.execute.assert_not_called()
 
 
+Row = namedtuple("Row", "id version_id contract_term_id")
+
+
+def _with_rows(session, *rows):
+    """Answer the row lookup a write routes through with ``rows``."""
+    session.execute.return_value.all.return_value = list(rows)
+    return session
+
+
+def _updates(session) -> list:
+    return [call.args[0] for call in session.execute.call_args_list if isinstance(call.args[0], Update)]
+
+
 def test_editing_a_term_on_a_frozen_only_contract_lands_in_a_draft():
     """Where no draft exists, one comes into being to receive the edit, carrying a copy of
     the agreement in force. Nobody is asked to make a version first, so editing a term on a
@@ -210,11 +283,9 @@ def test_editing_a_term_on_a_frozen_only_contract_lands_in_a_draft():
 
     draft_version_id = uuid4()
     copied_id = uuid4()
+    session = _with_rows(_session_returning(frozen_version_id), Row(definition.id, frozen_version_id, "t"))
     with (
-        patch(
-            "testgen.common.models.test_definition.get_current_session",
-            return_value=_session_returning(frozen_version_id),
-        ),
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
         patch.object(SuiteVersion, "in_force_for", return_value=MagicMock(id=frozen_version_id)),
         patch.object(
             TestDefinition, "resolve_write_target",
@@ -244,11 +315,9 @@ def test_a_payload_carrying_string_ids_routes_onto_the_draft_like_any_other():
 
     draft_version_id = uuid4()
     copied_id = uuid4()
+    session = _with_rows(_session_returning(frozen_version_id), Row(definition_id, frozen_version_id, "t"))
     with (
-        patch(
-            "testgen.common.models.test_definition.get_current_session",
-            return_value=_session_returning(frozen_version_id),
-        ),
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
         patch.object(SuiteVersion, "in_force_for", return_value=MagicMock(id=frozen_version_id)),
         patch.object(
             TestDefinition, "resolve_write_target",
@@ -261,16 +330,15 @@ def test_a_payload_carrying_string_ids_routes_onto_the_draft_like_any_other():
     assert definition.id == copied_id
 
 
-def _session_routing_version_lookups(*, persisted_version, frozen_versions=()):
-    """A session answering the persisted-row lookup and the frozen check by what each asks.
+def _session_routing_version_lookups(row_id, *, persisted_version, frozen_versions=(), resolved=None):
+    """A session answering the persisted-row lookup, the frozen check and the resolved-version
+    lookup by what each asks.
 
-    Answering both from one queue lets a guard that never issued the persisted-row lookup
-    read as guarded anyway, because the frozen check would consume the row's version.
+    The row lookup returns the persisted row, or nothing when ``persisted_version`` is None. The
+    frozen check answers by the version id it names; the resolved-version lookup, which names
+    none, answers ``resolved`` (the persisted version when not given).
     """
     def scalar(statement):
-        froms = statement.get_final_froms()
-        if getattr(froms[0], "name", None) == "test_definitions":
-            return persisted_version
         for term in conjuncts(statement.whereclause):
             if not isinstance(term, BinaryExpression) or term.operator is not operators.eq:
                 continue
@@ -278,17 +346,18 @@ def _session_routing_version_lookups(*, persisted_version, frozen_versions=()):
             if getattr(left, "key", None) == "id" and getattr(left.table, "name", None) == "suite_versions":
                 value = getattr(term.right, "value", None)
                 return value if value in frozen_versions else None
-        return None
+        return resolved or persisted_version
 
     session = MagicMock()
     session.scalar.side_effect = scalar
-    return session
+    rows = [Row(row_id, persisted_version, "term")] if persisted_version else []
+    return _with_rows(session, *rows)
 
 
 def test_an_update_whose_instance_carries_no_version_is_guarded_by_the_persisted_row():
     """The product's edit dialog rebuilds a definition from a summary payload, which carries
     no ``version_id``, so the instance holding one is not something the guard can assume. A
-    guard that reads the instance passes every such edit, frozen term or not.
+    guard that reads the instance passes every such edit straight onto the frozen term.
     """
     frozen_version_id = uuid4()
     definition = TestDefinition()
@@ -296,16 +365,20 @@ def test_an_update_whose_instance_carries_no_version_is_guarded_by_the_persisted
     definition.test_suite_id = uuid4()
     definition.version_id = None
 
+    draft_version_id, copied_id = uuid4(), uuid4()
     session = _session_routing_version_lookups(
-        persisted_version=frozen_version_id, frozen_versions=(frozen_version_id,)
+        definition.id, persisted_version=frozen_version_id, frozen_versions=(frozen_version_id,)
     )
     with (
         patch("testgen.common.models.test_definition.get_current_session", return_value=session),
         patch.object(SuiteVersion, "in_force_for", return_value=MagicMock(id=frozen_version_id)),
-        patch.object(TestDefinition, "resolve_write_target", return_value=(uuid4(), {})),
+        patch.object(
+            TestDefinition, "resolve_write_target", return_value=(draft_version_id, {definition.id: copied_id})
+        ),
     ):
-        with pytest.raises(FrozenVersionError):
-            definition.save()
+        definition.save()
+
+    assert (definition.id, definition.version_id) == (copied_id, draft_version_id)
 
 
 def test_an_update_whose_persisted_row_is_on_a_draft_proceeds():
@@ -315,11 +388,11 @@ def test_an_update_whose_persisted_row_is_on_a_draft_proceeds():
     definition.test_suite_id = uuid4()
     definition.version_id = None
 
-    session = _session_routing_version_lookups(persisted_version=draft_version_id)
+    session = _session_routing_version_lookups(definition.id, persisted_version=draft_version_id)
     with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
         definition.save()
 
-    session.execute.assert_called_once()
+    assert len(_updates(session)) == 1
 
 
 def test_an_update_of_a_row_that_no_longer_exists_is_refused():
@@ -328,12 +401,12 @@ def test_an_update_of_a_row_that_no_longer_exists_is_refused():
     definition.test_suite_id = uuid4()
     definition.version_id = None
 
-    session = _session_routing_version_lookups(persisted_version=None)
+    session = _session_routing_version_lookups(definition.id, persisted_version=None, resolved=uuid4())
     with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
         with pytest.raises(MissingTestDefinitionError):
             definition.save()
 
-    session.execute.assert_not_called()
+    assert _updates(session) == []
 
 
 def test_the_update_narrows_by_the_rows_resolved_version():
@@ -342,8 +415,7 @@ def test_the_update_narrows_by_the_rows_resolved_version():
     definition.test_suite_id = uuid4()
     definition.version_id = uuid4()
 
-    session = MagicMock()
-    session.scalar.return_value = None
+    session = _with_rows(_session_returning(None), Row(definition.id, definition.version_id, None))
     with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
         definition.save()
 
@@ -381,7 +453,7 @@ def test_refusing_a_superseded_version_write_opens_no_draft_and_copies_nothing()
     definition.version_id = superseded_version_id
 
     session = _session_routing_version_lookups(
-        persisted_version=superseded_version_id, frozen_versions=(superseded_version_id,)
+        definition.id, persisted_version=superseded_version_id, frozen_versions=(superseded_version_id,)
     )
     with (
         patch("testgen.common.models.test_definition.get_current_session", return_value=session),
@@ -392,7 +464,7 @@ def test_refusing_a_superseded_version_write_opens_no_draft_and_copies_nothing()
             definition.save()
 
     resolve.assert_not_called()
-    session.execute.assert_not_called()
+    assert _updates(session) == []
 
 
 def test_a_contract_with_no_version_in_force_refuses_a_frozen_row_outright():
@@ -403,7 +475,7 @@ def test_a_contract_with_no_version_in_force_refuses_a_frozen_row_outright():
     definition.version_id = frozen_version_id
 
     session = _session_routing_version_lookups(
-        persisted_version=frozen_version_id, frozen_versions=(frozen_version_id,)
+        definition.id, persisted_version=frozen_version_id, frozen_versions=(frozen_version_id,)
     )
     with (
         patch("testgen.common.models.test_definition.get_current_session", return_value=session),
@@ -414,3 +486,231 @@ def test_a_contract_with_no_version_in_force_refuses_a_frozen_row_outright():
             definition.save()
 
     resolve.assert_not_called()
+
+
+def _session_for_rows(rows, *, resolved, draft_rows=()):
+    """A session whose row lookup returns ``rows``, whose resolved-version lookup returns
+    ``resolved``, and whose draft lookup by term identity returns ``draft_rows``."""
+    session = MagicMock()
+    session.execute.return_value.all.side_effect = [list(rows), list(draft_rows)]
+    session.scalar.return_value = resolved
+    return session
+
+
+def _routing(session, *, frozen=(), in_force=None, write_target=None):
+    return (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch.object(SuiteVersion, "is_frozen_agreement", side_effect=lambda v: v in frozen),
+        patch.object(SuiteVersion, "in_force_for", return_value=in_force),
+        patch.object(TestDefinition, "resolve_write_target", return_value=write_target),
+    )
+
+
+def test_rows_of_a_writable_version_map_to_themselves_and_open_nothing():
+    placeholder = uuid4()
+    row = Row(uuid4(), placeholder, None)
+    session = _session_for_rows([row], resolved=placeholder)
+    p_session, p_frozen, p_force, p_target = _routing(session)
+    with p_session, p_frozen, p_force, p_target as resolve:
+        version, mapping = TestDefinition.resolve_writable(uuid4(), [row.id])
+    assert (version, mapping) == (placeholder, {row.id: row.id})
+    resolve.assert_not_called()
+
+
+def test_an_active_row_with_no_draft_maps_to_its_copy_in_the_new_draft():
+    active, draft = uuid4(), uuid4()
+    row, copy_id = Row(uuid4(), active, "orders-row-count"), uuid4()
+    session = _session_for_rows([row], resolved=active)
+    p = _routing(session, frozen={active}, in_force=MagicMock(id=active), write_target=(draft, {row.id: copy_id}))
+    with p[0], p[1], p[2], p[3]:
+        assert TestDefinition.resolve_writable(uuid4(), [row.id]) == (draft, {row.id: copy_id})
+
+
+def test_an_active_row_with_a_draft_open_maps_to_the_drafts_copy_by_term_identity():
+    active, draft = uuid4(), uuid4()
+    row, copy_id = Row(uuid4(), active, "orders-row-count"), uuid4()
+    session = _session_for_rows(
+        [row], resolved=draft, draft_rows=[Row(copy_id, draft, "orders-row-count")]
+    )
+    p = _routing(session, frozen={active}, in_force=MagicMock(id=active), write_target=(draft, {}))
+    with p[0], p[1], p[2], p[3]:
+        assert TestDefinition.resolve_writable(uuid4(), [row.id]) == (draft, {row.id: copy_id})
+
+    lookup = session.execute.call_args_list[1].args[0]
+    terms = conjuncts(lookup.whereclause)
+    assert any(equality_conjunct(t, "version_id", "test_definitions", draft) for t in terms)
+    assert "contract_term_id IN" in str(lookup.compile(dialect=postgresql.dialect()))
+
+
+def test_an_active_row_the_draft_removed_is_refused_by_name():
+    active, draft = uuid4(), uuid4()
+    kept, removed = Row(uuid4(), active, "kept"), Row(uuid4(), active, "removed")
+    session = _session_for_rows([kept, removed], resolved=draft, draft_rows=[Row(uuid4(), draft, "kept")])
+    p = _routing(session, frozen={active}, in_force=MagicMock(id=active), write_target=(draft, {}))
+    with p[0], p[1], p[2], p[3], pytest.raises(RemovedInDraftError) as raised:
+        TestDefinition.resolve_writable(uuid4(), [kept.id, removed.id])
+    assert raised.value.row_ids == [removed.id]
+    assert raised.value.version_id == draft
+
+
+def test_a_superseded_row_is_refused_before_a_draft_is_opened():
+    superseded, active = uuid4(), uuid4()
+    row = Row(uuid4(), superseded, "old")
+    session = _session_for_rows([row], resolved=active)
+    p = _routing(session, frozen={superseded, active}, in_force=MagicMock(id=active))
+    with p[0], p[1], p[2], p[3] as resolve, pytest.raises(FrozenVersionError):
+        TestDefinition.resolve_writable(uuid4(), [row.id])
+    resolve.assert_not_called()
+
+
+def test_no_rows_named_on_a_frozen_only_contract_opens_a_draft():
+    active, draft = uuid4(), uuid4()
+    session = _session_for_rows([], resolved=active)
+    p = _routing(session, frozen={active}, in_force=MagicMock(id=active), write_target=(draft, {}))
+    with p[0], p[1], p[2], p[3]:
+        assert TestDefinition.resolve_writable(uuid4()) == (draft, {})
+
+
+def test_no_rows_named_on_a_writable_version_opens_nothing():
+    placeholder = uuid4()
+    session = _session_for_rows([], resolved=placeholder)
+    p = _routing(session)
+    with p[0], p[1], p[2], p[3] as resolve:
+        assert TestDefinition.resolve_writable(uuid4()) == (placeholder, {})
+    resolve.assert_not_called()
+
+
+def test_the_frozen_check_runs_once_per_distinct_version():
+    placeholder = uuid4()
+    rows = [Row(uuid4(), placeholder, None) for _ in range(3)]
+    session = _session_for_rows(rows, resolved=placeholder)
+    p = _routing(session)
+    with p[0], p[1] as frozen_check, p[2], p[3]:
+        TestDefinition.resolve_writable(uuid4(), [row.id for row in rows])
+    assert [call.args[0] for call in frozen_check.call_args_list] == [placeholder]
+
+
+def test_an_active_row_with_no_contract_identity_is_refused_as_unmatched_while_a_draft_is_open():
+    active, draft = uuid4(), uuid4()
+    matched, unmatched = Row(uuid4(), active, "kept"), Row(uuid4(), active, None)
+    session = _session_for_rows([matched, unmatched], resolved=draft)
+    p = _routing(session, frozen={active}, in_force=MagicMock(id=active), write_target=(draft, {}))
+    with p[0], p[1], p[2], p[3], pytest.raises(UnmatchedInDraftError) as raised:
+        TestDefinition.resolve_writable(uuid4(), [matched.id, unmatched.id])
+    assert isinstance(raised.value, FrozenVersionError), "every caller that refuses a frozen write still refuses it"
+    assert raised.value.version_id == active
+    assert raised.value.draft_id == draft
+    assert raised.value.row_ids == [unmatched.id]
+
+
+def test_the_superseded_version_refused_is_the_first_named_rows():
+    first, second, active = uuid4(), uuid4(), uuid4()
+    named = [Row(uuid4(), first, "a"), Row(uuid4(), second, "b")]
+    session = _session_for_rows(list(reversed(named)), resolved=active)
+    p = _routing(session, frozen={first, second, active}, in_force=MagicMock(id=active))
+    with p[0], p[1], p[2], p[3], pytest.raises(FrozenVersionError) as raised:
+        TestDefinition.resolve_writable(uuid4(), [row.id for row in named])
+    assert raised.value.version_id == first
+
+
+def _recording_session(events: list) -> MagicMock:
+    session = MagicMock()
+    session.expunge.side_effect = lambda _obj: events.append("expunge")
+    session.no_autoflush.__enter__.side_effect = lambda *_: events.append("autoflush off")
+    session.no_autoflush.__exit__.side_effect = lambda *_: events.append("autoflush on")
+    return session
+
+
+def _routing_recorded(events: list, term: TestDefinition, *, moved_to=None):
+    def route(_suite_id, row_ids):
+        events.append("route")
+        return term.version_id, {row_ids[0]: moved_to or row_ids[0]}
+
+    return patch.object(TestDefinition, "resolve_writable", side_effect=route)
+
+
+def test_saving_a_persistent_row_that_stays_put_keeps_it_attached_and_routes_with_autoflush_off():
+    """A loaded row may carry pending changes to columns the UPDATE does not write, which only
+    the session's own flush persists, so a row whose edit lands on itself stays attached."""
+    events: list = []
+    session = _recording_session(events)
+    term = TestDefinition(id=uuid4(), test_suite_id=uuid4(), version_id=uuid4(), test_type="Row_Ct")
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch("testgen.common.models.test_definition.inspect", return_value=MagicMock(persistent=True)),
+        patch.object(SuiteVersion, "is_frozen_agreement", return_value=False),
+        _routing_recorded(events, term),
+    ):
+        term.save()
+    assert events == ["autoflush off", "route", "autoflush on"]
+    session.expunge.assert_not_called()
+
+
+def test_saving_a_persistent_row_of_a_frozen_version_detaches_it_before_it_moves():
+    """A loaded row of a frozen version is dirty with an edit meant for the draft's copy. Any
+    flush while it is attached, including the explicit ones opening a draft, writes the edit
+    onto the frozen row, and moving its id onto the copy reads as a primary-key change."""
+    events: list = []
+    session = _recording_session(events)
+    original_id, copy_id = uuid4(), uuid4()
+    term = TestDefinition(id=original_id, test_suite_id=uuid4(), version_id=uuid4(), test_type="Row_Ct")
+    session.expunge.side_effect = lambda obj: events.append(("expunge", obj.id))
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch("testgen.common.models.test_definition.inspect", return_value=MagicMock(persistent=True)),
+        patch.object(SuiteVersion, "is_frozen_agreement", return_value=True),
+        _routing_recorded(events, term, moved_to=copy_id),
+    ):
+        term.save()
+    assert events == ["autoflush off", ("expunge", original_id), "route", "autoflush on"]
+    assert term.id == copy_id
+
+
+def test_saving_a_transient_row_detaches_nothing():
+    events: list = []
+    session = _recording_session(events)
+    term = TestDefinition(id=uuid4(), test_suite_id=uuid4(), version_id=uuid4(), test_type="Row_Ct")
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        _routing_recorded(events, term),
+    ):
+        term.save()
+    session.expunge.assert_not_called()
+    assert "route" in events
+
+
+def test_skipping_unwritable_rows_leaves_a_superseded_row_out_and_routes_the_rest():
+    superseded, active, draft = uuid4(), uuid4(), uuid4()
+    old, current, copy_id = Row(uuid4(), superseded, "old"), Row(uuid4(), active, "current"), uuid4()
+    session = _session_for_rows([old, current], resolved=active)
+    p = _routing(
+        session, frozen={superseded, active}, in_force=MagicMock(id=active), write_target=(draft, {current.id: copy_id})
+    )
+    with p[0], p[1], p[2], p[3]:
+        mapping = TestDefinition.resolve_writable(uuid4(), [old.id, current.id], skip_unwritable=True)
+    assert mapping == (draft, {current.id: copy_id})
+
+
+def test_skipping_unwritable_rows_opens_no_draft_when_every_row_is_superseded():
+    superseded, active = uuid4(), uuid4()
+    row = Row(uuid4(), superseded, "old")
+    session = _session_for_rows([row], resolved=active)
+    p = _routing(session, frozen={superseded, active}, in_force=MagicMock(id=active))
+    with p[0], p[1], p[2], p[3] as resolve:
+        assert TestDefinition.resolve_writable(uuid4(), [row.id], skip_unwritable=True) == (active, {})
+    resolve.assert_not_called()
+
+
+def test_skipping_unwritable_rows_leaves_out_rows_the_draft_cannot_match():
+    active, draft = uuid4(), uuid4()
+    kept, removed, unmatchable = Row(uuid4(), active, "kept"), Row(uuid4(), active, "removed"), Row(uuid4(), active, None)
+    copy_id = uuid4()
+    session = _session_for_rows(
+        [kept, removed, unmatchable], resolved=draft, draft_rows=[Row(copy_id, draft, "kept")]
+    )
+    p = _routing(session, frozen={active}, in_force=MagicMock(id=active), write_target=(draft, {}))
+    with p[0], p[1], p[2], p[3]:
+        mapping = TestDefinition.resolve_writable(
+            uuid4(), [kept.id, removed.id, unmatchable.id], skip_unwritable=True
+        )
+    assert mapping == (draft, {kept.id: copy_id})

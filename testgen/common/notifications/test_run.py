@@ -3,7 +3,7 @@ import logging
 from sqlalchemy import case, literal, or_, select
 
 from testgen import settings
-from testgen.common.enums import JobStatus, run_duration_seconds
+from testgen.common.enums import TEST_SUITE_TYPES, JobStatus, run_duration_seconds
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.notification_settings import (
     TestRunNotificationSettings,
@@ -377,7 +377,7 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
 
         result_list_by_status[status] = [{**r._mapping} for r in get_current_session().execute(query)]
 
-    (tr_summary,), _ = TestRun.select_summary(test_run_ids=[test_run.id])
+    (tr_summary,), _ = TestRun.select_summary(test_run_ids=[test_run.id], suite_types=TEST_SUITE_TYPES)
 
     test_run_url = "".join(
         (

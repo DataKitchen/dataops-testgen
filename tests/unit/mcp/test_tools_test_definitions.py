@@ -1,14 +1,35 @@
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from testgen.common.custom_test_validation import CustomQueryResult
+from testgen.common.enums import SuiteType
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY
+from testgen.common.models.suite_version import (
+    FrozenVersionError,
+    RemovedInDraftError,
+    SuiteVersion,
+    UnmatchedInDraftError,
+)
 from testgen.common.models.test_definition import ManagedTestDefinitionError, TestDefinition, TestDefinitionNote
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
-from testgen.mcp.tools.test_definitions import _DELETED_LISTING_LIMIT
-from tests.unit.sql_assertions import emitted_statements, scopes_to_a_version
+from testgen.mcp.tools.test_definitions import (
+    _DELETED_LISTING_LIMIT,
+    bulk_update_tests,
+    create_test,
+    delete_tests,
+    export_tests,
+    get_test,
+    import_tests,
+    list_tests,
+    resolved_version,
+    update_test,
+)
+from tests.unit.sql_assertions import conjuncts, emitted_statements, equality_conjunct, scopes_to_a_version
 
 # -- list_tests ---------------------------------------------------------------
 
@@ -1444,23 +1465,37 @@ def test_validate_custom_test_missing_connection(mock_resolve_suite, mock_conn, 
 # -- bulk_update_tests --------------------------------------------------------
 
 
+@pytest.fixture
+def routes_in_place():
+    """Route every named row to itself, as for a regular suite, and read its suite as one."""
+    with (
+        patch.object(
+            TestDefinition,
+            "resolve_writable",
+            side_effect=lambda _suite_id, row_ids=(): (uuid4(), {row_id: row_id for row_id in row_ids}),
+        ),
+        patch("testgen.mcp.tools.test_definitions.TestSuite.get", return_value=_make_suite()),
+    ):
+        yield
+
+
+@pytest.mark.usefixtures("routes_in_place")
 @patch("testgen.mcp.tools.test_definitions.get_current_session")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
 def test_bulk_update_tests_disable_no_filter(mock_resolve_suite, mock_session, db_session_mock):
     mock_resolve_suite.return_value = _make_suite()
-    result_mock = MagicMock()
-    result_mock.rowcount = 3
-    mock_session.return_value.execute.return_value = result_mock
+    mock_session.return_value.scalars.return_value.all.return_value = [uuid4(), uuid4(), uuid4()]
 
     from testgen.mcp.tools.test_definitions import bulk_update_tests
 
     result = bulk_update_tests(test_suite_id=str(uuid4()), action="disable")
 
-    assert "Disabled" in result
-    assert "3 test" in result
+    assert "Disabled 3 tests in suite `demo_suite`" in result
     assert "no filter" in result
+    assert "Version" not in result
 
 
+@pytest.mark.usefixtures("routes_in_place")
 @patch("testgen.mcp.tools.test_definitions.get_current_session")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_type")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
@@ -1468,9 +1503,7 @@ def test_bulk_update_tests_enable_with_table_filter(
     mock_resolve_suite, mock_resolve_tt, mock_session, db_session_mock
 ):
     mock_resolve_suite.return_value = _make_suite()
-    result_mock = MagicMock()
-    result_mock.rowcount = 1
-    mock_session.return_value.execute.return_value = result_mock
+    mock_session.return_value.scalars.return_value.all.return_value = [uuid4()]
 
     from testgen.mcp.tools.test_definitions import bulk_update_tests
 
@@ -1502,9 +1535,7 @@ def test_bulk_update_tests_invalid_action(mock_resolve_suite, mock_session, db_s
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
 def test_bulk_update_tests_no_match(mock_resolve_suite, mock_session, db_session_mock):
     mock_resolve_suite.return_value = _make_suite()
-    result_mock = MagicMock()
-    result_mock.rowcount = 0
-    mock_session.return_value.execute.return_value = result_mock
+    mock_session.return_value.scalars.return_value.all.return_value = []
 
     from testgen.mcp.tools.test_definitions import bulk_update_tests
 
@@ -1898,20 +1929,23 @@ def test_update_test_allows_existing_non_public_test_type(mock_resolve_td, mock_
 # -- version scoping ----------------------------------------------------------
 
 
+@pytest.mark.usefixtures("routes_in_place")
 @patch("testgen.mcp.tools.test_definitions.get_current_session")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
 def test_bulk_update_tests_scopes_to_a_version(mock_resolve_suite, mock_session, db_session_mock):
     mock_resolve_suite.return_value = _make_suite()
     session = MagicMock()
-    session.execute.return_value.rowcount = 0
+    session.scalars.return_value.all.return_value = [uuid4()]
     mock_session.return_value = session
 
     from testgen.mcp.tools.test_definitions import bulk_update_tests
 
     bulk_update_tests(test_suite_id=str(uuid4()), action="disable")
 
-    assert scopes_to_a_version(emitted_statements(session)[0]), (
-        "the bulk update writes every version of the suite, not the one it resolves to"
+    statements = emitted_statements(session)
+    assert len(statements) == 2, "one select of the matches, one update of their writable rows"
+    assert all(scopes_to_a_version(statement) for statement in statements), (
+        "the bulk update reads or writes every version of the suite, not the one it resolves to"
     )
 
 
@@ -1935,6 +1969,7 @@ def _deleted_ids(delete_where_mock) -> list:
     return list(id_clause.right.value)
 
 
+@pytest.mark.usefixtures("routes_in_place")
 @patch.object(TestDefinition, "delete_where")
 @patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
 @patch.object(TestDefinition, "list_for_ids")
@@ -1956,6 +1991,7 @@ def test_delete_tests_by_ids_reports_what_went(mock_list, _mock_notes, mock_dele
     assert sorted(_deleted_ids(mock_delete), key=str) == sorted([first, second], key=str)
 
 
+@pytest.mark.usefixtures("routes_in_place")
 @patch.object(TestDefinition, "delete_where", side_effect=ManagedTestDefinitionError())
 @patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
 @patch.object(TestDefinition, "list_for_ids")
@@ -1971,6 +2007,7 @@ def test_delete_tests_refuses_a_managed_test_as_a_user_error(
         delete_tests(test_definition_ids=[str(test_id)])
 
 
+@pytest.mark.usefixtures("routes_in_place")
 @patch.object(TestDefinition, "delete_where")
 @patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
 @patch.object(TestDefinition, "list_for_ids")
@@ -1987,6 +2024,7 @@ def test_delete_tests_by_ids_resolves_in_one_query(mock_list, _mock_notes, _mock
     assert sorted(mock_list.call_args.args[0], key=str) == sorted(ids, key=str)
 
 
+@pytest.mark.usefixtures("routes_in_place")
 @patch.object(TestDefinition, "delete_where")
 @patch.object(TestDefinitionNote, "get_notes_count_by_ids")
 @patch.object(TestDefinition, "list_for_ids")
@@ -2005,6 +2043,7 @@ def test_delete_tests_reports_the_notes_that_went_with_them(
     assert "Notes deleted:** 3" in result
 
 
+@pytest.mark.usefixtures("routes_in_place")
 @patch.object(TestDefinition, "delete_where")
 @patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
 @patch.object(TestDefinition, "list_for_ids")
@@ -2066,6 +2105,7 @@ def test_delete_tests_by_ids_scopes_the_lookup_to_allowed_projects(mock_list, db
     assert mock_list.call_args.args[1] == ["demo"]
 
 
+@pytest.mark.usefixtures("routes_in_place")
 @patch.object(TestDefinition, "delete_where")
 @patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
 @patch.object(TestDefinition, "list_for_ids")
@@ -2114,6 +2154,7 @@ def test_delete_tests_rejects_both_selections(db_session_mock):
         delete_tests(test_definition_ids=[str(uuid4())], test_suite_id=str(uuid4()))
 
 
+@pytest.mark.usefixtures("routes_in_place")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
 @patch.object(TestDefinition, "delete_where")
 @patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
@@ -2135,6 +2176,7 @@ def test_delete_tests_by_suite_names_the_whole_suite_as_its_scope(
     assert _deleted_ids(mock_delete) == [td.id for td in selected]
 
 
+@pytest.mark.usefixtures("routes_in_place")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_type", return_value="Alpha_Trunc")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
 @patch.object(TestDefinition, "delete_where")
@@ -2189,6 +2231,7 @@ def test_delete_tests_by_suite_names_an_unfiltered_empty_result_as_no_filter(
     assert "matched the filter (no filter)" in result
 
 
+@pytest.mark.usefixtures("routes_in_place")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
 @patch.object(TestDefinition, "delete_where")
 @patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
@@ -2237,6 +2280,7 @@ def test_delete_tests_by_suite_selects_only_the_resolved_version(
     )
 
 
+@pytest.mark.usefixtures("routes_in_place")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
 @patch("testgen.common.models.get_current_session")
 @patch("testgen.common.models.entity.get_current_session")
@@ -2276,3 +2320,640 @@ def test_delete_tests_deletes_only_within_the_resolved_version(
     deletes = [s for s in emitted_statements(session) if str(s).lstrip().lower().startswith("delete")]
     assert deletes, "no delete was issued"
     assert scopes_to_a_version(deletes[0]), "the delete is not confined to the resolved version"
+
+
+# -- contract versions --------------------------------------------------------
+
+
+def _contract_suite():
+    suite = _make_suite()
+    suite.test_suite = "Orders"
+    suite.suite_type = SuiteType.CONTRACT
+    return suite
+
+
+def _summary_row():
+    item = _make_td_summary()
+    item.last_auto_gen_date = None
+    item.flagged = False
+    return item
+
+
+@patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
+@patch("testgen.mcp.tools.test_definitions.TestDefinition.list_for_suite")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_list_tests_on_a_contract_names_the_resolved_version(mock_resolve, mock_list, mock_notes, db_session_mock):
+    suite = _contract_suite()
+    mock_resolve.return_value = suite
+    mock_list.return_value = ([_summary_row()], 1)
+    mock_notes.get_notes_count_by_ids.return_value = {}
+    draft = SuiteVersion(id=uuid4(), version=4)
+    with patch("testgen.mcp.tools.test_definitions.resolved_version", return_value=draft):
+        out = list_tests(str(suite.id))
+    assert "**Version:** v4 draft" in out
+    assert mock_list.call_args.kwargs["version_id"] is None
+
+
+@patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
+@patch("testgen.mcp.tools.test_definitions.TestDefinition.list_for_suite")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_list_tests_with_a_version_reads_that_version(mock_resolve, mock_list, mock_notes, db_session_mock):
+    suite = _contract_suite()
+    mock_resolve.return_value = suite
+    mock_list.return_value = ([_summary_row()], 1)
+    mock_notes.get_notes_count_by_ids.return_value = {}
+    v2 = SuiteVersion(id=uuid4(), version=2, frozen_at=datetime(2026, 1, 1, tzinfo=UTC))
+    with (
+        patch("testgen.mcp.tools.test_definitions.resolve_contract_version", return_value=v2),
+        patch.object(SuiteVersion, "is_active", return_value=False),
+    ):
+        out = list_tests(str(suite.id), version=2)
+    assert mock_list.call_args.kwargs["version_id"] == v2.id
+    assert "**Version:** v2 superseded" in out
+
+
+@patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
+@patch("testgen.mcp.tools.test_definitions.TestDefinition.list_for_suite")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_list_tests_on_a_regular_suite_names_no_version(mock_resolve, mock_list, mock_notes, db_session_mock):
+    suite = _contract_suite()
+    suite.suite_type = SuiteType.REGULAR
+    mock_resolve.return_value = suite
+    mock_list.return_value = ([_summary_row()], 1)
+    mock_notes.get_notes_count_by_ids.return_value = {}
+    out = list_tests(str(suite.id))
+    assert "Version" not in out
+    assert mock_list.call_args.kwargs["version_id"] is None
+
+
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_list_tests_with_a_version_on_a_regular_suite_is_refused(mock_resolve, db_session_mock):
+    suite = _contract_suite()
+    suite.suite_type = SuiteType.REGULAR
+    mock_resolve.return_value = suite
+    with pytest.raises(MCPUserError, match="is not a contract"):
+        list_tests(str(suite.id), version=1)
+
+
+def test_get_test_on_a_contract_names_the_version_its_row_belongs_to(db_session_mock):
+    row = _summary_row()
+    row.version_id = uuid4()
+    version = SuiteVersion(id=row.version_id, version=3, frozen_at=datetime(2026, 9, 12, tzinfo=UTC))
+    with (
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.get_for_project", return_value=row),
+        patch("testgen.mcp.tools.test_definitions.TestDefinitionNote.get_notes", return_value=[]),
+        patch("testgen.mcp.tools.test_definitions.TestResult.select_history", return_value=[]) as history,
+        patch.object(SuiteVersion, "get", return_value=version),
+        patch.object(SuiteVersion, "is_active", return_value=True),
+        patch("testgen.mcp.tools.test_definitions.TestSuite.get", return_value=_contract_suite()),
+    ):
+        out = get_test(str(row.id))
+    assert "**Version:** v3 active" in out
+    assert out.index("**ID:**") < out.index("**Version:**") < out.index("**Test Type:**")
+    assert SuiteType.CONTRACT in history.call_args.kwargs["suite_types"]
+
+
+@patch("testgen.mcp.tools.test_definitions.export_definitions")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_export_tests_with_a_version_exports_that_version(mock_resolve, mock_export, db_session_mock):
+    suite = _contract_suite()
+    mock_resolve.return_value = suite
+    mock_export.return_value = _make_export_document()
+    v3 = SuiteVersion(id=uuid4(), version=3, frozen_at=datetime(2026, 9, 12, tzinfo=UTC))
+    with (
+        patch("testgen.mcp.tools.test_definitions.resolve_contract_version", return_value=v3),
+        patch.object(SuiteVersion, "is_active", return_value=True),
+    ):
+        out = export_tests(str(suite.id), version=3)
+    assert mock_export.call_args.kwargs["version_id"] == v3.id
+    assert "**Version:** v3 active" in out
+
+
+# -- contract versions: writes ------------------------------------------------
+
+
+def _orm_td(**attrs):
+    td = _make_td_orm()
+    td.table_groups_id = uuid4()
+    for key, value in attrs.items():
+        setattr(td, key, value)
+    return td
+
+
+@contextmanager
+def _update_context(td, suite, versions=None, old_version=None, old_state="active"):
+    """Patch what ``update_test`` reads around the row, keyed to the version the row starts in."""
+    original = td.version_id
+    frozen = SuiteVersion(id=original, version=old_version, frozen_at=datetime(2026, 9, 12, tzinfo=UTC))
+    known = {original: frozen, **(versions or {})}
+    with (
+        patch("testgen.mcp.tools.test_definitions.resolve_test_definition", return_value=td),
+        patch("testgen.mcp.tools.test_definitions.TestType.get", return_value=_make_test_type()),
+        patch("testgen.mcp.tools.test_definitions.TestSuite.get", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.TableGroup.get", return_value=None),
+        patch.object(SuiteVersion, "get", side_effect=lambda version_id: known.get(version_id)),
+        patch.object(
+            SuiteVersion,
+            "is_active",
+            side_effect=lambda version_id, _suite_id: version_id == original and old_state == "active",
+        ),
+    ):
+        yield
+
+
+def test_update_routed_to_the_draft_returns_the_new_id_and_names_the_draft(db_session_mock):
+    old_id, new_id = uuid4(), uuid4()
+    td = _orm_td(id=old_id, version_id=uuid4())
+    draft = SuiteVersion(id=uuid4(), version=4)
+
+    def _route():
+        td.id, td.version_id = new_id, draft.id
+
+    td.save.side_effect = _route
+    with _update_context(td, suite=_contract_suite(), versions={draft.id: draft}, old_version=3):
+        out = update_test(str(old_id), fields={"severity": "Warning"})
+    assert f"`{new_id}`" in out
+    assert f"was `{old_id}`, in v3 active" in out
+    assert "use the new ID from now on" in out
+    assert "**Version:** v4 draft" in out
+
+
+def test_update_by_an_active_id_applies_the_fields_to_the_drafts_copy(db_session_mock):
+    active_version, draft = uuid4(), SuiteVersion(id=uuid4(), version=4)
+    active = _orm_td(id=uuid4(), version_id=active_version, severity="Fail", threshold_value="50")
+    copy = _orm_td(id=uuid4(), version_id=draft.id, severity="Log", threshold_value="99")
+    rows = {active.id: active, copy.id: copy}
+    with (
+        _update_context(active, suite=_contract_suite(), versions={draft.id: draft}, old_version=3),
+        patch(
+            "testgen.mcp.tools.test_definitions.resolve_test_definition",
+            side_effect=lambda row_id: rows[UUID(row_id)],
+        ),
+        patch.object(TestDefinition, "resolve_writable", return_value=(draft.id, {active.id: copy.id})),
+    ):
+        out = update_test(str(active.id), fields={"severity": "Warning"})
+
+    assert copy.severity == "Warning"
+    assert copy.threshold_value == "99"
+    copy.save.assert_called_once()
+    assert active.severity == "Fail"
+    active.save.assert_not_called()
+    assert "| `severity` | Log | Warning |" in out
+    assert f"`{copy.id}` (was `{active.id}`, in v3 active" in out
+    assert "**Version:** v4 draft" in out
+
+
+def test_update_of_a_draft_row_names_the_draft_without_a_new_id(db_session_mock):
+    draft = SuiteVersion(id=uuid4(), version=4)
+    td = _orm_td(id=uuid4(), version_id=draft.id)
+    with _update_context(td, suite=_contract_suite(), versions={draft.id: draft}):
+        out = update_test(str(td.id), fields={"severity": "Warning"})
+    assert "**Version:** v4 draft" in out
+    assert "was `" not in out
+
+
+def test_update_of_a_test_the_draft_removed_names_the_draft(db_session_mock):
+    td = _orm_td(id=uuid4(), version_id=uuid4())
+    draft = SuiteVersion(id=uuid4(), version=4)
+    td.save.side_effect = RemovedInDraftError(draft.id, [td.id])
+    with (
+        _update_context(td, suite=_contract_suite(), versions={draft.id: draft}, old_version=3),
+        pytest.raises(MCPUserError, match=rf"Test `{td.id}` was removed in v4 draft of contract `Orders`"),
+    ):
+        update_test(str(td.id), fields={"severity": "Warning"})
+
+
+def test_update_with_an_id_the_model_refuses_names_the_version(db_session_mock):
+    td = _orm_td(id=uuid4(), version_id=uuid4())
+    td.save.side_effect = FrozenVersionError(td.version_id)
+    with (
+        _update_context(td, suite=_contract_suite(), old_version=2, old_state="superseded"),
+        pytest.raises(
+            MCPUserError,
+            match=rf"Test `{td.id}` belongs to v2 superseded of contract `Orders`, which can no longer be edited",
+        ),
+    ):
+        update_test(str(td.id), fields={"severity": "Warning"})
+
+
+def test_update_of_an_active_test_the_draft_cannot_match_says_so(db_session_mock):
+    td = _orm_td(id=uuid4(), version_id=uuid4())
+    draft = SuiteVersion(id=uuid4(), version=4)
+    td.save.side_effect = UnmatchedInDraftError(td.version_id, draft.id, [td.id])
+    with (
+        _update_context(td, suite=_contract_suite(), versions={draft.id: draft}, old_version=3),
+        pytest.raises(
+            MCPUserError,
+            match=rf"Test `{td.id}` in v3 active of contract `Orders` cannot be matched to its copy in v4 draft",
+        ),
+    ):
+        update_test(str(td.id), fields={"severity": "Warning"})
+
+
+def test_delete_of_active_tests_the_draft_cannot_match_names_only_those(db_session_mock):
+    suite = _contract_suite()
+    matched_id, unmatched_id = uuid4(), uuid4()
+    active = SuiteVersion(id=uuid4(), version=3, frozen_at=datetime(2026, 1, 1, tzinfo=UTC))
+    draft = SuiteVersion(id=uuid4(), version=4)
+    with (
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.list_for_ids", return_value=[
+            MagicMock(id=matched_id, test_suite_id=suite.id), MagicMock(id=unmatched_id, test_suite_id=suite.id),
+        ]),
+        patch("testgen.mcp.tools.test_definitions.TestSuite.get", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.resolve_writable",
+              side_effect=UnmatchedInDraftError(active.id, draft.id, [unmatched_id])),
+        patch.object(SuiteVersion, "get", side_effect={active.id: active, draft.id: draft}.get),
+        patch.object(SuiteVersion, "is_active", return_value=True),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.delete_where") as delete_where,
+        pytest.raises(
+            MCPUserError,
+            match=rf"^Test `{unmatched_id}` in v3 active of contract `Orders` cannot be matched to its copy in "
+            r"v4 draft, so it cannot be edited\. Use `list_tests` to find the draft's tests\.$",
+        ),
+    ):
+        delete_tests(test_definition_ids=[str(matched_id), str(unmatched_id)])
+    delete_where.assert_not_called()
+
+
+def test_update_on_a_regular_suite_names_no_version(db_session_mock):
+    td = _orm_td(id=uuid4(), version_id=uuid4())
+    suite = _contract_suite()
+    suite.suite_type = SuiteType.REGULAR
+    with _update_context(td, suite=suite):
+        out = update_test(str(td.id), fields={"severity": "Warning"})
+    assert "Version" not in out
+    assert "was `" not in out
+
+
+def test_update_holds_its_edits_out_of_autoflush_until_save(db_session_mock):
+    """A query between the edit and ``save`` must not flush the edit onto a frozen row before
+    ``save`` can move it to the draft."""
+    td = _orm_td(id=uuid4(), version_id=uuid4(), severity="Fail")
+    draft = SuiteVersion(id=uuid4(), version=4)
+    events = []
+    db_session_mock.no_autoflush.__enter__.side_effect = lambda *_: events.append("hold")
+    db_session_mock.no_autoflush.__exit__.side_effect = lambda *_: events.append("release")
+    td.save.side_effect = lambda: events.append("save")
+    with (
+        _update_context(td, suite=_contract_suite(), versions={draft.id: draft}, old_version=3),
+        patch(
+            "testgen.mcp.tools.test_definitions.TableGroup.get",
+            side_effect=lambda _id: events.append(f"query after edit to {td.severity}"),
+        ),
+    ):
+        update_test(str(td.id), fields={"severity": "Warning"})
+    assert events == ["hold", "query after edit to Warning", "release", "save"]
+
+
+def test_create_on_a_contract_names_the_version_it_landed_in(db_session_mock):
+    suite = _contract_suite()
+    draft = SuiteVersion(id=uuid4(), version=4)
+    saved = MagicMock(id=uuid4(), version_id=draft.id)
+    saved.editable_fields.return_value = {"severity", "threshold_value", "column_name"}
+    summary = _make_td_summary()
+    summary.id, summary.test_suite_id, summary.version_id = saved.id, suite.id, draft.id
+    with (
+        patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.resolve_test_type", return_value="Alpha_Trunc"),
+        patch("testgen.mcp.tools.test_definitions.TestType.get", return_value=_make_test_type()),
+        patch("testgen.mcp.tools.test_definitions.TableGroup.get", return_value=_make_table_group()),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition") as td_cls,
+        patch("testgen.mcp.tools.test_definitions.TestDefinitionNote.get_notes", return_value=[]),
+        patch("testgen.mcp.tools.test_definitions.TestSuite.get", return_value=suite),
+        patch.object(SuiteVersion, "get", side_effect=lambda version_id: draft if version_id == draft.id else None),
+        patch.object(SuiteVersion, "is_active", return_value=False),
+    ):
+        td_cls.return_value = saved
+        td_cls.get_for_project.return_value = summary
+        out = create_test(
+            str(suite.id), "Alpha Truncation", "orders", fields={"column_name": "email", "threshold_value": "64"}
+        )
+    assert "**Version:** v4 draft" in out
+    assert out.count("**Version:**") == 1
+
+
+def test_delete_by_an_active_version_id_deletes_the_drafts_copy(db_session_mock):
+    suite = _contract_suite()
+    active_id, copy_id, draft = uuid4(), uuid4(), SuiteVersion(id=uuid4(), version=4)
+    selected = MagicMock(id=active_id, test_suite_id=suite.id, test_name_short="Row Count",
+                         test_type="Row_Ct", table_name="orders", column_name=None)
+    with (
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.list_for_ids", return_value=[selected]),
+        patch("testgen.mcp.tools.test_definitions.TestSuite.get", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.resolve_writable",
+              return_value=(draft.id, {active_id: copy_id})) as route,
+        patch("testgen.mcp.tools.test_definitions.SuiteVersion.get", return_value=draft),
+        patch("testgen.mcp.tools.test_definitions.TestDefinitionNote.get_notes_count_by_ids", return_value={}),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.delete_where") as delete_where,
+    ):
+        out = delete_tests(test_definition_ids=[str(active_id)])
+    route.assert_called_once_with(suite.id, [active_id])
+    sql = str(delete_where.call_args.args[0].compile(
+        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+    ))
+    assert str(copy_id) in sql and str(active_id) not in sql
+    assert f"`{copy_id}`" in out
+    assert "**Version:** v4 draft" in out
+
+
+def test_delete_naming_an_active_id_and_its_drafts_copy_deletes_and_counts_the_copy_once(db_session_mock):
+    suite = _contract_suite()
+    active_id, copy_id, draft = uuid4(), uuid4(), SuiteVersion(id=uuid4(), version=4)
+    rows = [
+        MagicMock(id=row_id, test_suite_id=suite.id, test_name_short="Row Count",
+                  test_type="Row_Ct", table_name="orders", column_name=None)
+        for row_id in (active_id, copy_id)
+    ]
+    with (
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.list_for_ids", return_value=rows),
+        patch("testgen.mcp.tools.test_definitions.TestSuite.get", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.resolve_writable",
+              return_value=(draft.id, {active_id: copy_id, copy_id: copy_id})),
+        patch("testgen.mcp.tools.test_definitions.SuiteVersion.get", return_value=draft),
+        patch(
+            "testgen.mcp.tools.test_definitions.TestDefinitionNote.get_notes_count_by_ids", return_value={}
+        ) as notes,
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.delete_where"),
+    ):
+        out = delete_tests(test_definition_ids=[str(active_id), str(copy_id)])
+    assert "# Deleted 1 tests" in out
+    assert out.count(f"`{copy_id}`") == 1
+    assert notes.call_args.args[0] == [str(copy_id)]
+
+
+def test_delete_of_a_test_the_draft_removed_deletes_nothing(db_session_mock):
+    suite = _contract_suite()
+    active_id, draft = uuid4(), SuiteVersion(id=uuid4(), version=4)
+    selected = MagicMock(id=active_id, test_suite_id=suite.id)
+    with (
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.list_for_ids", return_value=[selected]),
+        patch("testgen.mcp.tools.test_definitions.TestSuite.get", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.resolve_writable",
+              side_effect=RemovedInDraftError(draft.id, [active_id])),
+        patch("testgen.mcp.tools.test_definitions.SuiteVersion.get", return_value=draft),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.delete_where") as delete_where,
+        pytest.raises(MCPUserError, match=rf"Test `{active_id}` was removed in v4 draft of contract `Orders`"),
+    ):
+        delete_tests(test_definition_ids=[str(active_id)])
+    delete_where.assert_not_called()
+
+
+def test_delete_by_a_superseded_version_id_names_the_version(db_session_mock):
+    suite = _contract_suite()
+    old_id = uuid4()
+    v2 = SuiteVersion(id=uuid4(), version=2, frozen_at=datetime(2026, 1, 1, tzinfo=UTC))
+    with (
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.list_for_ids",
+              return_value=[MagicMock(id=old_id, test_suite_id=suite.id)]),
+        patch("testgen.mcp.tools.test_definitions.TestSuite.get", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.resolve_writable",
+              side_effect=FrozenVersionError(v2.id)),
+        patch.object(SuiteVersion, "get", return_value=v2),
+        patch.object(SuiteVersion, "is_active", return_value=False),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.delete_where") as delete_where,
+        pytest.raises(
+            MCPUserError,
+            match=rf"Test `{old_id}` belongs to v2 superseded of contract `Orders`, which can no longer be edited",
+        ),
+    ):
+        delete_tests(test_definition_ids=[str(old_id)])
+    delete_where.assert_not_called()
+
+
+def test_delete_spanning_suites_routes_every_suite_before_deleting_any(db_session_mock):
+    regular, contract = _make_suite(), _contract_suite()
+    regular_id, contract_id, draft = uuid4(), uuid4(), SuiteVersion(id=uuid4(), version=4)
+    rows = [MagicMock(id=regular_id, test_suite_id=regular.id), MagicMock(id=contract_id, test_suite_id=contract.id)]
+
+    def _route(suite_id, row_ids):
+        if suite_id == contract.id:
+            raise RemovedInDraftError(draft.id, row_ids)
+        return uuid4(), {row_id: row_id for row_id in row_ids}
+
+    with (
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.list_for_ids", return_value=rows),
+        patch("testgen.mcp.tools.test_definitions.TestSuite.get",
+              side_effect=lambda suite_id: {regular.id: regular, contract.id: contract}[suite_id]),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.resolve_writable", side_effect=_route) as route,
+        patch("testgen.mcp.tools.test_definitions.SuiteVersion.get", return_value=draft),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.delete_where") as delete_where,
+        pytest.raises(MCPUserError, match=rf"Test `{contract_id}` was removed in v4 draft"),
+    ):
+        delete_tests(test_definition_ids=[str(regular_id), str(contract_id)])
+    assert [call.args for call in route.call_args_list] == [(regular.id, [regular_id]), (contract.id, [contract_id])]
+    delete_where.assert_not_called()
+
+
+def test_delete_by_suite_filter_routes_the_selection_to_the_draft(db_session_mock):
+    suite = _contract_suite()
+    active_id, copy_id, draft = uuid4(), uuid4(), SuiteVersion(id=uuid4(), version=4)
+    selected = _make_td_minimal(test_id=active_id)
+    selected.test_suite_id = suite.id
+    with (
+        patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.select_minimal_where", return_value=[selected]),
+        patch("testgen.mcp.tools.test_definitions.TestSuite.get", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.resolve_writable",
+              return_value=(draft.id, {active_id: copy_id})) as route,
+        patch("testgen.mcp.tools.test_definitions.SuiteVersion.get", return_value=draft),
+        patch("testgen.mcp.tools.test_definitions.TestDefinitionNote.get_notes_count_by_ids", return_value={}),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.delete_where") as delete_where,
+    ):
+        out = delete_tests(test_suite_id=str(suite.id))
+    route.assert_called_once_with(suite.id, [active_id])
+    assert _deleted_ids(delete_where) == [copy_id]
+    assert f"`{copy_id}`" in out
+    assert "**Version:** v4 draft" in out
+
+
+def test_delete_by_suite_filter_matching_nothing_opens_no_draft(db_session_mock):
+    suite = _contract_suite()
+    with (
+        patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.select_minimal_where", return_value=[]),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.resolve_writable") as route,
+    ):
+        out = delete_tests(test_suite_id=str(suite.id))
+    route.assert_not_called()
+    assert "No tests matched" in out
+
+
+def test_bulk_update_routes_the_matched_tests_to_the_draft(db_session_mock):
+    suite = _contract_suite()
+    matched, copy_id, draft = uuid4(), uuid4(), SuiteVersion(id=uuid4(), version=4)
+    db_session_mock.scalars.return_value.all.return_value = [matched]
+    db_session_mock.execute.return_value.rowcount = 1
+    with (
+        patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.resolve_writable",
+              return_value=(draft.id, {matched: copy_id})) as route,
+        patch("testgen.mcp.tools.test_definitions.SuiteVersion.get", return_value=draft),
+    ):
+        out = bulk_update_tests(str(suite.id), "disable")
+    route.assert_called_once_with(suite.id, [matched])
+    sql = str(db_session_mock.execute.call_args.args[0].compile(
+        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+    ))
+    assert str(copy_id) in sql and str(matched) not in sql
+    assert "Disabled 1 tests in suite `Orders`" in out
+    assert "**Version:** v4 draft" in out
+
+
+def test_bulk_update_matching_nothing_opens_no_draft(db_session_mock):
+    suite = _contract_suite()
+    db_session_mock.scalars.return_value.all.return_value = []
+    with (
+        patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.resolve_writable") as route,
+    ):
+        out = bulk_update_tests(str(suite.id), "disable")
+    route.assert_not_called()
+    assert "No tests matched" in out
+
+
+def test_import_on_a_contract_names_the_version_written(db_session_mock):
+    suite = _contract_suite()
+    draft = SuiteVersion(id=uuid4(), version=4)
+    with (
+        patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.import_definitions", return_value=_make_import_response(created=2)),
+        patch("testgen.mcp.tools.test_definitions.resolved_version", return_value=draft),
+    ):
+        out = import_tests(str(suite.id), payload='{"definitions": []}', mode="apply")
+    assert "**Version:** v4 draft" in out
+
+
+def test_import_preview_on_a_frozen_only_contract_names_the_draft_an_apply_would_open(db_session_mock):
+    suite = _contract_suite()
+    active = SuiteVersion(id=uuid4(), version=3, frozen_at=datetime(2026, 9, 12, tzinfo=UTC))
+    with (
+        patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.import_definitions", return_value=_make_import_response(created=2)),
+        patch("testgen.mcp.tools.test_definitions.resolved_version", return_value=active),
+        patch.object(SuiteVersion, "is_active", return_value=True),
+    ):
+        out = import_tests(str(suite.id), payload='{"definitions": []}')
+    assert "**Version:** v4 draft" in out
+
+
+def test_import_naming_a_frozen_version_is_a_user_error(db_session_mock):
+    suite = _contract_suite()
+    v2 = SuiteVersion(id=uuid4(), version=2, frozen_at=datetime(2026, 1, 1, tzinfo=UTC))
+    with (
+        patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.import_definitions", side_effect=FrozenVersionError(v2.id)),
+        patch.object(SuiteVersion, "get", return_value=v2),
+        patch.object(SuiteVersion, "is_active", return_value=False),
+        pytest.raises(
+            MCPUserError, match=r"v2 superseded of contract `Orders` can no longer be edited\. Nothing was applied\."
+        ),
+    ):
+        import_tests(str(suite.id), payload='{"definitions": []}', mode="apply")
+
+
+def test_import_naming_an_active_test_the_draft_cannot_match_says_so(db_session_mock):
+    suite = _contract_suite()
+    unmatched = uuid4()
+    active = SuiteVersion(id=uuid4(), version=3, frozen_at=datetime(2026, 1, 1, tzinfo=UTC))
+    draft = SuiteVersion(id=uuid4(), version=4)
+    with (
+        patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
+        patch(
+            "testgen.mcp.tools.test_definitions.import_definitions",
+            side_effect=UnmatchedInDraftError(active.id, draft.id, [unmatched]),
+        ),
+        patch.object(SuiteVersion, "get", side_effect={active.id: active, draft.id: draft}.get),
+        patch.object(SuiteVersion, "is_active", return_value=True),
+        pytest.raises(
+            MCPUserError,
+            match=rf"^Test `{unmatched}` in v3 active of contract `Orders` cannot be matched to its copy in "
+            r"v4 draft, so it cannot be edited\. Use `list_tests` to find the draft's tests\. Nothing was applied\.$",
+        ),
+    ):
+        import_tests(str(suite.id), payload='{"definitions": []}', mode="apply")
+
+
+def test_import_naming_a_test_the_draft_removed_is_a_user_error(db_session_mock):
+    suite = _contract_suite()
+    removed, draft = uuid4(), SuiteVersion(id=uuid4(), version=4)
+    with (
+        patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
+        patch(
+            "testgen.mcp.tools.test_definitions.import_definitions",
+            side_effect=RemovedInDraftError(draft.id, [removed]),
+        ),
+        patch.object(SuiteVersion, "get", return_value=draft),
+        pytest.raises(MCPUserError, match=rf"Test `{removed}` was removed in v4 draft of contract `Orders`"),
+    ):
+        import_tests(str(suite.id), payload='{"definitions": []}', mode="apply")
+
+
+def test_import_whose_target_vanished_is_a_user_error(db_session_mock):
+    suite = _contract_suite()
+    gone = uuid4()
+    with (
+        patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
+        patch(
+            "testgen.mcp.tools.test_definitions.import_definitions",
+            side_effect=ValueError(f"Test definition {gone} no longer exists."),
+        ),
+        pytest.raises(MCPUserError, match=rf"Test definition {gone} no longer exists\. Nothing was applied\."),
+    ):
+        import_tests(str(suite.id), payload='{"definitions": []}', mode="apply")
+
+
+def test_import_on_a_regular_suite_names_no_version(db_session_mock):
+    suite = _contract_suite()
+    suite.suite_type = SuiteType.REGULAR
+    with (
+        patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.import_definitions", return_value=_make_import_response(created=2)),
+    ):
+        out = import_tests(str(suite.id), payload='{"definitions": []}', mode="apply")
+    assert "Version" not in out
+
+
+def test_delete_naming_several_tests_lists_only_those_of_the_refused_version(db_session_mock):
+    suite = _contract_suite()
+    old_id, current_id = uuid4(), uuid4()
+    v2 = SuiteVersion(id=uuid4(), version=2, frozen_at=datetime(2026, 1, 1, tzinfo=UTC))
+    db_session_mock.scalars.return_value.all.return_value = [old_id]
+    rows = [MagicMock(id=old_id, test_suite_id=suite.id), MagicMock(id=current_id, test_suite_id=suite.id)]
+    with (
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.list_for_ids", return_value=rows),
+        patch("testgen.mcp.tools.test_definitions.TestSuite.get", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.TestDefinition.resolve_writable",
+              side_effect=FrozenVersionError(v2.id)),
+        patch.object(SuiteVersion, "get", return_value=v2),
+        patch.object(SuiteVersion, "is_active", return_value=False),
+        pytest.raises(MCPUserError) as refusal,
+    ):
+        delete_tests(test_definition_ids=[str(old_id), str(current_id)])
+    assert f"Test `{old_id}` belongs to v2 superseded" in str(refusal.value)
+    assert str(current_id) not in str(refusal.value)
+    lookup = db_session_mock.scalars.call_args.args[0]
+    assert any(
+        equality_conjunct(term, "version_id", "test_definitions", v2.id) for term in conjuncts(lookup.whereclause)
+    )
+
+
+def test_resolved_version_is_the_contract_services_default_version():
+    suite, target = MagicMock(suite_type=SuiteType.CONTRACT), MagicMock()
+    with patch("testgen.mcp.tools.test_definitions.contract_service.version_for_export", return_value=target) as rule:
+        assert resolved_version(suite) is target
+    rule.assert_called_once_with(suite)
+
+
+def test_resolved_version_is_none_for_a_regular_suite():
+    assert resolved_version(MagicMock(suite_type=SuiteType.REGULAR)) is None
+
+
+def test_resolved_version_reports_a_contract_with_no_version_to_read():
+    with (
+        patch(
+            "testgen.mcp.tools.test_definitions.contract_service.version_for_export",
+            side_effect=ValueError("This contract has no version to export."),
+        ),
+        pytest.raises(MCPUserError, match="no version to export"),
+    ):
+        resolved_version(MagicMock(suite_type=SuiteType.CONTRACT))

@@ -59,6 +59,10 @@ def run_test_generation(
     test_suite = TestSuite.get(test_suite_id)
     if test_suite.suite_type == SuiteType.MONITOR:
         raise ValueError("Cannot run regular test generation for monitor suite")
+    if test_suite.suite_type == SuiteType.CONTRACT:
+        TestDefinition.resolve_writable(test_suite.id)
+        # Generation inserts on its own connection, which cannot see a draft only flushed here.
+        get_current_session().commit()
 
     resolved_sets = resolve_generation_sets(test_suite, generation_sets)
     LOG.info(f"Generating tests for generation sets: {', '.join(resolved_sets)}")

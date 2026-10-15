@@ -21,6 +21,7 @@ from testgen.common.enums import (
     PAUSABLE_JOB_KEYS,
     PII_FLAG_PREFIX_TO_LABEL,
     STOPPABLE_ONLY_STATUSES,
+    TEST_SUITE_TYPES,
     Disposition,
     ImpactDimension,
     IssueLikelihood,
@@ -60,6 +61,7 @@ from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.project import Project
 from testgen.common.models.scheduler import SCHEDULABLE_JOB_KEYS, JobSchedule
 from testgen.common.models.scores import ScoreCategory, ScoreDefinition
+from testgen.common.models.suite_version import SuiteVersion, VersionState
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import Severity, TestDefinition, TestDefinitionNote, TestType
 from testgen.common.models.test_result import TestResult, TestResultStatus
@@ -208,6 +210,14 @@ def format_suite_type_label(suite_type: SuiteType | str) -> str:
     through a separate surface and never reach this function.
     """
     return _SUITE_TYPE_INTERNAL_TO_LABEL[SuiteType(suite_type)].value
+
+
+MCP_SUITE_TYPES: tuple[SuiteType, ...] = TEST_SUITE_TYPES
+
+
+def format_version(number: int, state: VersionState) -> str:
+    """Render a contract version the one way every tool names it, e.g. ``v3 active``."""
+    return f"v{number} {state.value}"
 
 
 class ScoreGroupBy(StrEnum):
@@ -855,13 +865,17 @@ def resolve_hygiene_issue(issue_id: str) -> HygieneIssue:
 def resolve_contract(test_suite_id: str) -> TestSuite:
     """Resolve a contract's test suite ID, collapsing missing-or-inaccessible into one error path.
 
-    A suite the caller can reach but which keeps no versions is reported as not a contract
-    rather than as missing: the access check has already passed, so the suite is one the
-    caller can see in any suite listing, and a unified error would send them hunting a typo.
+    A regular suite the caller can reach is reported as not a contract rather than as missing:
+    the caller can see it in the suite listings, and a unified error would send them hunting a
+    typo. A monitor suite is reported as missing, as it is everywhere else regular suites are served.
     """
     suite_uuid = parse_uuid(test_suite_id, "test_suite_id")
     perms = get_project_permissions()
-    suite = TestSuite.get(suite_uuid, TestSuite.project_code.in_(perms.allowed_codes))
+    suite = TestSuite.get(
+        suite_uuid,
+        TestSuite.project_code.in_(perms.allowed_codes),
+        TestSuite.suite_type.in_(MCP_SUITE_TYPES),
+    )
     if suite is None:
         raise MCPResourceNotAccessible("Contract", test_suite_id)
     if suite.suite_type != SuiteType.CONTRACT:
@@ -869,13 +883,34 @@ def resolve_contract(test_suite_id: str) -> TestSuite:
     return suite
 
 
+def resolve_contract_version(suite: TestSuite, version: int | None) -> SuiteVersion | None:
+    """Resolve a ``version`` argument against a suite already resolved for the caller.
+
+    Returns ``None`` when no version was asked for. Raises ``MCPUserError`` when the suite keeps
+    no versions or holds no version with that number.
+    """
+    if version is None:
+        return None
+    if suite.suite_type != SuiteType.CONTRACT:
+        raise MCPUserError(f"Test suite `{suite.id}` is not a contract, so it keeps no versions.")
+    target = SuiteVersion.for_number(suite.id, version)
+    if target is None:
+        highest = get_current_session().scalar(
+            select(func.max(SuiteVersion.version)).where(SuiteVersion.test_suite_id == suite.id)
+        )
+        raise MCPUserError(
+            f"Contract `{suite.test_suite}` has no version {version}. Its versions are v1\u2013v{highest}."
+        )
+    return target
+
+
 def resolve_test_suite(test_suite_id: str) -> TestSuite:
-    """Resolve a regular (non-monitor) test suite ID, collapsing missing-or-inaccessible into one error path."""
+    """Resolve a regular or contract test suite ID, collapsing missing-or-inaccessible into one error path."""
     suite_uuid = parse_uuid(test_suite_id, "test_suite_id")
     perms = get_project_permissions()
     suite = TestSuite.get(
         suite_uuid,
-        TestSuite.suite_type == SuiteType.REGULAR,
+        TestSuite.suite_type.in_(MCP_SUITE_TYPES),
         TestSuite.project_code.in_(perms.allowed_codes),
     )
     if suite is None:
@@ -937,8 +972,10 @@ def resolve_test_definition(test_definition_id: str) -> TestDefinition:
         .join(TestSuite, TestDefinition.test_suite_id == TestSuite.id)
         .where(
             TestDefinition.id == td_uuid,
-            TestDefinition.version_clause(),
-            TestSuite.suite_type == SuiteType.REGULAR,
+            # A contract row is addressed whichever of its versions it belongs to, so the write
+            # routing can carry an active-version id to the draft or refuse a superseded one.
+            TestDefinition.any_contract_version_clause(MCP_SUITE_TYPES),
+            TestSuite.suite_type.in_(MCP_SUITE_TYPES),
             TestSuite.project_code.in_(perms.allowed_codes),
         )
     )
@@ -986,7 +1023,7 @@ def resolve_test_result(test_result_id: str) -> TestResult:
         .join(TestSuite, TestResult.test_suite_id == TestSuite.id)
         .where(
             TestResult.id == result_uuid,
-            TestSuite.suite_type == SuiteType.REGULAR,
+            TestSuite.suite_type.in_(MCP_SUITE_TYPES),
             TestSuite.project_code.in_(perms.allowed_codes),
         )
     )
@@ -999,7 +1036,8 @@ def resolve_test_result(test_result_id: str) -> TestResult:
 def resolve_test_note(test_note_id: str) -> TestDefinitionNote:
     """Resolve a test note ID to the live ORM model, collapsing missing-or-inaccessible.
 
-    Filters monitor suites and project access via the note's parent test definition.
+    Filters monitor suites and project access via the note's parent test definition. A note on
+    a contract's test resolves whichever version of the contract that test belongs to.
     """
     note_uuid = parse_uuid(test_note_id, "test_note_id")
     perms = get_project_permissions()
@@ -1009,8 +1047,8 @@ def resolve_test_note(test_note_id: str) -> TestDefinitionNote:
         .join(TestSuite, TestDefinition.test_suite_id == TestSuite.id)
         .where(
             TestDefinitionNote.id == note_uuid,
-            TestDefinition.version_clause(),
-            TestSuite.suite_type == SuiteType.REGULAR,
+            TestDefinition.any_contract_version_clause(MCP_SUITE_TYPES),
+            TestSuite.suite_type.in_(MCP_SUITE_TYPES),
             TestSuite.project_code.in_(perms.allowed_codes),
         )
     )

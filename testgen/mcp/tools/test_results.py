@@ -20,6 +20,7 @@ from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.services.source_data_protection import mcp_source_data_protected
 from testgen.mcp.tools.common import (
+    MCP_SUITE_TYPES,
     DocGroup,
     FailureGroupBy,
     format_page_footer,
@@ -93,7 +94,7 @@ def list_test_results(
     resolved_via_suite = False
     if test_suite_id:
         suite_uuid = parse_uuid(test_suite_id, "test_suite_id")
-        suite = TestSuite.get_regular(suite_uuid)
+        suite = TestSuite.get(suite_uuid, TestSuite.suite_type.in_(MCP_SUITE_TYPES))
         if suite is None or not perms.has_access(suite.project_code):
             raise MCPResourceNotAccessible("Test suite", test_suite_id)
         if suite.last_complete_test_run_id is None:
@@ -106,7 +107,9 @@ def list_test_results(
     else:
         job_uuid = parse_uuid(job_execution_id, "job_execution_id")
         test_run = TestRun.get(job_uuid)
-        suite = TestSuite.get_regular(test_run.test_suite_id) if test_run else None
+        suite = (
+            TestSuite.get(test_run.test_suite_id, TestSuite.suite_type.in_(MCP_SUITE_TYPES)) if test_run else None
+        )
         if test_run is None or suite is None or not perms.has_access(suite.project_code):
             raise MCPResourceNotAccessible("Test run", job_execution_id)
         run_id_label = job_execution_id
@@ -123,6 +126,7 @@ def list_test_results(
         limit=limit,
         offset=offset,
         project_codes=perms.allowed_codes,
+        suite_types=MCP_SUITE_TYPES,
     )
 
     if not results:
@@ -239,7 +243,9 @@ def get_failure_summary(
     if job_execution_id:
         job_uuid = parse_uuid(job_execution_id, "job_execution_id")
         test_run = TestRun.get(job_uuid)
-        suite = TestSuite.get_regular(test_run.test_suite_id) if test_run else None
+        suite = (
+            TestSuite.get(test_run.test_suite_id, TestSuite.suite_type.in_(MCP_SUITE_TYPES)) if test_run else None
+        )
         if test_run is None or suite is None or not perms.has_access(suite.project_code):
             raise MCPResourceNotAccessible("Test run", job_execution_id)
         test_run_id = test_run.id
@@ -262,6 +268,7 @@ def get_failure_summary(
         project_codes=project_codes,
         test_suite_id=test_suite_uuid,
         since=since_date,
+        suite_types=MCP_SUITE_TYPES,
     )
 
     if not failures:
@@ -329,7 +336,11 @@ def list_test_result_history(
     perms = get_project_permissions()
 
     results = TestResult.select_history(
-        test_definition_id=def_uuid, limit=limit, offset=offset, project_codes=perms.allowed_codes
+        test_definition_id=def_uuid,
+        limit=limit,
+        offset=offset,
+        project_codes=perms.allowed_codes,
+        suite_types=MCP_SUITE_TYPES,
     )
 
     if not results:
@@ -441,7 +452,7 @@ def search_test_results(
     if since_date is not None:
         clauses.append(TestResult.test_time >= since_date)
 
-    rows, total = TestResult.search_results(*clauses, page=page, limit=limit)
+    rows, total = TestResult.search_results(*clauses, page=page, limit=limit, suite_types=MCP_SUITE_TYPES)
 
     if not rows:
         return "No test results match the supplied filters."
@@ -538,6 +549,7 @@ def get_failure_trend(
         start_date=since_date,
         end_date=anchor_today,
         bucket=bucket,
+        suite_types=MCP_SUITE_TYPES,
     )
 
     if not buckets:
@@ -604,7 +616,7 @@ def compare_test_runs(
         run = TestRun.get(je_uuid)
         if run is None:
             raise MCPResourceNotAccessible("Test run", je_id_str)
-        suite = TestSuite.get_regular(run.test_suite_id)
+        suite = TestSuite.get(run.test_suite_id, TestSuite.suite_type.in_(MCP_SUITE_TYPES))
         if suite is None or not perms.has_access(suite.project_code):
             raise MCPResourceNotAccessible("Test run", je_id_str)
         return run

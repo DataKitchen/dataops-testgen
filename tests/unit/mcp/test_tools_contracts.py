@@ -8,12 +8,20 @@ from uuid import uuid4
 import pytest
 
 from testgen import settings
-from testgen.common.models.suite_version import SuiteVersion
+from testgen.common.contract_service import InvalidContractDocumentError
+from testgen.common.enums import JobStatus
+from testgen.common.models.suite_version import SuiteVersion, SuiteVersionListItem
 from testgen.common.odcs.render import OrphanedTermError
 from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, UnmappedFlavorError
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
-from testgen.mcp.tools.contracts import export_contract, split_document
+from testgen.mcp.tools.contracts import (
+    discard_contract_draft,
+    export_contract,
+    freeze_contract_version,
+    list_contract_versions,
+    split_document,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -370,3 +378,122 @@ def test_a_changed_document_carries_a_different_digest(db_session_mock):
 
     assert hashlib.sha256(changed.encode()).hexdigest() in _export_chunked(changed, 2_000, chunk=2)
     assert hashlib.sha256(document.encode()).hexdigest() not in _export_chunked(changed, 2_000, chunk=2)
+
+
+def _item(version, frozen_at=None, **kw):
+    return SuiteVersionListItem(
+        id=uuid4(), version=version, label=kw.get("label"), created_by=kw.get("created_by", "alice"),
+        frozen_at=frozen_at, term_count=kw.get("term_count", 40), run_count=kw.get("run_count", 0),
+        latest_run_id=kw.get("latest_run_id"), latest_run_status=kw.get("latest_run_status"),
+        latest_run_started_at=kw.get("latest_run_started_at"),
+    )
+
+
+def _list(suite, items, active_version):
+    in_force = SuiteVersion(id=uuid4(), version=active_version) if active_version else None
+    with (
+        _patch_perms(),
+        patch(f"{MODULE}.resolve_contract", return_value=suite),
+        patch.object(SuiteVersion, "list_for_suite", return_value=(items, len(items))),
+        patch.object(SuiteVersion, "in_force_for", return_value=in_force),
+    ):
+        return list_contract_versions(test_suite_id=str(suite.id))
+
+
+def test_versions_are_listed_newest_first_with_their_state(db_session_mock):
+    frozen = datetime(2026, 9, 12, 14, 3, tzinfo=UTC)
+    run_id = uuid4()
+    items = [
+        _item(4, created_by="bob", term_count=41, run_count=2),
+        _item(3, frozen, label="Q3 agreement", run_count=9, latest_run_id=run_id,
+              latest_run_status=JobStatus.COMPLETED, latest_run_started_at=frozen),
+        _item(2, frozen),
+    ]
+    out = _list(_contract(), items, active_version=3)
+    assert out.index("v4 draft") < out.index("v3 active") < out.index("v2 superseded")
+    assert "Q3 agreement" in out
+    assert f"`{run_id}` Completed 2026-09-12 14:03 UTC" in out
+    assert "| 41 |" in out and "| 9 |" in out
+
+
+def test_a_latest_run_that_has_not_started_shows_no_time(db_session_mock):
+    run_id = uuid4()
+    items = [_item(3, datetime(2026, 9, 12, tzinfo=UTC), run_count=1, latest_run_id=run_id,
+                   latest_run_status=JobStatus.PENDING, latest_run_started_at=None)]
+    out = _list(_contract(), items, active_version=3)
+    assert f"`{run_id}` Pending |" in out
+    assert "None" not in out
+
+
+def test_listing_versions_of_a_regular_suite_is_refused(db_session_mock):
+    with (
+        _patch_perms(),
+        patch(f"{MODULE}.resolve_contract", side_effect=MCPUserError("is not a contract, so it keeps no versions.")),
+        pytest.raises(MCPUserError, match="is not a contract"),
+    ):
+        list_contract_versions(test_suite_id=str(uuid4()))
+
+
+def _freeze(suite, *, frozen=None, previous=None, draft=True, error=None, **kwargs):
+    with (
+        _patch_perms(),
+        patch(f"{MODULE}.resolve_contract", return_value=suite),
+        patch.object(SuiteVersion, "in_force_for", return_value=previous),
+        patch.object(SuiteVersion, "draft_for", return_value=SuiteVersion(id=uuid4(), version=4) if draft else None),
+        patch(f"{MODULE}.contract_service.freeze_version", return_value=frozen, side_effect=error) as freeze,
+    ):
+        return freeze_contract_version(test_suite_id=str(suite.id), **kwargs), freeze
+
+
+def test_freezing_reports_what_now_runs_and_that_it_is_final(db_session_mock):
+    frozen = SuiteVersion(id=uuid4(), version=4, label="Q4 agreement", frozen_at=datetime(2026, 10, 8, tzinfo=UTC))
+    previous = SuiteVersion(id=uuid4(), version=3)
+    out, freeze = _freeze(_contract(), frozen=frozen, previous=previous, label="Q4 agreement")
+    assert freeze.call_args.kwargs["label"] == "Q4 agreement"
+    assert "Froze v4 of contract `Orders`" in out
+    assert "**Version:** v4 active" in out
+    assert "**Previous version:** v3 superseded" in out
+    assert "now run v4 by default" in out
+    assert "cannot be changed or unfrozen" in out
+
+
+def test_freezing_with_no_draft_says_so_rather_than_succeeding(db_session_mock):
+    previous = SuiteVersion(id=uuid4(), version=3)
+    with pytest.raises(MCPUserError, match="has no draft to freeze. v3 active is already frozen"):
+        _freeze(_contract(), previous=previous, draft=False)
+
+
+def test_freezing_passes_other_refusals_through(db_session_mock):
+    with pytest.raises(MCPUserError, match="orphaned term"):
+        _freeze(_contract(), error=ValueError("orphaned term"))
+
+
+def test_freezing_an_invalid_document_lists_the_problems(db_session_mock):
+    error = InvalidContractDocumentError(["schema[0].name is required", "version is required"])
+    with pytest.raises(MCPUserError, match="schema\\[0\\].name is required") as raised:
+        _freeze(_contract(), error=error)
+    assert "version is required" in str(raised.value)
+
+
+def _discard(suite, *, count=0, now_at=None, error=None):
+    with (
+        _patch_perms(),
+        patch(f"{MODULE}.resolve_contract", return_value=suite),
+        patch.object(SuiteVersion, "draft_for", return_value=SuiteVersion(id=uuid4(), version=4)),
+        patch.object(SuiteVersion, "in_force_for", return_value=now_at),
+        patch(f"{MODULE}.contract_service.discard_draft", return_value=count, side_effect=error),
+    ):
+        return discard_contract_draft(test_suite_id=str(suite.id))
+
+
+def test_discarding_reports_tests_removed_and_the_version_returned_to(db_session_mock):
+    out = _discard(_contract(), count=41, now_at=SuiteVersion(id=uuid4(), version=3))
+    assert "Discarded v4 draft of contract `Orders`" in out
+    assert "**Tests removed:** 41" in out
+    assert "**Contract is now at:** v3 active" in out
+
+
+def test_discarding_when_the_service_refuses_is_a_user_error(db_session_mock):
+    error = ValueError("This contract has no frozen version behind its draft; discarding it would leave ...")
+    with pytest.raises(MCPUserError, match="no frozen version behind its draft"):
+        _discard(_contract(), error=error)

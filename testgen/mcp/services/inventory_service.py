@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy import and_, select
 
-from testgen.common.enums import SuiteType
+from testgen.common.enums import TEST_SUITE_TYPES
 from testgen.common.flavors import table_group_schema_label
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
@@ -58,7 +58,7 @@ def get_inventory(
             TestSuite,
             and_(
                 TestSuite.table_groups_id == TableGroup.id,
-                TestSuite.suite_type == SuiteType.REGULAR,
+                TestSuite.suite_type.in_(TEST_SUITE_TYPES),
             ),
         )
     )

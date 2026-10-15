@@ -251,6 +251,34 @@ def test_run_test_generation_rejects_monitor_suite(generation_mocks):
         run_test_generation("suite-1", ["Standard"])
 
 
+def test_a_contracts_generation_opens_and_commits_its_draft_before_generating(generation_mocks):
+    """Generation writes on its own connection, so a draft opened in this session must be
+    committed before the generation SQL can stamp tests onto it."""
+    generation_mocks["suite"].suite_type = SuiteType.CONTRACT
+    events = MagicMock()
+    with (
+        patch(f"{MODULE}.TestDefinition.resolve_writable", side_effect=lambda *_: events.route()) as route,
+        patch(f"{MODULE}.get_current_session") as get_session,
+    ):
+        get_session.return_value.commit.side_effect = lambda: events.commit()
+        generation_mocks["generation"].return_value.run.side_effect = lambda: events.generate()
+        run_test_generation("suite-1")
+
+    route.assert_called_once_with(generation_mocks["suite"].id)
+    assert [name for name, *_ in events.mock_calls] == ["route", "commit", "generate"]
+
+
+def test_a_regular_suites_generation_opens_nothing(generation_mocks):
+    with (
+        patch(f"{MODULE}.TestDefinition.resolve_writable") as route,
+        patch(f"{MODULE}.get_current_session") as get_session,
+    ):
+        run_test_generation("suite-1")
+
+    route.assert_not_called()
+    get_session.return_value.commit.assert_not_called()
+
+
 def test_generation_params_carry_the_resolved_version():
     tg = _make_generation()
 

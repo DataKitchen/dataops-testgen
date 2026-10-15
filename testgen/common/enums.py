@@ -371,3 +371,6 @@ class SuiteType(StrEnum):
     REGULAR = "regular"
     MONITOR = "monitor"
     CONTRACT = "contract"
+
+
+TEST_SUITE_TYPES: tuple[SuiteType, ...] = (SuiteType.REGULAR, SuiteType.CONTRACT)

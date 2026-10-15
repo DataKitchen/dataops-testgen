@@ -3,6 +3,10 @@ from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.sql import operators
+from sqlalchemy.sql.elements import BinaryExpression, Grouping
 
 from testgen.common.enums import (
     Disposition,
@@ -16,10 +20,12 @@ from testgen.common.enums import (
     SuiteType,
 )
 from testgen.common.models.scores import ScoreCategory
-from testgen.common.models.test_definition import Severity
+from testgen.common.models.suite_version import SuiteVersion, VersionState
+from testgen.common.models.test_definition import Severity, TestDefinition
 from testgen.common.models.test_result import TestResultStatus
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.tools.common import (
+    MCP_SUITE_TYPES,
     SCORE_CATEGORY_ARG_TO_COLUMN,
     SCORE_CHAIN_LEAF_TO_COLUMN,
     SCORE_FILTER_FIELD_TO_COLUMN,
@@ -31,6 +37,7 @@ from testgen.mcp.tools.common import (
     ScoreType,
     format_disposition,
     format_run_duration,
+    format_version,
     parse_category,
     parse_disposition,
     parse_impact_dimension,
@@ -45,6 +52,7 @@ from testgen.mcp.tools.common import (
     parse_severity,
     parse_uuid,
     resolve_contract,
+    resolve_contract_version,
     resolve_hygiene_issue,
     resolve_issue_type,
     resolve_profiling_run,
@@ -54,7 +62,7 @@ from testgen.mcp.tools.common import (
     validate_limit,
     validate_page,
 )
-from tests.unit.sql_assertions import scopes_to_a_version
+from tests.unit.sql_assertions import conjuncts, scopes_to_a_version
 
 # --- parse_uuid ---
 
@@ -1484,7 +1492,7 @@ def _version_scoped_session() -> MagicMock:
 
 @patch("testgen.mcp.tools.common.get_project_permissions")
 @patch("testgen.mcp.tools.common.get_current_session")
-def test_resolve_test_definition_scopes_to_a_version(mock_session_fn, mock_permissions):
+def test_resolve_test_definition_scopes_regular_suites_to_a_version(mock_session_fn, mock_permissions):
     session = _version_scoped_session()
     mock_session_fn.return_value = session
     mock_permissions.return_value.allowed_codes = ["demo"]
@@ -1494,8 +1502,24 @@ def test_resolve_test_definition_scopes_to_a_version(mock_session_fn, mock_permi
     with pytest.raises(MCPResourceNotAccessible):
         resolve_test_definition(str(uuid4()))
 
-    query = session.scalars.call_args[0][0]
-    assert scopes_to_a_version(query), "the resolver reads every version of the suite"
+    _assert_regular_scoped_and_contract_any_version(session.scalars.call_args[0][0])
+
+
+def _assert_regular_scoped_and_contract_any_version(statement) -> None:
+    ors = [
+        term.element
+        for term in conjuncts(statement.whereclause)
+        if isinstance(term, Grouping) and getattr(term.element, "operator", None) is operators.or_
+    ]
+    assert len(ors) == 1, "one OR-ed term: resolved version, or any version of a contract"
+    branches = ors[0].clauses
+    assert any(scopes_to_a_version(select(TestDefinition.id).where(branch)) for branch in branches)
+    assert any(
+        isinstance(branch, BinaryExpression)
+        and getattr(branch.left, "key", None) == "suite_type"
+        and branch.right.value == SuiteType.CONTRACT
+        for branch in branches
+    )
 
 
 @patch("testgen.mcp.tools.common.get_project_permissions")
@@ -1516,7 +1540,9 @@ def test_resolve_monitor_scopes_to_a_version(mock_session_fn, mock_permissions):
 
 @patch("testgen.mcp.tools.common.get_project_permissions")
 @patch("testgen.mcp.tools.common.get_current_session")
-def test_resolve_test_note_scopes_to_a_version(mock_session_fn, mock_permissions):
+def test_resolve_test_note_reads_a_note_on_any_version_of_a_contract(mock_session_fn, mock_permissions):
+    """A note stays editable on whichever row it belongs to, so a contract's note resolves on any
+    of its versions while a regular suite's stays scoped to the resolved version."""
     session = _version_scoped_session()
     mock_session_fn.return_value = session
     mock_permissions.return_value.allowed_codes = ["demo"]
@@ -1526,8 +1552,58 @@ def test_resolve_test_note_scopes_to_a_version(mock_session_fn, mock_permissions
     with pytest.raises(MCPResourceNotAccessible):
         resolve_test_note(str(uuid4()))
 
-    query = session.scalars.call_args[0][0]
-    assert scopes_to_a_version(query), "a note on a definition from another version still resolves"
+    _assert_regular_scoped_and_contract_any_version(session.scalars.call_args[0][0])
+
+
+def _compiled(clause) -> str:
+    return " ".join(str(clause.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})).split())
+
+
+@pytest.mark.parametrize("resolver_name", ["resolve_test_definition", "resolve_test_result", "resolve_test_note"])
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.get_current_session")
+def test_resolvers_include_contracts_and_still_reject_a_monitor_suite(mock_session_fn, mock_permissions, resolver_name):
+    from testgen.mcp.tools import common
+
+    session = MagicMock()
+    session.scalars.return_value.first.return_value = MagicMock()
+    mock_session_fn.return_value = session
+    mock_permissions.return_value.allowed_codes = ["demo"]
+
+    getattr(common, resolver_name)(str(uuid4()))
+
+    sql = _compiled(session.scalars.call_args[0][0])
+    assert "test_suites.suite_type IN ('regular', 'contract')" in sql
+    assert "'monitor'" not in sql
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.get_current_session")
+def test_resolve_test_definition_reads_any_version_of_a_contract(mock_session_fn, mock_permissions):
+    from testgen.mcp.tools.common import resolve_test_definition
+
+    session = MagicMock()
+    session.scalars.return_value.first.return_value = MagicMock()
+    mock_session_fn.return_value = session
+    mock_permissions.return_value.allowed_codes = ["demo"]
+
+    resolve_test_definition(str(uuid4()))
+
+    assert "OR test_suites.suite_type = 'contract'" in _compiled(session.scalars.call_args[0][0])
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.TestSuite.get")
+def test_resolve_test_suite_includes_contracts(mock_get, mock_permissions):
+    from testgen.mcp.tools.common import resolve_test_suite
+
+    mock_get.return_value = MagicMock()
+    mock_permissions.return_value.allowed_codes = ["demo"]
+
+    resolve_test_suite(str(uuid4()))
+
+    clauses = [_compiled(clause) for clause in mock_get.call_args.args[1:]]
+    assert "test_suites.suite_type IN ('regular', 'contract')" in clauses
 
 
 # --- FLAVOR_CONNECTION_SCHEMA ---
@@ -1649,15 +1725,29 @@ def test_resolve_contract_scopes_the_lookup_to_allowed_projects(mock_suite_cls, 
     assert mock_suite_cls.get.call_args.args[1:], "the lookup passed no scoping clause"
 
 
-@pytest.mark.parametrize("suite_type", [SuiteType.REGULAR, SuiteType.MONITOR])
+@patch("testgen.mcp.tools.common.get_project_permissions")
+def test_resolve_contract_looks_up_only_regular_suites_and_contracts(mock_get_perms, db_session_mock):
+    """A monitor suite never appears in the suite listings, so it is reported as missing."""
+    mock_get_perms.return_value = _mock_perms()
+
+    with (
+        patch("testgen.mcp.tools.common.TestSuite.get", return_value=None) as get,
+        pytest.raises(MCPResourceNotAccessible),
+    ):
+        resolve_contract(str(uuid4()))
+
+    clauses = " ".join(_compiled(clause) for clause in get.call_args.args[1:])
+    assert "test_suites.suite_type IN ('regular', 'contract')" in clauses
+
+
 @patch("testgen.mcp.tools.common.get_project_permissions")
 @patch("testgen.mcp.tools.common.TestSuite")
-def test_resolve_contract_rejects_a_suite_that_keeps_no_versions(
-    mock_suite_cls, mock_get_perms, suite_type, db_session_mock
+def test_resolve_contract_rejects_a_regular_suite_as_keeping_no_versions(
+    mock_suite_cls, mock_get_perms, db_session_mock
 ):
     """Named rather than collapsed: the caller passed the access check, so the suite is one
     they can already see, and `not found` would send them looking for a typo."""
-    mock_suite_cls.get.return_value = _mock_contract(suite_type)
+    mock_suite_cls.get.return_value = _mock_contract(SuiteType.REGULAR)
     mock_get_perms.return_value = _mock_perms()
 
     with pytest.raises(MCPUserError, match="not a contract"):
@@ -1667,6 +1757,61 @@ def test_resolve_contract_rejects_a_suite_that_keeps_no_versions(
 def test_resolve_contract_invalid_uuid():
     with pytest.raises(MCPUserError, match="Invalid test_suite_id"):
         resolve_contract("not-a-uuid")
+
+
+def test_format_version_renders_number_and_state():
+    assert format_version(3, VersionState.ACTIVE) == "v3 active"
+    assert format_version(4, VersionState.DRAFT) == "v4 draft"
+    assert format_version(2, VersionState.SUPERSEDED) == "v2 superseded"
+
+
+def test_mcp_suite_types_hold_regular_and_contract_but_not_monitor():
+    assert set(MCP_SUITE_TYPES) == {SuiteType.REGULAR, SuiteType.CONTRACT}
+
+
+def test_mcp_suite_types_are_the_test_suite_types():
+    from testgen.common.enums import TEST_SUITE_TYPES
+
+    assert MCP_SUITE_TYPES is TEST_SUITE_TYPES
+
+
+def _suite(suite_type):
+    suite = MagicMock()
+    suite.id = uuid4()
+    suite.test_suite = "Orders"
+    suite.suite_type = suite_type
+    return suite
+
+
+def test_no_version_resolves_to_none():
+    assert resolve_contract_version(_suite(SuiteType.CONTRACT), None) is None
+
+
+def test_a_regular_suite_without_a_version_resolves_to_none():
+    assert resolve_contract_version(_suite(SuiteType.REGULAR), None) is None
+
+
+def test_a_version_on_a_regular_suite_is_a_user_error():
+    with pytest.raises(MCPUserError, match="is not a contract, so it keeps no versions"):
+        resolve_contract_version(_suite(SuiteType.REGULAR), 2)
+
+
+def test_a_known_version_number_resolves_to_that_version():
+    target = SuiteVersion(id=uuid4(), version=2)
+    with patch.object(SuiteVersion, "for_number", return_value=target) as for_number:
+        assert resolve_contract_version(_suite(SuiteType.CONTRACT), 2) is target
+    assert for_number.call_args.args[1] == 2
+
+
+def test_an_unknown_version_number_names_the_versions_that_exist():
+    session = MagicMock()
+    session.scalar.return_value = 4
+    with (
+        patch.object(SuiteVersion, "for_number", return_value=None),
+        patch("testgen.mcp.tools.common.get_current_session", return_value=session),
+        pytest.raises(MCPUserError, match=r"Contract `Orders` has no version 7\. Its versions are v1\u2013v4\."),
+    ):
+        resolve_contract_version(_suite(SuiteType.CONTRACT), 7)
 
 
 # --- report_no_change ---

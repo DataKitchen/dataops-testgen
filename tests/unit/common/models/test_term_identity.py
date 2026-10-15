@@ -389,7 +389,10 @@ def test_editing_a_terms_column_name_leaves_its_identity_unchanged():
     with (
         patch("testgen.common.models.test_definition.get_current_session", return_value=session),
         patch("testgen.common.models.entity.get_current_session", return_value=session),
-        patch("testgen.common.models.test_definition.SuiteVersion.is_frozen_agreement", return_value=False),
+        patch("testgen.common.models.suite_version.get_current_session", return_value=session),
+        patch.object(
+            TestDefinition, "resolve_writable", return_value=(definition.version_id, {definition.id: definition.id})
+        ),
     ):
         definition.save()
 

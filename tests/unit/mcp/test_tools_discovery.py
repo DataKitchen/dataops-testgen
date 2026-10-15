@@ -1,12 +1,15 @@
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
-from testgen.common.enums import SuiteType
+from testgen.common.enums import JOB_STATUS_LABEL, JobStatus, SuiteType
+from testgen.common.models.suite_version import ContractState
 from testgen.common.models.test_suite import TestSuite as RealTestSuite
-from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible
+from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
+from testgen.mcp.tools.common import MCP_SUITE_TYPES
 
 
 @patch("testgen.mcp.services.inventory_service.get_inventory")
@@ -394,7 +397,7 @@ def test_get_test_suite_rejects_inaccessible_id(mock_common_suite, db_session_mo
 @patch("testgen.mcp.tools.common.TestSuite")
 def test_get_test_suite_rejects_actual_monitor_suite(mock_common_suite, db_session_mock):
     """A monitor suite is rejected because resolve_test_suite passes a
-    ``suite_type == REGULAR`` clause.
+    ``suite_type IN (regular, contract)`` clause.
 
     Simulates the real DB filter behaviour: ``TestSuite.get`` returns the monitor
     suite when called without the filter clause, ``None`` when the clause is present.
@@ -405,7 +408,7 @@ def test_get_test_suite_rejects_actual_monitor_suite(mock_common_suite, db_sessi
     # MagicMock answers `compare()` truthily, which would make the check below always match.
     mock_common_suite.suite_type = RealTestSuite.suite_type
     mock_common_suite.project_code = RealTestSuite.project_code
-    exclusion = RealTestSuite.suite_type == SuiteType.REGULAR
+    exclusion = RealTestSuite.suite_type.in_(MCP_SUITE_TYPES)
 
     def filtered_get(_uuid, *clauses):
         # The resolver's contract: pass the regular-suite clause to TestSuite.get.
@@ -595,3 +598,236 @@ def test_get_data_inventory_forwards_global_admin_flag(
 
     kwargs = mock_get_inventory.call_args.kwargs
     assert kwargs["is_global_admin"] is True
+
+
+def _summary(name, suite_type="regular"):
+    s = MagicMock()
+    s.id = uuid4()
+    s.test_suite = name
+    s.suite_type = suite_type
+    s.connection_name = "main_conn"
+    s.table_groups_name = "core"
+    s.test_suite_description = None
+    s.test_ct = 3
+    s.generation_sets = None
+    s.latest_run_id = None
+    return s
+
+
+@patch("testgen.mcp.tools.discovery.SuiteVersion")
+@patch("testgen.mcp.tools.discovery.TestSuite")
+def test_list_test_suites_includes_contracts_by_default(mock_suite, mock_versions, db_session_mock):
+    regular, contract = _summary("Quality"), _summary("Orders", SuiteType.CONTRACT)
+    mock_suite.select_summary.return_value = [regular, contract]
+    active = MagicMock(version=3, frozen_at=datetime(2026, 9, 12, tzinfo=UTC))
+    draft = MagicMock(version=4, frozen_at=None)
+    mock_versions.states_for.return_value = {contract.id: ContractState(active=active, draft=draft)}
+
+    from testgen.mcp.tools.discovery import list_test_suites
+
+    result = list_test_suites("demo")
+
+    assert mock_suite.select_summary.call_args.kwargs["suite_types"] == MCP_SUITE_TYPES
+    assert "Contract · v3 active · v4 draft" in result
+    assert mock_versions.states_for.call_args.args[0] == [contract.id]
+
+
+@patch("testgen.mcp.tools.discovery.SuiteVersion")
+@patch("testgen.mcp.tools.discovery.TestSuite")
+def test_a_regular_row_is_unchanged(mock_suite, mock_versions, db_session_mock):
+    mock_suite.select_summary.return_value = [_summary("Quality")]
+    mock_versions.states_for.return_value = {}
+
+    from testgen.mcp.tools.discovery import list_test_suites
+
+    result = list_test_suites("demo")
+
+    assert "Type" not in result
+    assert " v" not in result.split("Quality", 1)[1].split("\n## ", 1)[0].replace("(id:", "")
+
+
+@patch("testgen.mcp.tools.discovery.SuiteVersion")
+@patch("testgen.mcp.tools.discovery.TestSuite")
+def test_suite_type_narrows_to_contracts(mock_suite, mock_versions, db_session_mock):
+    mock_suite.select_summary.return_value = []
+    mock_versions.states_for.return_value = {}
+
+    from testgen.mcp.tools.discovery import list_test_suites
+
+    list_test_suites("demo", suite_type="Contract")
+
+    assert mock_suite.select_summary.call_args.kwargs["suite_types"] == (SuiteType.CONTRACT,)
+
+
+@patch("testgen.mcp.tools.discovery.SuiteVersion")
+@patch("testgen.mcp.tools.discovery.TestSuite")
+def test_a_contract_with_only_a_draft(mock_suite, mock_versions, db_session_mock):
+    contract = _summary("Orders", SuiteType.CONTRACT)
+    mock_suite.select_summary.return_value = [contract]
+    mock_versions.states_for.return_value = {
+        contract.id: ContractState(active=None, draft=MagicMock(version=1, frozen_at=None))
+    }
+
+    from testgen.mcp.tools.discovery import list_test_suites
+
+    assert "Contract · v1 draft" in list_test_suites("demo")
+
+
+def test_an_unknown_suite_type_is_a_user_error(db_session_mock):
+    from testgen.mcp.tools.discovery import list_test_suites
+
+    with pytest.raises(MCPUserError, match="suite_type"):
+        list_test_suites("demo", suite_type="Monitor")
+
+
+def _contract_suite():
+    suite = MagicMock()
+    suite.id = uuid4()
+    suite.test_suite = "Orders"
+    suite.suite_type = SuiteType.CONTRACT
+    suite.connection_id = None
+    suite.table_groups_id = None
+    suite.generation_sets = None
+    return suite
+
+
+def _get(suite, state, verification=None, run_summary=None, latest_verification=None, summaries=None):
+    from testgen.mcp.tools.discovery import get_test_suite
+
+    if summaries is not None:
+        def select_summary(*, test_run_ids, **_):
+            found = [summaries[run_id] for run_id in test_run_ids if run_id in summaries]
+            return found, len(found)
+    else:
+        def select_summary(**_):
+            return ([run_summary], 1) if run_summary else ([], 0)
+
+    with (
+        patch("testgen.mcp.tools.discovery.resolve_test_suite", return_value=suite),
+        patch("testgen.mcp.tools.discovery.TestSuite.test_definition_stats",
+              return_value=MagicMock(total=3, locked=0, counts_by_type={})),
+        patch("testgen.mcp.tools.discovery.SuiteVersion.states_for", return_value={suite.id: state}),
+        patch(
+            "testgen.mcp.tools.discovery.TestRun.latest_verification",
+            new=latest_verification or MagicMock(return_value=verification),
+        ),
+        patch("testgen.mcp.tools.discovery.TestRun.select_summary", side_effect=select_summary),
+        patch("testgen.mcp.tools.discovery.list_generation_sets", return_value=[]),
+    ):
+        return get_test_suite(str(suite.id))
+
+
+FROZEN = datetime(2026, 9, 12, 14, 3, tzinfo=UTC)
+
+
+def test_the_block_names_active_draft_and_counted_version(db_session_mock):
+    active = MagicMock(version=3, frozen_at=FROZEN, label="Q3 agreement", created_by="alice")
+    draft = MagicMock(version=4, frozen_at=None)
+    out = _get(_contract_suite(), ContractState(active=active, draft=draft))
+    assert "## Contract" in out
+    assert '- **Active version:** v3 active — "Q3 agreement" (frozen 2026-09-12 14:03 UTC)' in out
+    assert "**Draft:** v4 draft" in out
+    assert "**Tests counted from:** v4 draft" in out
+
+
+def test_the_verification_is_the_latest_run_of_the_active_version(db_session_mock):
+    active = MagicMock(version=3, frozen_at=FROZEN, label=None, created_by="alice")
+    run = MagicMock(id=uuid4())
+    summary = MagicMock(
+        status=JobStatus.COMPLETED, status_label=JOB_STATUS_LABEL[JobStatus.COMPLETED],
+        test_ct=12, passed_ct=10, failed_ct=1, warning_ct=1, error_ct=0, started_at=FROZEN,
+    )
+    out = _get(_contract_suite(), ContractState(active=active, draft=None), run, summary)
+    assert (
+        f"- **Latest verification:** Failed — run `{run.id}` (started 2026-09-12 14:03 UTC); "
+        "12 tests: 10 passed, 1 failed, 1 warnings, 0 errors"
+    ) in out
+
+
+@pytest.mark.parametrize(
+    ("failed", "errors", "warnings", "verdict"),
+    [
+        (1, 1, 1, "Failed"),
+        (0, 1, 1, "Error"),
+        (0, 0, 1, "Warning"),
+        (0, 0, 0, "Passed"),
+    ],
+)
+def test_the_verdict_ranks_failed_then_error_then_warning(db_session_mock, failed, errors, warnings, verdict):
+    active = MagicMock(version=3, frozen_at=FROZEN, label=None, created_by="alice")
+    summary = MagicMock(
+        status=JobStatus.COMPLETED, status_label=JOB_STATUS_LABEL[JobStatus.COMPLETED],
+        test_ct=5, passed_ct=2, failed_ct=failed, warning_ct=warnings, error_ct=errors, started_at=FROZEN,
+    )
+    out = _get(_contract_suite(), ContractState(active=active, draft=None), MagicMock(id=uuid4()), summary)
+    assert f"**Latest verification:** {verdict} — run" in out
+
+
+def test_no_frozen_version_means_verification_unavailable(db_session_mock):
+    out = _get(_contract_suite(), ContractState(active=None, draft=MagicMock(version=1, frozen_at=None)))
+    assert "Verification unavailable: no version has been frozen yet, so runs of the draft are previews." in out
+
+
+def test_a_frozen_version_never_run_since(db_session_mock):
+    active = MagicMock(version=3, frozen_at=FROZEN, label=None, created_by="alice")
+    out = _get(_contract_suite(), ContractState(active=active, draft=None))
+    assert "Verification unavailable: v3 active has not run since it was frozen." in out
+
+
+def test_a_latest_verification_with_no_summary_reads_as_not_run_since(db_session_mock):
+    active = MagicMock(version=3, frozen_at=FROZEN, label=None, created_by="alice")
+    out = _get(_contract_suite(), ContractState(active=active, draft=None), MagicMock(id=uuid4()))
+    assert "Verification unavailable: v3 active has not run since it was frozen." in out
+
+
+def test_an_unfinished_latest_verification_is_named_not_counted(db_session_mock):
+    active = MagicMock(version=3, frozen_at=FROZEN, label=None, created_by="alice")
+    run = MagicMock(id=uuid4())
+    summary = MagicMock(status=JobStatus.RUNNING, status_label=JOB_STATUS_LABEL[JobStatus.RUNNING])
+    out = _get(
+        _contract_suite(), ContractState(active=active, draft=None),
+        latest_verification=MagicMock(side_effect=[run, None]), summaries={run.id: summary},
+    )
+    assert f"Verification unavailable: the latest run of v3 active (`{run.id}`) is Running." in out
+
+
+def test_the_active_version_line_names_no_author(db_session_mock):
+    active = MagicMock(version=3, frozen_at=FROZEN, label=None, created_by=None)
+    out = _get(_contract_suite(), ContractState(active=active, draft=None))
+    assert "- **Active version:** v3 active (frozen 2026-09-12 14:03 UTC)" in out
+    assert "None)" not in out
+
+
+@pytest.mark.parametrize("status", [JobStatus.ERROR, JobStatus.CANCELED, JobStatus.RUNNING])
+def test_an_unfinished_latest_run_falls_back_to_the_latest_completed_one(db_session_mock, status):
+    active = MagicMock(version=3, frozen_at=FROZEN, label=None, created_by=None)
+    newest, completed = MagicMock(id=uuid4()), MagicMock(id=uuid4())
+    summaries = {
+        newest.id: MagicMock(status=status, status_label=JOB_STATUS_LABEL[status]),
+        completed.id: MagicMock(
+            status=JobStatus.COMPLETED, status_label=JOB_STATUS_LABEL[JobStatus.COMPLETED],
+            test_ct=4, passed_ct=4, failed_ct=0, warning_ct=0, error_ct=0, started_at=FROZEN,
+        ),
+    }
+    latest_verification = MagicMock(side_effect=[newest, completed])
+
+    out = _get(
+        _contract_suite(), ContractState(active=active, draft=None),
+        latest_verification=latest_verification, summaries=summaries,
+    )
+
+    assert f"- **Latest verification:** Passed — run `{completed.id}`" in out
+    assert f"A newer run of v3 active (`{newest.id}`) is {JOB_STATUS_LABEL[status]}." in out
+    fallback_clause = latest_verification.call_args_list[1].args[1]
+    assert str(fallback_clause.compile(compile_kwargs={"literal_binds": True})) == (
+        "job_executions.status = 'completed'"
+    )
+
+
+def test_a_regular_suite_has_no_contract_block(db_session_mock):
+    suite = _contract_suite()
+    suite.suite_type = SuiteType.REGULAR
+    latest_verification = MagicMock()
+    out = _get(suite, None, latest_verification=latest_verification)
+    assert "## Contract" not in out
+    latest_verification.assert_not_called()

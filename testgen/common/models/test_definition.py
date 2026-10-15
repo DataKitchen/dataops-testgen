@@ -1,7 +1,7 @@
 import hashlib
 import json
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -23,6 +23,7 @@ from sqlalchemy import (
     exists,
     func,
     insert,
+    inspect,
     or_,
     select,
     text,
@@ -38,7 +39,12 @@ from testgen.common.enums import MonitorCalculation, MonitorType, OdcsDimension,
 from testgen.common.models import Base, get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString, ZeroIfEmptyInteger
 from testgen.common.models.entity import Entity, EntityMinimal
-from testgen.common.models.suite_version import FrozenVersionError, SuiteVersion
+from testgen.common.models.suite_version import (
+    FrozenVersionError,
+    RemovedInDraftError,
+    SuiteVersion,
+    UnmatchedInDraftError,
+)
 from testgen.utils import is_uuid4
 
 TestRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
@@ -427,6 +433,7 @@ class TestDefinitionSummary(TestTypeSummary):
     impact_dimension: str | None
     external_url: str | None
     custom_metadata: dict | None
+    version_id: UUID
 
     @property
     def display_name(self) -> str:
@@ -885,6 +892,8 @@ class TestDefinition(Entity):
                     setattr(copied, column.key, getattr(term, column.key))
             copied.id = uuid4()
             copied.version_id = target_version_id
+            if copied.last_auto_gen_date is None and copied.external_id is None:
+                copied.external_id = uuid4()
             session.add(copied)
             id_map[term.id] = copied.id
         session.flush()
@@ -929,16 +938,101 @@ class TestDefinition(Entity):
         draft, source = SuiteVersion.open_draft(test_suite_id)
         return draft.id, cls.copy_to_version(source.id, draft.id) if source else {}
 
+    @classmethod
+    def resolve_writable(
+        cls, test_suite_id: UUID | str, row_ids: Sequence[UUID | str] = (), *, skip_unwritable: bool = False
+    ) -> tuple[UUID, dict[UUID, UUID]]:
+        """The version the suite's next write lands in, and each named row's counterpart there.
+
+        Opens a draft when the suite resolves to a contract's frozen version or a named row
+        belongs to the version in force. A row of the writable version maps to itself; a row of
+        the version in force maps to the draft's copy, matched by contract identity. Rows that
+        do not exist are left out of the map.
+
+        Raises ``FrozenVersionError`` for a row of any other frozen version, before a draft is
+        opened, and its ``UnmatchedInDraftError`` subclass naming every row of the version in force
+        that carries no contract identity to match in an open draft. Raises ``RemovedInDraftError`` naming every row of the version
+        in force that the draft no longer holds.
+
+        With ``skip_unwritable``, those rows are left out of the map instead of raising, and no
+        draft is opened when every named row was left out for belonging to another frozen version.
+        """
+        session = get_current_session()
+        ids = [UUID(str(row_id)) for row_id in row_ids]
+        position = {row_id: index for index, row_id in enumerate(ids)}
+        rows = sorted(
+            session.execute(select(cls.id, cls.version_id, cls.contract_term_id).where(cls.id.in_(ids))).all()
+            if ids
+            else [],
+            key=lambda row: position[row.id],
+        )
+        frozen_by_version = {
+            version_id: SuiteVersion.is_frozen_agreement(version_id) for version_id in {row.version_id for row in rows}
+        }
+        frozen_versions = {version_id for version_id, frozen in frozen_by_version.items() if frozen}
+        if frozen_versions:
+            in_force = SuiteVersion.in_force_for(test_suite_id)
+            superseded = [
+                row.version_id
+                for row in rows
+                if row.version_id in frozen_versions and (in_force is None or row.version_id != in_force.id)
+            ]
+            if superseded and not skip_unwritable:
+                raise FrozenVersionError(superseded[0])
+            if superseded:
+                rows = [row for row in rows if row.version_id not in superseded]
+                frozen_versions -= set(superseded)
+                if not rows:
+                    return session.scalar(select(SuiteVersion.resolved_for(test_suite_id))), {}
+
+        resolved = session.scalar(select(SuiteVersion.resolved_for(test_suite_id)))
+        mapping = {row.id: row.id for row in rows if row.version_id not in frozen_versions}
+        resolved_frozen = (
+            frozen_by_version[resolved] if resolved in frozen_by_version else SuiteVersion.is_frozen_agreement(resolved)
+        )
+        if not frozen_versions and not resolved_frozen:
+            return resolved, mapping
+
+        target, copied = cls.resolve_write_target(test_suite_id)
+        frozen_rows = [row for row in rows if row.version_id in frozen_versions]
+        if copied:
+            mapping.update({row.id: copied[row.id] for row in frozen_rows})
+            return target, mapping
+
+        unmatchable = [row for row in frozen_rows if not row.contract_term_id]
+        if unmatchable and not skip_unwritable:
+            raise UnmatchedInDraftError(unmatchable[0].version_id, target, [row.id for row in unmatchable])
+        frozen_rows = [row for row in frozen_rows if row.contract_term_id]
+        term_ids = [row.contract_term_id for row in frozen_rows]
+        in_draft = (
+            {
+                draft_row.contract_term_id: draft_row.id
+                for draft_row in session.execute(
+                    select(cls.id, cls.version_id, cls.contract_term_id).where(
+                        cls.version_id == target, cls.contract_term_id.in_(term_ids)
+                    )
+                ).all()
+            }
+            if term_ids
+            else {}
+        )
+        removed = [row.id for row in frozen_rows if row.contract_term_id not in in_draft]
+        if removed and not skip_unwritable:
+            raise RemovedInDraftError(target, removed)
+        mapping.update({row.id: in_draft[row.contract_term_id] for row in frozen_rows if row.contract_term_id in in_draft})
+        return target, mapping
+
     def _route_to_writable_version(self) -> None:
-        """Move this write onto the contract's draft when the version it holds is frozen.
+        """Move this write onto the contract's draft when the version it would land on is frozen.
 
-        Where the contract has no draft, one is opened carrying a copy of every term and this
-        row becomes its own copy, so the edit lands on the draft and the frozen version keeps
-        what it had. A row that the draft did not copy is one the draft already supersedes,
-        and rewriting it would resurrect a superseded term.
+        An update is routed by ``resolve_writable`` from the persisted row's own version: a row
+        of the version in force becomes the draft's copy of it, opening the draft when there is
+        none, so the edit lands on the draft and the frozen version keeps what it had. A row of
+        a superseded version raises ``FrozenVersionError`` before any draft is opened, and a row
+        the draft has removed raises ``RemovedInDraftError``.
 
-        A row belonging to a version the agreement in force already supersedes is refused
-        before anything is written, so the refusal leaves no draft behind.
+        An insert holding the version in force lands on the draft instead, opening one when
+        there is none; one holding any other frozen version is refused.
 
         Raises ``MissingTestDefinitionError`` when the row being updated no longer exists, since
         nothing can then establish which version the write would land on.
@@ -946,31 +1040,22 @@ class TestDefinition(Entity):
         # Both ids are compared against ones the ORM hands back, never only passed to the
         # database, and a dialog payload delivers them as strings.
         row_id = UUID(str(self.id)) if self.id else None
-        version_id = UUID(str(self.version_id)) if self.version_id else None
-        if version_id is None and row_id is not None:
-            # An edit dialog rebuilds a definition from a summary payload, which carries no
-            # version, so the persisted row is the only thing that can say which one to guard.
-            version_id = get_current_session().scalar(
-                select(TestDefinition.version_id).where(TestDefinition.id == row_id)
-            )
-            if version_id is None:
+        if row_id is not None:
+            self.version_id, mapping = self.resolve_writable(self.test_suite_id, [row_id])
+            if row_id not in mapping:
                 raise MissingTestDefinitionError(f"Test definition {self.id} no longer exists.")
+            self.id = mapping[row_id]
+            return
 
+        version_id = UUID(str(self.version_id)) if self.version_id else None
         if not SuiteVersion.is_frozen_agreement(version_id):
             return
 
         in_force = SuiteVersion.in_force_for(self.test_suite_id)
         if in_force is None or version_id != in_force.id:
-            # Decided before the write target is resolved: resolving it would open a draft and
-            # copy the whole agreement into it, and that draft outlives the refusal.
             raise FrozenVersionError(version_id)
 
-        target_version_id, copied_ids = self.resolve_write_target(self.test_suite_id)
-        if row_id is not None:
-            if row_id not in copied_ids:
-                raise FrozenVersionError(version_id)
-            self.id = copied_ids[row_id]
-        self.version_id = target_version_id
+        self.version_id, _ = self.resolve_write_target(self.test_suite_id)
 
     @classmethod
     def delete_where(cls, *clauses: ColumnElement[bool]) -> int:
@@ -1010,8 +1095,12 @@ class TestDefinition(Entity):
         join_target=None,
         join_clause=None,
         order_by: tuple[str | InstrumentedAttribute] | None = None,
+        version_predicate=None,
     ):
-        """Build a select over *columns* narrowed to each row's resolved suite version."""
+        """Build a select over *columns* narrowed to each row's resolved suite version.
+
+        ``version_predicate`` replaces the resolved-version predicate when given.
+        """
         if join_target is not None:
             select_columns = [
                 getattr(cls, col, None) or getattr(join_target, col) if isinstance(col, str) else col
@@ -1022,10 +1111,20 @@ class TestDefinition(Entity):
             select_columns = [getattr(cls, col) if isinstance(col, str) else col for col in columns]
             query = select(*select_columns)
 
-        query = query.where(cls.version_clause(), *clauses)
+        query = query.where(cls.version_clause() if version_predicate is None else version_predicate, *clauses)
         if order_by is not None:
             query = query.order_by(*order_by)
         return query
+
+    @classmethod
+    def any_contract_version_clause(cls, suite_types: Sequence[SuiteType]) -> ColumnElement[bool] | None:
+        """The version predicate reading a contract's rows in any version, or None to keep the
+        resolved-version predicate when ``suite_types`` excludes contracts."""
+        from testgen.common.models.test_suite import TestSuite
+
+        if SuiteType.CONTRACT not in suite_types:
+            return None
+        return or_(cls.version_clause(), TestSuite.suite_type == SuiteType.CONTRACT)
 
     @classmethod
     def get(cls, identifier: str | UUID) -> TestDefinitionSummary | None:
@@ -1043,20 +1142,26 @@ class TestDefinition(Entity):
 
     @classmethod
     def get_for_project(
-        cls, identifier: UUID, project_codes: list[str] | None = None,
+        cls,
+        identifier: UUID,
+        project_codes: list[str] | None = None,
+        *,
+        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
     ) -> TestDefinitionSummary | None:
         """Fetch a test definition with project-level access check.
 
-        Returns None if the definition doesn't exist, belongs to a monitor suite, or the user lacks access.
+        Returns None if the definition doesn't exist, its suite is not one of ``suite_types``, or the user lacks access.
+        When ``suite_types`` includes contracts, a contract's definition is read in any of its versions.
         """
         from testgen.common.models.test_suite import TestSuite
 
         query = cls._scoped_select(
             cls._summary_columns,
             cls.id == identifier,
-            TestSuite.suite_type == SuiteType.REGULAR,
+            TestSuite.suite_type.in_(suite_types),
             join_target=TestType,
             join_clause=cls.test_type == TestType.test_type,
+            version_predicate=cls.any_contract_version_clause(suite_types),
         ).join(TestSuite, cls.test_suite_id == TestSuite.id)
         if project_codes is not None:
             query = query.where(TestSuite.project_code.in_(project_codes))
@@ -1101,10 +1206,15 @@ class TestDefinition(Entity):
         test_active: bool | None = None,
         page: int = 1,
         limit: int = 50,
+        *,
+        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        version_id: UUID | None = None,
     ) -> tuple[list[TestDefinitionSummary], int]:
         """Paginated test definitions for a suite, with optional filters.
 
-        Monitor suites are always filtered out — callers requesting a monitor suite get an empty page.
+        ``version_id`` reads that suite version instead of the one the suite resolves to.
+
+        Only suites of ``suite_types`` are read; a suite of another type yields an empty page.
         Project-level access is enforced when ``project_codes`` is set.
         """
         from testgen.common.models.test_suite import TestSuite
@@ -1112,9 +1222,10 @@ class TestDefinition(Entity):
         query = cls._scoped_select(
             cls._summary_columns,
             cls.test_suite_id == test_suite_id,
-            TestSuite.suite_type == SuiteType.REGULAR,
+            TestSuite.suite_type.in_(suite_types),
             join_target=TestType,
             join_clause=cls.test_type == TestType.test_type,
+            version_predicate=cls.version_id == version_id if version_id else None,
         ).join(TestSuite, cls.test_suite_id == TestSuite.id)
         if project_codes is not None:
             query = query.where(TestSuite.project_code.in_(project_codes))
@@ -1132,10 +1243,13 @@ class TestDefinition(Entity):
         cls,
         test_definition_ids: Iterable[UUID],
         project_codes: list[str] | None = None,
+        *,
+        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
     ) -> list[TestDefinitionMinimal]:
         """Test definitions for the given ids, in one statement.
 
-        Monitor suites are always filtered out. Project-level access is enforced when
+        Only suites of ``suite_types`` are read. When ``suite_types`` includes contracts, a
+        contract's definition is read in any of its versions. Project-level access is enforced when
         ``project_codes`` is set. An id matching nothing is absent from the result rather
         than raising, so a caller can report the difference itself.
         """
@@ -1148,9 +1262,10 @@ class TestDefinition(Entity):
         query = cls._scoped_select(
             cls._minimal_columns,
             cls.id.in_(ids),
-            TestSuite.suite_type == SuiteType.REGULAR,
+            TestSuite.suite_type.in_(suite_types),
             join_target=TestType,
             join_clause=cls.test_type == TestType.test_type,
+            version_predicate=cls.any_contract_version_clause(suite_types),
         ).join(TestSuite, cls.test_suite_id == TestSuite.id)
         if project_codes is not None:
             query = query.where(TestSuite.project_code.in_(project_codes))
@@ -1441,6 +1556,7 @@ class TestDefinition(Entity):
             cls.last_auto_gen_date,
             cls.version_id,
             cls.contract_term_id,
+            cls.external_id,
             cls.schema_name,
             cls.match_schema_name,
         ]
@@ -1456,6 +1572,7 @@ class TestDefinition(Entity):
             literal(None).label("last_auto_gen_date"),
             literal(target_version).label("version_id"),
             literal(None).label("contract_term_id"),
+            func.gen_random_uuid().label("external_id"),
             retargeted["schema_name"].label("schema_name"),
             retargeted["match_schema_name"].label("match_schema_name"),
         ]
@@ -1657,19 +1774,37 @@ class TestDefinition(Entity):
 
     def save(self) -> None:
         if self.id:
-            self._route_to_writable_version()
-            values = {
-                column.key: getattr(self, column.key, None)
-                for column in self.__table__.columns
-                if column not in self._update_exclude_columns
-            }
-            query = (
-                update(TestDefinition)
-                .where(TestDefinition.id == self.id, TestDefinition.version_clause())
-                .values(**values)
-            )
-            db_session = get_current_session()
-            db_session.execute(query)
+            session = get_current_session()
+            with session.no_autoflush:
+                # A loaded row of a frozen version is dirty with an edit meant for the draft's
+                # copy: opening the draft flushes explicitly, and routing changes its key. A row
+                # that stays put stays attached, since only the session's flush persists its
+                # changes to columns the UPDATE below does not write.
+                if inspect(self).persistent and SuiteVersion.is_frozen_agreement(self.version_id):
+                    session.expunge(self)
+                loaded_id = UUID(str(self.id))
+                self._route_to_writable_version()
+            columns = [column for column in self.__table__.columns if column not in self._update_exclude_columns]
+            values = {column.key: getattr(self, column.key, None) for column in columns}
+            if self.id != loaded_id:
+                # Routed onto the draft's copy, which may already carry edits of its own: only
+                # what this edit changed from the row it was loaded from is written over it.
+                loaded = session.execute(select(*columns).where(TestDefinition.id == loaded_id)).one()
+                values = {key: value for key, value in values.items() if value != getattr(loaded, key)}
+            if SuiteVersion.is_suite_owned(self.version_id):
+                values["external_id"] = case(
+                    (
+                        TestDefinition.last_auto_gen_date.is_(None),
+                        func.coalesce(TestDefinition.external_id, func.gen_random_uuid()),
+                    ),
+                    else_=TestDefinition.external_id,
+                )
+            if values:
+                session.execute(
+                    update(TestDefinition)
+                    .where(TestDefinition.id == self.id, TestDefinition.version_clause())
+                    .values(**values)
+                )
         else:
             if self.version_id is None:
                 self.version_id = get_current_session().scalar(
@@ -1681,10 +1816,13 @@ class TestDefinition(Entity):
             # column default and the post-flush refresh returns the same value, so nothing
             # downstream shifts.
             self.id = self.id or uuid4()
-            if not self.contract_term_id and SuiteVersion.is_suite_owned(self.version_id):
-                self.contract_term_id = self.mint_term_id(
-                    self.version_id, self.test_type, self.schema_name, self.table_name, self.column_name, self.id
-                )
+            if SuiteVersion.is_suite_owned(self.version_id):
+                if self.last_auto_gen_date is None and self.external_id is None:
+                    self.external_id = uuid4()
+                if not self.contract_term_id:
+                    self.contract_term_id = self.mint_term_id(
+                        self.version_id, self.test_type, self.schema_name, self.table_name, self.column_name, self.id
+                    )
             super().save()
 
 
