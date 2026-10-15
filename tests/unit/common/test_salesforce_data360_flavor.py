@@ -307,8 +307,8 @@ def test_template_files_exist():
     from pathlib import Path
 
     base = Path(__file__).parents[3] / "testgen" / "template" / "flavors" / "salesforce_data360"
-    assert (base / "profiling" / "project_profiling_query.sql").exists()
-    assert (base / "profiling" / "project_secondary_profiling_query.sql").exists()
+    assert (base / "profiling" / "column_profiling.sql").exists()
+    assert (base / "profiling" / "frequency_analysis.sql").exists()
     assert (base / "profiling" / "templated_functions.yaml").exists()
 
 
@@ -333,7 +333,7 @@ def test_templated_functions_yaml_parses():
 def test_profiling_query_uses_data360_datediff_syntax():
     from pathlib import Path
 
-    path = Path(__file__).parents[3] / "testgen" / "template" / "flavors" / "salesforce_data360" / "profiling" / "project_profiling_query.sql"
+    path = Path(__file__).parents[3] / "testgen" / "template" / "flavors" / "salesforce_data360" / "profiling" / "column_profiling.sql"
     sql = path.read_text()
 
     # Data 360 uses inline DATEDIFF('unit', start, end) — string units, not bare identifiers.
@@ -375,7 +375,7 @@ def test_is_date_uses_regexp_like():
 def test_profiling_query_has_no_pg_specific_syntax():
     from pathlib import Path
 
-    path = Path(__file__).parents[3] / "testgen" / "template" / "flavors" / "salesforce_data360" / "profiling" / "project_profiling_query.sql"
+    path = Path(__file__).parents[3] / "testgen" / "template" / "flavors" / "salesforce_data360" / "profiling" / "column_profiling.sql"
     content = path.read_text()
 
     assert "TABLESAMPLE" not in content
@@ -394,7 +394,7 @@ def test_profiling_query_has_no_pg_specific_syntax():
 def test_profiling_query_uses_data360_alternatives():
     from pathlib import Path
 
-    path = Path(__file__).parents[3] / "testgen" / "template" / "flavors" / "salesforce_data360" / "profiling" / "project_profiling_query.sql"
+    path = Path(__file__).parents[3] / "testgen" / "template" / "flavors" / "salesforce_data360" / "profiling" / "column_profiling.sql"
     content = path.read_text()
 
     assert "REGEXP_LIKE" in content
@@ -402,10 +402,10 @@ def test_profiling_query_uses_data360_alternatives():
     assert "ORDER BY RANDOM()" in content
 
 
-def test_secondary_profiling_query_syntax():
+def test_frequency_analysis_query_syntax():
     from pathlib import Path
 
-    path = Path(__file__).parents[3] / "testgen" / "template" / "flavors" / "salesforce_data360" / "profiling" / "project_secondary_profiling_query.sql"
+    path = Path(__file__).parents[3] / "testgen" / "template" / "flavors" / "salesforce_data360" / "profiling" / "frequency_analysis.sql"
     content = path.read_text()
 
     assert "STRING_AGG" not in content

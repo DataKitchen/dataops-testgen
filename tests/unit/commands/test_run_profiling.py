@@ -747,7 +747,7 @@ def test_the_template_digest_resolves_for_every_flavor():
 
 
 def test_the_template_digest_tracks_content_and_names():
-    def digest(text: str, name: str = "project_profiling_query.sql"):
+    def digest(text: str, name: str = "column_profiling.sql"):
         entry = MagicMock(**{"read_text.return_value": text})
         entry.name = name  # `name` is reserved in the MagicMock constructor
         with patch(f"{MODULE}.get_template_files", return_value=[entry]):
