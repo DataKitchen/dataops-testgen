@@ -5,6 +5,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import Column, ForeignKey, String, asc, select
 from sqlalchemy.dialects import postgresql
 
+from testgen.common.audit.actions import AuditTargetType
+from testgen.common.audit.fields import AuditFields
 from testgen.common.models import get_current_session
 from testgen.common.models.entity import Entity
 
@@ -30,6 +32,9 @@ class ProjectMembership(Entity):
 
     _get_by = "id"
     _default_order_by = (asc(project_code),)
+
+    # A membership is recorded as a change to its member's access
+    __audit__ = AuditFields(target_type=AuditTargetType.USER, id="user_id", project="project_code", values=("role",))
 
     @classmethod
     def get_by_user_and_project(cls, user_id: UUID, project_code: str) -> Self | None:

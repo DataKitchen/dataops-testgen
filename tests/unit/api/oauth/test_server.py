@@ -56,6 +56,20 @@ def test_auth_code_save_authorization_code(mock_get_session):
 
 
 @patch("testgen.api.oauth.server.get_current_session")
+def test_saving_an_authorization_code_records_the_user_authorizing_the_client(_mock_get_session, audit_session, audit_log):
+    user = MagicMock(id=uuid4(), username="alice")
+    user.name = "Alice"
+    request = MagicMock(client=_client(), user=user, data={})
+
+    AuthorizationCodeGrant.__new__(AuthorizationCodeGrant).save_authorization_code("CODE123", request)
+    audit_session.commit()
+
+    [entry] = audit_log.records()
+    assert (entry["action"], entry["source"], entry["actor_id"]) == ("oauth_client.authorized", "api", str(user.id))
+    assert (entry["target_type"], entry["targets"], entry["target_name"]) == ("oauth_client", ["c1"], "Claude")
+
+
+@patch("testgen.api.oauth.server.get_current_session")
 def test_auth_code_query_returns_valid_code(mock_get_session):
     mock_session = MagicMock()
     mock_get_session.return_value = mock_session
@@ -459,7 +473,8 @@ def test_revocation_query_token_by_refresh_token(mock_get_session):
     mock_session.scalars.assert_called_once()
 
 
-def test_revocation_revoke_token_sets_timestamps():
+@patch("testgen.api.oauth.server.get_current_session")
+def test_revocation_revoke_token_sets_timestamps(_mock_get_session):
     token = MagicMock()
     request = MagicMock()
     request.form = {}
@@ -485,6 +500,77 @@ def test_revocation_access_only_hint():
     assert token.access_token_revoked_at is not None
     # refresh_token_revoked_at should NOT have been set
     assert token.refresh_token_revoked_at is None
+
+
+def _client(client_id: str = "c1", name: str = "Claude") -> OAuth2Client:
+    client = OAuth2Client(client_id=client_id)
+    client.set_client_metadata({"client_name": name})
+    return client
+
+
+def _token(owner_id=None, *, refresh_revoked_at=0, refresh_token="refresh"):  # noqa: S107
+    return OAuth2Token(
+        user_id=owner_id or uuid4(),
+        refresh_token=refresh_token,
+        issued_at=int(time.time()),
+        expires_in=3600,
+        access_token_revoked_at=0,
+        refresh_token_revoked_at=refresh_revoked_at,
+    )
+
+
+def _revoke(token, hint, *, public=False, chain_revoked=0):
+    client = _client()
+    if public:
+        client.set_client_metadata({"client_name": "Claude", "token_endpoint_auth_method": "none"})
+    request = MagicMock(form={"token_type_hint": hint} if hint else {}, client=client)
+    with patch("testgen.api.oauth.server._revoke_chain", return_value=chain_revoked):
+        TestGenRevocationEndpoint.__new__(TestGenRevocationEndpoint).revoke_token(token, request)
+
+
+@pytest.mark.parametrize(
+    ("hint", "token_values", "client_values"),
+    [
+        pytest.param(None, {}, {}, id="live-refresh-token"),
+        pytest.param("refresh_token", {}, {}, id="refresh-token-hint"),
+        pytest.param(None, {"refresh_revoked_at": 100}, {"public": True, "chain_revoked": 1}, id="public-chain"),
+    ],
+)
+@patch("testgen.api.oauth.server.get_current_session")
+def test_revocation_that_ends_access_records_the_owner_revoking_the_client(
+    mock_get_session, hint, token_values, client_values, audit_session, audit_log
+):
+    owner = MagicMock(id=uuid4(), username="alice")
+    owner.name = "Alice"
+    mock_get_session.return_value.get.return_value = owner
+
+    _revoke(_token(owner.id, **token_values), hint, **client_values)
+    audit_session.commit()
+
+    [entry] = audit_log.records()
+    assert (entry["action"], entry["source"], entry["actor_id"], entry["actor_username"]) == (
+        "oauth_client.access_revoked", "api", str(owner.id), "alice",
+    )
+    assert (entry["target_type"], entry["targets"], entry["target_name"]) == ("oauth_client", ["c1"], "Claude")
+
+
+@pytest.mark.parametrize(
+    ("hint", "token_values", "client_values"),
+    [
+        pytest.param("access_token", {}, {}, id="access-token-only"),
+        pytest.param(None, {"refresh_revoked_at": 100}, {}, id="refresh-token-already-revoked"),
+        pytest.param(None, {"refresh_token": None}, {}, id="no-refresh-token"),
+        pytest.param(None, {"refresh_revoked_at": 100}, {"public": True}, id="public-chain-already-revoked"),
+    ],
+)
+@patch("testgen.api.oauth.server.get_current_session")
+def test_revocation_that_leaves_access_unchanged_records_nothing(
+    mock_get_session, hint, token_values, client_values, audit_session, audit_log
+):
+    _revoke(_token(**token_values), hint, **client_values)
+    audit_session.commit()
+
+    assert audit_log.records() == []
 
 
 # --- create_authorization_server ---
@@ -567,6 +653,7 @@ def store() -> Iterator[_Store]:
     user.username = "alice"
     session = MagicMock()
     session.add.side_effect = data.save
+    session.execute.return_value.rowcount = 0  # The store does not apply Core updates
     counter = itertools.count()
 
     def query_code(_grant, code, client):
@@ -811,7 +898,7 @@ def test_revoking_a_refresh_token_revokes_a_public_clients_chain(store, http, au
     if auth_method == "none":
         form["client_id"] = "client"
 
-    with patch("testgen.api.oauth.server._revoke_chain") as mock_revoke_chain:
+    with patch("testgen.api.oauth.server._revoke_chain", return_value=1) as mock_revoke_chain:
         resp = http.post("/oauth/revoke", data=form, headers=headers)
 
     assert resp.status_code == 200

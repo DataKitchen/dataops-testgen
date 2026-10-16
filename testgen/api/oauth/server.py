@@ -20,7 +20,11 @@ from authlib.oauth2.rfc7636 import CodeChallenge
 from sqlalchemy import and_, case, or_, select, update
 
 from testgen import settings
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.record import Actor
+from testgen.common.audit.recorder import AuditContext, bind, record
 from testgen.common.auth import create_jwt_token
+from testgen.common.enums import JobSource
 from testgen.common.models import get_current_session
 from testgen.common.models.oauth import OAuth2AuthorizationCode, OAuth2Client, OAuth2ClientAuthMethod, OAuth2Token
 from testgen.common.models.user import User
@@ -65,6 +69,8 @@ class AuthorizationCodeGrant(grants.AuthorizationCodeGrant):
         )
         session = get_current_session()
         session.add(auth_code)
+        bind(AuditContext(source=JobSource.api, actor=Actor.of(request.user)))
+        record(AuditAction.OAUTH_CLIENT_AUTHORIZED, request.client)
         return auth_code
 
     def query_authorization_code(self, code, client):
@@ -199,10 +205,16 @@ class TestGenRevocationEndpoint(RevocationEndpoint):
         if hint == "access_token":
             token.access_token_revoked_at = now
         else:
+            # The client's access ends with its live refresh token; revoking an access token alone leaves it
+            ends_access = bool(token.refresh_token) and token.is_refresh_token_active()
             token.access_token_revoked_at = now
             token.refresh_token_revoked_at = now
             if request.client.token_endpoint_auth_method == OAuth2ClientAuthMethod.NONE:
-                _revoke_chain(token)
+                ends_access = _revoke_chain(token) > 0 or ends_access
+            if ends_access:
+                owner = get_current_session().get(User, token.user_id) if token.user_id else None
+                bind(AuditContext(source=JobSource.api, actor=Actor.of(owner) if owner else None))
+                record(AuditAction.OAUTH_CLIENT_ACCESS_REVOKED, request.client)
 
 
 class TestGenAuthorizationServer(AuthorizationServer):
