@@ -793,17 +793,16 @@ def update_catalog_for_edit(
     :param move: The schema move the edit made, if any.
     :param connection: The table group's connection, when the caller already has it.
     :returns: Why the catalog could not be read or written, or ``None`` when it was written or
-        needed no change. A failed write after a schema move is logged rather than returned.
+        needed no change.
     """
     if move:
-        apply_schema_move(move, table_group.id)
-        return None
+        return apply_schema_move(move, table_group.id)
     if membership_before != catalog_membership(table_group):
         return write_table_group_catalog(table_group, connection)
     return None
 
 
-def apply_schema_move(move: SchemaMove, table_group_id: UUID) -> None:
+def apply_schema_move(move: SchemaMove, table_group_id: UUID) -> str | None:
     """Make the move durable, then rewrite the catalog against the schema it names.
 
     The catalog is written on its own connection and commits there, so it cannot be undone by the
@@ -812,11 +811,16 @@ def apply_schema_move(move: SchemaMove, table_group_id: UUID) -> None:
     table drop-and-add to the schema-change monitors.
 
     A catalog that fails to write is recoverable: the next refresh rebuilds it.
+
+    :returns: Why the catalog could not be written, or ``None`` when it was written or the move
+        carries no catalog to write.
     """
     get_current_session().commit()
     if move.refresh_catalog is None:
-        return
+        return None
     try:
         move.refresh_catalog(table_group_id)
-    except Exception:
+    except Exception as error:
         LOG.exception("Catalog refresh after the schema move encountered errors")
+        return get_exception_message(error)
+    return None
