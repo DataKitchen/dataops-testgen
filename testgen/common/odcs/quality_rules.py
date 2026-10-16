@@ -443,6 +443,22 @@ def _whole_or_none(raw: str | None) -> int | None:
     return value if isinstance(value, int) else None
 
 
+def _date_bound(value: str, logical_type: str | None) -> str:
+    """``value`` as a ``date`` property declares it: the date alone when the time is midnight.
+
+    A bound with a time of day keeps it, since dropping the time would move the bound.
+    """
+    if logical_type != "date":
+        return value
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    if parsed.tzinfo is None and parsed.time() == datetime.min.time():
+        return parsed.date().isoformat()
+    return value
+
+
 def property_declaration(term: "TestDefinition", logical_type: str | None) -> dict[str, Any] | None:
     """The schema-property fields that make exactly ``term``'s claim, or ``None`` when none do.
 
@@ -478,7 +494,7 @@ def property_declaration(term: "TestDefinition", logical_type: str | None) -> di
     # TestGen passes.
     key = "minimum" if term.test_type.startswith("Min_") else "maximum"
     if term.test_type.endswith("_Date"):
-        value: Any = (term.baseline_value or "").strip() or None
+        value: Any = _date_bound((term.baseline_value or "").strip(), logical_type) or None
     else:
         value = _number_or_none(term.baseline_value)
     return {"logicalTypeOptions": {key: value}} if value is not None else None

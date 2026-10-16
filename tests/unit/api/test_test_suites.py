@@ -190,7 +190,7 @@ def _get(suite, *, table_group=None, permitted: bool = True):
         patch("testgen.api.deps.has_project_permission", return_value=permitted) as mock_perm,
         patch(f"{MODULE}.TableGroup") as mock_tg_cls,
     ):
-        mock_deps_cls.get_regular.return_value = suite
+        mock_deps_cls.get.return_value = suite
         mock_tg_cls.get.return_value = table_group
         resp = _client().get(f"/api/v1/test-suites/{TS_ID}")
     return resp, mock_deps_cls, mock_perm
@@ -245,13 +245,13 @@ def test_get_test_suite_is_not_default_when_its_table_group_points_elsewhere():
 
 
 def test_get_test_suite_resolves_only_regular_suites():
-    """A monitor or contract suite's id reaches ``get_regular``, which returns None for it,
-    so the caller gets the same 404 as for a suite that does not exist."""
+    """The suite is looked up narrowed to regular suites, so a monitor or contract suite's id
+    gets the same 404 as a suite that does not exist."""
     resp, mock_deps_cls, _ = _get(None)
 
     assert resp.status_code == 404
-    mock_deps_cls.get_regular.assert_called_once_with(TS_ID)
-    mock_deps_cls.get.assert_not_called()
+    mock_deps_cls.suite_type.in_.assert_called_once_with((SuiteType.REGULAR,))
+    mock_deps_cls.get.assert_called_once_with(TS_ID, mock_deps_cls.suite_type.in_.return_value)
 
 
 def test_get_test_suite_asks_for_view_permission():

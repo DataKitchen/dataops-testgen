@@ -5,8 +5,10 @@ from functools import cached_property
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
+from sqlalchemy.orm.attributes import flag_modified
 
+from testgen.common import contract_document
 from testgen.common.database.database_service import (
     execute_db_queries,
     fetch_dict_from_db,
@@ -14,7 +16,11 @@ from testgen.common.database.database_service import (
     replace_params,
 )
 from testgen.common.enums import SuiteType
-from testgen.common.generation_set_service import MONITOR_GENERATION_SET, resolve_generation_sets
+from testgen.common.generation_set_service import (
+    CONTRACT_GENERATION_SET,
+    MONITOR_GENERATION_SET,
+    resolve_generation_sets,
+)
 from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session
@@ -31,6 +37,24 @@ LOG = logging.getLogger("testgen")
 
 MonitorTestType = Literal["Freshness_Trend", "Volume_Trend", "Schema_Drift"]
 MonitorGenerationMode = Literal["upsert", "insert", "delete"]
+
+
+@dataclasses.dataclass
+class ContractGenerationResult:
+    """What a contract generation did.
+
+    ``term_count`` is the number of terms, Schema Conformance tests aside, that the generated tables
+    hold afterwards. ``tables_declared`` lists the tables the generation covered,
+    ``tables_not_in_catalog`` those of them the data catalog holds no columns for, and
+    ``tables_not_profiled`` those of them with no results in the profiling run the generation read --
+    every table when there is no profiling run to read. A table not profiled is generated from the data catalog
+    alone, with no Contract-set terms.
+    """
+
+    term_count: int
+    tables_declared: list[str]
+    tables_not_in_catalog: list[str]
+    tables_not_profiled: list[str]
 
 
 @dataclasses.dataclass
@@ -59,10 +83,6 @@ def run_test_generation(
     test_suite = TestSuite.get(test_suite_id)
     if test_suite.suite_type == SuiteType.MONITOR:
         raise ValueError("Cannot run regular test generation for monitor suite")
-    if test_suite.suite_type == SuiteType.CONTRACT:
-        TestDefinition.resolve_writable(test_suite.id)
-        # Generation inserts on its own connection, which cannot see a draft only flushed here.
-        get_current_session().commit()
 
     resolved_sets = resolve_generation_sets(test_suite, generation_sets)
     LOG.info(f"Generating tests for generation sets: {', '.join(resolved_sets)}")
@@ -72,10 +92,13 @@ def run_test_generation(
 
     success = False
     try:
-        TestGeneration(
-            connection, table_group, test_suite, resolved_sets, test_types, profile_run_id,
-            table_names=table_names,
-        ).run()
+        if test_suite.suite_type == SuiteType.CONTRACT:
+            run_contract_generation(test_suite.id, table_names=table_names, profile_run_id=profile_run_id)
+        else:
+            TestGeneration(
+                connection, table_group, test_suite, resolved_sets, test_types, profile_run_id,
+                table_names=table_names,
+            ).run()
         success = True
     except Exception:
         LOG.exception("Test generation encountered an error.")
@@ -132,20 +155,131 @@ def _execute_in_session(queries: list[tuple[str, dict | None]]) -> None:
         session.execute(text(query), params)
 
 
-def run_conformance_generation(test_suite_id: str | UUID, table_names: list[str] | None = None) -> None:
-    """Reconcile a contract draft's Schema Conformance tests with the tables it declares.
+def resolve_generation_profile_run(table_group: TableGroup, finishing_run_id: UUID | None = None) -> UUID | None:
+    """The profiling run test generation reads for ``table_group``, or ``None`` when it has none.
 
-    Adds a test for each declared table the table group's catalog holds and has no test yet,
-    and deletes the tests of tables the draft no longer declares. ``table_names`` limits the
-    additions to those tables; the deletions always cover the whole draft.
+    The newest run with complete results on or before the table group's as-of date, which lags
+    today by its ``profiling_delay_days``. ``finishing_run_id`` names a run that has just finished
+    but is not marked complete yet, and is eligible alongside the completed ones.
     """
-    test_suite = TestSuite.get(test_suite_id)
-    if test_suite.suite_type != SuiteType.CONTRACT:
-        raise ValueError("Cannot run conformance generation for a suite that is not a contract")
-    table_group = TableGroup.get(test_suite.table_groups_id)
-    connection = Connection.get(table_group.connection_id)
+    return ProfilingRun.latest_readable_id(
+        table_group.id, _generation_as_of_date(table_group, datetime.now(UTC)), finishing_run_id=finishing_run_id
+    )
 
-    TestGeneration(connection, table_group, test_suite, [], table_names=table_names).conformance_run()
+
+def _generation_as_of_date(table_group: TableGroup, run_date: datetime) -> datetime:
+    if delay_days := table_group.profiling_delay_days:
+        return run_date - timedelta(days=delay_days)
+    return run_date
+
+
+def _contract_context(test_suite_id: str | UUID) -> tuple[TestSuite, TableGroup, Connection]:
+    test_suite = TestSuite.get(test_suite_id)
+    if test_suite is None or test_suite.suite_type != SuiteType.CONTRACT:
+        raise ValueError("Cannot run contract generation for a suite that is not a contract")
+    table_group = TableGroup.get(test_suite.table_groups_id)
+    return test_suite, table_group, Connection.get(table_group.connection_id)
+
+
+def reconcile_contract_conformance(test_suite_id: str | UUID) -> None:
+    """Give each table a contract's draft declares one Schema Conformance test, and remove the test
+    of a table it no longer declares.
+
+    Also stamps a term id on every term of the draft that lacks one. Needs no profiling run and
+    leaves the metadata document untouched.
+    """
+    test_suite, table_group, connection = _contract_context(test_suite_id)
+    generation = TestGeneration(connection, table_group, test_suite, [])
+    generation.conformance_run()
+    TestDefinition.assign_missing_term_ids(generation.version_id)
+
+
+def _term_count(version_id: UUID, table_names: list[str]) -> int:
+    return get_current_session().scalar(
+        select(func.count()).select_from(TestDefinition).where(
+            TestDefinition.version_id == version_id,
+            TestDefinition.table_name.in_(table_names),
+            TestDefinition.test_type.not_in(MANAGED_TEST_TYPES),
+        )
+    ) or 0
+
+
+def run_contract_generation(
+    test_suite_id: str | UUID,
+    table_names: list[str] | None = None,
+    profile_run_id: UUID | None = None,
+    *,
+    refresh_identity: bool = True,
+) -> ContractGenerationResult:
+    """Generate a contract's draft: its metadata document from the data catalog and, when the
+    table group has been profiled, its terms.
+
+    Creates the draft when there is none, then:
+
+    1. when ``table_names`` is omitted and the draft declares no tables, declares every table in
+       the data catalog;
+    2. refreshes the contract's description and tags from the table group, unless
+       ``refresh_identity`` is false, and the descriptors of ``table_names`` -- or of every declared
+       table -- from the catalog;
+    3. with a completed profiling run, generates the Contract set's terms for those of the tables
+       the run profiled;
+    4. gives each table the draft declares its Schema Conformance test, whatever ``table_names``
+       holds, and removes the test of a table it no longer declares;
+    5. with a completed profiling run, refreshes the values profiling observed on each column.
+
+    Generation deletes the unlocked generated terms of the tables it covers that it did not
+    produce again, so it never covers a table the run has no results for: without a profiling
+    run, steps 3 and 5 are skipped entirely, and a declared table missing from the run keeps its
+    terms. ``profile_run_id`` names a run that has just finished
+    but is not marked complete yet. Returns a ``ContractGenerationResult`` describing the generation.
+
+    Generation reaches the database on its own connection and commits each statement itself,
+    so the document is committed before the terms are generated. A failure past that point
+    leaves the document generated with the terms missing; generating again resolves it.
+    """
+    test_suite, table_group, connection = _contract_context(test_suite_id)
+    session = get_current_session()
+    run_id = resolve_generation_profile_run(table_group, finishing_run_id=profile_run_id)
+
+    version_id, _ = TestDefinition.resolve_write_target(test_suite.id)
+    draft = SuiteVersion.get(version_id)
+    document = draft.metadata_document if draft.metadata_document is not None else {}
+    if table_names is None:
+        table_names = contract_document.declared_tables(document) or contract_document.catalog_table_names(
+            table_group.id
+        )
+    if refresh_identity:
+        contract_document.refresh_identity(document, table_group)
+    column_counts = contract_document.refresh_tables(document, table_group, table_names)
+    draft.metadata_document = document
+    flag_modified(draft, "metadata_document")
+    session.commit()
+
+    profiled = contract_document.profiled_table_names(run_id, table_names) if run_id is not None else []
+    if profiled:
+        LOG.info(f"Generating contract terms for {len(profiled)} declared tables")
+        TestGeneration(
+            connection, table_group, test_suite, [CONTRACT_GENERATION_SET], profile_run_id=run_id,
+            table_names=profiled,
+        ).run()
+    else:
+        LOG.info("No profiling results for the tables, so no contract terms are generated")
+    reconcile_contract_conformance(test_suite.id)
+
+    if run_id is not None:
+        # The document was committed before generation; reload it so a write committed meanwhile
+        # is not overwritten by the copy held in memory.
+        session.refresh(draft)
+        contract_document.fill_profiled_values(draft.metadata_document, run_id, table_names)
+        flag_modified(draft, "metadata_document")
+        session.flush()
+
+    return ContractGenerationResult(
+        term_count=_term_count(version_id, table_names),
+        tables_declared=list(table_names),
+        tables_not_in_catalog=[name for name in table_names if not column_counts.get(name)],
+        tables_not_profiled=[name for name in table_names if name not in profiled],
+    )
 
 
 class TestGeneration:
@@ -170,9 +304,7 @@ class TestGeneration:
         self.flavor_service = get_flavor_service(self.flavor)
 
         self.run_date = datetime.now(UTC)
-        self.as_of_date = self.run_date
-        if delay_days := self.table_group.profiling_delay_days:
-            self.as_of_date = self.run_date - timedelta(days=delay_days)
+        self.as_of_date = _generation_as_of_date(table_group, self.run_date)
 
         # A run that has just finished cannot be identified any other way at this point: its
         # job execution is still 'running' (marked complete only after the handler returns),

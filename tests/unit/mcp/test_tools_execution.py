@@ -7,6 +7,7 @@ import pytest
 from testgen.common.enums import SuiteType
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_definition import TestDefinition
+from testgen.common.models.test_suite import TestSuite as RealTestSuite
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
@@ -363,6 +364,71 @@ def test_generate_tests_rejects_unknown_set(mock_suite_cls, mock_job_exec, _mock
     mock_job_exec.submit.assert_not_called()
 
 
+@patch("testgen.mcp.tools.execution.resolve_generation_profile_run", return_value=uuid4())
+@patch("testgen.mcp.tools.execution.TableGroup")
+@patch("testgen.mcp.tools.execution.resolve_generation_sets", return_value=["Contract"])
+@patch("testgen.mcp.tools.execution.JobExecution")
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_generate_tests_submits_a_profiled_contract(
+    mock_suite_cls, mock_job_exec, _mock_resolve, _mock_tg, _mock_run, db_session_mock
+):
+    suite_id = uuid4()
+    suite = _mock_test_suite(suite_id=suite_id)
+    suite.suite_type = SuiteType.CONTRACT
+    mock_suite_cls.get.return_value = suite
+    mock_job_exec.submit.return_value = MagicMock(id=uuid4())
+
+    from testgen.mcp.tools.execution import generate_tests
+
+    out = generate_tests(str(suite_id))
+
+    assert mock_job_exec.submit.call_args.kwargs["kwargs"] == {
+        "test_suite_id": str(suite_id), "generation_sets": ["Contract"],
+    }
+    assert "Contract" in out
+    assert "Test suite" not in out
+
+
+@patch("testgen.mcp.tools.execution.resolve_generation_profile_run", return_value=None)
+@patch("testgen.mcp.tools.execution.TableGroup")
+@patch("testgen.mcp.tools.execution.resolve_generation_sets", return_value=["Contract"])
+@patch("testgen.mcp.tools.execution.JobExecution")
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_generate_tests_submits_an_unprofiled_contract_and_says_no_tests_will_be_generated(
+    mock_suite_cls, mock_job_exec, _mock_resolve, mock_tg, _mock_run, db_session_mock
+):
+    suite = _mock_test_suite(suite_id=uuid4())
+    suite.suite_type = SuiteType.CONTRACT
+    mock_suite_cls.get.return_value = suite
+    mock_tg.get.return_value = MagicMock(table_groups_name="orders_tg")
+    mock_job_exec.submit.return_value = MagicMock(id=uuid4())
+
+    from testgen.mcp.tools.execution import generate_tests
+
+    out = generate_tests(str(suite.id))
+
+    mock_job_exec.submit.assert_called_once()
+    assert "`orders_tg` has not been profiled" in out
+    assert "run_profiling" in out
+
+
+@patch("testgen.mcp.tools.execution.JobExecution")
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_generate_tests_resolves_regular_and_contract_suites_only(mock_suite_cls, _mock_job_exec, db_session_mock):
+    mock_suite_cls.suite_type = RealTestSuite.suite_type
+    mock_suite_cls.project_code = RealTestSuite.project_code
+    mock_suite_cls.get.return_value = None
+
+    from testgen.mcp.tools.execution import generate_tests
+
+    with pytest.raises(MCPResourceNotAccessible):
+        generate_tests(str(uuid4()))
+
+    clauses = mock_suite_cls.get.call_args.args[1:]
+    admitted = RealTestSuite.suite_type.in_((SuiteType.REGULAR, SuiteType.CONTRACT))
+    assert any(clause.compare(admitted) for clause in clauses)
+
+
 def test_generate_tests_invalid_uuid(db_session_mock):
     from testgen.mcp.tools.execution import generate_tests
 
@@ -389,6 +455,8 @@ def _generate(suite, *, draft=None):
     with (
         patch("testgen.mcp.tools.execution.resolve_test_suite", return_value=suite),
         patch("testgen.mcp.tools.execution.resolve_generation_sets", return_value=["Standard"]),
+        patch("testgen.mcp.tools.execution.TableGroup"),
+        patch("testgen.mcp.tools.execution.resolve_generation_profile_run", return_value=uuid4()),
         patch.object(
             TestDefinition,
             "resolve_writable",

@@ -1,19 +1,23 @@
-"""MCP read tools for data contracts — exporting a contract version as an ODCS document."""
+"""MCP tools for data contracts — exporting a version, reading its metadata document, and listing, freezing and
+discarding versions."""
 
 import hashlib
+from dataclasses import dataclass
 from typing import Annotated
 
+import yaml
 from pydantic import Field
 
 from testgen import settings
 from testgen.common import contract_service
+from testgen.common.contract_document import PROFILED_VALUES
 from testgen.common.contract_service import InvalidContractDocumentError
 from testgen.common.enums import JOB_STATUS_LABEL
 from testgen.common.models import with_database_session
 from testgen.common.models.suite_version import SuiteVersion, VersionState, version_state
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import mcp_permission
-from testgen.mcp.services.source_data_protection import mcp_source_data_only
+from testgen.mcp.services.source_data_protection import mcp_source_data_only, mcp_source_data_protected
 from testgen.mcp.tools.common import (
     DocGroup,
     format_page_footer,
@@ -51,6 +55,119 @@ def split_document(text: str, limit: int) -> list[str]:
     if current:
         pieces.append("".join(current))
     return pieces
+
+
+@dataclass
+class _DocumentChunk:
+    """A YAML document split into chunks of bounded size, and the chunk one response returns."""
+
+    text: str
+    pieces: list[str]
+    number: int
+
+    @classmethod
+    def select(cls, text: str, number: int) -> "_DocumentChunk":
+        """Split ``text`` into chunks and select chunk ``number``, counted from 1.
+
+        Raises ``MCPUserError`` when the document has no such chunk.
+        """
+        pieces = split_document(text, settings.MCP_CONTRACT_EXPORT_CHUNK_BYTES)
+        if not 1 <= number <= len(pieces):
+            raise MCPUserError(f"This document has {len(pieces)} chunks, so there is no chunk {number}.")
+        return cls(text, pieces, number)
+
+    def add_fields(self, doc: MdDoc) -> None:
+        """Add the document's size, chunk count and SHA-256 to ``doc`` when it has more than one chunk."""
+        if len(self.pieces) > 1:
+            size = len(self.text.encode()) // 1024
+            doc.field(
+                "Document",
+                f"{size} KB in {len(self.pieces)} chunks, of which this is chunk {self.number} of {len(self.pieces)}",
+            )
+            doc.field("SHA-256", hashlib.sha256(self.text.encode()).hexdigest())
+
+    def add_body(self, doc: MdDoc, tool_name: str) -> None:
+        """Add the chunk to ``doc`` as a YAML block, preceded by how to fetch the next one when there is one."""
+        if self.number < len(self.pieces):
+            doc.text(f"Call `{tool_name}` again with `chunk={self.number + 1}`, appending each piece in order.")
+        doc.code_block(self.pieces[self.number - 1], language="yaml")
+
+
+# Document fields that can carry values from the source data: a column's value bounds, profiled
+# value bounds, examples and allowed values, and a quality rule's thresholds, arguments, query and
+# implementation. A value a person typed cannot be told apart from one taken from the data, so
+# under source-data protection they are dropped uniformly.
+_SOURCE_VALUE_TYPE_OPTIONS = frozenset({"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"})
+_SOURCE_VALUE_RULE_FIELDS = frozenset({
+    "mustBe",
+    "mustNotBe",
+    "mustBeGreaterThan",
+    "mustBeGreaterOrEqualTo",
+    "mustBeLessThan",
+    "mustBeLessOrEqualTo",
+    "mustBeBetween",
+    "mustNotBeBetween",
+    "arguments",
+    "query",
+    "implementation",
+})
+_SOURCE_VALUE_PROPERTY_FIELDS = frozenset({"examples", "enum"})
+_OMITTED_FIELDS = (
+    "`logicalTypeOptions` " + ", ".join(f"`{key}`" for key in sorted(_SOURCE_VALUE_TYPE_OPTIONS)),
+    f"`{PROFILED_VALUES}` `maximum`, `minimum`",
+    ", ".join(f"`{key}`" for key in sorted(_SOURCE_VALUE_PROPERTY_FIELDS)),
+    "quality rule " + ", ".join(f"`{key}`" for key in sorted(_SOURCE_VALUE_RULE_FIELDS)),
+)
+
+
+def _without_bounds(options: dict) -> dict:
+    return {option: value for option, value in options.items() if option not in _SOURCE_VALUE_TYPE_OPTIONS}
+
+
+def _without_profiled_bounds(entries: list) -> list:
+    """``entries`` with the value bounds dropped from a ``profiledValues`` entry, and the entry
+    dropped when nothing else is left in it."""
+    kept = []
+    for entry in entries:
+        if (
+            isinstance(entry, dict) and entry.get("property") == PROFILED_VALUES
+            and isinstance(entry.get("value"), dict)
+        ):
+            if not (values := _without_bounds(entry["value"])):
+                continue
+            entry = {**entry, "value": values}
+        kept.append(entry)
+    return kept
+
+
+def _without_source_values(node: object) -> object:
+    """A copy of a metadata document node without the fields that can carry source-data values:
+    ``examples``, ``enum``, the value bounds of ``logicalTypeOptions`` and ``profiledValues``, and
+    quality-rule thresholds, arguments, queries and implementations."""
+    if isinstance(node, list):
+        return [_without_source_values(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+    kept = {}
+    for key, value in node.items():
+        if key in _SOURCE_VALUE_PROPERTY_FIELDS:
+            continue
+        if key == "logicalTypeOptions" and isinstance(value, dict):
+            value = _without_bounds(value)
+            if not value:
+                continue
+        elif key == "customProperties" and isinstance(value, list):
+            value = _without_profiled_bounds(value)
+            if not value:
+                continue
+        elif key == "quality" and isinstance(value, list):
+            value = [
+                {field: v for field, v in rule.items() if field not in _SOURCE_VALUE_RULE_FIELDS}
+                if isinstance(rule, dict) else rule
+                for rule in value
+            ]
+        kept[key] = _without_source_values(value)
+    return kept
 
 
 @mcp_source_data_only
@@ -98,23 +215,84 @@ def export_contract(
 
     state = version_state(target.frozen_at, SuiteVersion.is_active(target.id, suite.id))
 
-    pieces = split_document(exported.text, settings.MCP_CONTRACT_EXPORT_CHUNK_BYTES)
-    if not 1 <= chunk <= len(pieces):
-        raise MCPUserError(f"This document has {len(pieces)} chunks, so there is no chunk {chunk}.")
+    selected = _DocumentChunk.select(exported.text, chunk)
 
     doc = MdDoc()
     doc.heading(1, f"Contract `{suite.test_suite}`")
     doc.field("Version", format_version(target.version, state))
-    if len(pieces) > 1:
-        size = len(exported.text.encode()) // 1024
-        doc.field("Document", f"{size} KB in {len(pieces)} chunks, of which this is chunk {chunk} of {len(pieces)}")
-        doc.field("SHA-256", hashlib.sha256(exported.text.encode()).hexdigest())
+    selected.add_fields(doc)
     if chunk == 1 and exported.problems:
         doc.text("This document does not validate against the ODCS schema:")
         doc.bullets(exported.problems)
-    if chunk < len(pieces):
-        doc.text(f"Call `export_contract` again with `chunk={chunk + 1}`, appending each piece in order.")
-    doc.code_block(pieces[chunk - 1], language="yaml")
+    selected.add_body(doc, "export_contract")
+
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("view")
+def get_contract_metadata(
+    test_suite_id: Annotated[
+        str, Field(description="UUID of the contract to read.")
+    ],
+    version: Annotated[
+        int | None,
+        Field(
+            description="Version number to read. Defaults to the draft where one exists, otherwise the "
+            "version in force.",
+        ),
+    ] = None,
+    chunk: Annotated[
+        int,
+        Field(
+            description="Which piece of a document too large for one response to return. The first "
+            "response reports how many there are.",
+        ),
+    ] = 1,
+) -> str:
+    """Read one version of a contract's metadata document.
+
+    Returns the contract's descriptive half as ODCS YAML: its tables and columns with their types
+    and descriptions, governance attributes and servers. The contract's terms -- its tests -- are
+    not included; ``list_tests`` returns them, and, where source data is not protected,
+    ``export_contract`` returns the full document with them. A large document arrives in chunks: the first response says how many there are, and
+    appending them in order reproduces the document. Every chunk carries the whole document's
+    SHA-256; a chunk whose digest differs from the first means the document changed in between, so
+    start again from chunk 1.
+
+    Under source-data protection, fields that can hold values from the data, such as observed
+    minimums and maximums, are left out, and the response lists them.
+    """
+    suite = resolve_contract(test_suite_id)
+    try:
+        target = contract_service.version_for_export(suite, version)
+    except ValueError as e:
+        raise MCPUserError(str(e)) from e
+
+    hide_source_data = mcp_source_data_protected()
+    document = target.metadata_document or {}
+    if hide_source_data:
+        document = _without_source_values(document)
+    text = yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
+    selected = _DocumentChunk.select(text, chunk)
+
+    doc = MdDoc()
+    doc.heading(1, f"Contract `{suite.test_suite}` metadata")
+    doc.field(
+        "Version",
+        format_version(target.version, version_state(target.frozen_at, SuiteVersion.is_active(target.id, suite.id))),
+    )
+    selected.add_fields(doc)
+    if hide_source_data:
+        doc.field("Omitted Fields", "; ".join(_OMITTED_FIELDS))
+    if chunk == 1:
+        doc.text(
+            "The contract's terms are not included; `list_tests` returns them."
+            if hide_source_data
+            else "The contract's terms are not included; `list_tests` returns them, and `export_contract` "
+            "returns the full document with them."
+        )
+    selected.add_body(doc, "get_contract_metadata")
 
     return doc.render()
 

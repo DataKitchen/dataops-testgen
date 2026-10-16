@@ -253,6 +253,30 @@ def test_submit_test_generation_rejects_unknown_set(mock_je_cls, _mock_resolve):
     mock_je_cls.submit.assert_not_called()
 
 
+
+@patch(f"{MODULE}.resolve_generation_sets", return_value=["Contract"])
+@patch(f"{MODULE}.JobExecution")
+def test_submit_test_generation_submits_a_contract(mock_je_cls, _mock_resolve):
+    test_suite = _mock_test_suite(suite_type=SuiteType.CONTRACT)
+    mock_je_cls.submit.return_value = _mock_job(job_key="run-test-generation")
+
+    submit_test_generation(test_suite)
+
+    assert mock_je_cls.submit.call_args.kwargs["kwargs"]["generation_sets"] == ["Contract"]
+
+
+def test_submit_test_generation_resolves_regular_suites_and_contracts():
+    with (
+        patch("testgen.api.deps.TestSuite") as mock_ts_cls,
+        patch("testgen.api.deps.has_project_permission", return_value=True),
+    ):
+        mock_ts_cls.get.return_value = None
+        resp = TestClient(_client_with_overrides()).post(f"/api/v1/test-suites/{uuid4()}/test-generation")
+
+    assert resp.status_code == 404
+    mock_ts_cls.suite_type.in_.assert_called_once_with((SuiteType.REGULAR, SuiteType.CONTRACT))
+
+
 # --- get_job_status ---
 
 

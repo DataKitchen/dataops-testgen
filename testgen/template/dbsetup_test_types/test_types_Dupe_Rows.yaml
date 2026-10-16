@@ -41,6 +41,7 @@ test_types:
   algorithm: Counting
   generation_sets:
     - Standard
+    - Contract
   cat_test_conditions: []
   target_data_lookups:
   - id: '1409'

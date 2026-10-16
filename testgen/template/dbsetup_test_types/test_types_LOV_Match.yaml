@@ -44,6 +44,7 @@ test_types:
   algorithm: Set / lookup
   generation_sets:
     - Standard
+    - Contract
   cat_test_conditions:
   - id: '7014'
     test_type: LOV_Match

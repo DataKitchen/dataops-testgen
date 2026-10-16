@@ -5,12 +5,13 @@ from typing import Annotated
 from pydantic import Field
 from sqlalchemy import select
 
+from testgen.commands.test_generation import resolve_generation_profile_run
 from testgen.common.enums import JOB_STATUS_LABEL, JobKey, JobSource, SuiteType
 from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import EXTERNAL_URL_MAX_LENGTH, JobExecution, validate_caller_metadata
 from testgen.common.models.suite_version import SuiteVersion, VersionState, version_state
-from testgen.common.models.table_group import validate_schema_name
+from testgen.common.models.table_group import TableGroup, validate_schema_name
 from testgen.common.models.test_definition import TestDefinition
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
@@ -141,7 +142,7 @@ def generate_tests(
         Field(description="Generation set names, e.g. from ``testgen://generation-sets``."),
     ] = None,
 ) -> str:
-    """Submit a test-generation job for a test suite.
+    """Submit a test-generation job for a test suite or a contract.
     Auto-creates test definitions from the latest profiling results for the table group;
     locked and manually created test definitions are preserved. Returns immediately with
     a job_execution_id.
@@ -150,16 +151,28 @@ def generate_tests(
     generation sets. Read ``testgen://generation-sets`` for the available sets and the test types
     each one covers. Test types outside the selected sets are deleted unless they are locked.
 
-    The value hash test types (Match Text, Numeric and Date Hash, their Keyed variants, and Match
-    Epoch Sum, in the Table Comparison set) are generated only from a profiling run that computed
-    value hashes. That needs ``profile_table_comparison`` on the table group (see ``get_table_group``)
-    and a profiling run since it was turned on; otherwise they are not generated.
+    A contract generates its own fixed set of test types and its metadata (read with
+    ``get_contract_metadata``) into its draft, so omit ``generation_sets`` for one. It covers the
+    declared tables, or every table when none are declared. Before its table group is profiled,
+    only the catalog metadata and schema conformance tests are written.
+
+    Value hash test types (Table Comparison set) need a profiling run with
+    ``profile_table_comparison`` on (see ``get_table_group``).
     """
     suite = resolve_test_suite(test_suite_id)
     try:
         resolved_sets = resolve_generation_sets(suite, generation_sets)
     except ValueError as error:
         raise MCPUserError(str(error)) from error
+    note = None
+    if suite.suite_type == SuiteType.CONTRACT:
+        table_group = TableGroup.get(suite.table_groups_id)
+        if resolve_generation_profile_run(table_group) is None:
+            note = (
+                f"Table group `{table_group.table_groups_name}` has not been profiled, so the contract's metadata "
+                "is generated from the data catalog alone and no tests are generated besides schema conformance. "
+                "Run profiling with `run_profiling`, then generate again."
+            )
 
     version_label = None
     if suite.suite_type == SuiteType.CONTRACT:
@@ -176,11 +189,12 @@ def generate_tests(
     return _render_submission(
         "Test generation",
         suite.test_suite,
-        "Test suite",
+        "Contract" if suite.suite_type == SuiteType.CONTRACT else "Test suite",
         job,
         "list_tests",
         poll_hint="to verify the new definitions appear",
         version=version_label,
+        note=note,
     ).render()
 
 

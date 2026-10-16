@@ -1,6 +1,6 @@
 """A term rendered into an ODCS document resolves back to the same test type, identity and parameters."""
 
-from datetime import date
+from datetime import date, datetime
 from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
@@ -87,6 +87,7 @@ _TERMS: list[tuple[str, str | None, str | None, dict]] = [
     ("Max_Val", "c_max", "integer", {"baseline_value": "100", "threshold_value": "0", "custom_metadata": _METADATA}),
     ("Max_Val", "c_max_tolerant", "integer", {"baseline_value": "100", "threshold_value": "2"}),
     ("Min_Date", "c_min_date", "date", {"baseline_value": "2026-01-01", "threshold_value": "0"}),
+    ("Max_Date", "c_max_date_midnight", "date", {"baseline_value": "2026-01-31 00:00:00", "threshold_value": "0"}),
     ("Max_Date", "c_max_date", "timestamp", {"baseline_value": "2026-01-31 06:00:00", "threshold_value": "0"}),
     ("Text_Length_Range", "c_length", "string",
      {"lower_tolerance": "2", "upper_tolerance": "9", "threshold_value": "0"}),
@@ -183,6 +184,8 @@ def _comparable(test_type: str, name: str, value: object) -> object:
         return parse_value_list(value)
     if name == "groupby_names":
         return _groupby_columns(SimpleNamespace(groupby_names=value))
+    if name == "baseline_value" and test_type in ("Min_Date", "Max_Date"):
+        return datetime.fromisoformat(value)
     try:
         return float(value)
     except (TypeError, ValueError):

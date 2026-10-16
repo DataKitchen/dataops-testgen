@@ -24,9 +24,8 @@ DEFAULT_GENERATION_SET = "Standard"
 def list_generation_sets(*, include_monitor: bool = False) -> list[str]:
     """Every generation set defined in the database, alphabetically.
 
-    ``Contract`` is permanently excluded, the same way ``Monitor`` is: it reaches no picker,
-    endpoint or tool, whether or not it happens to hold rows. Curating its member test types
-    is a separate change; today it has no rows in ``generation_sets`` either way.
+    ``Contract`` is always excluded: a contract suite resolves to it without being asked, and
+    no other suite may use it.
     """
     rows = get_current_session().execute(
         text("SELECT DISTINCT generation_set FROM generation_sets ORDER BY generation_set")
@@ -84,8 +83,7 @@ def resolve_generation_sets(test_suite: TestSuite, requested: list[str] | None) 
     is an error: an unmatched set generates no test types, and the stale-delete would
     then remove every unlocked auto-generated test in the suite.
 
-    A contract suite always resolves to ``Contract`` alone, whether or not that set has
-    any member test types yet, and refuses any other request. A non-contract suite
+    A contract suite always resolves to ``Contract`` alone and refuses any other request. A non-contract suite
     refuses to be given the ``Contract`` set.
     """
     is_contract = test_suite.suite_type == SuiteType.CONTRACT
@@ -106,7 +104,10 @@ def resolve_generation_sets(test_suite: TestSuite, requested: list[str] | None) 
             return [CONTRACT_GENERATION_SET]
 
         if CONTRACT_GENERATION_SET in requested:
-            raise ValueError(f"'{CONTRACT_GENERATION_SET}' cannot be used for a non-contract test suite.")
+            raise ValueError(
+                f"'{CONTRACT_GENERATION_SET}' cannot be used for a non-contract test suite. "
+                f"Available generation sets: {', '.join(available)}."
+            )
 
         if MONITOR_GENERATION_SET in requested:
             raise ValueError(

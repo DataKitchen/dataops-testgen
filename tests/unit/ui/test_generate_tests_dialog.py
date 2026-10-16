@@ -24,10 +24,13 @@ def _warning(
         patch.object(dialog.TableGroup, "get", return_value=table_group),
         patch.object(dialog.Connection, "get"),
         patch.object(dialog, "get_flavor_service", return_value=MagicMock(supports_value_hash=supports_value_hash)),
-        patch.object(dialog.ProfilingRun, "latest_readable_id", return_value=profile_run_id),
+        patch.object(dialog, "resolve_generation_profile_run", return_value=profile_run_id) as resolve_run,
         patch.object(dialog.ProfileResult, "has_value_hashes", return_value=has_value_hashes),
     ):
-        return dialog.get_value_hash_warning.__wrapped__("tg-1")
+        warning = dialog.get_value_hash_warning.__wrapped__("tg-1")
+    if supports_value_hash:
+        resolve_run.assert_called_once_with(table_group)
+    return warning
 
 
 def test_warns_to_turn_on_table_comparison_when_it_is_off(db_session_mock):

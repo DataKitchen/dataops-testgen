@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 
+from testgen.commands.test_generation import ContractGenerationResult
 from testgen.common.enums import SuiteType
 from testgen.common.odcs.servers import UnmappedFlavorError
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
@@ -256,6 +257,128 @@ def test_create_test_suite_contract_type_initializes_the_contract(
     assert kwargs["suite_type"] == SuiteType.CONTRACT
     mock_connection_cls.get.assert_called_once_with(tg.connection_id)
     mock_contract_service.initialize_contract.assert_called_once_with(instance, tg, connection)
+
+
+def _create_contract(table_names, *, catalog=("orders", "customers"), generation=None):
+    """Create a contract through the tool with the catalog and the generation stubbed out."""
+    tg = _mock_table_group(table_groups_name="sales")
+    with (
+        _patch_perms(),
+        patch(f"{MODULE}.resolve_table_group", return_value=tg),
+        patch(f"{MODULE}.TestSuite", return_value=_mock_test_suite(suite_type=SuiteType.CONTRACT)),
+        patch(f"{MODULE}.Connection"),
+        patch(f"{MODULE}.contract_service") as contract_service,
+        patch(f"{MODULE}.contract_document.catalog_table_names", return_value=list(catalog)),
+        patch(f"{MODULE}.run_contract_generation", return_value=generation) as generate,
+    ):
+        from testgen.mcp.tools.test_suites import create_test_suite
+
+        out = create_test_suite(
+            table_group_id=str(tg.id), test_suite_name="Orders contract", suite_type="Contract",
+            table_names=table_names,
+        )
+    return out, contract_service, generate
+
+
+def test_create_test_suite_contract_with_tables_generates_them_and_reports_it(db_session_mock):
+    generation = ContractGenerationResult(
+        term_count=42, tables_declared=["orders", "customers"], tables_not_in_catalog=[], tables_not_profiled=[],
+    )
+
+    out, contract_service, generate = _create_contract(["orders", "customers", "orders"], generation=generation)
+
+    contract_service.initialize_contract.assert_called_once()
+    generate.assert_called_once_with(contract_service.initialize_contract.call_args.args[0].id,
+                                     table_names=["orders", "customers"])
+    assert "**Declared tables:** `orders`, `customers`" in out
+    assert "**Tests:** 42" in out
+    assert "no profiling results" not in out
+
+
+def test_create_test_suite_contract_names_the_tables_profiling_has_no_results_for(db_session_mock):
+    generation = ContractGenerationResult(
+        term_count=3, tables_declared=["orders", "customers"], tables_not_in_catalog=[],
+        tables_not_profiled=["customers"],
+    )
+
+    out, _, _ = _create_contract(["orders", "customers"], generation=generation)
+
+    assert "`sales` has no profiling results for `customers`, so" in out
+    assert "generate_tests" in out
+
+
+def test_create_test_suite_contract_names_a_table_missing_from_the_catalog_only_once(db_session_mock):
+    generation = ContractGenerationResult(
+        term_count=0, tables_declared=["orders"], tables_not_in_catalog=["orders"], tables_not_profiled=["orders"],
+    )
+
+    out, _, _ = _create_contract(["orders"], generation=generation)
+
+    assert "holds no columns for `orders`" in out
+    assert "no profiling results" not in out
+
+
+def test_create_test_suite_contract_whose_generation_fails_still_reports_the_contract(db_session_mock):
+    """The contract is committed before generation, so a failure rolls back to it, and the caller needs
+    its ID rather than an error to retry into a duplicate."""
+    tg = _mock_table_group(table_groups_name="sales")
+    suite = _mock_test_suite(suite_type=SuiteType.CONTRACT)
+    calls = MagicMock()
+    db_session_mock.commit.side_effect = lambda: calls.commit()
+    db_session_mock.rollback.side_effect = lambda: calls.rollback()
+
+    def fail_generation(*_args, **_kwargs):
+        calls.generate()
+        raise RuntimeError("generation broke")
+
+    with (
+        _patch_perms(),
+        patch(f"{MODULE}.resolve_table_group", return_value=tg),
+        patch(f"{MODULE}.TestSuite", return_value=suite),
+        patch(f"{MODULE}.Connection"),
+        patch(f"{MODULE}.contract_service"),
+        patch(f"{MODULE}.contract_document.catalog_table_names", return_value=["orders"]),
+        patch(f"{MODULE}.run_contract_generation", side_effect=fail_generation),
+    ):
+        from testgen.mcp.tools.test_suites import create_test_suite
+
+        out = create_test_suite(
+            table_group_id=str(tg.id), test_suite_name="Orders contract", suite_type="Contract",
+            table_names=["orders"],
+        )
+
+    assert str(suite.id) in out
+    assert "generating its tables failed" in out
+    assert "generate_tests" in out
+    assert [name for name, _, _ in calls.mock_calls][:3] == ["commit", "generate", "rollback"]
+
+
+def test_create_test_suite_contract_without_tables_generates_nothing(db_session_mock):
+    out, contract_service, generate = _create_contract(None)
+
+    contract_service.initialize_contract.assert_called_once()
+    generate.assert_not_called()
+    assert "Declared tables" not in out
+
+
+def test_create_test_suite_refuses_a_table_the_table_group_does_not_hold_before_creating_anything(db_session_mock):
+    with pytest.raises(MCPUserError, match="no tables named `ghost`"):
+        _create_contract(["orders", "ghost"])
+
+
+def test_create_test_suite_refuses_table_names_for_a_regular_suite(db_session_mock):
+    tg = _mock_table_group()
+    with (
+        _patch_perms(),
+        patch(f"{MODULE}.resolve_table_group", return_value=tg),
+        patch(f"{MODULE}.TestSuite") as suite_cls,
+    ):
+        from testgen.mcp.tools.test_suites import create_test_suite
+
+        with pytest.raises(MCPUserError, match="applies only to contracts"):
+            create_test_suite(table_group_id=str(tg.id), test_suite_name="Anything", table_names=["orders"])
+
+    suite_cls.assert_not_called()
 
 
 @patch(f"{MODULE}.contract_service")

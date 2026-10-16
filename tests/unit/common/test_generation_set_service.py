@@ -215,6 +215,15 @@ def test_a_regular_suite_refuses_the_contract_set():
             resolve_generation_sets(suite, ["Contract"])
 
 
+def test_a_regular_suite_refusing_the_contract_set_lists_the_available_sets():
+    suite = MagicMock(suite_type=SuiteType.REGULAR, generation_sets=["Standard"])
+    with patch(
+        "testgen.common.generation_set_service.list_generation_sets", return_value=["Standard", "Table Comparison"]
+    ):
+        with pytest.raises(ValueError, match="Available generation sets: Standard, Table Comparison"):
+            resolve_generation_sets(suite, ["Contract"])
+
+
 def test_the_contract_set_is_not_listed():
     with patch("testgen.common.generation_set_service.get_current_session") as session:
         session.return_value.execute.return_value.all.return_value = [("Standard",), ("Contract",)]

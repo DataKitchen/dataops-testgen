@@ -42,6 +42,7 @@ test_types:
   algorithm: Boundary check
   generation_sets:
     - Standard
+    - Contract
   cat_test_conditions:
   - id: '7015'
     test_type: Min_Date

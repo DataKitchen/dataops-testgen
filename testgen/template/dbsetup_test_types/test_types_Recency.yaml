@@ -44,6 +44,7 @@ test_types:
   algorithm: Freshness / time
   generation_sets:
     - Standard
+    - Contract
   cat_test_conditions:
   - id: '7022'
     test_type: Recency

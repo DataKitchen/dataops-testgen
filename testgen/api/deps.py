@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from testgen.common.auth import AuthError, authorize_token, decode_jwt_token
-from testgen.common.enums import PublicJobKey
+from testgen.common.enums import PublicJobKey, SuiteType
 from testgen.common.models import Session, bound_session, get_current_session, session_limiter
 from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
@@ -165,10 +165,11 @@ def resolve_table_group(permission: str):
     return Depends(dependency)
 
 
-def resolve_test_suite(permission: str):
-    """Resolve a non-monitor TestSuite by ``test_suite_id`` path param and verify project permission."""
+def resolve_test_suite(permission: str, suite_types: tuple[SuiteType, ...] = (SuiteType.REGULAR,)):
+    """Resolve a TestSuite of one of ``suite_types`` by ``test_suite_id`` path param and verify project permission."""
     def dependency(test_suite_id: UUID, user: User = _require_user) -> TestSuite:
-        return _check_access(TestSuite.get_regular(test_suite_id), user, permission)
+        suite = TestSuite.get(test_suite_id, TestSuite.suite_type.in_(suite_types))
+        return _check_access(suite, user, permission)
     return Depends(dependency)
 
 
