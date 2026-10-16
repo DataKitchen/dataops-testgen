@@ -87,9 +87,14 @@ def api_error(status_code: int, code: str, detail: str) -> HTTPException:
 
 def api_errors(status_code: int, code: str, details: list[str]) -> HTTPException:
     """Build an HTTPException in the standardized error format with one entry per detail, all sharing ``code``."""
+    return api_error_entries(status_code, [(code, detail) for detail in details])
+
+
+def api_error_entries(status_code: int, entries: list[tuple[str, str]]) -> HTTPException:
+    """Build an HTTPException in the standardized error format with one entry per ``(code, detail)`` pair."""
     return HTTPException(
         status_code=status_code,
-        detail={"errors": [{"code": code, "detail": detail} for detail in details]},
+        detail={"errors": [{"code": code, "detail": detail} for code, detail in entries]},
     )
 
 
