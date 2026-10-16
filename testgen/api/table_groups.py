@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 
 from testgen.api.deps import (
     api_error,
+    api_error_entries,
     api_errors,
     db_session,
     fields_to_change,
@@ -254,7 +255,9 @@ _REFUSAL_STATUS = {
     responses={
         400: {
             "model": ErrorResponse,
-            "description": "One entry per field or file declaration that failed validation",
+            "description": "One entry per field or file declaration that failed validation, and one "
+            "`pii_permission_required` entry when the request changes PII detection without permission to "
+            "view PII",
         },
         409: {
             "model": ErrorResponse,
@@ -275,14 +278,20 @@ def update_table_group(
     `table_set`, the masks and `file_declarations` replace the stored list. Catalog tags are merged:
     a tag the request does not name is left as it is.
 
+    Changing `profile_flag_pii` requires permission to view PII. Without it, the 400 carries a
+    `pii_permission_required` entry alongside any `invalid_table_group` entries.
+
     When `schema_name` changes, profiling, test generation, monitors, and test runs read the new
     schema, and tests keep their history. Referential tests keep the schema of their second table.
-    The change is refused when the schema cannot be read or no table in it matches the table group's
-    table filters, as edited by the same request. Tables the new schema does not have are listed under
+    The change is refused with `schema_unreadable` when the schema cannot be read, and with
+    `schema_empty` when no table in it matches the table group's table filters, as edited by the same
+    request. Tables the table group no longer selects after the move are listed under
     `schema_change.missing_tables`.
 
     When the update changes which tables belong to the table group, its data catalog is rewritten from
-    the target before the response returns. `catalog_error` says why when the target could not be read.
+    the target before the response returns. `catalog_error` says why when the catalog could not be
+    rewritten, including when a filter change without a schema move matches no table. The update is
+    saved in that case.
     """
     sent = fields_to_change(body)
     tags = body.catalog_tags.model_dump(exclude_unset=True) if body.catalog_tags else {}
@@ -305,12 +314,11 @@ def update_table_group(
             criteria=(body.table_set, body.include_masks, body.exclude_masks),
             require=False,
         )
-    if (
+    pii_denied = (
         body.profile_flag_pii is not None
         and body.profile_flag_pii != table_group.profile_flag_pii
         and not has_project_permission(user, table_group.project_code, "view_pii")
-    ):
-        errors.append(_PII_FLAG_DENIED)
+    )
 
     membership_before = catalog_membership(table_group)
     for name, value in sent.items():
@@ -327,8 +335,11 @@ def update_table_group(
 
     apply_table_group_flavor_rules(table_group, connection)
     errors.extend(validate_table_group_fields(table_group, connection))
-    if errors:
-        raise api_errors(400, "invalid_table_group", errors)
+    if errors or pii_denied:
+        entries = [("invalid_table_group", error) for error in errors]
+        if pii_denied:
+            entries.append(("pii_permission_required", _PII_FLAG_DENIED))
+        raise api_error_entries(400, entries)
 
     move = None
     # The move's queries autoflush the edited name, so a duplicate can surface there as well as on save.

@@ -81,8 +81,9 @@ class TableGroupSchemaChange(BaseModel):
     missing_tables: list[str] = Field(
         default_factory=list,
         description=(
-            "Tables in the table group that the new schema does not have. The change still applies. "
-            "Their tests report an error on each test run, or are deactivated if the test suite "
+            "Tables in the table group's catalog that it no longer selects after the move, because the new "
+            "schema does not have them or because the request's table filters exclude them. The change still "
+            "applies. Their tests report an error on each test run, or are deactivated if the test suite "
             "deactivates tests that fail validation, and the next monitor run deletes their "
             "monitors along with the thresholds they learned."
         ),
@@ -1067,7 +1068,8 @@ class TableGroupUpdateResponse(TableGroupResponse):
         default=None,
         description=(
             "Set when the update changed which tables belong to the table group and the data catalog could not "
-            "be read from the target. The update is saved, and the catalog keeps the tables it had before until "
+            "be rewritten: the target could not be read or written, or, without a schema move, no table matches "
+            "the table group's filters. The update is saved, and the catalog keeps the tables it had before until "
             "the table group is profiled or tested."
         ),
     )

@@ -1125,7 +1125,9 @@ def _move(previous="public", schema="onboard_2026_09_16", missing=None, repointe
     )
 
 
-def _patch(body: dict, *, table_group=None, can_view_pii: bool = True, move=None, move_error=None):
+def _patch(
+    body: dict, *, table_group=None, can_view_pii: bool = True, move=None, move_error=None, apply_error=None
+):
     """PATCH the table group, returning the response and the mocks a test asserts against."""
     table_group = table_group if table_group is not None else _table_group()
     with (
@@ -1133,7 +1135,7 @@ def _patch(body: dict, *, table_group=None, can_view_pii: bool = True, move=None
         patch("testgen.api.deps.TableGroup") as mock_cls,
         patch(f"{MODULE}.has_project_permission", return_value=can_view_pii) as mock_pii,
         patch(f"{MODULE}.move_table_group_schema", return_value=move, side_effect=move_error) as mock_move,
-        patch(f"{RULES_MODULE}.apply_schema_move") as mock_apply,
+        patch(f"{RULES_MODULE}.apply_schema_move", return_value=apply_error) as mock_apply,
         patch(f"{MODULE}.get_current_session"),
     ):
         mock_cls.get.return_value = table_group
@@ -1299,13 +1301,25 @@ def test_update_table_group_refuses_a_pii_change_without_view_pii():
     assert result.resp.status_code == 400
     assert _error_entries(result.resp) == [
         {
-            "code": "invalid_table_group",
+            "code": "pii_permission_required",
             "detail": "Changing PII detection requires permission to view PII. "
             "Leave this setting unchanged or contact your administrator.",
         }
     ]
     result.table_group.save.assert_not_called()
     assert result.pii.call_args.args[1:] == ("demo", "view_pii")
+
+
+def test_update_table_group_reports_a_pii_refusal_beside_the_field_errors():
+    """A client tells the permission refusal from a bad value by its code, not by its message."""
+    result = _patch({"profile_sample_percent": 0, "profile_flag_pii": False}, can_view_pii=False)
+
+    assert result.resp.status_code == 400
+    assert [entry["code"] for entry in _error_entries(result.resp)] == [
+        "invalid_table_group",
+        "pii_permission_required",
+    ]
+    result.table_group.save.assert_not_called()
 
 
 def test_update_table_group_lets_a_user_without_view_pii_change_other_fields():
@@ -1356,6 +1370,14 @@ def test_update_table_group_moves_the_schema_and_reports_what_moved():
     assert body["schema_change"]["missing_tables"] == ["archive"]
     assert body["schema_change"]["definitions_repointed"] == 3
     result.apply.assert_called_once()
+
+
+def test_update_table_group_reports_a_catalog_write_that_failed_after_the_move():
+    result = _patch({"schema_name": "onboard_2026_09_16"}, move=_move(), apply_error="permission denied")
+
+    assert result.resp.status_code == 200, result.resp.text
+    assert result.resp.json()["catalog_error"] == "permission denied"
+    assert result.resp.json()["schema_change"]["schema_name"] == "onboard_2026_09_16"
 
 
 def test_update_table_group_resending_the_current_schema_moves_nothing():
