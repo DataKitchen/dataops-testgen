@@ -7,6 +7,7 @@ connection failure, empty result).
 """
 
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -15,6 +16,7 @@ from testgen import settings
 from testgen.common.database.column_chars import ObjectType
 from testgen.common.database.table_group_service import (
     SchemaMove,
+    apply_schema_move,
     apply_table_group_flavor_rules,
     catalog_membership,
     is_duplicate_name_error,
@@ -857,7 +859,7 @@ def test_a_changed_mask_changes_the_membership():
 
 
 @patch(f"{MODULE}.write_table_group_catalog")
-@patch(f"{MODULE}.apply_schema_move")
+@patch(f"{MODULE}.apply_schema_move", return_value=None)
 def test_a_schema_move_writes_the_catalog_through_the_move(mock_apply, mock_write):
     table_group = TableGroup(table_group_schema="staging", profiling_include_mask="order%")
     membership_before = catalog_membership(TableGroup(table_group_schema="sales", profiling_include_mask="%"))
@@ -867,6 +869,38 @@ def test_a_schema_move_writes_the_catalog_through_the_move(mock_apply, mock_writ
 
     mock_apply.assert_called_once_with(move, table_group.id)
     mock_write.assert_not_called()
+
+
+@patch(f"{MODULE}.apply_schema_move", return_value="permission denied for schema staging")
+def test_a_schema_move_says_why_its_catalog_write_failed(_mock_apply):
+    table_group = TableGroup(table_group_schema="staging")
+    membership_before = catalog_membership(TableGroup(table_group_schema="sales"))
+    move = SchemaMove(previous_schema="sales", schema="staging", missing_tables=[], definitions_repointed=0)
+
+    assert update_catalog_for_edit(table_group, membership_before, move) == "permission denied for schema staging"
+
+
+@patch(f"{MODULE}.get_current_session")
+def test_apply_schema_move_commits_then_reports_a_failed_catalog_write(mock_session):
+    def refresh(_table_group_id):
+        assert mock_session.return_value.commit.called, "the catalog must be written after the move commits"
+        raise RuntimeError("permission denied for schema staging")
+
+    move = SchemaMove(
+        previous_schema="sales", schema="staging", missing_tables=[], definitions_repointed=0, refresh_catalog=refresh
+    )
+
+    assert apply_schema_move(move, uuid4()) == "permission denied for schema staging"
+
+
+@patch(f"{MODULE}.get_current_session")
+def test_apply_schema_move_reports_nothing_when_the_catalog_is_written(_mock_session):
+    move = SchemaMove(
+        previous_schema="sales", schema="staging", missing_tables=[], definitions_repointed=0,
+        refresh_catalog=lambda _table_group_id: None,
+    )
+
+    assert apply_schema_move(move, uuid4()) is None
 
 
 @patch(f"{MODULE}.write_table_group_catalog", return_value="connection refused")

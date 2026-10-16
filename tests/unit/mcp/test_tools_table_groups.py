@@ -1741,7 +1741,7 @@ def test_update_table_group_reports_a_catalog_it_could_not_read(
     ) in out
 
 
-@patch(f"{SERVICE_MODULE}.apply_schema_move")
+@patch(f"{SERVICE_MODULE}.apply_schema_move", return_value=None)
 @patch(f"{MODULE}.move_table_group_schema")
 @patch(f"{MODULE}.TableGroup")
 @patch(f"{MODULE}.resolve_table_group")
@@ -1764,6 +1764,30 @@ def test_update_table_group_leaves_the_catalog_to_a_schema_move(
 
     mock_apply.assert_called_once()
     catalog_write.assert_not_called()
+
+
+@patch(f"{SERVICE_MODULE}.apply_schema_move", return_value="permission denied for schema staging")
+@patch(f"{MODULE}.move_table_group_schema")
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_reports_a_catalog_write_that_failed_after_a_schema_move(
+    mock_resolve, mock_tg_cls, mock_move, _mock_apply, catalog_write, db_session_mock,
+):
+    tg = _mock_table_group(table_group_schema="public")
+    mock_resolve.return_value = tg
+
+    def move(table_group, schema, **_kwargs):
+        table_group.table_group_schema = schema
+        return SchemaMove(previous_schema="public", schema=schema, missing_tables=[], definitions_repointed=0)
+
+    mock_move.side_effect = move
+
+    from testgen.mcp.tools.table_groups import update_table_group
+
+    with _patch_perms():
+        out = update_table_group(table_group_id=str(tg.id), schema="staging")
+
+    assert "permission denied for schema staging" in out
 
 
 @patch(f"{MODULE}.preview_table_group_service")
