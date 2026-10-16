@@ -5,6 +5,7 @@ import pytest
 import yaml
 
 from testgen.common.enums import OdcsDimension, QualityDimension
+from testgen.common.flavors import SqlFlavorCode
 from testgen.common.models import test_definition
 from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.odcs import quality_rules
@@ -20,7 +21,7 @@ from testgen.common.odcs.quality_rules import (
     project_rule,
     rule_scope,
 )
-from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, ServerType
+from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND
 from testgen.common.odcs.validation import validate_document
 
 pytestmark = pytest.mark.unit
@@ -124,7 +125,7 @@ def _route_to_sql(monkeypatch, test_type: str, scope: RuleScope = RuleScope.COLU
 
 def test_a_required_term_projects_a_null_values_library_rule():
     term = _term(test_type="Required", threshold_value="0", contract_term_id="term-required")
-    rule = project_rule(term, _test_type("Required", dq_dimension="Completeness"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Required", dq_dimension="Completeness"), SqlFlavorCode.POSTGRESQL)
 
     assert rule["type"] == "library"
     assert rule["metric"] == "nullValues"
@@ -136,7 +137,7 @@ def test_a_required_term_projects_a_null_values_library_rule():
 
 
 def test_a_library_rule_names_its_metric_and_never_a_rule_key():
-    rule = project_rule(_term(test_type="Required", threshold_value="3"), _test_type("Required"), ServerType.POSTGRES)
+    rule = project_rule(_term(test_type="Required", threshold_value="3"), _test_type("Required"), SqlFlavorCode.POSTGRESQL)
     assert "rule" not in rule
 
 
@@ -147,7 +148,7 @@ def test_a_list_of_values_term_carries_its_values_as_an_argument():
         threshold_value="0",
         contract_term_id="term-lov",
     )
-    rule = project_rule(term, _test_type("LOV_Match", dq_dimension="Validity"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("LOV_Match", dq_dimension="Validity"), SqlFlavorCode.POSTGRESQL)
 
     assert rule["type"] == "library"
     assert rule["metric"] == "invalidValues"
@@ -162,7 +163,7 @@ def test_a_pattern_match_term_carries_its_pattern_as_an_argument():
         threshold_value="0",
         contract_term_id="term-pattern",
     )
-    rule = project_rule(term, _test_type("Pattern_Match", dq_dimension="Validity"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Pattern_Match", dq_dimension="Validity"), SqlFlavorCode.POSTGRESQL)
 
     assert rule["arguments"] == {"pattern": "[A-Z][0-9]{4}"}
     assert not validate_document(_wrap(rule, RuleScope.COLUMN))
@@ -178,7 +179,7 @@ def test_a_custom_query_term_projects_a_sql_rule_that_counts(monkeypatch):
         contract_term_id="term-condition",
     )
     rule = project_rule(
-        term, _test_type("Condition_Flag", dq_dimension="Validity"), ServerType.POSTGRES, CONDITION_FLAG_CONDITION
+        term, _test_type("Condition_Flag", dq_dimension="Validity"), SqlFlavorCode.POSTGRESQL, CONDITION_FLAG_CONDITION
     )
 
     assert rule["type"] == "sql"
@@ -194,7 +195,7 @@ def test_a_table_scoped_sql_rule_never_carries_the_property_placeholder(monkeypa
         custom_query="a <> b",
         threshold_value="0",
     )
-    rule = project_rule(term, _test_type("Condition_Flag"), ServerType.POSTGRES, CONDITION_FLAG_CONDITION)
+    rule = project_rule(term, _test_type("Condition_Flag"), SqlFlavorCode.POSTGRESQL, CONDITION_FLAG_CONDITION)
 
     assert "{object}" in rule["query"]
     assert "{property}" not in rule["query"]
@@ -224,7 +225,7 @@ def test_a_referential_term_projects_a_custom_rule_with_an_implementation(monkey
     test_type = _test_type(
         "Combo_Match", dq_dimension="Consistency", default_parm_columns="match_table_name,match_column_names"
     )
-    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
 
     assert rule["type"] == "custom"
     assert rule["engine"] == "testgen"
@@ -245,20 +246,20 @@ def test_a_custom_rule_carries_no_operator(monkeypatch):
         ),
     )
     term = _term(test_type="Combo_Match", threshold_value="0")
-    rule = project_rule(term, _test_type("Combo_Match"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Combo_Match"), SqlFlavorCode.POSTGRESQL)
 
     assert not any(operator.value in rule for operator in Operator)
 
 
 def test_the_originating_test_type_rides_in_custom_properties_under_the_testgen_vendor():
-    rule = project_rule(_term(test_type="Required", threshold_value="0"), _test_type("Required"), ServerType.POSTGRES)
+    rule = project_rule(_term(test_type="Required", threshold_value="0"), _test_type("Required"), SqlFlavorCode.POSTGRESQL)
     marker = {"property": "testType", "value": "Required", "vendor": "testgen"}
     assert marker in rule["customProperties"]
 
 
 def test_the_rules_id_is_the_terms_stored_identity():
     term = _term(test_type="Required", threshold_value="0", contract_term_id="a-very-specific-id")
-    rule = project_rule(term, _test_type("Required"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Required"), SqlFlavorCode.POSTGRESQL)
     assert rule["id"] == "a-very-specific-id"
 
 
@@ -269,6 +270,7 @@ def test_reserved_subtree_fields_are_emitted_onto_the_rule():
         custom_metadata={
             "odcs": {
                 "name": "Email required",
+                "description": "Every customer has an email.",
                 "businessImpact": "regulatory",
                 "method": "reconciliation",
                 "tags": ["finance"],
@@ -277,9 +279,10 @@ def test_reserved_subtree_fields_are_emitted_onto_the_rule():
             }
         },
     )
-    rule = project_rule(term, _test_type("Required"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Required"), SqlFlavorCode.POSTGRESQL)
 
     assert rule["name"] == "Email required"
+    assert rule["description"] == "Every customer has an email."
     assert rule["businessImpact"] == "regulatory"
     assert rule["method"] == "reconciliation"
     assert rule["tags"] == ["finance"]
@@ -294,7 +297,7 @@ def test_an_unrecognised_reserved_subtree_key_is_not_emitted():
         threshold_value="0",
         custom_metadata={"odcs": {"bogusKey": "nope", "name": "kept"}},
     )
-    rule = project_rule(term, _test_type("Required"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Required"), SqlFlavorCode.POSTGRESQL)
 
     assert "bogusKey" not in rule
     assert rule["name"] == "kept"
@@ -312,7 +315,7 @@ def test_a_stray_key_inside_a_reserved_custom_property_is_stripped_not_forwarded
             "odcs": {"customProperties": [{"property": "vendor", "value": "acme", "stray": "z"}]}
         },
     )
-    rule = project_rule(term, _test_type("Required"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Required"), SqlFlavorCode.POSTGRESQL)
 
     assert {"property": "vendor", "value": "acme"} in rule["customProperties"]
     assert not any("stray" in entry for entry in rule["customProperties"])
@@ -329,7 +332,7 @@ def test_a_stray_key_inside_a_reserved_authoritative_definition_is_stripped_not_
             ]}
         },
     )
-    rule = project_rule(term, _test_type("Required"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Required"), SqlFlavorCode.POSTGRESQL)
 
     assert rule["authoritativeDefinitions"] == [{"url": "https://example.com/policy", "type": "glossary"}]
     assert not validate_document(_wrap(rule, RuleScope.COLUMN))
@@ -358,7 +361,7 @@ def test_a_reserved_entry_is_rebuilt_in_the_schemas_key_order_whatever_order_it_
             }
         },
     )
-    rule = project_rule(term, _test_type("Required"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Required"), SqlFlavorCode.POSTGRESQL)
 
     custom_property = next(entry for entry in rule["customProperties"] if entry.get("property") == "p")
     assert list(custom_property) == ["id", "property", "value", "description", "vendor"]
@@ -376,7 +379,7 @@ def test_a_non_conforming_id_is_stripped_from_a_reserved_custom_property_not_the
             "odcs": {"customProperties": [{"property": "vendor", "value": "acme", "id": "has spaces"}]}
         },
     )
-    rule = project_rule(term, _test_type("Required"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Required"), SqlFlavorCode.POSTGRESQL)
 
     assert {"property": "vendor", "value": "acme"} in rule["customProperties"]
     assert not any("id" in entry and entry.get("property") == "vendor" for entry in rule["customProperties"])
@@ -393,7 +396,7 @@ def test_a_non_conforming_id_is_stripped_from_a_reserved_authoritative_definitio
             ]}
         },
     )
-    rule = project_rule(term, _test_type("Required"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Required"), SqlFlavorCode.POSTGRESQL)
 
     assert rule["authoritativeDefinitions"] == [{"url": "https://example.com/policy", "type": "glossary"}]
     assert not validate_document(_wrap(rule, RuleScope.COLUMN))
@@ -412,7 +415,7 @@ def test_a_conforming_id_survives_untouched_on_both_reserved_entry_shapes():
             }
         },
     )
-    rule = project_rule(term, _test_type("Required"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Required"), SqlFlavorCode.POSTGRESQL)
 
     assert {"property": "vendor", "value": "acme", "id": "cp-1"} in rule["customProperties"]
     assert rule["authoritativeDefinitions"] == [
@@ -434,7 +437,7 @@ def test_an_incomplete_reserved_entry_is_dropped_rather_than_forwarded_invalid()
             }
         },
     )
-    rule = project_rule(term, _test_type("Required"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Required"), SqlFlavorCode.POSTGRESQL)
 
     assert not any(entry.get("property") == "only_a_property_no_value" for entry in rule["customProperties"])
     assert rule["authoritativeDefinitions"] == []
@@ -447,7 +450,7 @@ def test_a_users_own_metadata_keys_become_rule_custom_properties():
         threshold_value="0",
         custom_metadata={"team": "finance", "ownerEmail": "data-owner@example.com"},
     )
-    rule = project_rule(term, _test_type("Required"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Required"), SqlFlavorCode.POSTGRESQL)
 
     assert {"property": "team", "value": "finance"} in rule["customProperties"]
     assert {"property": "ownerEmail", "value": "data-owner@example.com"} in rule["customProperties"]
@@ -460,7 +463,7 @@ def test_a_dimension_in_the_reserved_subtree_overrides_the_test_types_dimension(
         threshold_value="0",
         custom_metadata={"odcs": {"dimension": "accuracy"}},
     )
-    rule = project_rule(term, _test_type("Required", dq_dimension="Completeness"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Required", dq_dimension="Completeness"), SqlFlavorCode.POSTGRESQL)
     assert rule["dimension"] == "accuracy"
 
 
@@ -475,7 +478,7 @@ def test_a_dimension_the_enum_does_not_hold_is_reported_not_raised():
         custom_metadata={"odcs": {"dimension": "Nonsense"}},
     )
 
-    rule = project_rule(term, _test_type("Required", dq_dimension="Completeness"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Required", dq_dimension="Completeness"), SqlFlavorCode.POSTGRESQL)
 
     assert rule["dimension"] == "Nonsense"
     problems = validate_document(_wrap(rule, RuleScope.COLUMN))
@@ -491,14 +494,14 @@ def test_a_dimension_stored_as_an_enum_member_is_normalised_to_its_value():
         custom_metadata={"odcs": {"dimension": OdcsDimension.ACCURACY}},
     )
 
-    rule = project_rule(term, _test_type("Required"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Required"), SqlFlavorCode.POSTGRESQL)
 
     assert type(rule["dimension"]) is str
     assert rule["dimension"] == "accuracy"
 
 
 def test_no_enum_member_reaches_the_rendered_rule():
-    rule = project_rule(_term(test_type="Required", threshold_value="0"), _test_type("Required"), ServerType.POSTGRES)
+    rule = project_rule(_term(test_type="Required", threshold_value="0"), _test_type("Required"), SqlFlavorCode.POSTGRESQL)
     assert type(rule["type"]) is str
     assert type(rule["metric"]) is str
     assert type(rule["dimension"]) is str
@@ -518,14 +521,14 @@ def test_no_enum_member_reaches_the_rendered_rule():
 def test_library_sql_and_custom_rules_carry_their_shapes_required_companion(monkeypatch):
     _route_to_sql(monkeypatch, "Condition_Flag", RuleScope.TABLE)
     library_rule = project_rule(
-        _term(test_type="Required", threshold_value="0"), _test_type("Required"), ServerType.POSTGRES
+        _term(test_type="Required", threshold_value="0"), _test_type("Required"), SqlFlavorCode.POSTGRESQL
     )
     assert "metric" in library_rule
 
     sql_rule = project_rule(
         _term(test_type="Condition_Flag", custom_query="a <> b", threshold_value="0"),
         _test_type("Condition_Flag"),
-        ServerType.POSTGRES,
+        SqlFlavorCode.POSTGRESQL,
         CONDITION_FLAG_CONDITION,
     )
     assert "query" in sql_rule
@@ -544,7 +547,7 @@ def test_library_sql_and_custom_rules_carry_their_shapes_required_companion(monk
     custom_rule = project_rule(
         _term(test_type="Combo_Match", threshold_value="0"),
         _test_type("Combo_Match", default_parm_columns="threshold_value"),
-        ServerType.POSTGRES,
+        SqlFlavorCode.POSTGRESQL,
     )
     assert "engine" in custom_rule
     assert "implementation" in custom_rule
@@ -553,12 +556,12 @@ def test_library_sql_and_custom_rules_carry_their_shapes_required_companion(monk
 def test_a_sql_rule_carries_which_server_dialect_it_was_written_for(monkeypatch):
     _route_to_sql(monkeypatch, "Condition_Flag", RuleScope.TABLE)
     term = _term(test_type="Condition_Flag", custom_query="a <> b", threshold_value="0")
-    rule = project_rule(term, _test_type("Condition_Flag"), ServerType.SNOWFLAKE, CONDITION_FLAG_CONDITION)
+    rule = project_rule(term, _test_type("Condition_Flag"), SqlFlavorCode.SNOWFLAKE, CONDITION_FLAG_CONDITION)
     assert {"property": "serverType", "value": "snowflake", "vendor": "testgen"} in rule["customProperties"]
 
 
 def test_a_library_rule_never_carries_a_server_dialect_marker():
-    rule = project_rule(_term(test_type="Required", threshold_value="0"), _test_type("Required"), ServerType.POSTGRES)
+    rule = project_rule(_term(test_type="Required", threshold_value="0"), _test_type("Required"), SqlFlavorCode.POSTGRESQL)
     assert not any(entry["property"] == "serverType" for entry in rule["customProperties"])
 
 
@@ -576,7 +579,7 @@ def test_a_macro_carrying_measure_is_expanded_for_the_declared_flavor_and_leaves
         contract_term_id="term-daily",
     )
     rule = project_rule(
-        term, _test_type("Daily_Record_Ct", dq_dimension="Completeness"), ServerType.POSTGRES,
+        term, _test_type("Daily_Record_Ct", dq_dimension="Completeness"), SqlFlavorCode.POSTGRESQL,
         DAILY_RECORD_CT_CONDITION,
     )
 
@@ -600,7 +603,7 @@ def test_a_run_date_carrying_measure_uses_current_date_not_a_frozen_export_date(
         contract_term_id="term-future-date",
     )
     rule = project_rule(
-        term, _test_type("Future_Date", dq_dimension="Timeliness"), ServerType.POSTGRES, FUTURE_DATE_CONDITION
+        term, _test_type("Future_Date", dq_dimension="Timeliness"), SqlFlavorCode.POSTGRESQL, FUTURE_DATE_CONDITION
     )
 
     assert "CURRENT_DATE" in rule["query"]
@@ -616,7 +619,7 @@ def test_a_measure_combining_a_macro_and_run_date_resolves_both(monkeypatch):
     # macro is expanded, matching execute_tests_query.py's own replace_params-then-macro order).
     term = _term(test_type="Recency", column_name="last_seen", threshold_value="0", contract_term_id="term-recency")
     rule = project_rule(
-        term, _test_type("Recency", dq_dimension="Timeliness"), ServerType.POSTGRES, RECENCY_CONDITION
+        term, _test_type("Recency", dq_dimension="Timeliness"), SqlFlavorCode.POSTGRESQL, RECENCY_CONDITION
     )
 
     assert "<%" not in rule["query"]
@@ -643,7 +646,7 @@ def test_no_testgen_placeholder_survives_into_a_sql_query_across_several_real_me
     ]
     for test_type_code, condition, extra in cases:
         term = _term(test_type=test_type_code, threshold_value="0", **extra)
-        rule = project_rule(term, _test_type(test_type_code), ServerType.POSTGRES, condition)
+        rule = project_rule(term, _test_type(test_type_code), SqlFlavorCode.POSTGRESQL, condition)
         leftover = re.findall(r"\{[A-Z_]+\}", rule["query"])
         assert not leftover, (test_type_code, rule["query"], leftover)
 
@@ -657,9 +660,9 @@ def test_a_column_type_carrying_measure_renders_custom_without_one_and_builds_wi
     term = _term(test_type="Future_Date", column_name="ship_date", threshold_value="0")
     test_type = _test_type("Future_Date", dq_dimension="Timeliness")
 
-    assert project_rule(term, test_type, ServerType.BIGQUERY, FUTURE_DATE_BIGQUERY_CONDITION)["type"] == "custom"
+    assert project_rule(term, test_type, SqlFlavorCode.BIGQUERY, FUTURE_DATE_BIGQUERY_CONDITION)["type"] == "custom"
 
-    rule = project_rule(term, test_type, ServerType.BIGQUERY, FUTURE_DATE_BIGQUERY_CONDITION, column_type="DATETIME")
+    rule = project_rule(term, test_type, SqlFlavorCode.BIGQUERY, FUTURE_DATE_BIGQUERY_CONDITION, column_type="DATETIME")
     assert "{COLUMN_TYPE}" not in rule["query"]
     assert "DATETIME" in rule["query"]
     assert not validate_document(_wrap(rule, RuleScope.COLUMN))
@@ -674,9 +677,9 @@ def test_a_column_type_carrying_measure_on_its_second_flavor_also_builds_with_on
     )
     test_type = _test_type("Min_Date", dq_dimension="Validity")
 
-    assert project_rule(term, test_type, ServerType.HANA, MIN_DATE_SAP_HANA_CONDITION)["type"] == "custom"
+    assert project_rule(term, test_type, SqlFlavorCode.SAP_HANA, MIN_DATE_SAP_HANA_CONDITION)["type"] == "custom"
 
-    rule = project_rule(term, test_type, ServerType.HANA, MIN_DATE_SAP_HANA_CONDITION, column_type="DATE")
+    rule = project_rule(term, test_type, SqlFlavorCode.SAP_HANA, MIN_DATE_SAP_HANA_CONDITION, column_type="DATE")
     assert "{COLUMN_TYPE}" not in rule["query"]
     assert "CAST('2020-01-01' AS DATE)" in rule["query"]
     assert not validate_document(_wrap(rule, RuleScope.COLUMN))
@@ -686,7 +689,7 @@ def test_project_rule_requires_a_condition_for_an_sql_shape_term(monkeypatch):
     _route_to_sql(monkeypatch, "Condition_Flag", RuleScope.TABLE)
     term = _term(test_type="Condition_Flag", custom_query="a <> b", threshold_value="0")
     with pytest.raises(ValueError, match="CatCondition"):
-        project_rule(term, _test_type("Condition_Flag"), ServerType.POSTGRES)
+        project_rule(term, _test_type("Condition_Flag"), SqlFlavorCode.POSTGRESQL)
 
 
 # --- Percentage-type threshold conversion: tested by agreement, not by shape --------------
@@ -714,7 +717,7 @@ def test_missing_pct_conversion_agrees_with_the_term_across_a_spread_of_populate
         threshold_value=str(h),
         contract_term_id="term-missing-pct",
     )
-    rule = project_rule(term, _test_type("Missing_Pct", dq_dimension="Completeness"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Missing_Pct", dq_dimension="Completeness"), SqlFlavorCode.POSTGRESQL)
     assert not validate_document(_wrap(rule, RuleScope.COLUMN))
 
     lower, upper = rule["mustBeBetween"]
@@ -759,7 +762,7 @@ def test_a_missing_pct_term_whose_band_saturates_renders_a_range_not_an_equality
     because both band ends landed on the same folded value.
     """
     term = _term(test_type="Missing_Pct", baseline_ct="50", baseline_value_ct="0", threshold_value="2.0")
-    rule = project_rule(term, _test_type("Missing_Pct", dq_dimension="Completeness"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Missing_Pct", dq_dimension="Completeness"), SqlFlavorCode.POSTGRESQL)
     assert "mustBe" not in rule
     assert rule["mustBeBetween"] == [pytest.approx(29.19, abs=0.01), pytest.approx(100.0)]
 
@@ -769,7 +772,7 @@ def test_a_term_with_no_contract_identity_is_refused_by_name():
     so the freeze fails naming a node position rather than the term that has no identity."""
     term = _term(contract_term_id=None)
     with pytest.raises(ValueError, match="customers"):
-        project_rule(term, _test_type("Required"), ServerType.POSTGRES)
+        project_rule(term, _test_type("Required"), SqlFlavorCode.POSTGRESQL)
 
 
 @pytest.mark.parametrize(
@@ -801,7 +804,7 @@ def test_a_term_whose_values_cannot_be_stated_exactly_renders_custom(test_type, 
     """TestGen still runs such a term -- a cleared bound reads as NULL and passes -- so the
     contract carries it as a ``custom`` rule rather than failing the freeze or export."""
     term = _term(test_type=test_type, **fields)
-    rule = project_rule(term, _test_type(test_type), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type(test_type), SqlFlavorCode.POSTGRESQL)
     assert rule["type"] == "custom"
     assert "metric" not in rule
     assert "query" not in rule
@@ -811,7 +814,7 @@ def test_a_term_whose_values_cannot_be_stated_exactly_renders_custom(test_type, 
 
 def test_unique_pct_renders_as_a_custom_rule():
     term = _term(test_type="Unique_Pct", baseline_value_ct="100", baseline_unique_ct="90", threshold_value="0.5")
-    rule = project_rule(term, _test_type("Unique_Pct", dq_dimension="Uniqueness"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Unique_Pct", dq_dimension="Uniqueness"), SqlFlavorCode.POSTGRESQL)
     assert rule["type"] == "custom"
     assert "metric" not in rule
 
@@ -820,7 +823,7 @@ def test_dupe_rows_on_one_column_renders_a_column_scoped_duplicate_values_rule()
     term = _term(test_type="Dupe_Rows", groupby_names='"order_id"')
     test_type = _test_type("Dupe_Rows", dq_dimension="Uniqueness", test_scope="table")
     assert rule_scope(term, test_type) is RuleScope.COLUMN
-    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
     assert rule["metric"] == "duplicateValues"
     assert rule["unit"] == "rows"
     assert rule["mustBeLessOrEqualTo"] == 0
@@ -830,7 +833,7 @@ def test_dupe_rows_on_one_column_renders_a_column_scoped_duplicate_values_rule()
 def test_dupe_rows_bound_is_the_terms_skip_errors():
     term = _term(test_type="Dupe_Rows", groupby_names='"order_id"', skip_errors=5)
     test_type = _test_type("Dupe_Rows", dq_dimension="Uniqueness", test_scope="table")
-    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
     assert rule["mustBeLessOrEqualTo"] == 5
 
 
@@ -838,7 +841,7 @@ def test_dupe_rows_on_several_columns_renders_a_table_scoped_rule_listing_them()
     term = _term(test_type="Dupe_Rows", groupby_names='"order_id", "line_no"')
     test_type = _test_type("Dupe_Rows", dq_dimension="Uniqueness", test_scope="table")
     assert rule_scope(term, test_type) is RuleScope.TABLE
-    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
     assert rule["arguments"] == {"properties": ["order_id", "line_no"]}
 
 
@@ -846,7 +849,7 @@ def test_dupe_rows_with_no_grouping_attaches_to_the_table_and_lists_nothing():
     term = _term(test_type="Dupe_Rows", groupby_names=None)
     test_type = _test_type("Dupe_Rows", dq_dimension="Uniqueness", test_scope="table")
     assert rule_scope(term, test_type) is RuleScope.TABLE
-    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
     assert "arguments" not in rule
 
 
@@ -859,7 +862,7 @@ def test_row_ct_pct_conversion_agrees_with_the_term_across_a_spread_of_row_count
         threshold_value=str(percent),
         contract_term_id="term-row-ct-pct",
     )
-    rule = project_rule(term, _test_type("Row_Ct_Pct", dq_dimension="Completeness"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Row_Ct_Pct", dq_dimension="Completeness"), SqlFlavorCode.POSTGRESQL)
     assert not validate_document(_wrap(rule, RuleScope.TABLE))
     assert rule["metric"] == "rowCount"
     assert rule["unit"] == "rows"
@@ -892,7 +895,7 @@ def test_a_custom_rule_carries_parameters_the_test_type_declares_and_nothing_els
         "Avg_Shift", dq_dimension="Consistency",
         default_parm_columns="baseline_value_ct,baseline_avg,baseline_sd,threshold_value",
     )
-    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
     assert rule["type"] == "custom"
     assert rule["engine"] == "testgen"
     assert rule["implementation"] == {
@@ -911,21 +914,21 @@ def test_a_custom_rule_implementation_omits_the_subject():
         "Avg_Shift", dq_dimension="Consistency",
         default_parm_columns="schema_name,table_name,column_name,threshold_value",
     )
-    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
     assert set(rule["implementation"]) & {"schema_name", "table_name", "column_name"} == set()
 
 
 def test_a_custom_rule_carries_no_comparison_operator():
     term = _term(test_type="Avg_Shift", threshold_value="0.5")
     test_type = _test_type("Avg_Shift", dq_dimension="Consistency", default_parm_columns="threshold_value")
-    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
     assert not [key for key in rule if key.startswith("mustBe")]
 
 
 def test_a_custom_query_term_carries_its_query_as_a_parameter():
     term = _term(test_type="CUSTOM", custom_query="SELECT * FROM t WHERE x < 0")
     test_type = _test_type("CUSTOM", dq_dimension="Accuracy", default_parm_columns="custom_query,match_column_names")
-    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
     assert rule["type"] == "custom"
     assert rule["implementation"]["custom_query"] == "SELECT * FROM t WHERE x < 0"
 
@@ -939,7 +942,7 @@ def test_a_custom_rule_description_states_the_check_and_the_threshold():
         except_message="Standardized difference between averages is over the selected threshold level.",
         threshold_description="Standardized Difference Measure",
     )
-    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
     assert rule["description"] == (
         "Tests for statistically significant shift in mean value for column from average "
         "calculated at baseline. Fails: Standardized difference between averages is over the "
@@ -956,7 +959,7 @@ def test_a_description_omits_the_threshold_clause_when_the_term_has_none():
         except_message="Column value combinations are not found in reference table values.",
         threshold_description="Expected count of non-matching value combinations",
     )
-    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
     assert rule["description"].endswith("not found in reference table values.")
     assert "Threshold:" not in rule["description"]
 
@@ -968,7 +971,7 @@ def test_a_description_omits_catalogue_segments_that_are_absent():
         "Avg_Shift", dq_dimension="Consistency", default_parm_columns="threshold_value",
         test_description=None, except_message=None, threshold_description=None,
     )
-    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
     assert "None" not in rule["description"]
 
 
@@ -981,7 +984,7 @@ def test_a_non_numeric_threshold_renders_as_stored():
         except_message="Column values do not exactly match expected list of values.",
         threshold_description="Sorted list of all distinct expected values",
     )
-    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
     assert "Threshold: 'Val1|Val2'" in rule["description"]
 
 
@@ -989,7 +992,7 @@ def test_a_type_declaring_no_parameters_still_renders_an_empty_implementation():
     """The schema requires `implementation` on a custom rule; an empty object is valid."""
     term = _term(test_type="Table_Freshness")
     test_type = _test_type("Table_Freshness", dq_dimension="Timeliness", default_parm_columns=None)
-    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
     assert rule["implementation"] == {}
 
 
@@ -1007,20 +1010,20 @@ def test_a_single_bound_library_term_renders_its_own_threshold(test_type, operat
     term = _term(
         test_type=test_type, baseline_value=baseline_value, threshold_value="4217", contract_term_id="term-threshold"
     )
-    rule = project_rule(term, _test_type(test_type), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type(test_type), SqlFlavorCode.POSTGRESQL)
     assert rule[operator] == 4217
 
 
 def test_a_list_of_values_term_unescapes_a_quote_inside_a_value():
     term = _term(test_type="LOV_Match", baseline_value="('it''s','N')", threshold_value="0")
-    rule = project_rule(term, _test_type("LOV_Match", dq_dimension="Validity"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("LOV_Match", dq_dimension="Validity"), SqlFlavorCode.POSTGRESQL)
 
     assert rule["arguments"] == {"validValues": ["it's", "N"]}
 
 
 def test_a_pattern_term_keeps_its_pattern_as_a_string():
     term = _term(test_type="Pattern_Match", baseline_value="[A-Z][0-9]{4}", threshold_value="0")
-    rule = project_rule(term, _test_type("Pattern_Match", dq_dimension="Validity"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Pattern_Match", dq_dimension="Validity"), SqlFlavorCode.POSTGRESQL)
 
     assert rule["arguments"] == {"pattern": "[A-Z][0-9]{4}"}
 
@@ -1039,7 +1042,7 @@ def test_groupby_columns_collapses_escaped_quotes():
 
 def test_a_dupe_rows_term_with_quoted_groupby_names_renders_unquoted_properties():
     term = _term(test_type="Dupe_Rows", column_name=None, groupby_names='"id", "status"', threshold_value="0")
-    rule = project_rule(term, _test_type("Dupe_Rows", dq_dimension="Uniqueness"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Dupe_Rows", dq_dimension="Uniqueness"), SqlFlavorCode.POSTGRESQL)
 
     assert rule["arguments"] == {"properties": ["id", "status"]}
 
@@ -1056,7 +1059,7 @@ def test_sql_metric_renders_its_own_query_against_its_own_bounds(lower, upper, o
         custom_query="SELECT COUNT(*) AS late FROM {DATA_SCHEMA}.orders WHERE shipped IS NULL;\n",
     )
 
-    rule = project_rule(term, _test_type("SQL_Metric", dq_dimension="Accuracy"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("SQL_Metric", dq_dimension="Accuracy"), SqlFlavorCode.POSTGRESQL)
 
     assert rule["type"] == "sql"
     assert rule["query"] == "SELECT COUNT(*) AS late FROM sales.orders WHERE shipped IS NULL"
@@ -1066,13 +1069,13 @@ def test_sql_metric_renders_its_own_query_against_its_own_bounds(lower, upper, o
 
 def test_match_null_ct_must_equal_its_baseline_count():
     term = _term(test_type="Match_Null_Ct", baseline_ct="12")
-    rule = project_rule(term, _test_type("Match_Null_Ct"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Match_Null_Ct"), SqlFlavorCode.POSTGRESQL)
     assert (rule["metric"], rule["unit"], rule["mustBe"]) == ("nullValues", "rows", 12)
 
 
 def test_match_row_ct_must_equal_its_threshold():
     term = _term(test_type="Match_Row_Ct", column_name=None, threshold_value="600")
-    rule = project_rule(term, _test_type("Match_Row_Ct"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Match_Row_Ct"), SqlFlavorCode.POSTGRESQL)
     assert (rule["metric"], rule["mustBe"]) == ("rowCount", 600)
 
 
@@ -1082,7 +1085,7 @@ def test_match_row_ct_must_equal_its_threshold():
 ])
 def test_required_no_placeholder_lists_its_placeholders_as_missing_values(baseline, arguments):
     term = _term(test_type="Required_No_Placeholder", baseline_value=baseline, threshold_value="2")
-    rule = project_rule(term, _test_type("Required_No_Placeholder"), ServerType.POSTGRES)
+    rule = project_rule(term, _test_type("Required_No_Placeholder"), SqlFlavorCode.POSTGRESQL)
     assert rule["metric"] == "missingValues"
     assert {key: rule[key] for key in ("arguments",) if key in rule} == arguments
     assert rule["mustBeLessOrEqualTo"] == 2
@@ -1095,14 +1098,14 @@ def test_required_no_placeholder_lists_its_placeholders_as_missing_values(baseli
     ("US_State", {"validValues": list(quality_rules.US_STATE_VALID_VALUES)}),
 ])
 def test_a_fixed_predicate_type_renders_its_own_predicate(test_type, argument):
-    rule = project_rule(_term(test_type=test_type, threshold_value="3"), _test_type(test_type), ServerType.POSTGRES)
+    rule = project_rule(_term(test_type=test_type, threshold_value="3"), _test_type(test_type), SqlFlavorCode.POSTGRESQL)
     assert (rule["metric"], rule["arguments"], rule["mustBeLessOrEqualTo"]) == ("invalidValues", argument, 3)
 
 
-@pytest.mark.parametrize(("server_type", "shape"), [
-    (ServerType.POSTGRES, "library"), (ServerType.SNOWFLAKE, "library"),
-    (ServerType.SQLSERVER, "custom"), (ServerType.BIGQUERY, "custom"),
+@pytest.mark.parametrize(("flavor", "shape"), [
+    (SqlFlavorCode.POSTGRESQL, "library"), (SqlFlavorCode.SNOWFLAKE, "library"),
+    (SqlFlavorCode.MSSQL, "custom"), (SqlFlavorCode.BIGQUERY, "custom"),
 ])
-def test_email_format_is_a_pattern_rule_only_where_its_measure_checks_that_pattern(server_type, shape):
-    rule = project_rule(_term(test_type="Email_Format"), _test_type("Email_Format"), server_type)
+def test_email_format_is_a_pattern_rule_only_where_its_measure_checks_that_pattern(flavor, shape):
+    rule = project_rule(_term(test_type="Email_Format"), _test_type("Email_Format"), flavor)
     assert rule["type"] == shape

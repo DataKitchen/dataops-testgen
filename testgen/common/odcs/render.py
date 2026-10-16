@@ -30,19 +30,16 @@ from testgen.common.odcs.quality_rules import (
     RuleShape,
     _groupby_columns,
     declaration_marker,
+    drop_field,
     is_declaration_marker,
     lov_values,
     project_rule,
     property_declaration,
     rule_scope,
     rule_shape,
+    synthesized_marker,
 )
-from testgen.common.odcs.servers import (
-    FLAVOR_TO_SERVER_TYPE,
-    ODCS_API_VERSION,
-    ODCS_KIND,
-    UnmappedFlavorError,
-)
+from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND
 
 
 class OrphanedTermError(ValueError):
@@ -103,9 +100,9 @@ def _flavor_code_for(table_group: TableGroup) -> str:
     Reached via the suite's table group rather than reversing the document's declared
     ``servers[0].type`` through ``FLAVOR_TO_SERVER_TYPE``: that reverse mapping is not unique
     (``sqlserver`` answers to both ``azure_mssql`` and ``mssql``), so it would silently pick
-    one of two dialects for every sqlserver-backed contract. This path is unambiguous, and it
-    is the same connection ``build_server_block`` read the declared server from, so the
-    declared server and this code agree by construction.
+    one of two dialects for every sqlserver-backed contract, and a ``custom`` entry names no
+    dialect at all. This path is unambiguous: it is the connection the contract's terms run
+    against.
     """
     connection = Connection.get(table_group.connection_id)
     return connection.sql_flavor_code
@@ -165,6 +162,7 @@ def _synthesized_measure_property(subject: str) -> dict[str, Any]:
         "semanticType": "measure",
         "logicalType": "number",
         "transformLogic": subject,
+        "customProperties": [synthesized_marker()],
     }
 
 
@@ -243,18 +241,16 @@ def _attach_rule(
     return _attach_to_property(table, _property_name(term, test_type), rule, synthesized_names)
 
 
-def _apply_enum(prop: dict[str, Any], term: TestDefinition) -> None:
-    """Declare ``prop``'s ``enum`` from a ``LOV_Match`` term's baseline values, when absent.
+def _apply_enum(prop: dict[str, Any], term: TestDefinition, claimed: dict[tuple[str, ...], Any]) -> None:
+    """Declare ``prop``'s ``enum`` from a ``LOV_Match`` term's baseline values, unless an earlier
+    term in this render declared another (``_declare``).
 
     The schema's ``enum`` is an array of ``{"value": ...}`` objects, not a list of bare
-    strings, so the stored literal is parsed into individual values first. Never overwrites an
-    already-declared enum.
+    strings, so the stored literal is parsed into individual values first.
     """
-    if "enum" in prop or not term.baseline_value:
-        return
-    values = lov_values(term.baseline_value)
+    values = lov_values(term.baseline_value) if term.baseline_value else None
     if values:
-        prop["enum"] = [{"value": value} for value in values]
+        _declare(prop, {"enum": [{"value": value} for value in values]}, claimed)
 
 
 def _declared_property(
@@ -306,25 +302,13 @@ def _drop_declarations(document: dict[str, Any]) -> None:
             for entry in filter(is_declaration_marker, entries):
                 paths = entry.get("value", {}).get("declares") if isinstance(entry.get("value"), dict) else None
                 for path in paths if isinstance(paths, list) else []:
-                    _drop_field(prop, str(path).split("."))
+                    drop_field(prop, str(path).split("."))
             if "customProperties" in prop:
                 kept = [entry for entry in entries if not is_declaration_marker(entry)]
                 if kept:
                     prop["customProperties"] = kept
                 else:
                     del prop["customProperties"]
-
-
-def _drop_field(node: dict[str, Any], path: list[str]) -> None:
-    """Remove the field at ``path`` under ``node``, and a parent object it leaves empty."""
-    if len(path) == 1:
-        node.pop(path[0], None)
-        return
-    child = node.get(path[0])
-    if isinstance(child, dict):
-        _drop_field(child, path[1:])
-        if not child:
-            del node[path[0]]
 
 
 def render_document(version: SuiteVersion) -> dict[str, Any]:
@@ -337,8 +321,7 @@ def render_document(version: SuiteVersion) -> dict[str, Any]:
     Returns a new document; the version's own ``metadata_document`` is never mutated. Raises
     ``OrphanedTermError`` if a term names a table the document does not declare, names a test
     type the catalogue no longer holds, or is column-scoped with no ``column_name`` to attach
-    its rule to; ``UnmappedFlavorError`` if the backing connection's flavor maps to no ODCS
-    server type; and ``ValueError`` (from ``rule_scope``) if a term's test type is excluded --
+    its rule to; and ``ValueError`` (from ``rule_scope``) if a term's test type is excluded --
     none is ever silently dropped or placed somewhere its query would not mean what it claims.
     Terms of a managed test type are left out: they check what the document itself declares,
     so the document is already their assertion.
@@ -374,17 +357,14 @@ def render_document(version: SuiteVersion) -> dict[str, Any]:
             # never inspects query text -- but land a `{property}`-carrying query on the table
             # node, where the spec defines no resolution for it. Refused rather than placed.
             raise OrphanedTermError(
-                f"Term {term.contract_term_id!r} of test type {term.test_type!r} is "
+                f"Term {term.contract_term_id!r} of test type {test_types[term.test_type].test_name_short!r} is "
                 "column-scoped but carries no column_name to attach its rule to."
             )
 
     table_group = _table_group_for(version)
-    flavor_code = _flavor_code_for(table_group)
-    server_type = FLAVOR_TO_SERVER_TYPE.get(SqlFlavorCode(flavor_code))
-    if server_type is None:
-        raise UnmappedFlavorError(f"No server type for flavor {flavor_code!r}.")
+    flavor = SqlFlavorCode(_flavor_code_for(table_group))
     sql_test_types = {term.test_type for term in terms if rule_shape(term.test_type) is RuleShape.SQL}
-    conditions = _conditions_for(sql_test_types, FLAVOR_CODE_TO_FAMILY[SqlFlavorCode(flavor_code)])
+    conditions = _conditions_for(sql_test_types, FLAVOR_CODE_TO_FAMILY[flavor])
     column_types = _column_types_for(table_group.id)
     # One synthesized-name set per table: the slug fallback in `_attach_to_property` must only
     # ever reuse a property this render call minted itself, never a declared one that happens
@@ -409,13 +389,13 @@ def render_document(version: SuiteVersion) -> dict[str, Any]:
         rule = project_rule(
             term,
             test_type,
-            server_type,
+            flavor,
             condition=conditions.get(term.test_type),
             column_type=column_types.get((term.table_name, term.column_name)),
             logical_type=logical_type,
         )
         prop = _attach_rule(table, term, test_type, rule, synthesized_names)
         if prop is not None and term.test_type == "LOV_Match":
-            _apply_enum(prop, term)
+            _apply_enum(prop, term, claimed_by_property.setdefault((term.table_name, prop["name"]), {}))
 
     return document

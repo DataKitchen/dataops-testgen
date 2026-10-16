@@ -68,6 +68,7 @@ dependencies = [
     "holidays~=0.89",
     "packaging>=24.0",
     "jsonschema[format-nongpl]==4.26.0",
+    "sqlglot==30.17.0",
 
     # Pinned to match the manually compiled libs or for security
     "pyarrow==23.0.1",

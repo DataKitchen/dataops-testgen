@@ -8,7 +8,9 @@ from jsonschema import Draft201909Validator
 
 from testgen.common.odcs.servers import ODCS_API_VERSION
 
+# Every ODCS release from v3.1.0 on. Each file is the schema as published at its release tag.
 _SCHEMA_FILES: dict[str, str] = {
+    "v3.1.0": "odcs-json-schema-v3.1.0.json",
     ODCS_API_VERSION: "odcs-json-schema-v3.2.0.json",
 }
 
@@ -37,8 +39,8 @@ def validate_document(document: dict) -> list[str]:
     Returns every violation the schema validator reports, as ``f"{json_path}: {message}"`` in
     the validator's own wording, sorted by JSON path. An empty list means the document is
     valid. A version with no bundled schema is itself reported as a violation: the standard
-    allows eight and this bundles one, so declaring another is legal ODCS that cannot be
-    checked here, which a caller handles the same way as any other violation.
+    allows versions older than the ones bundled here, and a document declaring one is legal ODCS
+    that cannot be checked, which a caller handles the same way as any other violation.
     """
     api_version = document.get("apiVersion") or ODCS_API_VERSION
     try:

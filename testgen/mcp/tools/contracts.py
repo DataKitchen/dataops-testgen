@@ -1,5 +1,5 @@
-"""MCP tools for data contracts — exporting a version, reading its metadata document, and listing, freezing and
-discarding versions."""
+"""MCP tools for data contracts — exporting a version, reading its metadata document, listing, freezing and
+discarding versions, and importing an ODCS document."""
 
 import hashlib
 from dataclasses import dataclass
@@ -7,14 +7,28 @@ from typing import Annotated
 
 import yaml
 from pydantic import Field
+from sqlalchemy import select
 
 from testgen import settings
-from testgen.common import contract_service
+from testgen.common import contract_import, contract_service
 from testgen.common.contract_document import PROFILED_VALUES
+from testgen.common.contract_import import (
+    ContractIdentityError,
+    ContractImportMode,
+    ContractImportPlan,
+    ContractTermReason,
+)
 from testgen.common.contract_service import InvalidContractDocumentError
-from testgen.common.enums import JOB_STATUS_LABEL
-from testgen.common.models import with_database_session
+from testgen.common.database.test_suite_service import validate_test_suite_fields
+from testgen.common.enums import JOB_STATUS_LABEL, SuiteType
+from testgen.common.flavors import SqlFlavorCode
+from testgen.common.models import get_current_session, with_database_session
+from testgen.common.models.connection import Connection
 from testgen.common.models.suite_version import SuiteVersion, VersionState, version_state
+from testgen.common.models.table_group import TableGroup
+from testgen.common.models.test_definition import TestType
+from testgen.common.models.test_suite import TestSuite
+from testgen.common.test_definition_export_import_service import ImportAction
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import mcp_permission
 from testgen.mcp.services.source_data_protection import mcp_source_data_only, mcp_source_data_protected
@@ -23,7 +37,10 @@ from testgen.mcp.tools.common import (
     format_page_footer,
     format_page_info,
     format_version,
+    parse_enum,
+    raise_validation_error,
     resolve_contract,
+    resolve_table_group,
     validate_limit,
     validate_page,
 )
@@ -338,6 +355,22 @@ def list_contract_versions(
     return doc.render()
 
 
+_TERM_REASON_LABELS: dict[ContractTermReason, str] = {
+    ContractTermReason.MATCHED_BY_ID: "Matched by rule ID",
+    ContractTermReason.MATCHED_BY_KEY: "Matched by test type, table and column",
+    ContractTermReason.UNCHANGED: "Unchanged",
+    ContractTermReason.NEW: "Not in the contract",
+    ContractTermReason.ABSENT: "Not in the document",
+}
+
+_ACTION_HEADINGS: dict[ImportAction, str] = {
+    ImportAction.create: "To create",
+    ImportAction.update: "To update",
+    ImportAction.delete: "To delete",
+    ImportAction.skip: "Unchanged",
+}
+
+
 @with_database_session
 @mcp_permission("edit")
 def freeze_contract_version(
@@ -403,3 +436,209 @@ def discard_contract_draft(
     doc.field("Tests removed", removed)
     doc.field("Contract is now at", format_version(now_at.version, VersionState.ACTIVE))
     return doc.render()
+
+
+@with_database_session
+@mcp_permission("edit")
+def import_contract(
+    payload: Annotated[str, Field(description="The ODCS document, as YAML or JSON text.")],
+    test_suite_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of the contract to import into. The document replaces the contract's draft, and opens "
+            "one when the contract has none. Omit to create a contract instead.",
+        ),
+    ] = None,
+    table_group_id: Annotated[
+        str | None,
+        Field(description="UUID of the table group to create a contract in. Omit to import into `test_suite_id`."),
+    ] = None,
+    test_suite_name: Annotated[
+        str | None,
+        Field(
+            description="Name for the contract being created. Defaults to the name the document declares, and is "
+            "required when it declares none.",
+        ),
+    ] = None,
+    mode: Annotated[
+        str,
+        Field(description="`preview` (default) reports every change without saving anything; `apply` saves them."),
+    ] = "preview",
+) -> str:
+    """Import an ODCS document as a new contract, or into an existing contract's draft.
+
+    The document is the whole agreement. Its quality rules, and column constraints such as a
+    maximum or a required column, become the contract's tests; the rest becomes its metadata.
+    Tests the contract holds that the document does not state are deleted. Preview first, and check
+    the deletions.
+
+    Supply exactly one of `test_suite_id` and `table_group_id`. An import never changes a frozen
+    version, and a document whose contract `id` differs from the contract's is refused.
+
+    A rule TestGen cannot check stays in the document, marked unverifiable. SQL in the document is
+    not translated between database dialects; the response warns when the document declares a
+    server of a different type than the connection.
+    """
+    parsed_mode = parse_enum(mode, ContractImportMode, "mode")
+    if test_suite_id and table_group_id:
+        raise MCPUserError(
+            "Supply `test_suite_id` or `table_group_id`, not both. `test_suite_id` imports into that contract's "
+            "draft; `table_group_id` creates a contract."
+        )
+    if not test_suite_id and not table_group_id:
+        raise MCPUserError(
+            "Supply either `test_suite_id` (to import into that contract's draft) or `table_group_id` (to create a "
+            "contract in that table group)."
+        )
+
+    if test_suite_id:
+        suite: TestSuite | None = resolve_contract(test_suite_id)
+        table_group = TableGroup.get(suite.table_groups_id)
+    else:
+        suite = None
+        table_group = resolve_table_group(table_group_id)
+
+    connection = Connection.get(table_group.connection_id)
+
+    try:
+        plan = contract_import.prepare_import(payload, table_group, connection, suite)
+    except InvalidContractDocumentError as e:
+        raise_validation_error(e.problems, "The document was not imported. No changes saved.")
+    except ContractIdentityError as e:
+        incoming, target = _inline_code(e.incoming_id), _inline_code(e.target_id)
+        raise MCPUserError(
+            f"The document's contract `id` is {incoming}, but this contract's is {target}, so the document is a "
+            f"different agreement. To import it into this contract, change the document's `id` to {target}. If it "
+            "is a separate agreement, call `import_contract` with `table_group_id` instead of `test_suite_id` to "
+            "create a new contract. No changes saved."
+        ) from e
+
+    if suite is None:
+        name = (test_suite_name or plan.document_name or "").strip()
+        if not name:
+            raise MCPUserError("The document declares no `name`, so `test_suite_name` is required. No changes saved.")
+        suite = TestSuite(
+            project_code=table_group.project_code,
+            connection_id=table_group.connection_id,
+            table_groups_id=table_group.id,
+            test_suite=name,
+            suite_type=SuiteType.CONTRACT.value,
+        )
+        if errors := validate_test_suite_fields(suite):
+            raise_validation_error(errors, "The contract was not created. No changes saved.")
+        creating = True
+    else:
+        creating = False
+
+    version_label = None
+    conformance_failed = False
+    if parsed_mode is ContractImportMode.APPLY:
+        if creating:
+            session = get_current_session()
+            session.add(suite)
+            session.flush()
+            contract_service.initialize_contract(suite, table_group, connection)
+        applied = contract_import.apply_import(plan, suite, table_group, SqlFlavorCode(connection.sql_flavor_code))
+        version = SuiteVersion.get(applied.version_id)
+        is_active = version.frozen_at is not None and SuiteVersion.is_active(version.id, suite.id)
+        version_label = format_version(version.version, version_state(version.frozen_at, is_active))
+        conformance_failed = applied.conformance_failed
+
+    return _render_import(
+        plan, suite, parsed_mode, creating=creating, version_label=version_label, conformance_failed=conformance_failed
+    )
+
+
+def _render_import(
+    plan: ContractImportPlan,
+    suite: TestSuite,
+    mode: ContractImportMode,
+    *,
+    creating: bool,
+    version_label: str | None,
+    conformance_failed: bool = False,
+) -> str:
+    preview = mode is ContractImportMode.PREVIEW
+    name = _inline_code(suite.test_suite)
+    doc = MdDoc()
+    if preview:
+        doc.heading(1, f"Contract Import Preview for {name}")
+        doc.text("Preview only — no changes were persisted. Re-run with `mode='apply'` to persist.")
+    else:
+        doc.heading(1, f"Contract {name} {'created' if creating else 'imported'}")
+        doc.field("ID", str(suite.id), code=True)
+        doc.field("Version", version_label)
+    if conformance_failed:
+        doc.text(
+            "The import was saved, but updating its schema conformance tests failed. Re-run this import with "
+            "`mode='apply'` to update them."
+        )
+    if plan.document_id:
+        doc.field("ODCS contract ID", _inline_code(plan.document_id))
+
+    suffix = " (projected)" if preview else ""
+    doc.field(f"Created{suffix}", plan.count(ImportAction.create))
+    doc.field(f"Updated{suffix}", plan.count(ImportAction.update))
+    doc.field(f"Deleted{suffix}", plan.count(ImportAction.delete))
+    doc.field("Unchanged", plan.count(ImportAction.skip))
+    doc.field("Rules and constraints that became tests", plan.resolved_count)
+    doc.field("Rules kept as unverifiable", len(plan.unverifiable_rules))
+    doc.field("Constraints no test checks", len(plan.unresolved_declarations))
+
+    if plan.server_type_warning:
+        doc.text(f"Warning: {plan.server_type_warning}")
+    if plan.tables_not_in_catalog:
+        doc.text(
+            "The data catalog holds no columns for "
+            f"{', '.join(_inline_code(table) for table in plan.tables_not_in_catalog)}, so those tables get no schema "
+            "conformance test until they appear in the catalog."
+        )
+
+    labels = _test_type_labels({change.test_type for change in plan.changes})
+    for action in (ImportAction.delete, ImportAction.create, ImportAction.update, ImportAction.skip):
+        changes = [change for change in plan.changes if change.action is action]
+        if not changes:
+            continue
+        doc.heading(2, f"{_ACTION_HEADINGS[action]} ({len(changes)})")
+        doc.table(
+            ["Rule ID", "Test Type", "Table", "Column", "Reason"],
+            [
+                [
+                    change.contract_term_id or "",
+                    labels.get(change.test_type, change.test_type),
+                    change.table_name,
+                    change.column_name or "",
+                    _TERM_REASON_LABELS[change.reason],
+                ]
+                for change in changes
+            ],
+        )
+
+    if plan.unverifiable_rules:
+        doc.heading(2, f"Kept as unverifiable ({len(plan.unverifiable_rules)})")
+        doc.text("TestGen cannot check these rules. They stay in the contract's document and are not run.")
+        doc.bullets([_inline_text(label) for label in plan.unverifiable_rules])
+    if plan.unresolved_declarations:
+        doc.heading(2, f"Constraints no test checks ({len(plan.unresolved_declarations)})")
+        doc.text("No test checks exactly these column constraints. They stay in the contract's document.")
+        doc.bullets([_inline_text(label) for label in plan.unresolved_declarations])
+    return doc.render()
+
+
+def _inline_text(value: str) -> str:
+    """Text from a document, as one escaped line."""
+    return MdDoc.escape(" ".join(str(value).split()))
+
+
+def _inline_code(value: str) -> str:
+    """Text from a document, as one code span."""
+    return MdDoc.code(" ".join(str(value).split()))
+
+
+def _test_type_labels(codes: set[str]) -> dict[str, str]:
+    if not codes:
+        return {}
+    rows = get_current_session().execute(
+        select(TestType.test_type, TestType.test_name_short).where(TestType.test_type.in_(codes))
+    )
+    return {code: short_name or code for code, short_name in rows}

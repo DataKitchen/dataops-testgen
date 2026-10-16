@@ -183,7 +183,7 @@ def validate_custom_metadata(value: object) -> str | None:
     ``custom_metadata`` must be a JSON object (key-value pairs), bounded in key count and serialized
     size. A value under the reserved ``odcs`` key, when present, must itself be a JSON object, and
     any of its ``dimension``, ``tags``, ``customProperties``, ``authoritativeDefinitions``,
-    ``name``, ``businessImpact``, ``method``, ``schedule``, or ``scheduler`` fields it carries must
+    ``name``, ``description``, ``businessImpact``, ``method``, ``schedule``, or ``scheduler`` fields it carries must
     conform to the shape a rendered contract document requires. An unrecognized key at the
     subtree's own top level is accepted -- it is simply not emitted at render, which keeps a
     document written by a newer TestGen readable by an older one. That tolerance does not extend
@@ -207,10 +207,10 @@ def validate_custom_metadata(value: object) -> str | None:
     return None
 
 
-# Reserved-subtree fields that must be strings when present. Only these five carry that
+# Reserved-subtree fields that must be strings when present. Only these six carry that
 # constraint -- ``dimension``, ``tags``, ``customProperties`` and ``authoritativeDefinitions``
 # each have their own list-of-objects shape instead.
-_ODCS_STRING_FIELDS = ("name", "businessImpact", "method", "schedule", "scheduler")
+_ODCS_STRING_FIELDS = ("name", "description", "businessImpact", "method", "schedule", "scheduler")
 
 # The pinned ODCS schema's ``CustomProperty``/``AuthoritativeDefinitions`` item objects are
 # sealed (``additionalProperties: false``); a stray key inside one is invalid ODCS
@@ -228,8 +228,9 @@ ODCS_AUTHORITATIVE_DEFINITION_REQUIRED_FIELDS = frozenset({"url", "type"})
 # ``AuthoritativeDefinitions[].id`` are a ``$ref`` to. A value here that does not match is the
 # same failure shape as a stray key: it saves cleanly and then blocks the version's freeze.
 #
-# The rule's own ``id`` (``contract_term_id``) needs no equivalent check: ``slugify_term_id``
-# already constrains it to ``^[A-Za-z0-9_-]+$``, a strict subset of this pattern.
+# The rule's own ``id`` (``contract_term_id``) needs no equivalent check: a minted id comes from
+# ``slugify_term_id`` (``^[A-Za-z0-9_-]+$``, a strict subset of this pattern), and an imported one
+# arrives in a document already validated against the schema.
 ODCS_STABLE_ID_PATTERN = re.compile(r"^[^\s.#/\\@!%&^]+$")
 
 
@@ -740,6 +741,74 @@ def one_of_fields_for(test_type: TestType) -> list[str]:
     return [col for col in _param_columns(test_type) if col in flagged]
 
 
+# `test_definitions` columns a write sets that the schema bounds, and their widths in characters.
+# Must match the column widths in 030_initialize_new_schema_structure.sql.
+_COLUMN_WIDTHS: dict[str, int] = {
+    "test_description": 1000,
+    "schema_name": 100,
+    "table_name": 100,
+    "column_name": 500,
+    "baseline_ct": 1000,
+    "baseline_unique_ct": 1000,
+    "baseline_value": 1000,
+    "baseline_value_ct": 1000,
+    "threshold_value": 1000,
+    "baseline_sum": 1000,
+    "baseline_avg": 1000,
+    "baseline_sd": 1000,
+    "lower_tolerance": 1000,
+    "upper_tolerance": 1000,
+    "subset_condition": 500,
+    "having_condition": 500,
+    "window_date_column": 100,
+    "match_schema_name": 100,
+    "match_table_name": 100,
+    "match_column_names": 200,
+    "match_subset_condition": 500,
+    "match_having_condition": 500,
+    "history_calculation": 1000,
+    "history_calculation_upper": 1000,
+    "contract_term_id": 100,
+}
+_UNBOUNDED_TEXT_COLUMNS = ("groupby_names", "match_groupby_names", "custom_query", "external_url")
+_INTEGER_COLUMNS = ("skip_errors", "window_days", "history_lookback")
+_MAX_INTEGER = 2**31 - 1
+
+
+def _storage_errors(value_of: Callable[[str], object]) -> dict[str, str]:
+    """Fields whose value the ``test_definitions`` column cannot store, mapped to the reason.
+
+    ``value_of`` returns a field's value by name.
+    """
+    errors: dict[str, str] = {}
+    for field in (*_COLUMN_WIDTHS, *_UNBOUNDED_TEXT_COLUMNS, *_INTEGER_COLUMNS):
+        value = value_of(field)
+        if value is None:
+            continue
+        if isinstance(value, dict | list):
+            errors[field] = "must be a single value"
+        elif field in _INTEGER_COLUMNS and not _is_storable_integer(value):
+            errors[field] = "must be a whole number"
+        elif (width := _COLUMN_WIDTHS.get(field)) and len(str(value)) > width:
+            errors[field] = f"must be at most {width} characters"
+    return errors
+
+
+def _is_storable_integer(value: object) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if isinstance(value, str):
+        if value == "":
+            return True
+        digits = value.strip()
+        if not (digits.isascii() and digits.lstrip("+-").isdigit()):
+            return False
+        value = int(digits)
+    return isinstance(value, int) and abs(value) <= _MAX_INTEGER
+
+
 def missing_required_fields(test_type: TestType, value_of: Callable[[str], object]) -> dict[str, str]:
     """Required fields of ``test_type`` that are blank, mapped to the reason.
 
@@ -747,7 +816,7 @@ def missing_required_fields(test_type: TestType, value_of: Callable[[str], objec
     :func:`_required_fields_for` and the group from :func:`one_of_fields_for`.
     """
     errors = {
-        field: f"required for test type `{test_type.test_type}`"
+        field: f"required for test type `{test_type.test_name_short}`"
         for field in _required_fields_for(test_type)
         if _is_blank(value_of(field))
     }
@@ -755,7 +824,7 @@ def missing_required_fields(test_type: TestType, value_of: Callable[[str], objec
     if one_of and all(_is_blank(value_of(field)) for field in one_of):
         listed = ", ".join(f"`{field}`" for field in one_of)
         for field in one_of:
-            errors[field] = f"at least one of {listed} is required for test type `{test_type.test_type}`"
+            errors[field] = f"at least one of {listed} is required for test type `{test_type.test_name_short}`"
     return errors
 
 
@@ -1401,13 +1470,13 @@ class TestDefinition(Entity):
         # expression or categorical column list under test). Table-scoped tests don't use it.
         if test_type.test_scope not in ("column", "custom", "referential") and not _is_blank(self.column_name):
             errors["column_name"] = (
-                f"test type `{test_type.test_type}` has scope `{test_type.test_scope}`; "
+                f"test type `{test_type.test_name_short}` has scope `{test_type.test_scope}`; "
                 f"column_name does not apply to this scope"
             )
 
         if not _is_blank(self.custom_query) and "custom_query" not in test_type.param_columns:
             errors["custom_query"] = (
-                f"test type `{test_type.test_type}` does not accept a custom query"
+                f"test type `{test_type.test_name_short}` does not accept a custom query"
             )
 
         metadata_error = validate_custom_metadata(self.custom_metadata)
@@ -1415,6 +1484,7 @@ class TestDefinition(Entity):
             errors["custom_metadata"] = metadata_error
 
         errors.update(missing_required_fields(test_type, lambda field: getattr(self, field, None)))
+        errors.update(_storage_errors(lambda field: getattr(self, field, None)))
 
         if errors:
             raise InvalidTestDefinitionFields(errors)

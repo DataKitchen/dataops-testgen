@@ -4,6 +4,7 @@ from importlib import resources
 import pytest
 import yaml
 
+from testgen.common.flavors import SqlFlavorCode
 from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.odcs.quality_rules import project_rule
 from testgen.common.odcs.serialize import (
@@ -13,7 +14,6 @@ from testgen.common.odcs.serialize import (
     SCHEMA_KEY_ORDER,
     serialize_document,
 )
-from testgen.common.odcs.servers import ServerType
 
 pytestmark = pytest.mark.unit
 
@@ -188,7 +188,7 @@ def _real_projected_rule() -> dict:
     # below exercises both branches of the ordering logic and would surface a leaked
     # StrEnum member from the real production code path, not a fixture built to avoid one.
     term = _term()
-    return project_rule(term, _test_type("Required"), ServerType.POSTGRES)
+    return project_rule(term, _test_type("Required"), SqlFlavorCode.POSTGRESQL)
 
 
 def test_reserialising_a_parsed_document_is_byte_identical():

@@ -1066,7 +1066,7 @@ def test_create_test_column_scope_requires_column_name(
         "threshold_value", "column_name",
     }
     saved.validate.side_effect = InvalidTestDefinitionFields(
-        {"column_name": "required for test type `Alpha_Trunc`"}
+        {"column_name": "required for test type `Alpha Truncation`"}
     )
     mock_td.return_value = saved
 

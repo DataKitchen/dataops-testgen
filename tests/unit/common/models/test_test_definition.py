@@ -1,12 +1,17 @@
 """Tests for TestDefinition model methods."""
 
+import re
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
 from testgen.common.models.test_definition import (
+    _COLUMN_WIDTHS,
+    _INTEGER_COLUMNS,
+    _UNBOUNDED_TEXT_COLUMNS,
     CUSTOM_METADATA_MAX_BYTES,
     CUSTOM_METADATA_MAX_KEYS,
     InvalidTestDefinitionFields,
@@ -228,6 +233,51 @@ def test_validate_happy_path():
     tt = make_test_type()
     td = make_td(column_name="email", threshold_value="10")
     td.validate(tt)  # no raise
+
+
+def test_the_storage_checks_match_the_test_definitions_schema():
+    schema = (Path(__file__).parents[4] / "testgen" / "template" / "dbsetup"
+              / "030_initialize_new_schema_structure.sql").read_text()
+    block = re.search(r"CREATE TABLE test_definitions \((.*?)\n\);", schema, re.DOTALL).group(1)
+    types = dict(re.findall(r"^\s+(\w+)\s+(\w+(?:\(\d+\))?)", block, re.MULTILINE))
+
+    assert {field: f"VARCHAR({width})" for field, width in _COLUMN_WIDTHS.items()} == {
+        field: types[field] for field in _COLUMN_WIDTHS
+    }
+    assert {types[field] for field in _INTEGER_COLUMNS} == {"INTEGER"}
+    assert {types[field] for field in _UNBOUNDED_TEXT_COLUMNS} == {"VARCHAR"}
+
+
+@pytest.mark.parametrize(("field", "value", "reason"), [
+    ("baseline_value", "x" * 1001, "must be at most 1000 characters"),
+    ("subset_condition", "x" * 501, "must be at most 500 characters"),
+    ("match_column_names", "x" * 201, "must be at most 200 characters"),
+    ("skip_errors", "many", "must be a whole number"),
+    ("skip_errors", "  ", "must be a whole number"),
+    ("skip_errors", "\u0665", "must be a whole number"),
+    ("window_days", 2.5, "must be a whole number"),
+    ("history_lookback", 2**31, "must be a whole number"),
+    ("groupby_names", ["a", "b"], "must be a single value"),
+], ids=[
+    "baseline_value", "subset_condition", "match_column_names", "integer_text", "integer_blank", "integer_non_ascii",
+    "fraction", "overflow", "list",
+])
+def test_validate_rejects_a_value_its_column_cannot_store(field, value, reason):
+    td = make_td(column_name="email", threshold_value="10", **{field: value})
+    with pytest.raises(InvalidTestDefinitionFields) as exc_info:
+        td.validate(make_test_type())
+    assert exc_info.value.errors[field] == reason
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("baseline_value", "x" * 1000),
+    ("skip_errors", "5"),
+    ("skip_errors", ""),
+    ("window_days", 7.0),
+    ("groupby_names", "x" * 5000),
+], ids=["baseline_value", "integer_text", "integer_blank", "integral_float", "unbounded_text"])
+def test_validate_accepts_a_value_its_column_can_store(field, value):
+    make_td(column_name="email", threshold_value="10", **{field: value}).validate(make_test_type())
 
 
 def test_validate_missing_required_column_name():

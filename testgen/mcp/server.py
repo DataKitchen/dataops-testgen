@@ -259,6 +259,7 @@ def build_mcp_server(
         export_contract,
         freeze_contract_version,
         get_contract_metadata,
+        import_contract,
         list_contract_versions,
     )
     from testgen.mcp.tools.data_catalog import update_catalog_metadata
@@ -547,6 +548,7 @@ def build_mcp_server(
     if not env_hides_source_only_tools:
         tool_wrapper(export_contract)
     tool_wrapper(get_contract_metadata)
+    tool_wrapper(import_contract)
     tool_wrapper(update_catalog_metadata)
 
     # Resources

@@ -115,8 +115,10 @@ def test_sql_metric_is_the_only_sql_row():
     }
 
 
-def test_the_declaration_types_are_the_decided_six():
-    assert DECLARATION_TEST_TYPES == {"Min_Val", "Max_Val", "Min_Date", "Max_Date", "Text_Length_Range", "Unique"}
+def test_the_declaration_types_are_the_decided_seven():
+    assert DECLARATION_TEST_TYPES == {
+        "Min_Val", "Max_Val", "Min_Date", "Max_Date", "Text_Length_Range", "Unique", "Required",
+    }
 
 
 def test_every_custom_routing_reason_names_a_custom_catalogue_type():
@@ -175,6 +177,7 @@ def test_dupe_rows_routes_to_the_library_table():
 def _test_type_stub(entry: dict) -> SimpleNamespace:
     return SimpleNamespace(
         test_type=entry["test_type"],
+        test_name_short=entry["test_name_short"],
         test_scope=entry["test_scope"],
         column_name_prompt=entry.get("column_name_prompt"),
         default_parm_columns=entry.get("default_parm_columns"),

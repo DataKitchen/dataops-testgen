@@ -65,10 +65,10 @@ def test_a_document_with_no_api_version_falls_back_to_the_pinned_schema():
     assert validate_document(document) == ["$: 'apiVersion' is a required property"]
 
 
-@pytest.mark.parametrize("declared", ["v3.1.0", "v2.2.0"])
+@pytest.mark.parametrize("declared", ["v3.0.2", "v2.2.0"])
 def test_an_api_version_the_standard_allows_but_we_do_not_bundle_is_a_reported_problem(declared):
     """These are legal ODCS -- the schema's own ``apiVersion`` enum accepts eight versions and
-    we bundle one. A document declaring another is a document we cannot check, which belongs in
+    we bundle those from v3.1.0 on. A document declaring another is a document we cannot check, which belongs in
     the problem list beside every other violation rather than coming out as an exception."""
     problems = validate_document(_minimal_document() | {"apiVersion": declared})
 
@@ -78,10 +78,20 @@ def test_an_api_version_the_standard_allows_but_we_do_not_bundle_is_a_reported_p
 
 def test_a_document_is_checked_against_the_version_it_declares():
     """Not against a version supplied alongside it: a document validated against someone
-    else's ruler reports clean while saying it is something we never checked."""
+    else's ruler reports clean while saying it is something we never checked. ``context`` is a
+    root field v3.2.0 added."""
+    document = _minimal_document() | {"status": "active", "context": {}}
+
+    assert validate_document(document) == []
+    assert validate_document(document | {"apiVersion": "v3.1.0"}) != [], "the declared version was ignored"
+
+
+def test_a_v3_1_document_validates_against_its_own_schema():
+    """v3.1.0 requires ``status``, which v3.2.0 made optional."""
     document = _minimal_document() | {"apiVersion": "v3.1.0"}
 
-    assert validate_document(document) != [], "the declared version was ignored"
+    assert validate_document(document) == ["$: 'status' is a required property"]
+    assert validate_document(document | {"status": "active"}) == []
 
 
 def test_an_api_version_outside_the_standard_is_also_a_reported_problem():

@@ -10,7 +10,7 @@ from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.odcs import render
 from testgen.common.odcs.quality_rules import CatCondition
 from testgen.common.odcs.render import OrphanedTermError, render_document
-from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, UnmappedFlavorError
+from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND
 from testgen.common.odcs.validation import validate_document
 from tests.unit.sql_assertions import conjuncts, emitted_statements, equality_conjunct, scopes_to_a_version
 
@@ -146,19 +146,30 @@ def test_a_term_whose_test_type_left_the_catalogue_is_refused_by_name():
     assert "Gone_From_Catalogue" in str(excinfo.value)
 
 
-def test_a_flavor_that_maps_to_no_server_type_is_refused_by_name():
-    """``build_server_block`` checks this at contract creation and raises ``UnmappedFlavorError``;
-    rendering looked the same value up with a bare subscript, so any later divergence surfaced
-    as ``KeyError`` naming only an enum member."""
+def test_a_contract_on_a_flavor_with_no_server_type_renders_its_rules_without_a_server_type_marker():
     version = _version(metadata_document={"schema": [{"name": "orders"}]})
-    term = _term(
-        test_type="Row_Ct", column_name=None, table_name="orders",
-        threshold_value="10", contract_term_id="term-row-ct",
-    )
-    test_types = {"Row_Ct": _test_type("Row_Ct", test_scope="table", dq_dimension="Completeness")}
+    terms = [
+        _term(
+            test_type="Row_Ct", column_name=None, table_name="orders",
+            threshold_value="10", contract_term_id="term-row-ct",
+        ),
+        _term(
+            test_type="CUSTOM", column_name="Order Total Matches Detail", table_name="orders",
+            custom_query="SELECT 1", contract_term_id="term-custom",
+        ),
+    ]
+    test_types = {
+        "Row_Ct": _test_type("Row_Ct", test_scope="table", dq_dimension="Completeness"),
+        "CUSTOM": _test_type("CUSTOM", test_scope="custom", dq_dimension="Accuracy"),
+    }
 
-    with pytest.raises(UnmappedFlavorError, match="s3"):
-        _render_with(version=version, terms=[term], test_types=test_types, flavor_code="s3")
+    rendered = _render_with(version=version, terms=terms, test_types=test_types, flavor_code="s3")
+
+    rules = _all_rules(rendered)
+    assert [rule["id"] for rule in rules] == ["term-row-ct", "term-custom"]
+    assert not any(
+        entry["property"] == "serverType" for rule in rules for entry in rule.get("customProperties", [])
+    )
 
 
 def test_a_table_level_term_lands_on_the_table_node():
@@ -177,7 +188,7 @@ def test_a_column_level_term_lands_on_its_column_node():
     version = _version(
         metadata_document={"schema": [{"name": "orders", "properties": [{"name": "amount"}]}]}
     )
-    term = _term(test_type="Required", column_name="amount", table_name="orders", threshold_value="0", contract_term_id="term-required")
+    term = _term(test_type="Required", column_name="amount", table_name="orders", threshold_value="2", contract_term_id="term-required")
     test_types = {"Required": _test_type("Required", test_scope="column", dq_dimension="Completeness")}
 
     rendered = _render_with(version=version, terms=[term], test_types=test_types)
@@ -195,7 +206,7 @@ def test_a_schema_conformance_term_renders_no_rule():
         metadata_document={"schema": [{"name": "orders", "properties": [{"name": "amount"}]}]}
     )
     terms = [
-        _term(test_type="Required", column_name="amount", table_name="orders", threshold_value="0", contract_term_id="term-required"),
+        _term(test_type="Required", column_name="amount", table_name="orders", threshold_value="2", contract_term_id="term-required"),
         _term(test_type="Schema_Conformance", column_name=None, table_name="orders", threshold_value=None, contract_term_id="term-conformance"),
     ]
     test_types = {"Required": _test_type("Required", test_scope="column", dq_dimension="Completeness")}
@@ -245,6 +256,7 @@ def test_a_term_whose_subject_is_an_expression_lands_under_a_measure_property():
     assert prop["semanticType"] == "measure"
     assert prop["logicalType"] == "number"
     assert prop["transformLogic"] == "SUM(total_amount)"
+    assert prop["customProperties"] == [{"property": "synthesized", "value": True, "vendor": "testgen"}]
     assert [rule["id"] for rule in prop["quality"]] == ["term-avg-shift"]
 
 
@@ -406,7 +418,7 @@ def test_the_rendered_rule_count_equals_the_term_count():
     )
     terms = [
         _term(test_type="Row_Ct", column_name=None, table_name="orders", threshold_value="10", contract_term_id="term-row-ct"),
-        _term(test_type="Required", column_name="amount", table_name="orders", threshold_value="0", contract_term_id="term-required"),
+        _term(test_type="Required", column_name="amount", table_name="orders", threshold_value="2", contract_term_id="term-required"),
         _term(
             test_type="Avg_Shift", column_name="SUM(total_amount)", table_name="orders",
             threshold_value="5", contract_term_id="term-avg-shift",
@@ -467,7 +479,7 @@ def test_a_list_of_values_term_declares_the_columns_enum_as_well_as_its_rule():
     assert [rule["id"] for rule in prop["quality"]] == ["term-lov"]
 
 
-def test_an_already_declared_enum_is_not_overwritten():
+def test_a_stored_enum_gives_way_to_the_list_of_values_term():
     version = _version(
         metadata_document={
             "schema": [
@@ -487,8 +499,26 @@ def test_an_already_declared_enum_is_not_overwritten():
     rendered = _render_with(version=version, terms=[term], test_types=test_types)
 
     prop = _property_named(rendered, "status")
-    assert prop["enum"] == [{"value": "PRE_EXISTING"}]
+    assert prop["enum"] == [{"value": "Y"}, {"value": "N"}]
     assert [rule["id"] for rule in prop["quality"]] == ["term-lov"]
+
+
+def test_a_second_list_of_values_term_keeps_the_first_terms_enum():
+    version = _version(metadata_document={"schema": [{"name": "orders", "properties": [{"name": "status"}]}]})
+    terms = [
+        _term(
+            test_type="LOV_Match", column_name="status", table_name="orders",
+            baseline_value=values, threshold_value="0", contract_term_id=term_id,
+        )
+        for term_id, values in (("term-lov-a", "('Y','N')"), ("term-lov-b", "('X')"))
+    ]
+    test_types = {"LOV_Match": _test_type("LOV_Match", test_scope="column", dq_dimension="Validity")}
+
+    rendered = _render_with(version=version, terms=terms, test_types=test_types)
+
+    prop = _property_named(rendered, "status")
+    assert prop["enum"] == [{"value": "Y"}, {"value": "N"}]
+    assert [rule["id"] for rule in prop["quality"]] == ["term-lov-a", "term-lov-b"]
 
 
 def test_a_term_whose_table_is_not_declared_raises_rather_than_being_dropped():
@@ -548,7 +578,7 @@ def test_rendering_does_not_mutate_the_stored_document():
         metadata_document={"schema": [{"name": "orders", "properties": [{"name": "amount"}]}]}
     )
     before = copy.deepcopy(version.metadata_document)
-    term = _term(test_type="Required", column_name="amount", table_name="orders", threshold_value="0", contract_term_id="term-required")
+    term = _term(test_type="Required", column_name="amount", table_name="orders", threshold_value="2", contract_term_id="term-required")
     test_types = {"Required": _test_type("Required", test_scope="column", dq_dimension="Completeness")}
 
     rendered = _render_with(version=version, terms=[term], test_types=test_types)
@@ -710,7 +740,7 @@ def _declaring_version(*properties: dict) -> SuiteVersion:
 
 _COLUMN_TYPES = {
     code: _test_type(code, test_scope="column")
-    for code in ("Min_Val", "Max_Val", "Min_Date", "Max_Date", "Text_Length_Range", "Unique", "Constant")
+    for code in ("Min_Val", "Max_Val", "Min_Date", "Max_Date", "Text_Length_Range", "Unique", "Required", "Constant")
 }
 
 
@@ -798,6 +828,18 @@ def test_unique_declares_required_too():
 
     prop = _property_named(document, "order_id")
     assert (prop["unique"], prop["required"]) == (True, True)
+    assert _all_rules(document) == []
+
+
+def test_a_required_term_allowing_no_exceptions_declares_required():
+    version = _declaring_version({"name": "email", "logicalType": "string"})
+    term = _term(test_type="Required", column_name="email", contract_term_id="term-required")
+
+    document = _render_with(version=version, terms=[term], test_types=_COLUMN_TYPES)
+
+    prop = _property_named(document, "email")
+    assert prop["required"] is True
+    assert [entry["value"]["declares"] for entry in prop["customProperties"]] == [["required"]]
     assert _all_rules(document) == []
 
 

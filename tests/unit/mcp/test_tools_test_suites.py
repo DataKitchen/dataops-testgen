@@ -6,8 +6,9 @@ from uuid import uuid4
 import pytest
 
 from testgen.commands.test_generation import ContractGenerationResult
+from testgen.common.contract_service import InitializedContract
 from testgen.common.enums import SuiteType
-from testgen.common.odcs.servers import UnmappedFlavorError
+from testgen.common.odcs.servers import CustomServerReason, ServerType
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
@@ -425,68 +426,39 @@ def test_create_test_suite_regular_type_does_not_touch_the_contract_service(
 @patch(f"{MODULE}.Connection")
 @patch(f"{MODULE}.TestSuite")
 @patch(f"{MODULE}.resolve_table_group")
-def test_create_test_suite_contract_on_unmapped_flavor_is_a_user_facing_error(
+def test_create_test_suite_contract_on_a_flavor_with_no_server_type_says_its_entry_is_custom(
     mock_resolve, mock_suite_cls, mock_connection_cls, mock_contract_service, db_session_mock,
 ):
-    """build_server_block raises a bare ValueError for a flavor with no ODCS server type;
-    the MCP boundary must translate it rather than let it escape as an unhandled traceback."""
     tg = _mock_table_group()
     mock_resolve.return_value = tg
     mock_suite_cls.return_value = _mock_test_suite(suite_type=SuiteType.CONTRACT)
     connection = MagicMock()
     connection.sql_flavor_code = "redshift_spectrum"
     mock_connection_cls.get.return_value = connection
-    mock_contract_service.initialize_contract.side_effect = UnmappedFlavorError(
-        "No server type for flavor 'redshift_spectrum'."
+    mock_contract_service.initialize_contract.return_value = InitializedContract(
+        draft=MagicMock(), custom_server_reason=CustomServerReason(server_type=None)
     )
 
     from testgen.mcp.tools.test_suites import create_test_suite
 
-    with _patch_perms(), pytest.raises(MCPUserError) as exc:
-        create_test_suite(
+    with _patch_perms():
+        out = create_test_suite(
             table_group_id=str(tg.id), test_suite_name="Orders contract", suite_type="Contract"
         )
 
-    msg = str(exc.value)
-    assert "Amazon Redshift Spectrum" in msg
-    assert "cannot be created" in msg
-    assert "redshift_spectrum" not in msg
-    assert "No server type" not in msg
+    assert (
+        "The contract's server entry uses the custom type, because a `Amazon Redshift Spectrum` connection "
+        "has no matching server type in the standard."
+    ) in out
+    assert "redshift_spectrum" not in out
 
 
-@patch(f"{MODULE}.Connection")
-@patch(f"{MODULE}.TestSuite")
-@patch(f"{MODULE}.resolve_table_group")
-def test_create_test_suite_contract_on_table_group_with_no_connection_is_a_user_facing_error(
-    mock_resolve, mock_suite_cls, mock_connection_cls, db_session_mock,
-):
-    """table_groups.connection_id is nullable; a contract needs a connection to build the
-    server block from, so a table group without one must fail with a clean message, not an
-    AttributeError from dereferencing a None connection."""
-    tg = _mock_table_group(connection_id=None, table_groups_name="Orphan TG")
-    mock_resolve.return_value = tg
-    mock_suite_cls.return_value = _mock_test_suite(suite_type=SuiteType.CONTRACT)
-
-    from testgen.mcp.tools.test_suites import create_test_suite
-
-    with _patch_perms(), pytest.raises(MCPUserError) as exc:
-        create_test_suite(
-            table_group_id=str(tg.id), test_suite_name="Orders contract", suite_type="Contract"
-        )
-
-    msg = str(exc.value)
-    assert "Orphan TG" in msg
-    assert "no connection" in msg
-    mock_connection_cls.get.assert_not_called()
-
-
-def test_create_test_suite_contract_composition_surfaces_the_real_unmapped_flavor_error(db_session_mock):
-    """Keeps contract_service.initialize_contract and build_server_block REAL, so this proves
-    an actually-unmapped flavor produces a ValueError that reaches the MCP translation — not
-    just that the translation re-raises whatever ValueError a mock is told to throw."""
+def test_create_test_suite_contract_composition_creates_a_custom_entry_for_a_real_unmapped_flavor(db_session_mock):
+    """Keeps contract_service.initialize_contract and build_server_block REAL, so this proves a
+    genuinely unmapped flavor creates the contract with a custom entry and says so."""
     tg = _mock_table_group()
-    connection = MagicMock()
-    connection.sql_flavor_code = "redshift_spectrum"  # a genuinely unmapped flavor code
+    connection = MagicMock(project_host="rs.example", project_port="5439", project_db="analytics", parameters={})
+    connection.sql_flavor_code = "redshift_spectrum"
 
     from testgen.mcp.tools.test_suites import create_test_suite
 
@@ -498,16 +470,14 @@ def test_create_test_suite_contract_composition_surfaces_the_real_unmapped_flavo
         _patch_perms(),
     ):
         mock_connection_cls.get.return_value = connection
-        with pytest.raises(MCPUserError) as exc:
-            create_test_suite(
-                table_group_id=str(tg.id), test_suite_name="Orders contract", suite_type="Contract"
-            )
+        out = create_test_suite(
+            table_group_id=str(tg.id), test_suite_name="Orders contract", suite_type="Contract"
+        )
 
-    msg = str(exc.value)
-    assert "Amazon Redshift Spectrum" in msg
-    assert "cannot be created" in msg
-    assert "redshift_spectrum" not in msg
-    assert "No server type" not in msg
+    assert "Test Suite `" in out
+    assert "uses the custom type, because a `Amazon Redshift Spectrum` connection" in out
+    draft = db_session_mock.add.call_args_list[-1].args[0]
+    assert draft.metadata_document["servers"][0]["type"] == "custom"
 
 
 @patch(f"{MODULE}.resolve_table_group")
@@ -843,28 +813,36 @@ def test_update_test_suite_allows_role_with_edit_but_not_administer(mock_resolve
 @patch(f"{MODULE}.Connection")
 @patch(f"{MODULE}.TestSuite")
 @patch(f"{MODULE}.resolve_table_group")
-def test_create_test_suite_contract_missing_field_names_the_field(
+def test_create_test_suite_contract_missing_fields_names_the_fields_and_the_type(
     mock_resolve, mock_suite_cls, mock_connection_cls, mock_contract_service, db_session_mock,
 ):
-    """build_server_block raises ValueError both for an unmapped flavor and for a mapped one
-    whose connection is missing a required field. Reporting the second as the first tells a
-    user on a supported flavor that their flavor is unsupported.
-    """
     tg = _mock_table_group()
     mock_resolve.return_value = tg
     mock_suite_cls.return_value = _mock_test_suite(suite_type=SuiteType.CONTRACT)
     connection = MagicMock()
     connection.sql_flavor_code = "postgresql"
     mock_connection_cls.get.return_value = connection
-    mock_contract_service.initialize_contract.side_effect = ValueError(
-        "The connection does not supply port, which postgres requires."
+    mock_contract_service.initialize_contract.return_value = InitializedContract(
+        draft=MagicMock(),
+        custom_server_reason=CustomServerReason(server_type=ServerType.POSTGRES, missing_fields=("host", "port")),
     )
 
     from testgen.mcp.tools.test_suites import create_test_suite
 
-    with _patch_perms(), pytest.raises(MCPUserError) as exc:
-        create_test_suite(
+    with _patch_perms():
+        out = create_test_suite(
             table_group_id=str(tg.id), test_suite_name="Orders contract", suite_type="Contract"
         )
 
-    assert "port" in str(exc.value)
+    assert (
+        "The contract's server entry uses the custom type, because the connection does not supply "
+        "`host`, `port`, which `postgres` requires."
+    ) in out
+
+
+def test_a_typed_server_entry_adds_no_note():
+    from testgen.mcp.tools.test_suites import _render_created_suite
+
+    out = _render_created_suite(_mock_test_suite(suite_type=SuiteType.CONTRACT), table_group_name="TG")
+
+    assert "custom type" not in out

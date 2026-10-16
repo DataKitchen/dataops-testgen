@@ -27,7 +27,7 @@ from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import MANAGED_TEST_TYPES, TestDefinition
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.odcs import render, serialize
-from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, build_server_block
+from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, CustomServerReason, build_server_block
 from testgen.common.odcs.validation import validate_document
 
 
@@ -174,12 +174,21 @@ def _active_version(suite: TestSuite) -> SuiteVersion | None:
     return SuiteVersion.in_force_for(suite.id)
 
 
+@dataclass(frozen=True)
+class InitializedContract:
+    """A contract's first draft, and why its server entry is ``custom`` when it is."""
+
+    draft: SuiteVersion
+    custom_server_reason: CustomServerReason | None
+
+
 def initialize_contract(
     suite: TestSuite, table_group: TableGroup, connection: Connection, username: str | None = None
-) -> SuiteVersion:
+) -> InitializedContract:
     """Give a newly created contract its first draft, generation set and prefilled document."""
     _assert_contract(suite)
     session = get_current_session()
+    server = build_server_block(connection, table_group)
     version = SuiteVersion.next_version_for(suite.id)
     draft = SuiteVersion(
         id=uuid4(),
@@ -191,7 +200,7 @@ def initialize_contract(
             "id": str(suite.id),
             "version": SuiteVersion.document_version(version),
             "name": suite.test_suite,
-            "servers": [build_server_block(connection, table_group)],
+            "servers": [server.entry],
             "schema": [],
         },
         odcs_api_version=ODCS_API_VERSION,
@@ -200,7 +209,7 @@ def initialize_contract(
     session.add(draft)
     suite.generation_sets = [CONTRACT_GENERATION_SET]
     session.flush()
-    return draft
+    return InitializedContract(draft=draft, custom_server_reason=server.custom_reason)
 
 
 def add_table(suite: TestSuite, table_name: str) -> ContractGenerationResult:
