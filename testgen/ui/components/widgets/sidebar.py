@@ -66,13 +66,7 @@ def _on_navigate(payload: dict | None) -> None:
         return
 
     if payload.get("path") == LOGOUT_PATH:
-        session.auth.end_user_session()
-        # This hack is needed because the auth cookie does not immediately get cleared
-        # We don't want to try to load the session again on the next run
-        session.auth.logging_out = True
-        # streamlit_authenticator sets authentication_status implicitly
-        # So we need to clear it
-        session.authentication_status = None
+        session.auth.sign_out()
 
         Router().queue_navigation(to="")
         # Without the time.sleep, cookies sometimes don't get cleared on deployed instances

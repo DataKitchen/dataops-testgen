@@ -61,6 +61,19 @@ LOG_FILE_MAX_QTY: str = getenv("TESTGEN_LOG_FILE_MAX_QTY", "90")
 Maximum log files to keep, defaults to 90 days (one file per day).
 """
 
+AUDIT_LOG_ENABLED: bool = getenv("TESTGEN_AUDIT_LOG_ENABLED", "yes").lower() in ("yes", "true")
+"""
+When set, audit records are written to `audit.log` under `LOG_FILE_PATH`.
+
+from env variable: `TESTGEN_AUDIT_LOG_ENABLED`
+defaults to: `True`
+"""
+
+AUDIT_LOG_MAX_QTY: str = getenv("TESTGEN_AUDIT_LOG_MAX_QTY", "90")
+"""
+Maximum audit log files to keep, defaults to 90 days (one file per day).
+"""
+
 APP_ENCRYPTION_SALT: str = getenv("TG_DECRYPT_SALT")
 """
 Salt used to encrypt and decrypt user secrets. Only allows ascii

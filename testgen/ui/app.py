@@ -7,7 +7,10 @@ import streamlit as st
 
 from testgen import settings
 from testgen.common import version_service
+from testgen.common.audit.record import Actor
+from testgen.common.audit.recorder import AuditContext, set_context_resolver
 from testgen.common.docker_service import check_basic_configuration
+from testgen.common.enums import JobSource
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.standalone_postgres import STANDALONE_URI_ENV_VAR, ensure_standalone_setup, is_standalone_mode
 from testgen.ui import bootstrap
@@ -18,6 +21,14 @@ from testgen.ui.services.query_cache import select_projects_where
 from testgen.ui.session import session
 
 LOG = logging.getLogger("testgen")
+
+
+def _audit_context() -> AuditContext:
+    user = session.auth.user if session.auth else None
+    return AuditContext(source=JobSource.ui, actor=Actor.of(user) if user else None)
+
+
+set_context_resolver(_audit_context)
 
 if is_standalone_mode() and (standalone_uri := os.environ.get(STANDALONE_URI_ENV_VAR)):
     ensure_standalone_setup(standalone_uri)

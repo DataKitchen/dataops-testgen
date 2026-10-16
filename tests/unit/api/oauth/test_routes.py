@@ -2,12 +2,14 @@
 
 import os
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 os.environ.setdefault("AUTHLIB_INSECURE_TRANSPORT", "1")
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
 
 from testgen.api.deps import db_session
 from testgen.api.oauth.routes import (
@@ -17,6 +19,7 @@ from testgen.api.oauth.routes import (
     _security_headers,
     router,
 )
+from testgen.common.models import Session, bound_session
 from testgen.common.models.oauth import OAuth2ClientAuthMethod
 
 
@@ -24,9 +27,19 @@ def _noop_db_session():
     yield None
 
 
-def _make_client() -> TestClient:
+async def _sqlite_db_session():  # noqa: RUF029
+    # Async, as the real dependency is, so the bound session reaches the sync handler's worker thread.
+    session = Session(bind=create_engine("sqlite://", connect_args={"check_same_thread": False}))
+    with bound_session(session):
+        yield session
+    session.commit()
+    session.close()
+
+
+def _make_client(with_session: bool = False) -> TestClient:
+    """A client for the OAuth routes; ``with_session`` gives each request a committing in-memory session."""
     app = FastAPI()
-    app.dependency_overrides[db_session] = _noop_db_session
+    app.dependency_overrides[db_session] = _sqlite_db_session if with_session else _noop_db_session
     app.include_router(router)
     return TestClient(app)
 
@@ -218,6 +231,27 @@ def test_logout_returns_302_redirect():
     assert resp.headers["location"] == "/"
 
 
+@patch("testgen.api.oauth.routes._get_existing_user")
+def test_logout_records_the_signed_in_user(mock_existing_user, audit_log):
+    user = MagicMock()
+    user.id = uuid4()
+    user.username = "alice"
+    user.name = None
+    mock_existing_user.return_value = user
+
+    _make_client(with_session=True).get("/oauth/logout", follow_redirects=False)
+
+    [entry] = audit_log.records()
+    assert (entry["action"], entry["source"], entry["actor_id"]) == ("user.signed_out", "api", str(user.id))
+
+
+@patch("testgen.api.oauth.routes._get_existing_user", return_value=None)
+def test_logout_without_a_session_cookie_records_nothing(_mock_existing_user, audit_log):
+    _make_client(with_session=True).get("/oauth/logout", follow_redirects=False)
+
+    assert audit_log.records() == []
+
+
 def test_logout_clears_oauth_session_cookie():
     client = _make_client()
     resp = client.get("/oauth/logout", follow_redirects=False)
@@ -347,15 +381,18 @@ def test_authorize_get_skips_login_for_existing_user(mock_existing, mock_issue):
 @patch("testgen.api.oauth.routes._issue_auth_code")
 @patch("testgen.api.oauth.routes.verify_password", return_value=True)
 @patch("testgen.api.oauth.routes.User")
-def test_authorize_post_valid_credentials_issues_code(mock_user_cls, mock_verify, mock_issue):
+def test_authorize_post_valid_credentials_issues_code(mock_user_cls, mock_verify, mock_issue, audit_log):
     from fastapi.responses import RedirectResponse
 
     mock_user = MagicMock()
+    mock_user.id = uuid4()
+    mock_user.username = "alice"
+    mock_user.name = "Alice A."
     mock_user.password = "hashed"  # noqa: S105
     mock_user_cls.get.return_value = mock_user
     mock_issue.return_value = RedirectResponse(url="http://localhost/cb?code=ABC", status_code=302)
 
-    client = _make_client()
+    client = _make_client(with_session=True)
     resp = client.post(
         "/oauth/authorize",
         data={
@@ -371,17 +408,20 @@ def test_authorize_post_valid_credentials_issues_code(mock_user_cls, mock_verify
     mock_user_cls.get.assert_called_once_with("alice")
     mock_verify.assert_called_once_with("secret", "hashed")
     mock_issue.assert_called_once()
+    [entry] = audit_log.records()
+    assert (entry["action"], entry["outcome"], entry["source"]) == ("user.signed_in", "succeeded", "api")
+    assert (entry["actor_id"], entry["actor_username"]) == (str(mock_user.id), "alice")
 
 
 @patch("testgen.api.oauth.routes._get_client_name", return_value="")
 @patch("testgen.api.oauth.routes.verify_password", return_value=False)
 @patch("testgen.api.oauth.routes.User")
-def test_authorize_post_invalid_password_returns_401(mock_user_cls, mock_verify, mock_client_name):
+def test_authorize_post_invalid_password_returns_401(mock_user_cls, mock_verify, mock_client_name, audit_log):
     mock_user = MagicMock()
     mock_user.password = "hashed"  # noqa: S105
     mock_user_cls.get.return_value = mock_user
 
-    client = _make_client()
+    client = _make_client(with_session=True)
     resp = client.post(
         "/oauth/authorize",
         data={"username": "alice", "password": "wrong", "client_id": "abc123"},
@@ -389,14 +429,17 @@ def test_authorize_post_invalid_password_returns_401(mock_user_cls, mock_verify,
 
     assert resp.status_code == 401
     assert "Invalid username or password" in resp.text
+    [entry] = audit_log.records()
+    assert (entry["action"], entry["outcome"], entry["source"]) == ("user.signed_in", "failed", "api")
+    assert (entry["actor_id"], entry["actor_username"]) == (None, "alice")
 
 
 @patch("testgen.api.oauth.routes._get_client_name", return_value="")
 @patch("testgen.api.oauth.routes.User")
-def test_authorize_post_unknown_user_returns_401(mock_user_cls, mock_client_name):
+def test_authorize_post_unknown_user_returns_401(mock_user_cls, mock_client_name, audit_log):
     mock_user_cls.get.return_value = None
 
-    client = _make_client()
+    client = _make_client(with_session=True)
     resp = client.post(
         "/oauth/authorize",
         data={"username": "nobody", "password": "x", "client_id": "abc123"},
@@ -404,6 +447,8 @@ def test_authorize_post_unknown_user_returns_401(mock_user_cls, mock_client_name
 
     assert resp.status_code == 401
     assert "Invalid username or password" in resp.text
+    [entry] = audit_log.records()
+    assert (entry["outcome"], entry["actor_id"], entry["actor_username"]) == ("failed", None, "nobody")
 
 
 # --- POST /oauth/token ---

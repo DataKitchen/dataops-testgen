@@ -90,11 +90,16 @@ def test_credentials_still_log_the_user_in():
         auth.login_user.assert_called_once_with(USERNAME)
 
 
-def test_wrong_credentials_are_rejected():
+def test_wrong_credentials_are_rejected_and_recorded_once(audit_log):
     submitted = {"Username": USERNAME, "Password": "not-the-password"}
     with _rendered_login_page(submitted=submitted) as (state, auth):
-        assert state["authentication_status"] is False
         auth.login_user.assert_not_called()
+        # Cleared, so a later rerun without a new submit does not report the attempt again
+        assert state["authentication_status"] is None
+
+    [entry] = audit_log.records()
+    assert (entry["action"], entry["outcome"]) == ("user.signed_in", "failed")
+    assert (entry["actor_id"], entry["actor_username"]) == (None, USERNAME)
 
 
 def test_authenticator_reauthenticates_from_the_cookie_unless_disabled():
