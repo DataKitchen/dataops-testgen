@@ -16,9 +16,16 @@ from testgen.api.schemas import (
     JobResponse,
     JobSubmittedResponse,
     TestGenerationRequest,
+    TestGenerationSubmittedResponse,
     TestRunRequest,
 )
-from testgen.common.enums import JobKey, JobSource, JobStatus, PublicJobKey, SuiteType
+from testgen.commands.test_generation import (
+    TestsNeedProfilingError,
+    parse_regeneration_groups,
+    resolve_generation_profile_run,
+    unprofiled_regeneration_note,
+)
+from testgen.common.enums import JobKey, JobSource, JobStatus, PublicJobKey, RegenerationGroup, SuiteType
 from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.table_group import TableGroup
@@ -81,9 +88,9 @@ def submit_test_run(
 @router.post(
     "/test-suites/{test_suite_id}/test-generation",
     summary="Submit a test generation job",
-    response_model=JobSubmittedResponse,
+    response_model=TestGenerationSubmittedResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    responses={400: {"model": ErrorResponse, "description": "Invalid generation set"}},
+    responses={400: {"model": ErrorResponse, "description": "Invalid generation set or regeneration groups"}},
 )
 def submit_test_generation(
     test_suite: TestSuite = resolve_test_suite("edit", (SuiteType.REGULAR, SuiteType.CONTRACT)),  # noqa: B008
@@ -101,19 +108,44 @@ def submit_test_generation(
     Epoch Sum, in the Table Comparison set) are generated only from a profiling run that computed
     value hashes. That needs ``profile_table_comparison`` on the table group and a profiling run
     since it was turned on; otherwise they are not generated.
+
+    For a contract, ``regenerate`` chooses what is refreshed; omit it to refresh everything. Tests
+    alone cannot be regenerated before the table group has been profiled.
     """
+    regenerate = body.regenerate if body else None
+    is_contract = test_suite.suite_type == SuiteType.CONTRACT
+    if regenerate is not None and not is_contract:
+        raise api_error(400, "regeneration_groups_not_allowed", "Regeneration groups apply to contracts only.")
     try:
         generation_sets = resolve_generation_sets(test_suite, body.generation_sets if body else None)
     except ValueError as error:
         raise api_error(400, "invalid_generation_set", str(error)) from error
 
+    groups: list[RegenerationGroup] | None = None
+    note = None
+    if is_contract:
+        table_group = TableGroup.get(test_suite.table_groups_id)
+        profiled = resolve_generation_profile_run(table_group) is not None
+        try:
+            groups = parse_regeneration_groups(
+                list(RegenerationGroup) if regenerate is None else regenerate, has_profiling_run=profiled
+            )
+        except TestsNeedProfilingError as error:
+            raise api_error(400, "table_group_not_profiled", str(error)) from error
+        if not profiled:
+            note = unprofiled_regeneration_note(table_group.table_groups_name, groups)
+
     job = JobExecution.submit(
         job_key=JobKey.run_test_generation,
-        kwargs={"test_suite_id": str(test_suite.id), "generation_sets": generation_sets},
+        kwargs={
+            "test_suite_id": str(test_suite.id),
+            "generation_sets": generation_sets,
+            **({"regenerate": [str(group) for group in groups]} if groups else {}),
+        },
         source=JobSource.api,
         project_code=test_suite.project_code,
     )
-    return JobSubmittedResponse.model_validate(job, from_attributes=True)
+    return TestGenerationSubmittedResponse(id=job.id, created_at=job.created_at, regenerate=groups, note=note)
 
 
 @router.get(

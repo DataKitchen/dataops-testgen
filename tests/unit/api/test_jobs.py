@@ -254,15 +254,70 @@ def test_submit_test_generation_rejects_unknown_set(mock_je_cls, _mock_resolve):
 
 
 
-@patch(f"{MODULE}.resolve_generation_sets", return_value=["Contract"])
-@patch(f"{MODULE}.JobExecution")
-def test_submit_test_generation_submits_a_contract(mock_je_cls, _mock_resolve):
+def _submit_contract(regenerate=None, *, profiled=True):
     test_suite = _mock_test_suite(suite_type=SuiteType.CONTRACT)
-    mock_je_cls.submit.return_value = _mock_job(job_key="run-test-generation")
+    with (
+        patch(f"{MODULE}.resolve_generation_sets", return_value=["Contract"]),
+        patch(f"{MODULE}.TableGroup") as mock_tg_cls,
+        patch(f"{MODULE}.resolve_generation_profile_run", return_value=uuid4() if profiled else None),
+        patch(f"{MODULE}.JobExecution") as mock_je_cls,
+    ):
+        mock_tg_cls.get.return_value = MagicMock(table_groups_name="orders_tg")
+        mock_je_cls.submit.return_value = _mock_job(job_key="run-test-generation")
+        body = TestGenerationRequest(regenerate=regenerate) if regenerate is not None else None
+        result = submit_test_generation(test_suite, body)
+    return result, mock_je_cls.submit
 
-    submit_test_generation(test_suite)
 
-    assert mock_je_cls.submit.call_args.kwargs["kwargs"]["generation_sets"] == ["Contract"]
+def test_submit_test_generation_submits_a_contract_regenerating_everything_by_default():
+    result, submit = _submit_contract()
+
+    assert submit.call_args.kwargs["kwargs"]["generation_sets"] == ["Contract"]
+    assert submit.call_args.kwargs["kwargs"]["regenerate"] == ["tests", "profiling", "governance"]
+    assert result.regenerate == ["tests", "profiling", "governance"]
+    assert result.note is None
+
+
+def test_submit_test_generation_passes_a_contracts_chosen_groups_in_order():
+    result, submit = _submit_contract(["governance", "tests"])
+
+    assert submit.call_args.kwargs["kwargs"]["regenerate"] == ["tests", "governance"]
+    assert result.regenerate == ["tests", "governance"]
+
+
+def test_submit_test_generation_says_what_an_unprofiled_contract_skips():
+    result, submit = _submit_contract(["profiling", "governance"], profiled=False)
+
+    submit.assert_called_once()
+    assert result.note == "Table group `orders_tg` has not been profiled, so the values profiling observed are not refreshed."
+
+
+def test_submit_test_generation_refuses_tests_alone_for_an_unprofiled_contract():
+    with pytest.raises(HTTPException) as excinfo:
+        _submit_contract(["tests"], profiled=False)
+
+    assert excinfo.value.status_code == 400
+    assert excinfo.value.detail["errors"][0]["code"] == "table_group_not_profiled"
+
+
+@patch(f"{MODULE}.JobExecution")
+def test_submit_test_generation_refuses_groups_for_a_regular_suite(mock_je_cls):
+    with pytest.raises(HTTPException) as excinfo:
+        submit_test_generation(_mock_test_suite(), TestGenerationRequest(regenerate=["tests"]))
+
+    assert excinfo.value.status_code == 400
+    assert excinfo.value.detail["errors"][0]["code"] == "regeneration_groups_not_allowed"
+    mock_je_cls.submit.assert_not_called()
+
+
+def test_test_generation_request_refuses_an_empty_list_of_groups():
+    with pytest.raises(ValidationError, match="at least 1 item"):
+        TestGenerationRequest(regenerate=[])
+
+
+def test_test_generation_request_refuses_an_unknown_group():
+    with pytest.raises(ValidationError, match="'tests', 'profiling' or 'governance'"):
+        TestGenerationRequest(regenerate=["docs"])
 
 
 def test_submit_test_generation_resolves_regular_suites_and_contracts():

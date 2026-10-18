@@ -33,14 +33,14 @@ def _table_group(description: str | None = None, **tags):
     )
 
 
-def _refresh(document: dict, columns: list, table=None, table_group=None) -> dict[str, int]:
+def _refresh(document: dict, columns: list, table=None, table_group=None, **groups: bool) -> dict[str, int]:
     with (
         patch.object(contract_document, "catalog_columns", return_value=columns),
         patch.object(contract_document, "_catalog_table", return_value=table),
     ):
         table_group = table_group or _table_group()
         contract_document.refresh_identity(document, table_group)
-        return contract_document.refresh_tables(document, table_group, ["orders"])
+        return contract_document.refresh_tables(document, table_group, ["orders"], **groups)
 
 
 def _custom(node: dict) -> dict:
@@ -508,12 +508,16 @@ def _profile(table: str, column: str, **values):
     return SimpleNamespace(table_name=table, column_name=column, **{**fields, **values})
 
 
-def _fill(document: dict, profiles: list) -> None:
+def _fill(document: dict, profiles: list, catalog_excluded: dict[str, bool] | None = None) -> None:
     session = MagicMock()
     session.scalar.return_value = datetime(2026, 10, 14, 9, 30)
     session.scalars.return_value = profiles
+    session.execute.return_value = [
+        SimpleNamespace(table_name="orders", column_name=name, excluded_data_element=excluded)
+        for name, excluded in (catalog_excluded or {}).items()
+    ]
     with patch.object(contract_document, "get_current_session", return_value=session):
-        contract_document.fill_profiled_values(document, uuid4(), ["orders"])
+        contract_document.fill_profiled_values(document, uuid4(), uuid4(), ["orders"])
 
 
 def _document(*props: dict) -> dict:
@@ -597,3 +601,140 @@ def test_a_column_with_no_logical_type_or_an_excluded_column_gets_no_profiled_va
     _fill(document, [_profile("orders", "blob", min_length=1), _profile("orders", "secret", min_length=1)])
 
     assert all(_profiled_values(prop) is None for prop in document["schema"][0]["properties"])
+
+
+def test_profiled_values_follow_the_catalogs_exclusion_over_the_documents_marker():
+    document = _document(
+        {"name": "secret", "logicalType": "string"},
+        {"name": "code", "logicalType": "string",
+         "customProperties": [{"property": "excludedDataElement", "value": True}]},
+    )
+
+    _fill(
+        document,
+        [_profile("orders", "secret", min_length=1), _profile("orders", "code", min_length=2, max_length=4)],
+        catalog_excluded={"secret": True, "code": False},
+    )
+
+    secret, code = document["schema"][0]["properties"]
+    assert _profiled_values(secret) is None
+    assert _profiled_values(code) == {"minLength": 2, "maxLength": 4}
+
+
+# --- regeneration groups ---
+
+
+def _hand_edited_document() -> dict:
+    return {"schema": [{
+        "name": "orders",
+        "description": "Hand-written table",
+        "customProperties": [{"property": "functionalTableType", "value": "window-entity"}],
+        "properties": [
+            {"name": "id", "physicalType": "varchar", "logicalType": "string", "description": "Hand-written id",
+             "classification": "public", "customProperties": [{"property": "pii", "value": True}]},
+            {"name": "email", "logicalType": "integer"},
+        ],
+    }]}
+
+
+def _catalog() -> tuple[list, SimpleNamespace]:
+    columns = [
+        _column("id", "integer", "ID-Unique", description="Catalog id", data_classification="internal"),
+        _column("email", "string", "Email", pii_flag=True),
+        _column("added", "date"),
+    ]
+    table = SimpleNamespace(**_governance(description="Catalog table", functional_table_type="cumulative-transaction"))
+    return columns, table
+
+
+def test_a_refresh_without_governance_keeps_hand_edits_and_refreshes_profiling():
+    document = _hand_edited_document()
+    columns, table = _catalog()
+
+    _refresh(document, columns, table=table, governance=False)
+
+    descriptor = document["schema"][0]
+    assert descriptor["description"] == "Hand-written table"
+    assert _custom(descriptor) == {"functionalTableType": "cumulative-transaction"}
+    assert descriptor["dataGranularityDescription"].startswith("One row per transaction")
+    id_prop, email, added = descriptor["properties"]
+    assert (id_prop["description"], id_prop["classification"]) == ("Hand-written id", "public")
+    assert _custom(id_prop) == {"pii": True, "functionalDataType": "ID-Unique"}
+    assert (id_prop["logicalType"], id_prop["physicalType"], id_prop["primaryKey"]) == ("integer", "text", True)
+    assert email["logicalTypeOptions"] == {"format": "email"}
+    assert "pii" not in _custom(email)
+    assert added["name"] == "added"
+
+
+def test_a_refresh_without_profiling_keeps_it_and_refreshes_governance():
+    document = _hand_edited_document()
+    columns, table = _catalog()
+
+    _refresh(document, columns, table=table, profiling=False)
+
+    descriptor = document["schema"][0]
+    assert descriptor["description"] == "Catalog table"
+    assert "dataGranularityDescription" not in descriptor
+    assert _custom(descriptor)["functionalTableType"] == "window-entity"
+    id_prop, email, _added = descriptor["properties"]
+    assert (id_prop["description"], id_prop["classification"]) == ("Catalog id", "internal")
+    assert "primaryKey" not in id_prop
+    assert "pii" not in _custom(id_prop)
+    assert "functionalDataType" not in _custom(id_prop)
+    assert "logicalTypeOptions" not in email
+    assert _custom(email) == {"pii": True}
+
+
+def test_a_refresh_of_neither_group_declares_new_columns_and_refreshes_types_only():
+    document = _hand_edited_document()
+    columns, table = _catalog()
+
+    with (
+        patch.object(contract_document, "catalog_columns", return_value=columns),
+        patch.object(contract_document, "_catalog_table", return_value=table),
+    ):
+        contract_document.refresh_tables(document, _table_group(), ["orders"], profiling=False, governance=False)
+
+    expected = _hand_edited_document()
+    id_prop, email = expected["schema"][0]["properties"]
+    id_prop.update(physicalType="text", logicalType="integer")
+    email.update(physicalType="text", logicalType="string")
+    expected["schema"][0]["properties"].append({"name": "added", "physicalType": "text", "logicalType": "date"})
+    assert document == expected
+
+
+def test_a_column_the_catalog_excludes_gets_no_key_or_format_while_governance_keeps_its_marker():
+    document = {"schema": [{"name": "orders", "properties": [
+        {"name": "id"},
+        {"name": "email", "customProperties": [{"property": "profiledValues", "value": {"minLength": 3}}]},
+    ]}]}
+
+    _refresh(document, [
+        _column("id", "integer", "ID-Unique", excluded_data_element=True),
+        _column("email", "string", "Email", excluded_data_element=True),
+    ], governance=False)
+
+    for prop in document["schema"][0]["properties"]:
+        assert not contract_document.is_excluded(prop), prop["name"]
+        assert "primaryKey" not in prop
+        assert "logicalTypeOptions" not in prop
+        assert _profiled_values(prop) is None
+
+
+
+def test_a_type_change_without_profiling_drops_the_format_and_values_of_the_previous_type():
+    document = {"schema": [{"name": "orders", "properties": [
+        {"name": "zip", "logicalType": "string", "logicalTypeOptions": {"format": "us-zip"},
+         "customProperties": [{"property": "profiledValues", "value": {"minLength": 5}}]},
+        {"name": "code", "logicalType": "string", "logicalTypeOptions": {"format": "email"},
+         "customProperties": [{"property": "profiledValues", "value": {"minLength": 3}}]},
+    ]}]}
+
+    _refresh(document, [_column("zip", "integer", "Zip"), _column("code", "string", "Email")], profiling=False)
+
+    zip_prop, code = document["schema"][0]["properties"]
+    assert zip_prop["logicalType"] == "integer"
+    assert "logicalTypeOptions" not in zip_prop
+    assert _profiled_values(zip_prop) is None
+    assert code["logicalTypeOptions"] == {"format": "email"}
+    assert _profiled_values(code) == {"minLength": 3}

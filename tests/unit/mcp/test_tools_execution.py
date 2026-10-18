@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -10,6 +11,8 @@ from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite as RealTestSuite
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
+
+_UNSET = object()
 
 
 def _mock_test_suite(suite_id=None, project_code="demo", name="Quality Suite"):
@@ -383,8 +386,9 @@ def test_generate_tests_submits_a_profiled_contract(
     out = generate_tests(str(suite_id))
 
     assert mock_job_exec.submit.call_args.kwargs["kwargs"] == {
-        "test_suite_id": str(suite_id), "generation_sets": ["Contract"],
+        "test_suite_id": str(suite_id), "generation_sets": ["Contract"], "regenerate": ["tests", "profiling", "governance"],
     }
+    assert "**Regenerate:** `tests`, `profiling`, `governance`" in out
     assert "Contract" in out
     assert "Test suite" not in out
 
@@ -408,7 +412,10 @@ def test_generate_tests_submits_an_unprofiled_contract_and_says_no_tests_will_be
     out = generate_tests(str(suite.id))
 
     mock_job_exec.submit.assert_called_once()
-    assert "`orders_tg` has not been profiled" in out
+    assert (
+        "`orders_tg` has not been profiled, so no tests are regenerated besides schema conformance and the values "
+        "profiling observed are not refreshed."
+    ) in out
     assert "run_profiling" in out
 
 
@@ -448,15 +455,18 @@ def test_generate_tests_suite_not_found_or_inaccessible(mock_suite_cls, mock_job
     mock_job_exec.submit.assert_not_called()
 
 
-def _generate(suite, *, draft=None):
+def _generate(suite, *, draft=None, regenerate=None, run_id=_UNSET):
     from testgen.mcp.tools.execution import generate_tests
 
     events = []
     with (
         patch("testgen.mcp.tools.execution.resolve_test_suite", return_value=suite),
         patch("testgen.mcp.tools.execution.resolve_generation_sets", return_value=["Standard"]),
-        patch("testgen.mcp.tools.execution.TableGroup"),
-        patch("testgen.mcp.tools.execution.resolve_generation_profile_run", return_value=uuid4()),
+        patch("testgen.mcp.tools.execution.TableGroup") as table_groups,
+        patch(
+            "testgen.mcp.tools.execution.resolve_generation_profile_run",
+            return_value=uuid4() if run_id is _UNSET else run_id,
+        ),
         patch.object(
             TestDefinition,
             "resolve_writable",
@@ -468,7 +478,8 @@ def _generate(suite, *, draft=None):
             side_effect=lambda **_: events.append("submit") or MagicMock(id=uuid4()),
         ) as submit,
     ):
-        out = generate_tests(str(suite.id))
+        table_groups.get.return_value = MagicMock(table_groups_name="orders_tg")
+        out = generate_tests(str(suite.id), regenerate=regenerate)
     return out, route, submit, events
 
 
@@ -480,6 +491,43 @@ def test_generating_for_a_frozen_only_contract_opens_the_draft_before_submitting
     assert events == ["open draft", "submit"]
     assert submit.call_args.kwargs["kwargs"]["test_suite_id"] == str(suite.id)
     assert "**Version:** v4 draft" in out
+
+
+def test_generating_a_contract_passes_the_chosen_groups_in_order(db_session_mock):
+    out, _, submit, _ = _generate(
+        _contract_suite(), draft=SuiteVersion(id=uuid4(), version=2), regenerate=["governance", "tests"]
+    )
+
+    assert submit.call_args.kwargs["kwargs"]["regenerate"] == ["tests", "governance"]
+    assert "**Regenerate:** `tests`, `governance`" in out
+    assert "not been profiled" not in out
+
+
+def test_generating_profiling_for_an_unprofiled_contract_says_profiled_values_are_not_refreshed(db_session_mock):
+    out, _, submit, _ = _generate(
+        _contract_suite(), draft=SuiteVersion(id=uuid4(), version=2), regenerate=["profiling"], run_id=None
+    )
+
+    submit.assert_called_once()
+    assert "`orders_tg` has not been profiled, so the values profiling observed are not refreshed." in out
+
+
+@pytest.mark.parametrize(("regenerate", "run_id", "message"), [
+    ([], uuid4(), "Select at least one regeneration group"),
+    (["tests", "docs"], uuid4(), "Unknown regeneration group `docs`. Accepted values: `tests`, `profiling`, `governance`."),
+    (["tests"], None, "The table group has not been profiled. Run profiling to regenerate tests."),
+])
+def test_generating_a_contract_refuses_an_invalid_choice_of_groups(db_session_mock, regenerate, run_id, message):
+    with pytest.raises(MCPUserError, match=re.escape(message)):
+        _generate(_contract_suite(), draft=SuiteVersion(id=uuid4(), version=2), regenerate=regenerate, run_id=run_id)
+
+
+def test_generating_a_regular_suite_refuses_regeneration_groups(db_session_mock):
+    suite = _mock_test_suite()
+    suite.suite_type = SuiteType.REGULAR
+
+    with pytest.raises(MCPUserError, match="applies to contracts only"):
+        _generate(suite, draft=SuiteVersion(id=uuid4(), version=1), regenerate=["tests"])
 
 
 def test_generating_for_a_regular_suite_opens_no_draft_and_names_no_version(db_session_mock):
