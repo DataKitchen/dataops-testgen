@@ -10,7 +10,7 @@ from pydantic import Field
 from sqlalchemy import select
 
 from testgen import settings
-from testgen.common import contract_import, contract_service
+from testgen.common import contract_creation, contract_import, contract_service
 from testgen.common.contract_document import PROFILED_VALUES
 from testgen.common.contract_import import (
     ContractIdentityError,
@@ -24,7 +24,7 @@ from testgen.common.enums import JOB_STATUS_LABEL, SuiteType
 from testgen.common.flavors import SqlFlavorCode
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
-from testgen.common.models.suite_version import SuiteVersion, VersionState, version_state
+from testgen.common.models.suite_version import SuiteVersion, VersionState, format_version, version_state
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_suite import TestSuite
@@ -36,7 +36,6 @@ from testgen.mcp.tools.common import (
     DocGroup,
     format_page_footer,
     format_page_info,
-    format_version,
     parse_enum,
     raise_validation_error,
     resolve_contract,
@@ -534,15 +533,14 @@ def import_contract(
     conformance_failed = False
     if parsed_mode is ContractImportMode.APPLY:
         if creating:
-            session = get_current_session()
-            session.add(suite)
-            session.flush()
-            contract_service.initialize_contract(suite, table_group, connection)
-        applied = contract_import.apply_import(plan, suite, table_group, SqlFlavorCode(connection.sql_flavor_code))
-        version = SuiteVersion.get(applied.version_id)
+            created = contract_creation.create_contract_from_import(suite, table_group, connection, plan)
+            version_id, conformance_failed = created.version_id, created.conformance_failed
+        else:
+            applied = contract_import.apply_import(plan, suite, table_group, SqlFlavorCode(connection.sql_flavor_code))
+            version_id, conformance_failed = applied.version_id, applied.conformance_failed
+        version = SuiteVersion.get(version_id)
         is_active = version.frozen_at is not None and SuiteVersion.is_active(version.id, suite.id)
         version_label = format_version(version.version, version_state(version.frozen_at, is_active))
-        conformance_failed = applied.conformance_failed
 
     return _render_import(
         plan, suite, parsed_mode, creating=creating, version_label=version_label, conformance_failed=conformance_failed

@@ -51,6 +51,7 @@ class TestSuiteMinimal(EntityMinimal):
     connection_id: int
     table_groups_id: UUID
     export_to_observability: str
+    suite_type: SuiteType
 
 
 @dataclass(frozen=True)

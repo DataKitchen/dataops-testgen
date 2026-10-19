@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models.custom_types import NullIfEmptyString
-from testgen.common.models.suite_version import SuiteVersion, VersionState, version_state
+from testgen.common.models.suite_version import SuiteVersion, VersionState, format_version, version_state
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_run import TestRun
 from testgen.utils import is_uuid4
@@ -374,3 +374,15 @@ def test_a_frozen_version_in_force_is_active():
 
 def test_a_frozen_version_not_in_force_is_superseded():
     assert version_state(datetime(2026, 9, 12, tzinfo=UTC), is_active=False) is VersionState.SUPERSEDED
+
+
+@pytest.mark.parametrize(
+    ("number", "state", "expected"),
+    [
+        (3, VersionState.ACTIVE, "v3 active"),
+        (4, VersionState.DRAFT, "v4 draft"),
+        (1, VersionState.SUPERSEDED, "v1 superseded"),
+    ],
+)
+def test_format_version_names_a_version_by_number_and_state(number, state, expected):
+    assert format_version(number, state) == expected
