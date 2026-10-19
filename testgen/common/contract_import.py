@@ -21,6 +21,12 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from testgen.commands.test_generation import reconcile_contract_conformance
 from testgen.common import contract_document
+from testgen.common.contract_rules import (
+    RuleResolver,
+    all_test_types,
+    nested_properties,
+    rule_label,
+)
 from testgen.common.contract_service import InvalidContractDocumentError, resolve_write_target
 from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
@@ -33,7 +39,6 @@ from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import (
     MANAGED_TEST_TYPES,
-    NON_PUBLIC_TEST_TYPES,
     ODCS_RULE_METADATA_KEY,
     TERM_ID_MAX_LENGTH,
     InvalidTestDefinitionFields,
@@ -52,8 +57,8 @@ from testgen.common.odcs.quality_rules import (
     mark_unverifiable,
     names_one_column,
     resolve_declarations,
-    resolve_rule,
     resolve_unnamed_declarations,
+    test_type_parameters,
 )
 from testgen.common.odcs.servers import FLAVOR_TO_SERVER_TYPE, ODCS_API_VERSION, ServerType
 from testgen.common.odcs.validation import validate_document
@@ -190,8 +195,8 @@ def split_document(
     id can be.
     """
     metadata = copy.deepcopy(document)
-    known = frozenset(test_types) - NON_PUBLIC_TEST_TYPES
-    declared_parameters = {code: frozenset(_declared_parameters(test_type)) for code, test_type in test_types.items()}
+    resolver = RuleResolver(test_types=test_types, flavor=flavor, qualify_tables=qualify_tables)
+    known = resolver.known_test_types
     terms: list[IncomingTerm] = []
     unverifiable: list[str] = []
     unresolved: list[str] = []
@@ -201,16 +206,10 @@ def split_document(
     ) -> list[Any]:
         kept = []
         for index, rule in enumerate(rules):
-            resolved = None
-            if isinstance(rule, dict):
-                resolved = resolve_rule(
-                    rule, scope, known, column_name,
-                    flavor=flavor, table_name=table_name, qualify_tables=qualify_tables,
-                    declared_parameters=declared_parameters,
-                )
+            resolved = resolver.resolve(rule, scope, table_name, column_name)
             if resolved is None:
                 kept.append(mark_unverifiable(rule) if isinstance(rule, dict) else rule)
-                unverifiable.append(_rule_label(rule, index, table_name, column_name))
+                unverifiable.append(rule_label(rule, index, f"{table_name}.{column_name}" if column_name else table_name))
                 continue
             test_type = test_types[resolved.test_type]
             rule_metadata = drop_generated_metadata(
@@ -229,8 +228,8 @@ def split_document(
 
     def same_claim(term: IncomingTerm, other: IncomingTerm) -> bool:
         return term.test_type == other.test_type and _parameter_values(
-            term.test_type, term.parameters, declared_parameters
-        ) == _parameter_values(other.test_type, other.parameters, declared_parameters)
+            term.test_type, term.parameters, resolver.parameters_by_type
+        ) == _parameter_values(other.test_type, other.parameters, resolver.parameters_by_type)
 
     for table in metadata.get("schema") or []:
         if not isinstance(table, dict) or not table.get("name"):
@@ -287,13 +286,13 @@ def split_document(
                 if not prop["customProperties"]:
                     del prop["customProperties"]
             # Terms check top-level columns only, so a nested rule or declaration resolves to nothing.
-            for nested, path in _nested_properties(prop, f"{table_name}.{column_name}"):
+            for nested, _, path in nested_properties(prop, "", f"{table_name}.{column_name}"):
                 if isinstance(nested.get("quality"), list):
                     nested["quality"] = [
                         mark_unverifiable(rule) if isinstance(rule, dict) else rule for rule in nested["quality"]
                     ]
                     unverifiable += [
-                        _rule_label(rule, index, path, None) for index, rule in enumerate(nested["quality"])
+                        rule_label(rule, index, path) for index, rule in enumerate(nested["quality"])
                     ]
                 unresolved += [
                     f"{path}: {declared}" for declared in resolve_unnamed_declarations(nested, frozenset()).unresolved
@@ -303,32 +302,6 @@ def split_document(
     return SplitDocument(
         metadata_document=metadata, terms=terms, unverifiable_rules=unverifiable, unresolved_declarations=unresolved
     )
-
-
-def _nested_properties(prop: dict[str, Any], path: str) -> list[tuple[dict[str, Any], str]]:
-    """The properties nested under an object or array column, at any depth, each with its dotted path."""
-    found = []
-    children = [(child, child.get("name")) for child in prop.get("properties") or [] if isinstance(child, dict)]
-    if isinstance(prop.get("items"), dict):
-        children.append((prop["items"], prop["items"].get("name") or "items"))
-    for node, name in children:
-        child_path = f"{path}.{name}"
-        found.append((node, child_path))
-        found += _nested_properties(node, child_path)
-    return found
-
-
-def _declared_parameters(test_type: TestType) -> list[str]:
-    return [name.strip() for name in (test_type.default_parm_columns or "").split(",") if name.strip()]
-
-
-def _rule_label(rule: Any, index: int, table_name: str, column_name: str | None) -> str:
-    node = f"{table_name}.{column_name}" if column_name else table_name
-    if isinstance(rule, dict):
-        for key in ("id", "name"):
-            if isinstance(rule.get(key), str) and rule[key]:
-                return f"{node}: {rule[key]}"
-    return f"{node}: rule {index + 1}"
 
 
 def _check_term_ids(terms: list[IncomingTerm]) -> None:
@@ -535,12 +508,8 @@ def _is_unchanged(
     )
 
 
-def _all_test_types() -> dict[str, TestType]:
-    return {row.test_type: row for row in get_current_session().scalars(select(TestType))}
-
-
 def _baseline_terms(suite: TestSuite, test_types: dict[str, TestType]) -> list[_BaselineTerm]:
-    parameter_columns = sorted({name for test_type in test_types.values() for name in _declared_parameters(test_type)})
+    parameter_columns = sorted({name for test_type in test_types.values() for name in test_type_parameters(test_type)})
     rows = get_current_session().scalars(
         select(TestDefinition).where(
             TestDefinition.test_suite_id == suite.id,
@@ -579,11 +548,11 @@ def prepare_import(
         check_identity(current.metadata_document if current else None, document.get("id"))
 
     flavor = SqlFlavorCode(connection.sql_flavor_code)
-    test_types = _all_test_types()
+    test_types = all_test_types()
     split = split_document(
         document, test_types, flavor=flavor, qualify_tables=table_group_qualifies_table_refs(table_group.id)
     )
-    declared_parameters = {code: _declared_parameters(test_type) for code, test_type in test_types.items()}
+    declared_parameters = {code: test_type_parameters(test_type) for code, test_type in test_types.items()}
     baseline = _baseline_terms(suite, test_types) if current is not None else []
     catalog_tables = set(contract_document.catalog_table_names(table_group.id))
     changes = plan_changes(
@@ -670,7 +639,7 @@ def _write_terms(
     session = get_current_session()
     now = datetime.now(UTC)
     qualifies_table_refs = table_group_qualifies_table_refs(table_group.id)
-    test_types = _all_test_types()
+    test_types = all_test_types()
 
     def target_of(change: TermChange) -> UUID:
         return copied.get(change.target_id, change.target_id)
@@ -688,7 +657,7 @@ def _write_terms(
             .where(TestDefinition.id.in_(renamed), TestDefinition.version_id == version_id)
             .values(contract_term_id=None)
         )
-    all_parameters = sorted({name for test_type in test_types.values() for name in _declared_parameters(test_type)})
+    all_parameters = sorted({name for test_type in test_types.values() for name in test_type_parameters(test_type)})
     for change in updates:
         values = {
             **dict.fromkeys(all_parameters),
@@ -739,7 +708,7 @@ def _term_values(
     """The columns a term's row takes: its subject, identity and metadata, and a value for every
     parameter its test type declares, NULL where the document states none."""
     values: dict[str, Any] = {
-        name: term.parameters.get(name) for name in _declared_parameters(test_types[term.test_type])
+        name: term.parameters.get(name) for name in test_type_parameters(test_types[term.test_type])
     }
     values.update(
         test_type=term.test_type,

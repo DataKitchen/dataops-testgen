@@ -27,6 +27,7 @@ from testgen.common.database.database_service import get_flavor_service
 from testgen.common.enums import OdcsDimension, QualityDimension, TestScope
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, SqlFlavorCode
 from testgen.common.models.test_definition import (
+    NON_PUBLIC_TEST_TYPES,
     ODCS_AUTHORITATIVE_DEFINITION_FIELDS,
     ODCS_AUTHORITATIVE_DEFINITION_REQUIRED_FIELDS,
     ODCS_CUSTOM_PROPERTY_FIELDS,
@@ -367,46 +368,51 @@ _SQL_ROWS: dict[str, RuleMapping] = {
 }
 
 # Every routed test type -- the union `render` and `resolve_rule` both read. Disjoint from
-# `EXCLUDED_TEST_TYPES`; a type in neither renders `custom`.
+# `NON_PUBLIC_TEST_TYPES`; a type in neither renders `custom`.
 RULE_MAPPINGS: dict[str, RuleMapping] = {**_LIBRARY_ROWS, **_SQL_ROWS}
 
-# Run-history test types: no term is ever authored against them, so no quality rule applies.
-# The value is the reason a reviewer would otherwise have to re-derive.
-EXCLUDED_TEST_TYPES: dict[str, str] = {
-    "Volume_Trend": "run-history type -- monitors row-count drift over time, not a contract-testable state",
-    "Freshness_Trend": "run-history type -- monitors update-interval drift over time, not a contract-testable state",
-    "Metric_Trend": "run-history type -- monitors an aggregate metric's drift over time, not a contract-testable state",
-    "Schema_Drift": "run-history type -- monitors schema changes over time, not a contract-testable state",
-}
-
 # Test types that come close to an ODCS construct and render `custom` because the construct
-# would claim something the test does not check. The value is the difference, so the decision
-# is not re-litigated from the name alone. Every type outside this table, `RULE_MAPPINGS`,
-# `DECLARATION_TEST_TYPES` and `EXCLUDED_TEST_TYPES` renders `custom` for having no ODCS
-# counterpart at all.
-CUSTOM_ROUTING_REASONS: dict[str, str] = {
-    "Match_True_Ct": "invalidValues with validValues [false] is exact, but would call every TRUE value invalid",
-    "Street_Addr_Pattern": "its percent divides by non-null rows; an invalidValues percent divides by all rows",
-    "Match_Zero_Length_Ct": "missingValues with [''] also counts NULLs, which this test does not",
-    "Recency": "a freshness service level compares seconds with a strict bound, not calendar days, and is "
-    "contract-level, so it would lose the term's identity and severity",
-    "Match_Column_Type": "its date category accepts a date or a timestamp; an ODCS logicalType names one of them",
-    "LOV_All": "it also requires every listed value to be present; invalidValues only rejects values outside the list",
-    "Match_Min_Val": "a minimum is one-sided, so it cannot assert equality with the baseline",
-    "Match_Max_Val": "a maximum is one-sided, so it cannot assert equality with the baseline",
-    "Match_Min_Length": "a minLength is per value, so it cannot assert the shortest length equals the baseline",
-    "Match_Max_Length": "a maxLength is one-sided, so it cannot assert equality with the baseline",
-    "Match_Column_Ct": "ODCS has no column-count assertion",
-    "Combo_Match": "ODCS relationships are not checked by engines, and treat NULL combinations differently",
-    "Future_Date": "its bound is the run date, which no fixed declared value can express",
-    "Future_Date_1Y": "its bound moves with the run date, which no fixed declared value can express",
-}
+# would claim something the test does not check.
+# Every type outside this set, `RULE_MAPPINGS`, `DECLARATION_TEST_TYPES` and
+# `NON_PUBLIC_TEST_TYPES` renders `custom` for having no ODCS counterpart at all.
+NEAR_STANDARD_CUSTOM_TEST_TYPES: frozenset[str] = frozenset({
+    # invalidValues with validValues [false] is exact, but would call every TRUE value invalid.
+    "Match_True_Ct",
+    # Its percent divides by non-null rows; an invalidValues percent divides by all rows.
+    "Street_Addr_Pattern",
+    # missingValues with [''] also counts NULLs, which this test does not.
+    "Match_Zero_Length_Ct",
+    # A freshness service level compares seconds with a strict bound, not calendar days, and is
+    # contract-level, so it would lose the term's identity and severity.
+    "Recency",
+    # Its date category accepts a date or a timestamp; an ODCS logicalType names one of them.
+    "Match_Column_Type",
+    # It also requires every listed value to be present; invalidValues only rejects values outside
+    # the list.
+    "LOV_All",
+    # A minimum is one-sided, so it cannot assert equality with the baseline.
+    "Match_Min_Val",
+    # A maximum is one-sided, so it cannot assert equality with the baseline.
+    "Match_Max_Val",
+    # A minLength is per value, so it cannot assert the shortest length equals the baseline.
+    "Match_Min_Length",
+    # A maxLength is one-sided, so it cannot assert equality with the baseline.
+    "Match_Max_Length",
+    # ODCS has no column-count assertion.
+    "Match_Column_Ct",
+    # ODCS relationships are not checked by engines, and treat NULL combinations differently.
+    "Combo_Match",
+    # Its bound is the run date, which no fixed declared value can express.
+    "Future_Date",
+    # Its bound moves with the run date, which no fixed declared value can express.
+    "Future_Date_1Y",
+})
 
 
 # The property `logicalType` values each declaration is exact for, per test type; `None` admits
 # any. A bound compares values of one kind -- and the schema shapes `logicalTypeOptions` by
 # `logicalType` -- so a term on a property declaring another type, or none, renders `custom`.
-_DECLARATION_LOGICAL_TYPES: dict[str, frozenset[str] | None] = {
+DECLARATION_LOGICAL_TYPES: dict[str, frozenset[str] | None] = {
     "Min_Val": frozenset({"integer", "number"}),
     "Max_Val": frozenset({"integer", "number"}),
     "Min_Date": frozenset({"date", "timestamp"}),
@@ -415,7 +421,7 @@ _DECLARATION_LOGICAL_TYPES: dict[str, frozenset[str] | None] = {
     "Unique": None,
     "Required": None,
 }
-DECLARATION_TEST_TYPES: frozenset[str] = frozenset(_DECLARATION_LOGICAL_TYPES)
+DECLARATION_TEST_TYPES: frozenset[str] = frozenset(DECLARATION_LOGICAL_TYPES)
 
 
 def _allows_no_exceptions(term: "TestDefinition") -> bool:
@@ -470,9 +476,9 @@ def property_declaration(term: "TestDefinition", logical_type: str | None) -> di
     declares ``required``, because its measure counts every NULL where ``unique`` alone ignores
     them.
     """
-    if term.test_type not in _DECLARATION_LOGICAL_TYPES or not _allows_no_exceptions(term):
+    if term.test_type not in DECLARATION_LOGICAL_TYPES or not _allows_no_exceptions(term):
         return None
-    allowed = _DECLARATION_LOGICAL_TYPES[term.test_type]
+    allowed = DECLARATION_LOGICAL_TYPES[term.test_type]
     if allowed is not None and logical_type not in allowed:
         return None
 
@@ -576,8 +582,8 @@ def constant_value(term: "TestDefinition", logical_type: str | None) -> str | in
 def rule_shape(test_type: str) -> RuleShape | None:
     """How ``test_type``'s terms render: ``None`` when no rule applies at all.
 
-    Three outcomes, in order. A run-history type (``EXCLUDED_TEST_TYPES``) renders nothing --
-    no term is ever authored against one. A type with a ``RULE_MAPPINGS`` row renders that
+    Three outcomes, in order. A non-public type (``NON_PUBLIC_TEST_TYPES``) renders nothing --
+    no term of one is ever authored in a document. A type with a ``RULE_MAPPINGS`` row renders that
     row's shape. Everything else renders ``custom``: the fallback carries the test type's own
     parameters, so it needs no per-type entry and a type added to the catalogue later exports
     without a mapping change.
@@ -585,7 +591,7 @@ def rule_shape(test_type: str) -> RuleShape | None:
     Never raises. A name outside the catalogue falls through to ``custom`` like any other
     unrouted type -- placement is where an unplaceable term is refused, not here.
     """
-    if test_type in EXCLUDED_TEST_TYPES:
+    if test_type in NON_PUBLIC_TEST_TYPES:
         return None
     mapping = RULE_MAPPINGS.get(test_type)
     return mapping.shape if mapping is not None else RuleShape.CUSTOM
@@ -627,9 +633,9 @@ def rule_scope(term: "TestDefinition", test_type: "TestType") -> RuleScope:
     Types whose mapping sets ``scope_follows_term`` (``Dupe_Rows``) depend on the term instead: a
     grouping of one column attaches to that column, a grouping of several to the table.
 
-    Raises ``ValueError`` for an excluded type, whose terms should not exist.
+    Raises ``ValueError`` for a non-public type, which renders no rule.
     """
-    if test_type.test_type in EXCLUDED_TEST_TYPES:
+    if test_type.test_type in NON_PUBLIC_TEST_TYPES:
         raise ValueError(f"{test_type.test_name_short!r} renders no quality rule, so it has no node to attach one to.")
 
     mapping = RULE_MAPPINGS.get(test_type.test_type)
@@ -726,6 +732,13 @@ def _row_ct_pct_band(term: "TestDefinition") -> tuple[float, float, float, float
     lower = baseline_count * (1 - percent / 100)
     upper = baseline_count * (1 + percent / 100)
     return lower, upper, baseline_count, percent
+
+
+# The ``testgen`` properties ``_conversion_properties`` writes onto a rule: baselines and
+# thresholds behind a converted band.
+CONVERSION_PROPERTIES = frozenset({
+    "baselineRatio", "thresholdBound", "baselineCt", "baselineValueCt", "baselineCount", "thresholdPercent",
+})
 
 
 def _conversion_properties(
@@ -849,7 +862,7 @@ def _user_custom_properties(custom_metadata: dict | None) -> list[dict[str, Any]
     ]
 
 
-def _declared_parameters(test_type: "TestType") -> list[str]:
+def test_type_parameters(test_type: "TestType") -> list[str]:
     """The parameter names ``test_type`` declares, in catalogue order."""
     return [name.strip() for name in (test_type.default_parm_columns or "").split(",") if name.strip()]
 
@@ -864,7 +877,7 @@ def _custom_implementation(term: "TestDefinition", test_type: "TestType") -> dic
     """
     return {
         name: getattr(term, name)
-        for name in _declared_parameters(test_type)
+        for name in test_type_parameters(test_type)
         if name not in ("schema_name", "table_name", "column_name") and getattr(term, name, None) not in (None, "")
     }
 
@@ -1440,7 +1453,7 @@ def _resolve_marker(
 ) -> str | None:
     """The marker's test type, once checked for coherence -- or ``None`` to decline a marker
     that names a type absent from ``known_test_types`` (a typo, or a type renamed since the rule
-    was rendered), names an excluded type, claims more than one operator at once, or disagrees
+    was rendered), names a non-public type, claims more than one operator at once, or disagrees
     with its own routed shape.
 
     A custom-routed type must carry no operator: its bound is one of its parameters, never an
