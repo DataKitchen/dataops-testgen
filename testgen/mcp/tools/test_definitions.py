@@ -41,7 +41,6 @@ from testgen.common.models.test_result import TestResult
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.test_definition_export_import_service import (
     IMPORT_ACTION_LABELS,
-    IMPORT_REASON_LABELS,
     ImportAction,
     ImportConfig,
     ImportMode,
@@ -56,6 +55,7 @@ from testgen.common.test_definition_export_import_service import (
     Origin,
     export_definitions,
     import_definitions,
+    import_reason_label,
 )
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_authorized_mcp_user, get_project_permissions, mcp_permission
@@ -1233,7 +1233,7 @@ def _append_import_result(doc: MdDoc, result: ImportResponse, preview: bool) -> 
     for item in result.items:
         for td in item.tds:
             rows_by_action.setdefault(item.action, []).append(
-                [IMPORT_REASON_LABELS.get(item.reason, item.reason.value), td.idx, td.target_id]
+                [import_reason_label(item.reason, td.errors), td.idx, td.target_id]
             )
 
     for action in ImportAction:

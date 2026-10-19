@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from functools import partial
 from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
@@ -29,7 +30,7 @@ from testgen.common.models.test_definition import (
     TestDefinition,
     TestType,
     missing_required_fields,
-    validate_custom_metadata,
+    test_definition_errors,
 )
 from testgen.common.models.test_suite import TestSuite
 
@@ -84,6 +85,7 @@ class ImportReason(StrEnum):
     invalid_column = "invalid_column"
     missing_external_id = "missing_external_id"
     missing_required_field = "missing_required_field"
+    invalid_field = "invalid_field"
     absent = "absent"
 
 
@@ -105,8 +107,17 @@ IMPORT_REASON_LABELS: dict[ImportReason, str] = {
     ImportReason.invalid_column: "Column not in the data catalog",
     ImportReason.missing_external_id: "Missing external ID (required to match a manual test)",
     ImportReason.missing_required_field: "Missing a required field",
+    ImportReason.invalid_field: "Invalid field value",
     ImportReason.absent: "Not in the file",
 }
+
+
+def import_reason_label(reason: ImportReason, errors: dict[str, str] | None = None) -> str:
+    """The reason's label, followed by each invalid field and why when there are any."""
+    label = IMPORT_REASON_LABELS.get(reason, reason.value)
+    if not errors:
+        return label
+    return f"{label}. " + "; ".join(f"{field}: {why}" for field, why in errors.items())
 
 
 # Non-None defaults must match the ORM column defaults in TestDefinition:
@@ -183,17 +194,6 @@ class TestDefinitionExport(BaseModel):
     def _coerce_none_to_zero(cls, v: int | None) -> int:
         return v if v is not None else 0
 
-    @field_validator("custom_metadata")
-    @classmethod
-    def _check_custom_metadata(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
-        # The import path does not run TestDefinition.validate(), so this is the only enforcement
-        # of the custom_metadata shape/size bound on import. Shares validate_custom_metadata with
-        # the model so the rule has a single definition.
-        error = validate_custom_metadata(v)
-        if error:
-            raise ValueError(f"custom_metadata {error}")
-        return v
-
 
 class ExportSource(BaseModel):
     project_code: str
@@ -233,6 +233,7 @@ class ImportPayload(BaseModel):
 class ImportItemTD(BaseModel):
     idx: int | None = None
     target_id: UUID | None = None
+    errors: dict[str, str] | None = None
 
 
 class ImportItem(BaseModel):
@@ -466,12 +467,14 @@ def import_definitions(
             actions.append(_PlannedAction(ImportAction.skip, ImportReason.invalid_column, idx, td_import, target))
             continue
 
-        if missing_required_fields(
-            test_types[td_import.test_type], lambda field: _value_as_saved(td_import, target, field)
-        ):
-            actions.append(
-                _PlannedAction(ImportAction.skip, ImportReason.missing_required_field, idx, td_import, target)
-            )
+        test_type = test_types[td_import.test_type]
+        value_of = partial(_value_as_saved, td_import, target)
+        missing = missing_required_fields(test_type, value_of)
+        # Generators store values in a non-public type's undeclared parameters, which the full rules reject.
+        errors = missing if td_import.test_type in NON_PUBLIC_TEST_TYPES else test_definition_errors(test_type, value_of)
+        if errors:
+            reason = ImportReason.missing_required_field if missing else ImportReason.invalid_field
+            actions.append(_PlannedAction(ImportAction.skip, reason, idx, td_import, target, errors))
             continue
 
         if target is None:
@@ -518,6 +521,7 @@ class _PlannedAction:
     idx: int | None  # None for absence deletes (target-only, not in the file)
     td_import: TestDefinitionExport | None  # None for absence deletes
     target: Any  # Row (re-pointed at the writable version), TestDefinition after create flush, or None
+    errors: dict[str, str] | None = None  # Field-level reasons for a definition skipped as missing or invalid
 
 
 def _test_type_name(test_types: dict[str, TestType], code: str) -> str:
@@ -746,6 +750,7 @@ def _build_response(actions: list[_PlannedAction], version: ContractVersion | No
         td_entry = ImportItemTD(
             idx=planned.idx,
             target_id=planned.target.id if planned.target is not None else None,
+            errors=planned.errors,
         )
         items_by_key.setdefault(key, []).append(td_entry)
 

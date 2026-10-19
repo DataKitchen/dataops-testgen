@@ -39,7 +39,6 @@ from testgen.common.models.test_suite import TestSuite
 from testgen.common.pii_masking import get_pii_columns, mask_profiling_pii
 from testgen.common.test_definition_export_import_service import (
     IMPORT_ACTION_LABELS,
-    IMPORT_REASON_LABELS,
     ImportAction,
     ImportConfig,
     ImportMode,
@@ -53,6 +52,7 @@ from testgen.common.test_definition_export_import_service import (
     Origin,
     export_definitions,
     import_definitions,
+    import_reason_label,
 )
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
@@ -76,6 +76,7 @@ from testgen.ui.services.query_cache import (
     select_test_definitions_where,
     select_test_suites_minimal_where,
 )
+from testgen.ui.services.test_definition_service import save_from_dialog
 from testgen.ui.session import session
 from testgen.utils import dataframe_to_json_records, make_json_safe, to_dataframe
 
@@ -405,18 +406,20 @@ class TestDefinitionsPage(Page):
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, None)
 
-        def _save_test_definition(test_def: dict) -> None:
+        def _save_test_definition(test_def: dict) -> str | None:
             td_columns = set(TestDefinition.__table__.columns.keys())
             definition = TestDefinition(**{k: v for k, v in test_def.items() if k in td_columns})
             apply_test_definition_flavor_rules(
                 definition, table_group, qualifies_table_refs=qualifies_table_refs_with_schema
             )
-            definition.save()
+            return save_from_dialog(definition)
 
         @with_database_session
         def on_add_test_saved(test_def: dict) -> None:
             test_def["last_manual_update"] = datetime.now(UTC)
-            _save_test_definition(test_def)
+            if error := _save_test_definition(test_def):
+                st.session_state[TD_VALIDATE_RESULT_KEY] = {"success": False, "message": error}
+                return
             st.cache_data.clear()
             st.session_state.pop(TD_ADD_DIALOG_KEY, None)
             st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)
@@ -425,9 +428,11 @@ class TestDefinitionsPage(Page):
         def on_edit_test_saved(test_def: dict) -> None:
             test_def["last_manual_update"] = datetime.now(UTC)
             try:
-                _save_test_definition(test_def)
+                error = _save_test_definition(test_def)
             except MissingTestDefinitionError:
-                st.session_state[TD_VALIDATE_RESULT_KEY] = {"success": False, "message": MISSING_TEST_DEFINITION_MESSAGE}
+                error = MISSING_TEST_DEFINITION_MESSAGE
+            if error:
+                st.session_state[TD_VALIDATE_RESULT_KEY] = {"success": False, "message": error}
                 return
             st.cache_data.clear()
             st.session_state.pop(TD_EDIT_DIALOG_KEY, None)
@@ -1086,7 +1091,7 @@ def _build_import_preview(content: str, policy: dict, test_suite: TestSuite) -> 
             rows.append({
                 "action_code": item.action.value,
                 "action": IMPORT_ACTION_LABELS.get(item.action, item.action.value),
-                "reason": IMPORT_REASON_LABELS.get(item.reason, item.reason.value),
+                "reason": import_reason_label(item.reason, td.errors).replace("`", ""),
                 "test_name": test_name,
                 "table_name": table_name or "",
                 "column_name": column_name or "",

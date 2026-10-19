@@ -724,16 +724,19 @@ class Test_import_validation:
 
         volume = MonitorType.VOLUME.value
         target_id = uuid4()
-        existing = _make_existing_row(test_type=volume, table_name="t1", id_=target_id)
+        # Shaped like the generator's row: a table-level test with a custom query its type does not declare
+        generated = {"column_name": None, "custom_query": "SELECT COUNT(*) FROM t1"}
+        existing = _make_existing_row(test_type=volume, table_name="t1", id_=target_id, **generated)
         session.execute.return_value.all.return_value = [existing]
 
         ts = _make_test_suite()
-        td = _make_import_td(test_type=volume, table_name="t1")
+        td = _make_import_td(test_type=volume, table_name="t1", **generated)
         config = _make_config(on_match=OnMatch.overwrite_unlocked)
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types(volume)):
+        test_types = {volume: TestType(test_type=volume, test_scope="table")}
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=test_types):
             result = import_definitions(ts, config, _make_payload(td))
 
         assert result.summary.updated == 1
@@ -807,7 +810,7 @@ class Test_import_validation:
             ),
             pytest.param({"column_name": "SUM(c1)"}, "referential", set(), None, id="referential_expression"),
             pytest.param({"column_name": "c1 > 0"}, "custom", set(), None, id="custom_expression"),
-            pytest.param({}, "table", set(), None, id="table_scope"),
+            pytest.param({"column_name": None}, "table", set(), None, id="table_scope"),
         ],
     )
     @patch(f"{SERVICE_MODULE}.DataTable")
@@ -903,6 +906,64 @@ class Test_import_validation:
             result = import_definitions(ts, config, _make_payload(td))
 
         assert (ImportReason.missing_required_field in _reasons(result, ImportAction.skip)) is skipped
+
+    @pytest.mark.parametrize(
+        ("test_scope", "fields", "reason", "error_fields"),
+        [
+            pytest.param("column", {"severity": "Bogus"}, ImportReason.invalid_field, {"severity"}, id="severity"),
+            pytest.param(
+                "table", {"column_name": "c1"}, ImportReason.invalid_field, {"column_name"}, id="column_on_table_scope",
+            ),
+            pytest.param(
+                "column", {"custom_query": "SELECT 1"}, ImportReason.invalid_field, {"custom_query"}, id="custom_query",
+            ),
+            pytest.param(
+                "column", {"subset_condition": "x" * 501}, ImportReason.invalid_field, {"subset_condition"},
+                id="too_long",
+            ),
+            pytest.param(
+                "column", {"custom_metadata": {f"k{i}": "v" for i in range(51)}}, ImportReason.invalid_field,
+                {"custom_metadata"}, id="metadata_too_many_keys",
+            ),
+            pytest.param(
+                "column", {"custom_metadata": {"blob": "x" * 10_241}}, ImportReason.invalid_field,
+                {"custom_metadata"}, id="metadata_oversized",
+            ),
+            pytest.param(
+                "column", {"threshold_value": None, "severity": "Bogus"}, ImportReason.missing_required_field,
+                {"threshold_value", "severity"}, id="required_and_invalid",
+            ),
+        ],
+    )
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_invalid_field_skipped_with_field_errors(
+        self, mock_session_fn, mock_tg_cls, mock_dt_cls, test_scope, fields, reason, error_fields,
+    ):
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+        session.execute.return_value.all.return_value = []
+
+        td = _make_import_td(test_type="Thresholded", table_name="t1", **{"threshold_value": "5", **fields})
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        thresholded = TestType(
+            test_type="Thresholded",
+            test_scope=test_scope,
+            default_parm_columns="threshold_value",
+            default_parm_required="Y",
+        )
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value={"Thresholded": thresholded}):
+            result = import_definitions(_make_test_suite(), _make_config(), _make_payload(td))
+
+        assert result.summary.skipped == 1
+        assert _reasons(result, ImportAction.skip) == {reason}
+        [item] = result.items
+        assert set(item.tds[0].errors) == error_fields
 
     @patch(f"{SERVICE_MODULE}.DataTable")
     @patch(f"{SERVICE_MODULE}.TableGroup")
@@ -1068,6 +1129,26 @@ class Test_import_partial_update_validation:
         result = self._import(mock_session_fn, mock_tg_cls, mock_dt_cls, existing, td, self.THRESHOLDED)
 
         assert _reasons(result, ImportAction.skip) == set()
+
+    @pytest.mark.parametrize(
+        ("fields", "reason"),
+        [
+            pytest.param({}, ImportReason.invalid_field, id="omitted_keeps_stored_value"),
+            pytest.param({"custom_query": None}, None, id="file_clears_it"),
+        ],
+    )
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_an_omitted_field_is_checked_with_its_stored_value(
+        self, mock_session_fn, mock_tg_cls, mock_dt_cls, fields, reason
+    ):
+        existing = _make_existing_row(test_type="Thresholded", threshold_value="5", custom_query="SELECT 1")
+        td = _make_import_td(test_type="Thresholded", **fields)
+
+        result = self._import(mock_session_fn, mock_tg_cls, mock_dt_cls, existing, td, self.THRESHOLDED)
+
+        assert _reasons(result, ImportAction.skip) == ({reason} if reason else set())
 
     @pytest.mark.parametrize(
         ("existing_table", "catalog", "reason"),
@@ -1674,14 +1755,6 @@ class Test_schema:
     def test_custom_metadata_rejects_non_object(self, bad_value):
         with pytest.raises(ValidationError):
             TestDefinitionExport(test_type="Alpha", custom_metadata=bad_value)
-
-    def test_custom_metadata_rejects_too_many_keys(self):
-        with pytest.raises(ValidationError):
-            TestDefinitionExport(test_type="Alpha", custom_metadata={f"k{i}": "v" for i in range(51)})
-
-    def test_custom_metadata_rejects_oversized(self):
-        with pytest.raises(ValidationError):
-            TestDefinitionExport(test_type="Alpha", custom_metadata={"blob": "x" * 10_241})
 
 
 # --- Click-through fields: export + import ---

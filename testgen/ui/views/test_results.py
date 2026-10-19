@@ -1,4 +1,5 @@
 import typing
+from datetime import UTC, datetime
 from io import BytesIO
 from itertools import zip_longest
 from operator import attrgetter
@@ -61,6 +62,7 @@ from testgen.ui.services.query_cache import (
     select_test_definitions_where,
 )
 from testgen.ui.services.string_service import snake_case_to_title_case
+from testgen.ui.services.test_definition_service import save_from_dialog
 from testgen.ui.session import session
 from testgen.utils import dataframe_to_json_records, friendly_score, make_json_safe
 
@@ -450,6 +452,7 @@ class TestResultsPage(Page):
         def on_edit_test_saved(test_def: dict) -> None:
             valid_columns = {c.key for c in TestDefinition.__table__.columns}
             filtered = {k: v for k, v in test_def.items() if k in valid_columns}
+            filtered["last_manual_update"] = datetime.now(UTC)
             definition = TestDefinition(**filtered)
             if table_group := get_table_group_minimal(test_suite.table_groups_id):
                 apply_test_definition_flavor_rules(
@@ -458,9 +461,12 @@ class TestResultsPage(Page):
                     qualifies_table_refs=table_group_qualifies_table_refs(table_group.id),
                 )
             try:
-                definition.save()
+                error = save_from_dialog(definition)
             except CONTRACT_VERSION_ERRORS:
                 st.toast(CONTRACT_VERSION_MESSAGE, icon=":material/error:")
+                return
+            if error:
+                st.session_state[VALIDATE_RESULT_KEY] = {"success": False, "message": error}
                 return
             st.session_state.pop(EDIT_TEST_KEY, None)
             st.session_state.pop(VALIDATE_RESULT_KEY, None)

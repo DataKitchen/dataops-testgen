@@ -836,6 +836,41 @@ def missing_required_fields(test_type: TestType, value_of: Callable[[str], objec
     return errors
 
 
+def test_definition_errors(test_type: TestType, value_of: Callable[[str], object]) -> dict[str, str]:
+    """Fields of a test definition of ``test_type`` that are invalid, mapped to the reason.
+
+    ``value_of`` returns a field's value by name. Empty when the definition is valid.
+    """
+    errors: dict[str, str] = {}
+
+    severity = value_of("severity")
+    if severity:
+        try:
+            Severity(severity)
+        except ValueError:
+            valid = ", ".join(f"`{member.value}`" for member in Severity)
+            errors["severity"] = f"must be one of {valid} (got `{severity}`)"
+
+    if test_type.test_scope not in COLUMN_NAME_SCOPES and not _is_blank(value_of("column_name")):
+        errors["column_name"] = (
+            f"test type `{test_type.test_name_short}` has scope `{test_type.test_scope}`; "
+            f"column_name does not apply to this scope"
+        )
+
+    if not _is_blank(value_of("custom_query")) and "custom_query" not in test_type.param_columns:
+        errors["custom_query"] = (
+            f"test type `{test_type.test_name_short}` does not accept a custom query"
+        )
+
+    metadata_error = validate_custom_metadata(value_of("custom_metadata"))
+    if metadata_error:
+        errors["custom_metadata"] = metadata_error
+
+    errors.update(missing_required_fields(test_type, value_of))
+    errors.update(_storage_errors(value_of))
+    return errors
+
+
 def _param_columns(test_type: TestType) -> list[str]:
     return [c.strip() for c in (test_type.default_parm_columns or "").split(",")]
 
@@ -1498,34 +1533,7 @@ class TestDefinition(Entity):
         Raises :class:`InvalidTestDefinitionFields` with every offending field
         and reason — callers see all problems at once.
         """
-        errors: dict[str, str] = {}
-
-        if self.severity:
-            try:
-                Severity(self.severity)
-            except ValueError:
-                valid = ", ".join(f"`{member.value}`" for member in Severity)
-                errors["severity"] = f"must be one of {valid} (got `{self.severity}`)"
-
-        if test_type.test_scope not in COLUMN_NAME_SCOPES and not _is_blank(self.column_name):
-            errors["column_name"] = (
-                f"test type `{test_type.test_name_short}` has scope `{test_type.test_scope}`; "
-                f"column_name does not apply to this scope"
-            )
-
-        if not _is_blank(self.custom_query) and "custom_query" not in test_type.param_columns:
-            errors["custom_query"] = (
-                f"test type `{test_type.test_name_short}` does not accept a custom query"
-            )
-
-        metadata_error = validate_custom_metadata(self.custom_metadata)
-        if metadata_error:
-            errors["custom_metadata"] = metadata_error
-
-        errors.update(missing_required_fields(test_type, lambda field: getattr(self, field, None)))
-        errors.update(_storage_errors(lambda field: getattr(self, field, None)))
-
-        if errors:
+        if errors := test_definition_errors(test_type, lambda field: getattr(self, field, None)):
             raise InvalidTestDefinitionFields(errors)
 
     @classmethod
