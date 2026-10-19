@@ -6,7 +6,7 @@ from typing import Any
 import streamlit as st
 
 import testgen.ui.services.form_service as fm
-from testgen.common.enums import JobSource, JobStatus, SuiteType
+from testgen.common.enums import TEST_SUITE_TYPES, JobSource, JobStatus, SuiteType
 from testgen.common.models import database_session, get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import (
@@ -43,6 +43,12 @@ TR_RUN_NOTIFICATIONS_DIALOG_KEY = "tr:run_notifications_dialog"
 TR_RUN_TESTS_RESULT_KEY = "tr:run_tests_result"
 
 
+def run_started_message(suite_type: SuiteType | None, name: str) -> str:
+    """The Run Tests dialog's message once a run of the named suite is submitted."""
+    noun = "contract" if suite_type == SuiteType.CONTRACT else "test suite"
+    return f"Test run started for {noun} '{name}'."
+
+
 class TestRunsPage(Page):
     path = "test-runs"
     can_activate: typing.ClassVar = [
@@ -69,7 +75,7 @@ class TestRunsPage(Page):
             test_runs, total_count = get_test_run_summaries(project_code, table_group_id, test_suite_id, page=page)
             table_groups = select_table_groups_minimal_where(TableGroup.project_code == project_code)
             test_suites = select_test_suites_minimal_where(
-                TestSuite.project_code == project_code, TestSuite.suite_type == SuiteType.REGULAR
+                TestSuite.project_code == project_code, TestSuite.suite_type.in_(TEST_SUITE_TYPES)
             )
 
         def on_run_tests_clicked(*_) -> None:
@@ -91,7 +97,9 @@ class TestRunsPage(Page):
             run_tests_data = {
                 "title": "Run Tests",
                 "project_code": project_code,
-                "test_suites": [{"value": str(ts.id), "label": ts.test_suite} for ts in test_suites],
+                "test_suites": [
+                    {"value": str(ts.id), "label": ts.test_suite, "suite_type": ts.suite_type} for ts in test_suites
+                ],
                 "default_test_suite_id": str(test_suite_id) if test_suite_id else None,
                 "result": st.session_state.get(TR_RUN_TESTS_RESULT_KEY),
             }
@@ -110,7 +118,8 @@ class TestRunsPage(Page):
             selected_id = data.get("test_suite_id")
             selected_name = data.get("test_suite_name")
             success = True
-            message = f"Test run started for test suite '{selected_name}'."
+            suite_type = next((ts.suite_type for ts in test_suites if str(ts.id) == str(selected_id)), None)
+            message = run_started_message(suite_type, selected_name)
             show_link = session.current_page != "test-runs"
             try:
                 with database_session():
@@ -250,7 +259,7 @@ class TestRunNotificationSettingsDialog(NotificationSettingsDialogBase):
             (str(ts.id), ts.test_suite)
             for ts in select_test_suites_minimal_where(
                 TestSuite.project_code == self.ns_attrs["project_code"],
-                TestSuite.suite_type == SuiteType.REGULAR,
+                TestSuite.suite_type.in_(TEST_SUITE_TYPES),
             )
         ]
         test_suite_options.insert(0, (None, "All Test Suites"))
@@ -278,7 +287,7 @@ class TestRunScheduleDialog(ScheduleDialog):
     def init(self) -> None:
         self.test_suites = select_test_suites_minimal_where(
             TestSuite.project_code == self.project_code,
-            TestSuite.suite_type == SuiteType.REGULAR,
+            TestSuite.suite_type.in_(TEST_SUITE_TYPES),
         )
 
     def get_arg_value(self, job):

@@ -61,7 +61,7 @@ from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.project import Project
 from testgen.common.models.scheduler import SCHEDULABLE_JOB_KEYS, JobSchedule
 from testgen.common.models.scores import ScoreCategory, ScoreDefinition
-from testgen.common.models.suite_version import SuiteVersion, VersionState
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import Severity, TestDefinition, TestDefinitionNote, TestType
 from testgen.common.models.test_result import TestResult, TestResultStatus
@@ -213,11 +213,6 @@ def format_suite_type_label(suite_type: SuiteType | str) -> str:
 
 
 MCP_SUITE_TYPES: tuple[SuiteType, ...] = TEST_SUITE_TYPES
-
-
-def format_version(number: int, state: VersionState) -> str:
-    """Render a contract version the one way every tool names it, e.g. ``v3 active``."""
-    return f"v{number} {state.value}"
 
 
 class ScoreGroupBy(StrEnum):

@@ -19,12 +19,14 @@ from uuid import UUID
 
 import streamlit as st
 
+from testgen.common.enums import TEST_SUITE_TYPES, SuiteType
 from testgen.common.models.connection import Connection, ConnectionMinimal
 from testgen.common.models.entity import ENTITY_HASH_FUNCS
 from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunMinimal, ProfilingRunSummary
 from testgen.common.models.project import Project, ProjectSummary
 from testgen.common.models.project_membership import ProjectMembership
 from testgen.common.models.scheduler import JobSchedule
+from testgen.common.models.suite_version import ContractState, SuiteVersion
 from testgen.common.models.table_group import (
     TableGroup,
     TableGroupMinimal,
@@ -96,8 +98,14 @@ def get_test_suite_summaries(
     project_code: str,
     table_group_id: str | UUID | None = None,
     test_suite_name: str | None = None,
+    suite_types: tuple[SuiteType, ...] = (SuiteType.REGULAR,),
 ) -> Iterable[TestSuiteSummary]:
-    return _detached(TestSuite.select_summary(project_code, table_group_id, test_suite_name))
+    return _detached(TestSuite.select_summary(project_code, table_group_id, test_suite_name, suite_types=suite_types))
+
+
+@st.cache_data(show_spinner=False)
+def get_contract_states(suite_ids: tuple[UUID, ...]) -> dict[UUID, ContractState]:
+    return _detached(SuiteVersion.states_for(suite_ids))
 
 
 # -- TestRun ------------------------------------------------------------------
@@ -116,6 +124,7 @@ def get_test_run_summaries(
         test_suite_id=test_suite_id,
         page=page,
         page_size=page_size,
+        suite_types=TEST_SUITE_TYPES,
     ))
 
 

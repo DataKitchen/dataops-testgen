@@ -38,7 +38,7 @@ def test_delete_proceeds_when_no_matched_row_is_a_managed_definition():
         deleted = TestDefinition.delete_where(TestDefinition.id.in_([uuid4()]))
 
     assert deleted == 2
-    session.execute.assert_called_once()
+    assert str(session.execute.call_args.args[0]).lower().startswith("delete")
 
 
 def test_the_delete_guard_checks_the_callers_rows_for_a_managed_type():

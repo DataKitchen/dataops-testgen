@@ -13,11 +13,12 @@ from testgen.common.database.table_group_service import (
     schema_label_for_table_group,
     table_group_qualifies_table_refs,
 )
-from testgen.common.enums import JobKey, JobSource, SuiteType
+from testgen.common.enums import TEST_SUITE_TYPES, JobKey, JobSource, SuiteType
 from testgen.common.flavors import table_group_schema_label
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.suite_version import FrozenVersionError, RemovedInDraftError
 from testgen.common.models.test_definition import (
     MISSING_TEST_DEFINITION_MESSAGE,
     TestDefinition,
@@ -52,7 +53,6 @@ from testgen.ui.services.database_service import fetch_df_from_db, fetch_one_fro
 from testgen.ui.services.query_cache import (
     get_connection,
     get_table_group_minimal,
-    get_test_definition,
     get_test_run_minimal,
     get_test_suite,
     get_test_suite_minimal,
@@ -70,6 +70,8 @@ EXPORT_FILTERS_KEY = "tr:export_filters"
 SOURCE_DATA_KEY = "tr:source_data"
 PROFILING_KEY = "tr:profiling"
 EDIT_TEST_KEY = "tr:edit_test"
+CONTRACT_VERSION_ERRORS = (FrozenVersionError, RemovedInDraftError)
+CONTRACT_VERSION_MESSAGE = "This contract's tests cannot be changed from this run."
 VALIDATE_RESULT_KEY = "tr:validate_result"
 ISSUE_REPORT_KEY = "tr:issue_report"
 NOTES_DIALOG_KEY = "tr:notes_dialog"
@@ -158,7 +160,8 @@ class TestResultsPage(Page):
         **_kwargs,
     ) -> None:
         run = get_test_run_minimal(run_id)
-        if not run or not get_test_suite(run.test_suite_id, TestSuite.suite_type == SuiteType.REGULAR):
+        suite = get_test_suite(run.test_suite_id, TestSuite.suite_type.in_(TEST_SUITE_TYPES)) if run else None
+        if not run or not suite:
             self.router.navigate_with_warning(
                 f"Test run with ID '{run_id}' does not exist. Redirecting to list of Test Runs ...",
                 "test-runs",
@@ -335,7 +338,11 @@ class TestResultsPage(Page):
                 test_result_ids = payload.get("test_result_ids", [])
                 test_definition_ids = test_result_queries.get_test_definition_ids_for_results(test_result_ids)
             if test_definition_ids:
-                TestDefinition.set_status_attribute("flagged", test_definition_ids, value)
+                try:
+                    TestDefinition.set_status_attribute("flagged", test_definition_ids, value)
+                except CONTRACT_VERSION_ERRORS:
+                    st.toast(CONTRACT_VERSION_MESSAGE, icon=":material/error:")
+                    return
                 st.cache_data.clear()
 
         @with_database_session
@@ -358,7 +365,11 @@ class TestResultsPage(Page):
                 flagged=filter_flagged,
             )
             if all_def_ids:
-                TestDefinition.set_status_attribute("flagged", all_def_ids, value)
+                try:
+                    TestDefinition.set_status_attribute("flagged", all_def_ids, value)
+                except CONTRACT_VERSION_ERRORS:
+                    st.toast(CONTRACT_VERSION_MESSAGE, icon=":material/error:")
+                    return
                 st.cache_data.clear()
 
         def on_notes_clicked(payload: dict) -> None:
@@ -367,7 +378,7 @@ class TestResultsPage(Page):
         @with_database_session
         def on_note_added(payload: dict) -> None:
             td_id = payload["test_definition_id"]
-            if not TestDefinition.get(td_id):
+            if not TestDefinition.get_for_project(td_id, suite_types=TEST_SUITE_TYPES):
                 st.session_state[NOTES_DIALOG_KEY] = _load_notes_dialog_data(
                     td_id, df, error=MISSING_TEST_DEFINITION_MESSAGE, draft=payload["text"],
                 )
@@ -443,7 +454,11 @@ class TestResultsPage(Page):
                     table_group,
                     qualifies_table_refs=table_group_qualifies_table_refs(table_group.id),
                 )
-            definition.save()
+            try:
+                definition.save()
+            except CONTRACT_VERSION_ERRORS:
+                st.toast(CONTRACT_VERSION_MESSAGE, icon=":material/error:")
+                return
             st.session_state.pop(EDIT_TEST_KEY, None)
             st.session_state.pop(VALIDATE_RESULT_KEY, None)
             st.cache_data.clear()
@@ -546,6 +561,7 @@ class TestResultsPage(Page):
                 "run_info": {
                     "test_suite": run.test_suite,
                     "test_suite_id": str(run.test_suite_id),
+                    "is_contract": suite.suite_type == SuiteType.CONTRACT,
                     "run_date": run_date,
                     "project_code": run.project_code,
                     "is_latest_run": run.is_latest_run,
@@ -739,7 +755,7 @@ def _build_test_definition_data(test_definition_id: str | None, test_suite: Test
     if not test_definition_id:
         return None
 
-    test_definition = get_test_definition(test_definition_id)
+    test_definition = TestDefinition.get_for_project(test_definition_id, suite_types=TEST_SUITE_TYPES)
     if not test_definition:
         return None
 
