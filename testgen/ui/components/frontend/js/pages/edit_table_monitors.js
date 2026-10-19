@@ -12,7 +12,7 @@
  */
 
 import van from '/app/static/js/van.min.js';
-import { getValue, loadStylesheet } from '/app/static/js/utils.js';
+import { getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { Alert } from '/app/static/js/components/alert.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Card } from '/app/static/js/components/card.js';
@@ -60,6 +60,21 @@ const EditTableMonitors = (/** @type Properties */ props) => {
             || deletedMetricIds.val.length; // deletes
     });
     const isValid = van.derive(() => Object.values(formStates.val).every(s => s.valid));
+
+    // The form compares against the values it opened with, which include edits already queued, so
+    // its dirty flag cannot tell whether anything differs from the saved definition. Queue only the
+    // fields that do.
+    const queueChanges = (savedDefinition, changes, state) => {
+        const id = savedDefinition.id;
+        const queued = { ...updatedDefinitions.rawVal[id], ...changes };
+        const edits = Object.fromEntries(
+            Object.entries(queued).filter(([key, value]) => key !== 'id' && !isEqual(value, savedDefinition[key])),
+        );
+        const hasEdits = Object.keys(edits).length > 0;
+        const { [id]: _previous, ...others } = updatedDefinitions.rawVal;
+        updatedDefinitions.val = hasEdits ? { ...others, [id]: { ...edits, id } } : others;
+        formStates.val = { ...formStates.rawVal, [id]: { ...state, dirty: hasEdits } };
+    };
 
     const existingMetrics = van.derive(() => Object.fromEntries(
         getValue(props.definitions).filter(td => td.test_type === 'Metric_Trend').map(metric => [metric.id, metric])
@@ -236,12 +251,8 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                                     [id]: { ...newMetrics.val[id], ...changes },
                                 };
                                 formStates.val = { ...formStates.val, [id]: state };
-                            } else if (state.dirty) {
-                                updatedDefinitions.val = {
-                                    ...updatedDefinitions.val,
-                                    [id]: { ...updatedDefinitions.rawVal[id], ...changes, id },
-                                };
-                                formStates.val = { ...formStates.val, [id]: state };
+                            } else if (Object.keys(changes).length > 0) {
+                                queueChanges(existingMetrics.rawVal[id], changes, state);
                             }
                         },
                     });
@@ -262,12 +273,8 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                     definition: { ...selectedDef, ...updatedDefinitions.rawVal[selectedDef.id] },
                     class: 'edit-monitors--form',
                     onChange: (changes, state) => {
-                        if (state.dirty) {
-                            updatedDefinitions.val = {
-                                ...updatedDefinitions.val,
-                                [selectedDef.id]: { ...updatedDefinitions.rawVal[selectedDef.id], ...changes, id: selectedDef.id },
-                            };
-                            formStates.val = { ...formStates.val, [selectedDef.id]: state };
+                        if (Object.keys(changes).length > 0) {
+                            queueChanges(selectedDef, changes, state);
                         }
                     },
                 });

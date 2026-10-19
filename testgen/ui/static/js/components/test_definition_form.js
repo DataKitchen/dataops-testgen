@@ -267,6 +267,10 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
     const oneOfMissing = van.derive(() => oneOfConfigs.length > 0
         && oneOfConfigs.every(config => !(updatedDefinition.val[config.column] ?? config.default)));
 
+    // Keys that have differed from the original stay in `changes` after they are set back to it, so a
+    // host merging `changes` into its own copy overwrites the intermediate value.
+    const touchedKeys = new Set();
+
     van.derive(() => {
         const newDefinition = updatedDefinition.val
         const fieldsValidity = validityPerField.val;
@@ -275,12 +279,17 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
             !oneOfMissing.val;
 
         const changes = {};
+        let dirty = false;
         for (const key in newDefinition) {
             if (!isEqual(newDefinition[key], definition[key])) {
+                touchedKeys.add(key);
+                dirty = true;
+            }
+            if (touchedKeys.has(key)) {
                 changes[key] = newDefinition[key];
             }
         }
-        props.onChange?.(changes, { dirty: !!Object.keys(changes).length, valid: isValid });
+        props.onChange?.(changes, { dirty, valid: isValid });
     });
 
     const setFieldValues = (updatedValues) => {
@@ -395,18 +404,19 @@ const ThresholdForm = (options, definition) => {
 
     // Seeds validityPerField for this mode's fields. Threshold fields not rendered in the current
     // mode (e.g. lower/upper bound in 'prediction' mode) never mount an Input to self-report
-    // validity, so this must run once up front as well as on every mode change.
+    // validity, so this must run once up front as well as on every mode change. It reads rawVal: the
+    // up-front call runs while the host renders this form, and a .val read would re-render it on every edit.
     const applyModeValidity = (newMode) => {
         if (newMode === 'static') {
             if (!isFreshnessTrend) {
-                setFieldValidity('lower_tolerance', !!lowerTolerance.val);
+                setFieldValidity('lower_tolerance', !!lowerTolerance.rawVal);
             }
-            setFieldValidity('upper_tolerance', !!upperTolerance.val);
+            setFieldValidity('upper_tolerance', !!upperTolerance.rawVal);
             setFieldValidity('history_lookback', true);
         } else if (newMode === 'historical') {
             setFieldValidity('lower_tolerance', true);
             setFieldValidity('upper_tolerance', true);
-            setFieldValidity('history_lookback', !!historyLookback.val);
+            setFieldValidity('history_lookback', !!historyLookback.rawVal);
         } else {
             setFieldValidity('lower_tolerance', true);
             setFieldValidity('upper_tolerance', true);
