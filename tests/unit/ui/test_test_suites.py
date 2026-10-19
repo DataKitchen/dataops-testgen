@@ -269,6 +269,7 @@ def _generate_tests_data(suite_type: SuiteType, *, profiled: bool = True) -> dic
         patch.object(view, "get_test_suite_refresh_warning", return_value={"test_ct": 64}),
         patch.object(view, "get_value_hash_warning", return_value=None),
         patch.object(view, "get_sampled_unavailable_test_types", return_value={}),
+        patch.object(view, "get_generation_set_test_types", return_value=[]),
     ):
         return view.build_generate_tests_data("abc")
 
@@ -304,9 +305,17 @@ def test_a_test_suites_dialog_offers_no_regeneration_groups(session_state):
     assert data["generation_sets"] == ["Standard"]
 
 
-@pytest.mark.parametrize(("suite_type", "noted"), [(SuiteType.CONTRACT, False), (SuiteType.REGULAR, True)])
-def test_only_a_test_suite_notes_the_test_types_a_sampled_profile_cannot_support(session_state, suite_type, noted):
-    unavailable = {"LOV_Match": "Value Match"}
+@pytest.mark.parametrize(
+    ("suite_type", "expected"),
+    [
+        (SuiteType.REGULAR, {"LOV_Match": "Value Match", "Match_Lead_Space_Ct": "Match Leading Spaces"}),
+        (SuiteType.CONTRACT, {"LOV_Match": "Value Match"}),
+    ],
+)
+def test_notes_the_test_types_a_sampled_profile_cannot_support_for_what_the_suite_generates(
+    session_state, suite_type, expected
+):
+    unavailable = {"LOV_Match": "Value Match", "Match_Lead_Space_Ct": "Match Leading Spaces"}
     with (
         patch.object(
             view.TestSuite, "get",
@@ -321,14 +330,14 @@ def test_only_a_test_suite_notes_the_test_types_a_sampled_profile_cannot_support
         patch.object(view, "get_test_suite_refresh_warning", return_value=None),
         patch.object(view, "get_value_hash_warning", return_value=None),
         patch.object(view, "get_sampled_unavailable_test_types", return_value=unavailable) as sampled_unavailable,
+        patch.object(view, "get_generation_set_test_types", return_value=["LOV_Match", "Required"]) as contract_set,
     ):
         data = view.build_generate_tests_data("abc")
 
-    assert data["sampled_unavailable_test_types"] == (unavailable if noted else {})
-    if noted:
-        sampled_unavailable.assert_called_once_with("tg")
-    else:
-        sampled_unavailable.assert_not_called()
+    assert data["sampled_unavailable_test_types"] == expected
+    sampled_unavailable.assert_called_once_with("tg")
+    if suite_type == SuiteType.CONTRACT:
+        contract_set.assert_called_once_with(view.CONTRACT_GENERATION_SET)
 
 
 @pytest.mark.usefixtures("db_session_mock")

@@ -22,8 +22,10 @@ from testgen.common.database.test_suite_service import validate_test_suite_field
 from testgen.common.enums import TEST_SUITE_TYPES, JobSource, RegenerationGroup, SuiteType
 from testgen.common.flavors import FLAVOR_CODE_TO_LABEL
 from testgen.common.generation_set_service import (
+    CONTRACT_GENERATION_SET,
     DEFAULT_GENERATION_SET,
     get_generation_set_members,
+    get_generation_set_test_types,
     get_overriding_test_types,
     list_generation_sets,
     resolve_generation_sets,
@@ -465,6 +467,10 @@ def build_generate_tests_data(test_suite_id: str) -> dict:
             ],
             "tests_disabled_reason": None if profiled else TESTS_NEED_PROFILING,
         }
+    sampled_unavailable = get_sampled_unavailable_test_types(str(generate_suite.table_groups_id))
+    if is_contract:
+        contract_test_types = set(get_generation_set_test_types(CONTRACT_GENERATION_SET))
+        sampled_unavailable = {code: name for code, name in sampled_unavailable.items() if code in contract_test_types}
     return {
         "title": "Generate Tests",
         "test_suite_id": str(generate_suite.id),
@@ -475,9 +481,7 @@ def build_generate_tests_data(test_suite_id: str) -> dict:
         "selected_generation_sets": [] if is_contract else resolve_generation_sets(generate_suite, None),
         "generation_set_test_types": {} if is_contract else get_generation_set_members(),
         "overriding_test_types": {} if is_contract else get_overriding_test_types(),
-        "sampled_unavailable_test_types": (
-            {} if is_contract else get_sampled_unavailable_test_types(str(generate_suite.table_groups_id))
-        ),
+        "sampled_unavailable_test_types": sampled_unavailable,
         "refresh_warning": get_test_suite_refresh_warning(str(generate_suite.id)),
         "value_hash_test_types": sorted(VALUE_HASH_TEST_TYPES),
         "value_hash_warning": None if is_contract else get_value_hash_warning(str(generate_suite.table_groups_id)),

@@ -134,10 +134,10 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
             ? Alert({ type: 'warn' }, span(valueHashWarning))
             : '',
         () => {
-            if (isContract) return '';
+            if (!testsSelected.val) return '';
             const selectedTypes = new Set(selectedSets.val.flatMap(s => setMembers[s] ?? []));
             const names = Object.entries(sampledUnavailable)
-                .filter(([testType]) => selectedTypes.has(testType))
+                .filter(([testType]) => isContract || selectedTypes.has(testType))
                 .map(([, name]) => name)
                 .sort();
             if (!names.length) return '';
@@ -146,7 +146,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                 { type: 'warn' },
                 div(
                     { class: 'flex-row fx-align-center fx-gap-1' },
-                    span(`On tables profiled from a sample, ${names.length} of the selected test types ${verb} not generated.`),
+                    span(`On tables profiled from a sample, ${names.length} of the ${isContract ? 'contract\'s' : 'selected'} test types ${verb} not generated.`),
                     SampledProfileGapsHelp({ testTypes: names }),
                 ),
             );

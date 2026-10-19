@@ -8,6 +8,7 @@ from testgen.common.generation_set_service import (
     DEFAULT_GENERATION_SET,
     MONITOR_GENERATION_SET,
     get_generation_set_members,
+    get_generation_set_test_types,
     get_overriding_test_types,
     list_generation_sets,
     resolve_generation_sets,
@@ -65,6 +66,17 @@ def test_get_generation_set_members_groups_by_set(mock_session):
         "Plugin_Set": ["Plugin_Type_A", "Plugin_Type_B"],
         "Standard": ["Pattern_Match"],
     }
+
+
+# --- get_generation_set_test_types ---
+
+
+@patch(f"{MODULE}.get_current_session")
+def test_get_generation_set_test_types_reads_one_set_including_contract(mock_session):
+    mock_session.return_value.scalars.return_value = iter(["LOV_Match", "Required"])
+
+    assert get_generation_set_test_types(CONTRACT_GENERATION_SET) == ["LOV_Match", "Required"]
+    assert mock_session.return_value.scalars.call_args.args[1] == {"generation_set": CONTRACT_GENERATION_SET}
 
 
 # --- get_overriding_test_types ---

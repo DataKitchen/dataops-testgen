@@ -54,6 +54,16 @@ def get_generation_set_members() -> dict[str, list[str]]:
     return members
 
 
+def get_generation_set_test_types(generation_set: str) -> list[str]:
+    """The test types one generation set generates, the Monitor and Contract sets included."""
+    return list(
+        get_current_session().scalars(
+            text("SELECT test_type FROM generation_sets WHERE generation_set = :generation_set ORDER BY test_type"),
+            {"generation_set": generation_set},
+        )
+    )
+
+
 def get_overriding_test_types() -> dict[str, list[str]]:
     """Map each overridden test type to the active test types that override it.
 
