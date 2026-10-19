@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -8,11 +9,12 @@ from testgen.commands.test_generation import (
     ContractGenerationResult,
     TestGeneration,
     _term_count,
+    parse_regeneration_groups,
     reconcile_contract_conformance,
     run_contract_generation,
     run_test_generation,
 )
-from testgen.common.enums import SuiteType
+from testgen.common.enums import RegenerationGroup, SuiteType
 from testgen.common.models.suite_version import FrozenVersionError
 from tests.unit.sql_assertions import conjuncts, equality_conjunct
 
@@ -195,6 +197,7 @@ def generation_mocks():
         resolve.return_value = ["Standard"]
         yield {
             "suite": suite,
+            "table_group": tg_cls.get.return_value,
             "generation": gen_cls,
             "mixpanel": mixpanel_cls,
             "resolve": resolve,
@@ -262,9 +265,19 @@ def test_run_test_generation_rejects_monitor_suite(generation_mocks):
 def test_a_contracts_generation_runs_the_contract_generation(generation_mocks):
     generation_mocks["suite"].suite_type = SuiteType.CONTRACT
     with patch(f"{MODULE}.run_contract_generation") as generate_contract:
-        run_test_generation("suite-1", table_names=["orders"])
+        result = run_test_generation("suite-1", table_names=["orders"], regenerate=["tests"])
 
-    generate_contract.assert_called_once_with(generation_mocks["suite"].id, table_names=["orders"], profile_run_id=None)
+    generate_contract.assert_called_once_with(
+        generation_mocks["suite"].id, table_names=["orders"], profile_run_id=None, groups=["tests"]
+    )
+    assert result is generate_contract.return_value
+    generation_mocks["generation"].assert_not_called()
+
+
+def test_regeneration_groups_are_refused_for_a_regular_suite(generation_mocks):
+    with pytest.raises(ValueError, match="contracts only"):
+        run_test_generation("suite-1", regenerate=["tests"])
+
     generation_mocks["generation"].assert_not_called()
 
 
@@ -503,7 +516,7 @@ def contract_mocks(generation_mocks):
         versions.get.return_value = draft
         document.declared_tables.side_effect = lambda doc: [table["name"] for table in doc.get("schema", [])]
         document.catalog_table_names.return_value = ["orders", "customers", "products"]
-        document.refresh_tables.side_effect = lambda _doc, _group, names: dict.fromkeys(names, 3)
+        document.refresh_tables.side_effect = lambda _doc, _group, names, **_flags: dict.fromkeys(names, 3)
         document.profiled_table_names.side_effect = lambda _run, names: list(names)
         yield {
             **generation_mocks,
@@ -534,7 +547,7 @@ def test_generating_an_unprofiled_contract_writes_catalog_metadata_and_reconcile
 def test_a_generation_refreshes_the_contract_identity_before_its_tables(contract_mocks):
     calls = []
     contract_mocks["document"].refresh_identity.side_effect = lambda _doc, _group: calls.append("identity")
-    contract_mocks["document"].refresh_tables.side_effect = lambda _doc, _group, names: (
+    contract_mocks["document"].refresh_tables.side_effect = lambda _doc, _group, names, **_flags: (
         calls.append("tables") or dict.fromkeys(names, 3)
     )
 
@@ -572,7 +585,7 @@ def test_a_generation_with_no_profiled_table_generates_no_terms(contract_mocks):
 
 
 def test_a_generation_reports_what_it_did(contract_mocks):
-    contract_mocks["document"].refresh_tables.side_effect = lambda _doc, _group, _names: {"orders": 4, "customers": 0}
+    contract_mocks["document"].refresh_tables.side_effect = lambda _doc, _group, _names, **_flags: {"orders": 4, "customers": 0}
 
     result = run_contract_generation("suite-1")
 
@@ -640,8 +653,81 @@ def test_generating_a_contract_fills_the_profiled_values_of_its_tables(contract_
     run_contract_generation("suite-1")
 
     contract_mocks["document"].fill_profiled_values.assert_called_once_with(
-        contract_mocks["draft"].metadata_document, contract_mocks["run_id"], ["orders", "customers"]
+        contract_mocks["draft"].metadata_document,
+        contract_mocks["table_group"].id,
+        contract_mocks["run_id"],
+        ["orders", "customers"],
     )
+
+
+def test_regenerating_only_tests_leaves_the_document_and_profiled_values_alone(contract_mocks):
+    result = run_contract_generation("suite-1", groups=["tests"])
+
+    contract_mocks["document"].refresh_identity.assert_not_called()
+    assert contract_mocks["document"].refresh_tables.call_args.kwargs == {"profiling": False, "governance": False}
+    contract_mocks["document"].fill_profiled_values.assert_not_called()
+    assert contract_mocks["events"] == ["commit", "generate", "conformance"]
+    assert result.groups == [RegenerationGroup.TESTS]
+
+
+def test_regenerating_without_governance_keeps_the_identity_and_refreshes_profiling(contract_mocks):
+    result = run_contract_generation("suite-1", groups=["profiling", "tests"])
+
+    contract_mocks["document"].refresh_identity.assert_not_called()
+    assert contract_mocks["document"].refresh_tables.call_args.kwargs == {"profiling": True, "governance": False}
+    contract_mocks["document"].fill_profiled_values.assert_called_once()
+    assert result.groups == [RegenerationGroup.TESTS, RegenerationGroup.PROFILING]
+
+
+def test_regenerating_without_tests_generates_no_terms_but_reconciles_conformance(contract_mocks):
+    result = run_contract_generation("suite-1", groups=["governance"])
+
+    contract_mocks["document"].refresh_identity.assert_called_once()
+    assert contract_mocks["document"].refresh_tables.call_args.kwargs == {"profiling": False, "governance": True}
+    contract_mocks["generation"].return_value.run.assert_not_called()
+    contract_mocks["generation"].return_value.conformance_run.assert_called_once_with()
+    contract_mocks["document"].fill_profiled_values.assert_not_called()
+    assert result.groups == [RegenerationGroup.GOVERNANCE]
+
+
+def test_regenerating_tests_and_profiling_unprofiled_refreshes_the_catalog_and_reports_no_tests(contract_mocks):
+    contract_mocks["resolve_run"].return_value = None
+
+    result = run_contract_generation("suite-1", groups=["tests", "profiling"])
+
+    assert contract_mocks["document"].refresh_tables.call_args.kwargs == {"profiling": True, "governance": False}
+    contract_mocks["generation"].return_value.run.assert_not_called()
+    assert result.groups == [RegenerationGroup.PROFILING]
+    assert result.tables_not_profiled == ["orders", "customers"]
+
+
+def test_regenerating_only_tests_unprofiled_is_refused_before_anything_is_written(contract_mocks):
+    contract_mocks["resolve_run"].return_value = None
+
+    with pytest.raises(ValueError, match="has not been profiled"):
+        run_contract_generation("suite-1", groups=["tests"])
+
+    contract_mocks["document"].refresh_tables.assert_not_called()
+    assert contract_mocks["events"] == []
+
+
+@pytest.mark.parametrize(("values", "has_run", "expected"), [
+    (["governance", "tests"], True, [RegenerationGroup.TESTS, RegenerationGroup.GOVERNANCE]),
+    (["profiling", "profiling"], False, [RegenerationGroup.PROFILING]),
+    (["tests", "profiling"], False, [RegenerationGroup.TESTS, RegenerationGroup.PROFILING]),
+])
+def test_regeneration_groups_parse_in_enum_order(values, has_run, expected):
+    assert parse_regeneration_groups(values, has_profiling_run=has_run) == expected
+
+
+@pytest.mark.parametrize(("values", "has_run", "message"), [
+    ([], True, "at least one"),
+    (["tests", "docs"], True, "Unknown regeneration group `docs`. Accepted values: `tests`, `profiling`, `governance`."),
+    (["tests"], False, "has not been profiled"),
+])
+def test_regeneration_groups_refuse_an_invalid_choice(values, has_run, message):
+    with pytest.raises(ValueError, match=re.escape(message)):
+        parse_regeneration_groups(values, has_profiling_run=has_run)
 
 
 def test_the_term_count_covers_the_draft_s_generated_tables_and_leaves_out_conformance_tests():
@@ -666,6 +752,8 @@ def test_run_test_generation_generates_a_contract(generation_mocks):
     with patch(f"{MODULE}.run_contract_generation") as generate:
         run_test_generation("suite-1")
 
-    generate.assert_called_once_with(generation_mocks["suite"].id, table_names=None, profile_run_id=None)
+    generate.assert_called_once_with(
+        generation_mocks["suite"].id, table_names=None, profile_run_id=None, groups=list(RegenerationGroup)
+    )
     generation_mocks["generation"].assert_not_called()
     generation_mocks["mixpanel"].return_value.send_event.assert_called_once()
