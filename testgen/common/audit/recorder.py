@@ -43,7 +43,10 @@ _context_resolver: Callable[[], AuditContext | None] | None = None
 
 def bind(context: AuditContext, session: SQLAlchemySession | None = None) -> None:
     """Attribute the records made on ``session`` (default: the current session) to ``context``."""
-    (session or get_current_session()).info[_CONTEXT_KEY] = context
+    if (session := session or get_current_session()) is None:
+        LOG.error("Audit context for %s not bound: no database session", context.source)
+        return
+    session.info[_CONTEXT_KEY] = context
 
 
 def set_context_resolver(resolver: Callable[[], AuditContext | None]) -> None:

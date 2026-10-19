@@ -15,7 +15,7 @@ from uuid import uuid4
 import pytest
 
 from testgen import settings
-from testgen.common.audit.sinks import AUDIT_LOG_FILE_NAME, FileSink, get_sink
+from testgen.common.audit.sinks import AUDIT_LOG_FILE_NAME, get_sink
 from testgen.mcp.permissions import set_mcp_token, set_mcp_username
 
 # Fictional role matrix for tests. role_a has full access (but NOT view_pii — several
@@ -62,8 +62,8 @@ def audit_log(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "AUDIT_LOG_ENABLED", True)
     get_sink.cache_clear()
     yield AuditLog(folder)
-    if get_sink.cache_info().currsize and isinstance(sink := get_sink(), FileSink):
-        sink.close()
+    if get_sink.cache_info().currsize and (close := getattr(get_sink(), "close", None)):
+        close()
     get_sink.cache_clear()
 
 

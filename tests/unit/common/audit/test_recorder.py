@@ -191,3 +191,10 @@ def test_a_failing_sink_does_not_interrupt_the_action(session, audit_log, caplog
 
     assert audit_log.records() == []
     assert len([r for r in caplog.records if r.levelno == logging.ERROR]) == 2
+
+
+def test_bind_without_a_session_logs_and_does_not_raise(caplog):
+    with caplog.at_level(logging.ERROR, "testgen"):
+        bind(AuditContext(source=JobSource.api))
+
+    assert [r for r in caplog.records if "not bound" in r.getMessage()]
