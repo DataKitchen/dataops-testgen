@@ -17,6 +17,7 @@ from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.database.flavor.flavor_service import FlavorService
 from testgen.common.date_service import parse_fuzzy_date
+from testgen.common.enums import TEST_SUITE_TYPES
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection, SQLFlavor
 from testgen.common.models.data_column import DataColumnChars
@@ -69,7 +70,7 @@ def fetch_test_result_source_data(
     is_custom = issue_data.get("test_type") == "CUSTOM"
     lookup_query = None
     try:
-        test_definition = TestDefinition.get(issue_data["test_definition_id"])
+        test_definition = TestDefinition.get_for_project(issue_data["test_definition_id"], suite_types=TEST_SUITE_TYPES)
         if not test_definition:
             return SourceDataResult("NA", MISSING_TEST_DEFINITION_MESSAGE, None, None)
 
@@ -209,7 +210,7 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
     if not lookup_data or not lookup_data.lookup_query:
         return None
 
-    test_definition = TestDefinition.get(issue_data["test_definition_id"])
+    test_definition = TestDefinition.get_for_project(issue_data["test_definition_id"], suite_types=TEST_SUITE_TYPES)
     if not test_definition:
         return None
 

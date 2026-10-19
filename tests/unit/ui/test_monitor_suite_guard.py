@@ -49,7 +49,7 @@ def test_test_definitions_redirects_when_the_suite_does_not_resolve():
 # --- test results ---
 
 
-def test_test_results_narrows_the_suite_lookup_to_regular_suites():
+def test_test_results_narrows_the_suite_lookup_to_regular_suites_and_contracts():
     page = _page(TestResultsPage)
     run = MagicMock(test_suite_id="a-suite-id")
     with (
@@ -58,7 +58,7 @@ def test_test_results_narrows_the_suite_lookup_to_regular_suites():
     ):
         page.render(run_id="a-run-id")
 
-    assert _clause_text(get_suite.call_args) == "test_suites.suite_type = 'regular'"
+    assert _clause_text(get_suite.call_args) == "test_suites.suite_type IN ('regular', 'contract')"
 
 
 def test_test_results_redirects_when_the_run_belongs_to_a_monitor_suite():

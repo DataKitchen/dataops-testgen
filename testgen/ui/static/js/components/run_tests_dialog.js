@@ -3,6 +3,7 @@
  * @type {object}
  * @property {string} value
  * @property {string} label
+ * @property {string?} suite_type
  *
  * @typedef Result
  * @type {object}
@@ -63,7 +64,11 @@ const RunTestsDialog = (/** @type Properties */ props) => {
                 onChange: (value) => { selectedId.val = value; },
                 portalClass: 'run-tests--select',
             })
-            : () => span('Run tests for the test suite ', strong({}, selectedTestSuite.val?.label ?? ''), '?'),
+            : () => span(
+                `Run tests for the ${selectedTestSuite.val?.suite_type === 'contract' ? 'contract' : 'test suite'} `,
+                strong({}, selectedTestSuite.val?.label ?? ''),
+                '?',
+            ),
         () => selectedTestSuite.val
             ? ''
             : div({ style: 'margin: auto;' }, 'Select a test suite to run.'),

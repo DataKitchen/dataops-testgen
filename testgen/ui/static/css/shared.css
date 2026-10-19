@@ -713,6 +713,24 @@ code > .tg-icon:hover {
     border-radius: 8px;
 }
 
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 8px;
+    border: 1px solid color-mix(in srgb, var(--badge-color) 35%, transparent);
+    border-radius: 999px;
+    color: var(--badge-color);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 18px;
+    white-space: nowrap;
+    --badge-color: var(--secondary-text-color);
+}
+
+.badge-purple {
+    --badge-color: var(--facet-purple);
+}
+
 input {
     line-height: normal !important;
 }

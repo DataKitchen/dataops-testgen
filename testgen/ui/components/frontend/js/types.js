@@ -18,6 +18,7 @@
  * @type {object}
  * @property {string} project_code
  * @property {number} connection_count
+ * @property {number} contract_count
  * @property {string} default_connection_id
  * @property {number} table_group_count
  * @property {number} profiling_run_count

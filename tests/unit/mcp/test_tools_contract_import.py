@@ -62,6 +62,7 @@ def _contract():
 def _run(*, plan=None, prepare_error=None, suite=None, table_group=None, conformance_failed=False, **kwargs):
     suite = suite or _contract()
     table_group = table_group or MagicMock(table_groups_name="Sales", connection_id=1)
+    apply_import = MagicMock(return_value=AppliedImport(version_id=uuid4(), conformance_failed=conformance_failed))
     with (
         _patch_perms(),
         patch(f"{MODULE}.resolve_contract", return_value=suite),
@@ -70,10 +71,8 @@ def _run(*, plan=None, prepare_error=None, suite=None, table_group=None, conform
         patch(f"{MODULE}.Connection.get", return_value=MagicMock(sql_flavor_code="postgresql")),
         patch(f"{MODULE}._test_type_labels", return_value={"Required": "Required Entry", "Unique": "Unique Values"}),
         patch(f"{MODULE}.contract_import.prepare_import", return_value=plan or _plan(), side_effect=prepare_error),
-        patch(
-            f"{MODULE}.contract_import.apply_import",
-            return_value=AppliedImport(version_id=uuid4(), conformance_failed=conformance_failed),
-        ) as apply_import,
+        patch(f"{MODULE}.contract_import.apply_import", apply_import),
+        patch("testgen.common.contract_creation.apply_import", apply_import),
     ):
         return import_contract(payload="ignored", **kwargs), apply_import
 
@@ -140,7 +139,7 @@ def test_creating_from_a_document_with_no_name_requires_one(db_session_mock):
 def test_applying_a_new_contract_creates_and_initializes_it(db_session_mock):
     with (
         patch(f"{MODULE}.validate_test_suite_fields", return_value=[]),
-        patch(f"{MODULE}.contract_service.initialize_contract") as initialize,
+        patch("testgen.common.contract_creation.initialize_contract") as initialize,
         patch(f"{MODULE}.SuiteVersion.get", return_value=MagicMock(version=1, frozen_at=None)),
     ):
         out, apply_import = _run(table_group_id=str(uuid4()), test_suite_name="Vendor orders", mode="apply")

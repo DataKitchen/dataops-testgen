@@ -93,45 +93,137 @@ def test_the_guard_looks_for_a_version_that_is_frozen_and_suite_owned():
     assert _checks_frozen_and_suite_owned(statement)
 
 
-def _session_resolving_versions(version_ids, *, frozen_check_results):
-    """A session whose batch resolution yields `version_ids`, then answers the per-version
-    frozen-and-suite-owned check with `frozen_check_results`, in order.
-    """
+def _routed_session(*pairs):
+    """A session whose lookup of each named row's suite answers ``pairs`` of (row id, suite id)."""
     session = MagicMock()
-    session.scalars.return_value.all.return_value = version_ids
-    session.scalar.side_effect = frozen_check_results
+    session.execute.return_value.all.return_value = list(pairs)
+    session.execute.return_value.scalars.return_value.all.return_value = [row_id for row_id, _ in pairs]
     return session
 
 
-def test_set_status_attribute_refuses_a_frozen_suite_owned_version():
-    frozen_version_id = uuid4()
-    session = _session_resolving_versions([frozen_version_id], frozen_check_results=[frozen_version_id])
+def _bulk_params(session) -> dict:
+    return session.execute.call_args.args[1]
+
+
+def test_set_status_attribute_on_a_frozen_only_contract_lands_on_the_newly_opened_draft():
+    frozen_row, draft_row, suite_id = uuid4(), uuid4(), uuid4()
+    session = _routed_session((frozen_row, suite_id))
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch.object(TestDefinition, "resolve_writable", return_value=(uuid4(), {frozen_row: draft_row})) as resolve,
+    ):
+        TestDefinition.set_status_attribute("flagged", [str(frozen_row)], True)
+
+    resolve.assert_called_once_with(suite_id, [frozen_row])
+    assert _bulk_params(session)["test_definition_ids"] == [str(draft_row)]
+    assert str(frozen_row) not in _bulk_params(session)["test_definition_ids"]
+
+
+def test_set_status_attribute_on_a_regular_suite_writes_the_named_rows_unchanged():
+    row, suite_id = uuid4(), uuid4()
+    session = _routed_session((row, suite_id))
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch.object(TestDefinition, "resolve_writable", return_value=(NIL_UUID, {row: row})),
+    ):
+        TestDefinition.set_status_attribute("flagged", [str(row)], True)
+
+    assert _bulk_params(session)["test_definition_ids"] == [str(row)]
+
+
+def test_set_status_attribute_routes_each_suite_of_a_mixed_batch_separately():
+    regular_row, frozen_row, draft_row = uuid4(), uuid4(), uuid4()
+    regular_suite, contract_suite = uuid4(), uuid4()
+    session = _routed_session((regular_row, regular_suite), (frozen_row, contract_suite))
+    answers = {regular_suite: {regular_row: regular_row}, contract_suite: {frozen_row: draft_row}}
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch.object(
+            TestDefinition, "resolve_writable", side_effect=lambda suite, _ids: (uuid4(), answers[suite])
+        ),
+    ):
+        TestDefinition.set_status_attribute("flagged", [str(regular_row), str(frozen_row)], True)
+
+    assert _bulk_params(session)["test_definition_ids"] == [str(regular_row), str(draft_row)]
+
+
+def test_set_status_attribute_with_no_rows_issues_no_statement_beyond_the_lookup():
+    session = _routed_session()
     with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
-        with pytest.raises(FrozenVersionError):
-            TestDefinition.set_status_attribute("flagged", [str(uuid4())], True)
+        TestDefinition.set_status_attribute("flagged", [], True)
 
     session.execute.assert_not_called()
 
 
-def test_set_status_attribute_allows_a_placeholder_scoped_version():
-    session = _session_resolving_versions([NIL_UUID], frozen_check_results=[None])
-    with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
-        TestDefinition.set_status_attribute("flagged", [str(uuid4())], True)
+def test_delete_where_on_a_frozen_only_contract_deletes_the_drafts_copy_not_the_frozen_row():
+    frozen_row, draft_row, suite_id = uuid4(), uuid4(), uuid4()
+    session = _routed_session((frozen_row, suite_id))
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch("testgen.common.models.get_current_session", return_value=session),
+        patch.object(TestDefinition, "_assert_no_managed_definitions"),
+        patch.object(TestDefinition, "resolve_writable", return_value=(uuid4(), {frozen_row: draft_row})),
+    ):
+        TestDefinition.delete_where(TestDefinition.id.in_([frozen_row]))
 
-    session.execute.assert_called_once()
+    statement = session.execute.call_args.args[0]
+    compiled = str(statement.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    assert str(draft_row) in compiled
+    assert str(frozen_row) not in compiled
+    assert scopes_to_a_version(statement)
 
 
-def test_set_status_attribute_refuses_when_any_version_in_the_batch_is_frozen_and_suite_owned():
-    unfrozen_version_id = uuid4()
-    frozen_version_id = uuid4()
-    session = _session_resolving_versions(
-        [unfrozen_version_id, frozen_version_id], frozen_check_results=[None, frozen_version_id]
+def test_delete_where_on_a_regular_suite_deletes_the_selected_rows():
+    row, suite_id = uuid4(), uuid4()
+    session = _routed_session((row, suite_id))
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch("testgen.common.models.get_current_session", return_value=session),
+        patch.object(TestDefinition, "_assert_no_managed_definitions"),
+        patch.object(TestDefinition, "resolve_writable", return_value=(NIL_UUID, {row: row})),
+    ):
+        TestDefinition.delete_where(TestDefinition.id.in_([row]))
+
+    compiled = str(
+        session.execute.call_args.args[0].compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
     )
-    with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
-        with pytest.raises(FrozenVersionError):
-            TestDefinition.set_status_attribute("flagged", [str(uuid4()), str(uuid4())], True)
+    assert str(row) in compiled
 
-    session.execute.assert_not_called()
+
+def _move(session, frozen_row, draft_row):
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch.object(TestDefinition, "_assert_no_managed_definitions"),
+        patch.object(TestDefinition, "resolve_writable", return_value=(uuid4(), {frozen_row: draft_row})) as resolve,
+        patch.object(TestDefinition, "assign_missing_term_ids") as assign,
+    ):
+        TestDefinition.move([str(frozen_row)], uuid4(), uuid4(), target_schema="public", qualifies_table_refs=True)
+    return resolve, assign
+
+
+def test_move_out_of_a_frozen_only_contract_moves_the_drafts_copy_and_clears_its_term_identity():
+    frozen_row, draft_row, suite_id = uuid4(), uuid4(), uuid4()
+    session = _routed_session((frozen_row, suite_id))
+    session.scalar.side_effect = [NIL_UUID, None]
+    session.scalars.return_value.all.return_value = [draft_row]
+    _, assign = _move(session, frozen_row, draft_row)
+
+    update = _updates(session)[0]
+    compiled = str(update.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    assert str(draft_row) in compiled
+    assert str(frozen_row) not in compiled
+    assert update.compile().params["contract_term_id"] is None
+    assign.assert_called_once_with(NIL_UUID)
+
+
+def test_move_routes_the_named_rows_through_their_suites():
+    frozen_row, draft_row, suite_id = uuid4(), uuid4(), uuid4()
+    session = _routed_session((frozen_row, suite_id))
+    session.scalar.side_effect = [NIL_UUID, None]
+    session.scalars.return_value.all.return_value = [draft_row]
+    resolve, _ = _move(session, frozen_row, draft_row)
+
+    resolve.assert_called_once_with(suite_id, [frozen_row])
 
 
 def test_save_of_an_active_row_with_a_draft_open_lands_on_the_drafts_copy():
@@ -421,23 +513,6 @@ def test_the_update_narrows_by_the_rows_resolved_version():
 
     statement = session.execute.call_args.args[0]
     assert scopes_to_a_version(statement)
-
-
-def test_the_batch_guard_reads_the_rows_own_versions_not_the_suites():
-    """The suite's resolved version is where its next write would land, which for a contract
-    with an open draft is the draft — writable — no matter which version the ids belong to.
-    Checking that instead of the rows' own version passes a batch aimed at frozen terms, and
-    the UPDATE beneath it then matches nothing and reports success.
-    """
-    session = MagicMock()
-    session.scalars.return_value.all.return_value = []
-    with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
-        TestDefinition.set_status_attribute("flagged", [str(uuid4())], True)
-
-    statement = session.scalars.call_args.args[0]
-    selected = statement.selected_columns[0]
-    assert selected.name == "version_id"
-    assert selected.table.name == "test_definitions"
 
 
 def test_refusing_a_superseded_version_write_opens_no_draft_and_copies_nothing():

@@ -73,12 +73,14 @@ const STATUS_COLORS = {
 };
 
 /** Composite icon button: flag with a diagonal strikethrough (pen_size_1 rotated). */
-const ClearFlagButton = ({ disabled, onclick }) => {
+const CONTRACT_EDIT_DISABLED_TEXT = "Editing a contract's tests is coming soon.";
+
+const ClearFlagButton = ({ disabled, onclick, tooltip = 'Clear flag' }) => {
     return withTooltip(btn(
         {
             'data-testid': 'button',
             class: 'tg-button tg-icon-button tg-basic-button',
-            tooltip: 'Clear flag',
+            tooltip,
             disabled,
             onclick,
             style: 'width: 40px; position: relative;',
@@ -89,7 +91,7 @@ const ClearFlagButton = ({ disabled, onclick }) => {
             icon({ class: 'material-symbols-rounded', style: 'font-size: 20px;' }, 'flag'),
             icon({ class: 'material-symbols-rounded', style: 'font-size: 24px; position: absolute; top: -3px; left: -3px; transform: rotate(90deg);' }, 'pen_size_1'),
         ),
-    ), { text: 'Clear flag' });
+    ), { text: tooltip });
 };
 
 const FLAGGED_FILTER_OPTIONS = [
@@ -703,7 +705,9 @@ const TestResults = (/** @type Properties */ props) => {
             if (!permissions.val.can_disposition) return '';
             const isAll = selectAll.val;
             const count = selectedIdsCount.val;
+            const isContract = !!runInfo.val.is_contract;
             const noSelection = !isAll && count === 0 && !selectedRow.val;
+            const flagDisabled = isContract || noSelection;
 
             const onFlag = (value) => {
                 if (isAll) {
@@ -724,11 +728,14 @@ const TestResults = (/** @type Properties */ props) => {
                 { 'data-testid': 'flag-actions', class: 'flex-row fx-gap-1' },
                 span({ style: 'width: 0px; height: 24px; border-right: 1px dashed var(--border-color);'}, ''),
                 Button({
-                    type: 'icon', icon: 'flag', tooltip: 'Flag selected', disabled: noSelection,
+                    type: 'icon', icon: 'flag',
+                    tooltip: isContract ? CONTRACT_EDIT_DISABLED_TEXT : 'Flag selected',
+                    disabled: flagDisabled,
                     onclick: () => onFlag(true),
                 }),
                 ClearFlagButton({
-                    disabled: noSelection,
+                    disabled: flagDisabled,
+                    tooltip: isContract ? CONTRACT_EDIT_DISABLED_TEXT : 'Clear flag',
                     onclick: () => onFlag(false),
                 }),
             );
@@ -989,6 +996,8 @@ const TestResults = (/** @type Properties */ props) => {
                         ...[
                             permissions.val.can_edit && row.test_definition_exists ? Button({
                                 type: 'stroked', icon: 'edit', label: 'Edit', width: 'auto',
+                                disabled: !!runInfo.val.is_contract,
+                                tooltip: runInfo.val.is_contract ? CONTRACT_EDIT_DISABLED_TEXT : undefined,
                                 style: 'background: var(--button-generic-background-color);',
                                 onclick: () => emit('EditTestClicked', { payload: { test_result_id: row.test_result_id } }),
                             }) : '',
