@@ -19,6 +19,7 @@ import { Card } from '/app/static/js/components/card.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { Icon } from '/app/static/js/components/icon.js';
 import { TestDefinitionForm } from '/app/static/js/components/test_definition_form.js';
+import { withTooltip } from '/app/static/js/components/tooltip.js';
 
 const { div, span } = van.tags;
 
@@ -163,15 +164,20 @@ const EditTableMonitors = (/** @type Properties */ props) => {
 
                             return div(
                                 {
-                                    class: () => `edit-monitors--item clickable p-2 pr-0 border-radius-1 flex-row fx-justify-space-between ${selectedItem.val.id === id ? 'selected' : ''}`,
+                                    class: () => `edit-monitors--item clickable p-2 pr-0 border-radius-1 flex-row fx-justify-space-between fx-gap-1 ${selectedItem.val.id === id ? 'selected' : ''}`,
                                     onclick: () => selectedItem.val = { type: 'Metric_Trend', id },
                                 },
                                 span(
-                                    { style: `text-overflow: ellipsis; ${!metric.column_name ? 'font-style: italic;' : ''}` },
-                                    metric.column_name || '(Unnamed Metric)',
+                                    { class: 'edit-monitors--item-name flex-row' },
+                                    metric.column_name
+                                        ? withTooltip(
+                                            span({ class: 'edit-monitors--item-text' }, metric.column_name),
+                                            { text: metric.column_name, position: 'top-right' },
+                                        )
+                                        : span({ class: 'edit-monitors--item-text', style: 'font-style: italic;' }, '(Unnamed Metric)'),
                                     () => {
                                         const state = formStates.val[id];
-                                        return state && !state.valid ? span({ class: 'text-error' }, ' *') : '';
+                                        return state && !state.valid ? span({ class: 'text-error' }, '\u00a0*') : '';
                                     },
                                 ),
                                 Button({
@@ -343,10 +349,21 @@ stylesheet.replace(`
 
 .edit-monitors--list {
     flex: 200px 0 0;
+    min-width: 0;
 }
 
 .edit-monitors--item {
     height: 40px;
+}
+
+.edit-monitors--item-name {
+    min-width: 0;
+}
+
+.edit-monitors--item-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .edit-monitors--item:hover {
