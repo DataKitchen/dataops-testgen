@@ -29,7 +29,7 @@ def _make_run_summary(**overrides):
         "log_ct": 0, "dismissed_ct": 0, "dq_score_testing": 92.5,
         "error_message": None,
         "version_number": None, "version_frozen_at": None, "active_version_number": None,
-        "test_starttime": None, "is_preview": False,
+        "test_starttime": None, "is_preview": False, "version_discarded": False, "version_label": None,
     }
     defaults.update(overrides)
     return MagicMock(**defaults)
@@ -548,6 +548,32 @@ def test_a_run_of_a_draft_is_a_preview(db_session_mock):
     out = _render(run)
     assert "**Version:** v5 draft" in out
     assert "**Preview:** Yes" in out
+
+
+def test_a_run_of_a_discarded_draft_is_a_preview_of_a_discarded_draft(db_session_mock):
+    run = _real_run_summary(version_discarded=True, active_version_number=4, test_starttime=datetime(2026, 9, 13, 9, 0))
+    assert run.version_label == "discarded draft"
+    assert run.is_preview is True
+    out = _render(run)
+    assert "**Version:** discarded draft" in out
+    assert "**Preview:** Yes" in out
+
+
+def test_a_queued_run_of_a_draft_is_a_preview(db_session_mock):
+    run = _real_run_summary(version_number=5, active_version_number=4)
+    assert run.is_preview is True
+
+
+def test_version_label_names_the_versions_current_state(db_session_mock):
+    frozen = datetime(2026, 9, 12, tzinfo=UTC)
+    assert _real_run_summary(version_number=5, active_version_number=4).version_label == "v5 draft"
+    assert _real_run_summary(
+        version_number=4, version_frozen_at=frozen, active_version_number=4
+    ).version_label == "v4 active"
+    assert _real_run_summary(
+        version_number=3, version_frozen_at=frozen, active_version_number=4
+    ).version_label == "v3 superseded"
+    assert _real_run_summary().version_label is None
 
 
 def test_a_versioned_run_without_a_start_time_is_not_a_preview(db_session_mock):

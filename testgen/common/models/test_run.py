@@ -16,7 +16,7 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
-from testgen.common.models.suite_version import SuiteVersion
+from testgen.common.models.suite_version import SuiteVersion, format_version, version_state
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_result import TestResult, TestResultStatus
 from testgen.common.models.test_suite import TestSuite
@@ -77,12 +77,25 @@ class TestRunSummary(EntityMinimal):
     version_frozen_at: datetime | None = None
     active_version_number: int | None = None
     test_starttime: datetime | None = None
+    version_discarded: bool = False
 
     STATUS_LABEL: ClassVar[dict[str, str]] = JOB_STATUS_LABEL
 
     @property
+    def version_label(self) -> str | None:
+        """The run's version as every surface names it, e.g. ``v3 active``, or None for an unversioned run."""
+        if self.version_discarded:
+            return "discarded draft"
+        if self.version_number is None:
+            return None
+        state = version_state(self.version_frozen_at, self.version_number == self.active_version_number)
+        return format_version(self.version_number, state)
+
+    @property
     def is_preview(self) -> bool:
-        """Whether the run checked a version before it was frozen."""
+        """Whether the run checked a version before it was frozen, including a draft since discarded."""
+        if self.version_discarded:
+            return True
         if self.version_number is None:
             return False
         if self.version_frozen_at is None:
@@ -311,7 +324,9 @@ class TestRun(Entity):
             sv.frozen_at AS version_frozen_at,
             (SELECT MAX(av.version) FROM suite_versions av
                 WHERE av.test_suite_id = ts.id AND av.frozen_at IS NOT NULL) AS active_version_number,
-            tr.test_starttime
+            tr.test_starttime,
+            (tr.version_id IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM suite_versions dv WHERE dv.id = tr.version_id)) AS version_discarded
         FROM job_executions je
             LEFT JOIN test_runs tr ON tr.id = je.id
             LEFT JOIN suite_versions sv ON sv.id = tr.version_id AND sv.test_suite_id IS NOT NULL

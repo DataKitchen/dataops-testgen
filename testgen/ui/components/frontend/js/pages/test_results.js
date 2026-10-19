@@ -27,6 +27,7 @@
  * @property {TestResultItem[]} items
  * @property {object[]} summary
  * @property {string} score
+ * @property {{value: string, tooltip: string}?} contract_version
  * @property {object} filters
  * @property {string?} selected_id
  * @property {string?} selected_item
@@ -343,6 +344,28 @@ const DetailEntries = (entries) => entries.map(([key, value]) => div(
         ? Link({ href: value, label: value, open_new: true })
         : span({ class: 'tg-tr--metadata-value' }, formatMetadataValue(value)),
 ));
+
+/**
+ * The contract version a run measured, and whether it counts as the contract's status.
+ * @param {{value: string, tooltip: string}?} contractVersion
+ */
+const ContractVersion = (contractVersion) => {
+    if (!contractVersion) {
+        return '';
+    }
+    return div(
+        { class: 'flex-column' },
+        small({ class: 'text-caption' }, 'Contract Version'),
+        div(
+            { class: 'flex-row fx-gap-1 fx-align-flex-center' },
+            span({ 'data-testid': 'contract-version', class: 'text-large' }, contractVersion.value),
+            withTooltip(
+                Icon({ size: 16, classes: 'text-disabled' }, 'help'),
+                { text: contractVersion.tooltip, position: 'bottom', width: 240 },
+            ),
+        ),
+    );
+};
 
 /**
  * What the run carried besides its results: what it was pointed away from its defaults at, and the
@@ -894,6 +917,7 @@ const TestResults = (/** @type Properties */ props) => {
                 { class: 'fx-flex', style: 'min-width: 300px' },
                 () => SummaryBar({ items: summary.val, height: 20, width: 800 }),
             ),
+            () => ContractVersion(getValue(props.contract_version)),
             div(
                 { class: 'tg-tr--score flex-row fx-align-flex-end fx-gap-1' },
                 div(

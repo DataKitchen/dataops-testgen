@@ -32,6 +32,7 @@
  * @property {number?} log_ct
  * @property {number?} dismissed_ct
  * @property {string?} dq_score_testing
+ * @property {string?} version_caption
  *
  * @typedef Permissions
  * @type {object}
@@ -444,9 +445,10 @@ const TestRunItem = (
                 : span(formatTimestamp(displayTime)),
             div(
                 { class: 'text-caption mt-1' },
-                item.table_groups_name && item.test_suite
+                (item.table_groups_name && item.test_suite
                     ? `${item.table_groups_name} > ${item.test_suite}`
-                    : item.test_suite || '--',
+                    : item.test_suite || '--')
+                + (item.version_caption ? ` · ${item.version_caption}` : ''),
             ),
         ),
         div(

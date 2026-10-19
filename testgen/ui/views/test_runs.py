@@ -21,6 +21,7 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
+from testgen.ui.services.contract_run_service import run_version_caption
 from testgen.ui.services.query_cache import (
     get_project_summary,
     get_test_run_summaries,
@@ -170,6 +171,7 @@ class TestRunsPage(Page):
                         **run.to_dict(json_safe=True),
                         "status_label": run.status_label,
                         "dq_score_testing": friendly_score(run.dq_score_testing),
+                        "version_caption": run_version_caption(run),
                     } for run in test_runs
                 ],
                 "total_count": total_count,
