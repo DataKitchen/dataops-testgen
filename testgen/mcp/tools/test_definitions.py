@@ -23,6 +23,7 @@ from testgen.common.models.suite_version import (
     SuiteVersion,
     UnmatchedInDraftError,
     VersionState,
+    format_version,
     version_state,
 )
 from testgen.common.models.table_group import TableGroup
@@ -68,7 +69,6 @@ from testgen.mcp.tools.common import (
     format_flavor_label,
     format_page_footer,
     format_page_info,
-    format_version,
     parse_enum,
     parse_impact_dimension,
     parse_quality_dimension,

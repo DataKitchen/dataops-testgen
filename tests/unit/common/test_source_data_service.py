@@ -13,6 +13,7 @@ import testgen
 from testgen.commands.queries.execute_tests_query import InputParameters, TestExecutionSQL
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import get_flavor_service
+from testgen.common.enums import TEST_SUITE_TYPES
 from testgen.common.pii_masking import PII_REDACTED
 from testgen.common.source_data_service import (
     LookupData,
@@ -149,7 +150,7 @@ class Test_build_test_result_query:
 class Test_build_query_standard:
     @patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q)
     @patch(f"{MODULE}.replace_params", side_effect=lambda q, _p: q)
-    @patch(f"{MODULE}.TestDefinition.get", return_value=_FakeTestDefinition())
+    @patch(f"{MODULE}.TestDefinition.get_for_project", return_value=_FakeTestDefinition())
     @patch(f"{MODULE}._get_lookup_data")
     def test_returns_query_when_lookup_and_td_exist(self, mock_lookup, mock_td, _mock_replace, _mock_templated):
         mock_lookup.return_value = LookupData(
@@ -159,13 +160,13 @@ class Test_build_query_standard:
         result = _build_query_standard(_standard_issue_data(), limit=500)
         assert result is not None
         mock_lookup.assert_called_once_with("tg-uuid-1", "1001", "Test Results")
-        mock_td.assert_called_once_with("td-uuid-1")
+        mock_td.assert_called_once_with("td-uuid-1", suite_types=TEST_SUITE_TYPES)
 
     @patch(f"{MODULE}._get_lookup_data", return_value=None)
     def test_returns_none_when_no_lookup(self, _mock_lookup):
         assert _build_query_standard(_standard_issue_data(), limit=500) is None
 
-    @patch(f"{MODULE}.TestDefinition.get", return_value=None)
+    @patch(f"{MODULE}.TestDefinition.get_for_project", return_value=None)
     @patch(f"{MODULE}._get_lookup_data")
     def test_returns_none_when_no_test_definition(self, _mock_lookup, _mock_td):
         _mock_lookup.return_value = LookupData(lookup_query="SELECT 1", sql_flavor="postgresql")
@@ -173,7 +174,7 @@ class Test_build_query_standard:
 
     @patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q)
     @patch(f"{MODULE}.replace_params")
-    @patch(f"{MODULE}.TestDefinition.get")
+    @patch(f"{MODULE}.TestDefinition.get_for_project")
     @patch(f"{MODULE}._get_lookup_data")
     def test_tolerance_null_handling(self, mock_lookup, mock_td, mock_replace, _mock_templated):
         mock_lookup.return_value = LookupData(lookup_query="SELECT 1", sql_flavor="postgresql")
@@ -184,7 +185,7 @@ class Test_build_query_standard:
         assert params["UPPER_TOLERANCE"] == "NULL"
 
     @patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q)
-    @patch(f"{MODULE}.TestDefinition.get")
+    @patch(f"{MODULE}.TestDefinition.get_for_project")
     @patch(f"{MODULE}._get_lookup_data")
     def test_custom_query_data_schema_is_substituted(self, mock_lookup, mock_td, _mock_templated):
         mock_lookup.return_value = LookupData(lookup_query="SELECT q.* FROM ({CUSTOM_QUERY}) q", sql_flavor="postgresql")
@@ -206,7 +207,7 @@ class Test_build_query_standard:
         ],
     )
     @patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q)
-    @patch(f"{MODULE}.TestDefinition.get")
+    @patch(f"{MODULE}.TestDefinition.get_for_project")
     @patch(f"{MODULE}._get_lookup_data")
     def test_data_schema_is_expanded_inside_user_parameters(
         self, mock_lookup, mock_td, _mock_templated, field, placeholder,
@@ -223,7 +224,7 @@ class Test_build_query_standard:
     )
     @patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q)
     @patch(f"{MODULE}.replace_params")
-    @patch(f"{MODULE}.TestDefinition.get")
+    @patch(f"{MODULE}.TestDefinition.get_for_project")
     @patch(f"{MODULE}._get_lookup_data")
     def test_match_having_condition_follows_its_own_field(
         self, mock_lookup, mock_td, mock_replace, _mock_templated, having, match_having, expected,
@@ -235,7 +236,7 @@ class Test_build_query_standard:
 
     @patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q)
     @patch(f"{MODULE}.replace_params")
-    @patch(f"{MODULE}.TestDefinition.get")
+    @patch(f"{MODULE}.TestDefinition.get_for_project")
     @patch(f"{MODULE}._get_lookup_data")
     def test_baseline_value_list_renders_flavor_literals(self, mock_lookup, mock_td, mock_replace, _mock_templated):
         mock_lookup.return_value = LookupData(lookup_query="SELECT 1", sql_flavor="databricks")
@@ -248,7 +249,7 @@ class Test_build_query_standard:
 
     @patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q)
     @patch(f"{MODULE}.replace_params")
-    @patch(f"{MODULE}.TestDefinition.get")
+    @patch(f"{MODULE}.TestDefinition.get_for_project")
     @patch(f"{MODULE}._get_lookup_data")
     def test_subset_condition_defaults(self, mock_lookup, mock_td, mock_replace, _mock_templated):
         mock_lookup.return_value = LookupData(lookup_query="SELECT 1", sql_flavor="postgresql")
@@ -273,7 +274,7 @@ def _test_type_lookups():
 
 
 @pytest.mark.parametrize(("sql_flavor", "lookup_query"), list(_test_type_lookups()))
-@patch(f"{MODULE}.TestDefinition.get")
+@patch(f"{MODULE}.TestDefinition.get_for_project")
 @patch(f"{MODULE}._get_lookup_data")
 def test_every_lookup_placeholder_is_substituted(mock_lookup, mock_td, sql_flavor, lookup_query):
     mock_lookup.return_value = LookupData(lookup_query=lookup_query, sql_flavor=sql_flavor)
@@ -295,7 +296,7 @@ class Test_match_schema_resolution:
     def _build(self, test_definition, issue_data):
         with (
             patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q),
-            patch(f"{MODULE}.TestDefinition.get", return_value=test_definition),
+            patch(f"{MODULE}.TestDefinition.get_for_project", return_value=test_definition),
             patch(f"{MODULE}._get_lookup_data") as mock_lookup,
         ):
             mock_lookup.return_value = LookupData(
@@ -405,7 +406,7 @@ class Test_fetch_test_result_source_data:
     @patch(f"{MODULE}.fetch_from_target_db")
     @patch(f"{MODULE}.Connection.get_by_table_group")
     @patch(f"{MODULE}._build_query_standard", return_value="SELECT 1")
-    @patch(f"{MODULE}.TestDefinition.get", return_value=_FakeTestDefinition())
+    @patch(f"{MODULE}.TestDefinition.get_for_project", return_value=_FakeTestDefinition())
     def test_returns_ok_with_data(self, _mock_td, _mock_build, _mock_conn, mock_fetch):
         mock_fetch.return_value = _MOCK_ROWS
         result = fetch_test_result_source_data(_standard_issue_data(), limit=500)
@@ -414,14 +415,14 @@ class Test_fetch_test_result_source_data:
         assert result.query == "SELECT 1"
         assert result.message is None
 
-    @patch(f"{MODULE}.TestDefinition.get", return_value=None)
+    @patch(f"{MODULE}.TestDefinition.get_for_project", return_value=None)
     def test_returns_na_when_no_test_definition(self, _mock_td):
         result = fetch_test_result_source_data(_standard_issue_data())
         assert result.status == "NA"
         assert "no longer exists" in result.message
 
     @patch(f"{MODULE}._build_query_standard", return_value=None)
-    @patch(f"{MODULE}.TestDefinition.get", return_value=_FakeTestDefinition())
+    @patch(f"{MODULE}.TestDefinition.get_for_project", return_value=_FakeTestDefinition())
     def test_returns_na_when_no_lookup_query(self, _mock_td, _mock_build):
         result = fetch_test_result_source_data(_standard_issue_data())
         assert result.status == "NA"
@@ -430,7 +431,7 @@ class Test_fetch_test_result_source_data:
     @patch(f"{MODULE}.fetch_from_target_db", return_value=[])
     @patch(f"{MODULE}.Connection.get_by_table_group")
     @patch(f"{MODULE}._build_query_standard", return_value="SELECT 1")
-    @patch(f"{MODULE}.TestDefinition.get", return_value=_FakeTestDefinition())
+    @patch(f"{MODULE}.TestDefinition.get_for_project", return_value=_FakeTestDefinition())
     def test_returns_nd_when_no_rows(self, _mock_td, _mock_build, _mock_conn, _mock_fetch):
         result = fetch_test_result_source_data(_standard_issue_data())
         assert result.status == "ND"
@@ -439,7 +440,7 @@ class Test_fetch_test_result_source_data:
     @patch(f"{MODULE}.fetch_from_target_db", side_effect=Exception("connection refused"))
     @patch(f"{MODULE}.Connection.get_by_table_group")
     @patch(f"{MODULE}._build_query_standard", return_value="SELECT 1")
-    @patch(f"{MODULE}.TestDefinition.get", return_value=_FakeTestDefinition())
+    @patch(f"{MODULE}.TestDefinition.get_for_project", return_value=_FakeTestDefinition())
     def test_returns_err_on_exception(self, _mock_td, _mock_build, _mock_conn, _mock_fetch):
         result = fetch_test_result_source_data(_standard_issue_data())
         assert result.status == "ERR"
@@ -449,7 +450,7 @@ class Test_fetch_test_result_source_data:
     @patch(f"{MODULE}.fetch_from_target_db")
     @patch(f"{MODULE}.Connection.get_by_table_group")
     @patch(f"{MODULE}._build_query_standard", return_value="SELECT 1")
-    @patch(f"{MODULE}.TestDefinition.get", return_value=_FakeTestDefinition())
+    @patch(f"{MODULE}.TestDefinition.get_for_project", return_value=_FakeTestDefinition())
     def test_calls_mask_pii_for_standard(self, _mock_td, _mock_build, _mock_conn, mock_fetch, mock_mask):
         mock_fetch.return_value = _MOCK_ROWS
         fetch_test_result_source_data(_standard_issue_data(), mask_pii=True)
@@ -463,7 +464,7 @@ class Test_fetch_test_result_source_data:
     @patch(f"{MODULE}.fetch_from_target_db")
     @patch(f"{MODULE}.Connection.get_by_table_group")
     @patch(f"{MODULE}._build_query_custom", return_value="SELECT custom")
-    @patch(f"{MODULE}.TestDefinition.get", return_value=_FakeTestDefinition())
+    @patch(f"{MODULE}.TestDefinition.get_for_project", return_value=_FakeTestDefinition())
     def test_masks_redactable_columns_for_custom(
         self, _mock_td, _mock_build, _mock_conn, mock_fetch, mock_mask, mock_custom_lookup, mock_mask_pii,
     ):

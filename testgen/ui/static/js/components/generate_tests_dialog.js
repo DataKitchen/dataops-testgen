@@ -15,6 +15,7 @@
  * @type {object}
  * @property {string} test_suite_id
  * @property {string} test_suite_name
+ * @property {boolean?} is_contract
  * @property {string[]} generation_sets
  * @property {string[]} selected_generation_sets
  * @property {Object.<string, string[]>} generation_set_test_types
@@ -55,6 +56,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
 
     const testSuiteId = getValue(props.test_suite_id);
     const testSuiteName = getValue(props.test_suite_name);
+    const isContract = getValue(props.is_contract) === true;
     const generationSets = getValue(props.generation_sets) ?? [];
     const storedSets = getValue(props.selected_generation_sets) ?? [];
     const setMembers = getValue(props.generation_set_test_types) ?? {};
@@ -62,11 +64,11 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
     const valueHashTypes = new Set(getValue(props.value_hash_test_types) ?? []);
     const valueHashWarning = getValue(props.value_hash_warning);
     const selectedSets = van.state(storedSets.filter((s) => generationSets.includes(s)));
-    const submitDisabled = van.derive(() => selectedSets.val.length === 0);
+    const submitDisabled = van.derive(() => !isContract && selectedSets.val.length === 0);
 
     const content = div(
         { class: 'flex-column fx-gap-3 generate-tests--wrapper' },
-        generationSets.length > 0
+        !isContract && generationSets.length > 0
             ? Select({
                 label: 'Generation Sets',
                 value: selectedSets,
@@ -151,11 +153,20 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                     : '',
             );
         },
-        div(
-            span('Execute test generation for the test suite '),
-            strong({}, testSuiteName),
-            span('?'),
-        ),
+        isContract
+            ? div(
+                div(
+                    span('Generate tests for the contract '),
+                    strong({}, testSuiteName),
+                    span('?'),
+                ),
+                div({ class: 'text-secondary' }, 'Regenerates the contract\'s draft from the tables it declares.'),
+            )
+            : div(
+                span('Execute test generation for the test suite '),
+                strong({}, testSuiteName),
+                span('?'),
+            ),
         () => {
             const result = getValue(props.result) ?? {};
             return result.message
@@ -173,11 +184,9 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                     style: 'width: auto;',
                     disabled: submitDisabled,
                     onclick: () => emit('GenerateTestsConfirmed', {
-                        payload: {
-                            test_suite_id: testSuiteId,
-                            test_suite_name: testSuiteName,
-                            generation_sets: selectedSets.val,
-                        },
+                        payload: isContract
+                            ? { test_suite_id: testSuiteId, test_suite_name: testSuiteName, is_contract: true }
+                            : { test_suite_id: testSuiteId, test_suite_name: testSuiteName, generation_sets: selectedSets.val },
                     }),
                 }),
             )

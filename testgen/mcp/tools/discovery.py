@@ -8,7 +8,7 @@ from testgen.common.models import with_database_session
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
-from testgen.common.models.suite_version import ContractState, SuiteVersion, VersionState
+from testgen.common.models.suite_version import ContractState, SuiteVersion, VersionState, format_version
 from testgen.common.models.test_result import TestResultStatus
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
@@ -18,7 +18,6 @@ from testgen.mcp.tools.common import (
     MCP_SUITE_TYPES,
     DocGroup,
     format_flavor_label,
-    format_version,
     parse_suite_type,
     resolve_connection,
     resolve_table_group,

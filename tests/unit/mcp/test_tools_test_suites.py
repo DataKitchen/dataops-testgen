@@ -15,6 +15,7 @@ from testgen.mcp.permissions import ProjectPermissions
 pytestmark = pytest.mark.unit
 
 MODULE = "testgen.mcp.tools.test_suites"
+CREATION = "testgen.common.contract_creation"
 
 
 def _patch_perms(allowed=("demo",), memberships=None, permission="edit", role="role_a"):
@@ -233,12 +234,12 @@ def test_create_test_suite_defaults_to_regular(mock_resolve, mock_suite_cls, db_
     assert kwargs["suite_type"] == SuiteType.REGULAR
 
 
-@patch(f"{MODULE}.contract_service")
+@patch(f"{CREATION}.initialize_contract")
 @patch(f"{MODULE}.Connection")
 @patch(f"{MODULE}.TestSuite")
 @patch(f"{MODULE}.resolve_table_group")
 def test_create_test_suite_contract_type_initializes_the_contract(
-    mock_resolve, mock_suite_cls, mock_connection_cls, mock_contract_service, db_session_mock,
+    mock_resolve, mock_suite_cls, mock_connection_cls, mock_initialize_contract, db_session_mock,
 ):
     tg = _mock_table_group()
     mock_resolve.return_value = tg
@@ -257,7 +258,7 @@ def test_create_test_suite_contract_type_initializes_the_contract(
     _, kwargs = mock_suite_cls.call_args
     assert kwargs["suite_type"] == SuiteType.CONTRACT
     mock_connection_cls.get.assert_called_once_with(tg.connection_id)
-    mock_contract_service.initialize_contract.assert_called_once_with(instance, tg, connection)
+    mock_initialize_contract.assert_called_once_with(instance, tg, connection)
 
 
 def _create_contract(table_names, *, catalog=("orders", "customers"), generation=None):
@@ -268,9 +269,9 @@ def _create_contract(table_names, *, catalog=("orders", "customers"), generation
         patch(f"{MODULE}.resolve_table_group", return_value=tg),
         patch(f"{MODULE}.TestSuite", return_value=_mock_test_suite(suite_type=SuiteType.CONTRACT)),
         patch(f"{MODULE}.Connection"),
-        patch(f"{MODULE}.contract_service") as contract_service,
+        patch(f"{CREATION}.initialize_contract") as initialize,
         patch(f"{MODULE}.contract_document.catalog_table_names", return_value=list(catalog)),
-        patch(f"{MODULE}.run_contract_generation", return_value=generation) as generate,
+        patch(f"{CREATION}.run_contract_generation", return_value=generation) as generate,
     ):
         from testgen.mcp.tools.test_suites import create_test_suite
 
@@ -278,7 +279,7 @@ def _create_contract(table_names, *, catalog=("orders", "customers"), generation
             table_group_id=str(tg.id), test_suite_name="Orders contract", suite_type="Contract",
             table_names=table_names,
         )
-    return out, contract_service, generate
+    return out, initialize, generate
 
 
 def test_create_test_suite_contract_with_tables_generates_them_and_reports_it(db_session_mock):
@@ -286,10 +287,10 @@ def test_create_test_suite_contract_with_tables_generates_them_and_reports_it(db
         term_count=42, tables_declared=["orders", "customers"], tables_not_in_catalog=[], tables_not_profiled=[],
     )
 
-    out, contract_service, generate = _create_contract(["orders", "customers", "orders"], generation=generation)
+    out, initialize, generate = _create_contract(["orders", "customers", "orders"], generation=generation)
 
-    contract_service.initialize_contract.assert_called_once()
-    generate.assert_called_once_with(contract_service.initialize_contract.call_args.args[0].id,
+    initialize.assert_called_once()
+    generate.assert_called_once_with(initialize.call_args.args[0].id,
                                      table_names=["orders", "customers"])
     assert "**Declared tables:** `orders`, `customers`" in out
     assert "**Tests:** 42" in out
@@ -337,9 +338,9 @@ def test_create_test_suite_contract_whose_generation_fails_still_reports_the_con
         patch(f"{MODULE}.resolve_table_group", return_value=tg),
         patch(f"{MODULE}.TestSuite", return_value=suite),
         patch(f"{MODULE}.Connection"),
-        patch(f"{MODULE}.contract_service"),
+        patch(f"{CREATION}.initialize_contract"),
         patch(f"{MODULE}.contract_document.catalog_table_names", return_value=["orders"]),
-        patch(f"{MODULE}.run_contract_generation", side_effect=fail_generation),
+        patch(f"{CREATION}.run_contract_generation", side_effect=fail_generation),
     ):
         from testgen.mcp.tools.test_suites import create_test_suite
 
@@ -355,9 +356,9 @@ def test_create_test_suite_contract_whose_generation_fails_still_reports_the_con
 
 
 def test_create_test_suite_contract_without_tables_generates_nothing(db_session_mock):
-    out, contract_service, generate = _create_contract(None)
+    out, initialize, generate = _create_contract(None)
 
-    contract_service.initialize_contract.assert_called_once()
+    initialize.assert_called_once()
     generate.assert_not_called()
     assert "Declared tables" not in out
 
@@ -382,12 +383,12 @@ def test_create_test_suite_refuses_table_names_for_a_regular_suite(db_session_mo
     suite_cls.assert_not_called()
 
 
-@patch(f"{MODULE}.contract_service")
+@patch(f"{CREATION}.initialize_contract")
 @patch(f"{MODULE}.Connection")
 @patch(f"{MODULE}.TestSuite")
 @patch(f"{MODULE}.resolve_table_group")
 def test_create_test_suite_contract_card_names_the_type(
-    mock_resolve, mock_suite_cls, mock_connection_cls, mock_contract_service, db_session_mock,
+    mock_resolve, mock_suite_cls, mock_connection_cls, mock_initialize_contract, db_session_mock,
 ):
     tg = _mock_table_group()
     mock_resolve.return_value = tg
@@ -404,11 +405,11 @@ def test_create_test_suite_contract_card_names_the_type(
     assert "**Type:** Contract" in out
 
 
-@patch(f"{MODULE}.contract_service")
+@patch(f"{CREATION}.initialize_contract")
 @patch(f"{MODULE}.TestSuite")
 @patch(f"{MODULE}.resolve_table_group")
-def test_create_test_suite_regular_type_does_not_touch_the_contract_service(
-    mock_resolve, mock_suite_cls, mock_contract_service, db_session_mock,
+def test_create_test_suite_regular_type_does_not_create_a_contract(
+    mock_resolve, mock_suite_cls, mock_initialize_contract, db_session_mock,
 ):
     tg = _mock_table_group()
     mock_resolve.return_value = tg
@@ -419,15 +420,15 @@ def test_create_test_suite_regular_type_does_not_touch_the_contract_service(
     with _patch_perms():
         create_test_suite(table_group_id=str(tg.id), test_suite_name="Anything")
 
-    mock_contract_service.initialize_contract.assert_not_called()
+    mock_initialize_contract.assert_not_called()
 
 
-@patch(f"{MODULE}.contract_service")
+@patch(f"{CREATION}.initialize_contract")
 @patch(f"{MODULE}.Connection")
 @patch(f"{MODULE}.TestSuite")
 @patch(f"{MODULE}.resolve_table_group")
 def test_create_test_suite_contract_on_a_flavor_with_no_server_type_says_its_entry_is_custom(
-    mock_resolve, mock_suite_cls, mock_connection_cls, mock_contract_service, db_session_mock,
+    mock_resolve, mock_suite_cls, mock_connection_cls, mock_initialize_contract, db_session_mock,
 ):
     tg = _mock_table_group()
     mock_resolve.return_value = tg
@@ -435,7 +436,7 @@ def test_create_test_suite_contract_on_a_flavor_with_no_server_type_says_its_ent
     connection = MagicMock()
     connection.sql_flavor_code = "redshift_spectrum"
     mock_connection_cls.get.return_value = connection
-    mock_contract_service.initialize_contract.return_value = InitializedContract(
+    mock_initialize_contract.return_value = InitializedContract(
         draft=MagicMock(), custom_server_reason=CustomServerReason(server_type=None)
     )
 
@@ -809,12 +810,12 @@ def test_update_test_suite_allows_role_with_edit_but_not_administer(mock_resolve
     assert "Test Suite `DQ Suite` updated" in out
 
 
-@patch(f"{MODULE}.contract_service")
+@patch(f"{CREATION}.initialize_contract")
 @patch(f"{MODULE}.Connection")
 @patch(f"{MODULE}.TestSuite")
 @patch(f"{MODULE}.resolve_table_group")
 def test_create_test_suite_contract_missing_fields_names_the_fields_and_the_type(
-    mock_resolve, mock_suite_cls, mock_connection_cls, mock_contract_service, db_session_mock,
+    mock_resolve, mock_suite_cls, mock_connection_cls, mock_initialize_contract, db_session_mock,
 ):
     tg = _mock_table_group()
     mock_resolve.return_value = tg
@@ -822,7 +823,7 @@ def test_create_test_suite_contract_missing_fields_names_the_fields_and_the_type
     connection = MagicMock()
     connection.sql_flavor_code = "postgresql"
     mock_connection_cls.get.return_value = connection
-    mock_contract_service.initialize_contract.return_value = InitializedContract(
+    mock_initialize_contract.return_value = InitializedContract(
         draft=MagicMock(),
         custom_server_reason=CustomServerReason(server_type=ServerType.POSTGRES, missing_fields=("host", "port")),
     )

@@ -11,12 +11,14 @@
  * @property {ProjectSummary} project_summary
  * @property {TestSuiteSummary} test_suites
  * @property {FilterOption[]} table_group_filter_options
+ * @property {FilterOption[]} suite_type_filter_options
  * @property {string?} test_suite_name
  * @property {Permissions} permissions
  * @property {object?} run_tests_dialog
  * @property {object?} generate_tests_dialog
  * @property {object?} schedule_dialog
  * @property {object?} notifications_dialog
+ * @property {object?} add_wizard
  */
 import van from '/app/static/js/van.min.js';
 import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
@@ -25,6 +27,7 @@ import { Select } from '/app/static/js/components/select.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Card } from '/app/static/js/components/card.js';
 import { Link } from '/app/static/js/components/link.js';
+import { withTooltip } from '/app/static/js/components/tooltip.js';
 import { Caption } from '/app/static/js/components/caption.js';
 import { SummaryBar } from '/app/static/js/components/summary_bar.js';
 import { EMPTY_STATE_MESSAGE, EmptyState } from '/app/static/js/components/empty_state.js';
@@ -35,10 +38,9 @@ import { ScheduleList } from '/app/static/js/components/schedule_list.js';
 import { NotificationSettings } from '/app/static/js/components/notification_settings.js';
 import { Alert } from '/app/static/js/components/alert.js';
 import { Toggle } from '/app/static/js/components/toggle.js';
-import { Checkbox } from '/app/static/js/components/checkbox.js';
+import { TestSuiteFields, createTestSuiteFormState, testSuiteFormPayload } from '/app/static/js/components/test_suite_form.js';
 import { Input } from '/app/static/js/components/input.js';
-import { ExpanderToggle } from '/app/static/js/components/expander_toggle.js';
-import { required } from '/app/static/js/form_validators.js';
+import { TestSuiteWizard } from '/app/static/js/components/test_suite_wizard.js';
 
 const { b, div, h4, pre, small, span, i } = van.tags;
 
@@ -72,19 +74,7 @@ const TestSuites = (/** @type Properties */ props) => {
     const formDialogOpen = van.state(false);
     van.derive(() => { if (formDialogInfo.val?.open) formDialogOpen.val = true; });
 
-    const formState = {
-        testSuiteName: van.state(''),
-        tableGroupId: van.state(null),
-        description: van.state(''),
-        severity: van.state(null),
-        exportToObservability: van.state(false),
-        dqScoreExclude: van.state(false),
-        deactivateInvalidTests: van.state(false),
-        componentKey: van.state(''),
-        componentType: van.state('dataset'),
-        componentName: van.state(''),
-    };
-
+    const formState = createTestSuiteFormState();
     const formValidity = {
         testSuiteName: van.state(false),
         tableGroupId: van.state(false),
@@ -95,6 +85,7 @@ const TestSuites = (/** @type Properties */ props) => {
         const info = formDialogInfo.val;
         if (!info?.open) return;
         const v = info.initial_values ?? {};
+        formState.suiteType.val = v.suite_type ?? 'regular';
         formState.testSuiteName.val = v.test_suite ?? '';
         formState.tableGroupId.val = v.table_groups_id ?? null;
         formState.description.val = v.test_suite_description ?? '';
@@ -124,7 +115,7 @@ const TestSuites = (/** @type Properties */ props) => {
         { id: wrapperId, 'data-testid': 'test-suites', style: 'overflow-y: auto;' },
         () => {
             const projectSummary = getValue(props.project_summary);
-            return projectSummary.test_suite_count > 0
+            return (projectSummary.test_suite_count + projectSummary.contract_count) > 0
             ? div(
                 { class: 'tg-test-suites'},
                 div(
@@ -137,10 +128,15 @@ const TestSuites = (/** @type Properties */ props) => {
                             options: getValue(props.table_group_filter_options) ?? [],
                             allowNull: true,
                             style: 'font-size: 14px;',
-                            onChange: (value) => {
-                                console.log(value)
-                                emit('FilterApplied', { payload: { table_group_id: value } })
-                            },
+                            onChange: (value) => emit('FilterApplied', { payload: { table_group_id: value } }),
+                        }),
+                        () => Select({
+                            label: 'Test Suite Type',
+                            value: getValue(props.suite_type_filter_options)?.find((op) => op.selected)?.value ?? null,
+                            options: getValue(props.suite_type_filter_options) ?? [],
+                            allowNull: true,
+                            style: 'font-size: 14px;',
+                            onChange: (value) => emit('FilterApplied', { payload: { suite_type: value } }),
                         }),
                         () => Input({
                             icon: 'search',
@@ -196,6 +192,15 @@ const TestSuites = (/** @type Properties */ props) => {
                             { class: 'flex-column tg-test-suites--card-title', 'data-testid': 'test-suite-title' },
                             h4(testSuite.test_suite),
                             small(`${testSuite.connection_name} > ${testSuite.table_groups_name}`),
+                            testSuite.suite_type === 'contract'
+                                ? div(
+                                    { class: 'flex-row fx-gap-2 fx-align-flex-center tg-test-suites--version-row' },
+                                    span({ class: 'badge badge-purple', 'data-testid': 'test-suite-contract-badge' }, 'Contract'),
+                                    testSuite.version_caption
+                                        ? small({ 'data-testid': 'test-suite-version-caption' }, testSuite.version_caption)
+                                        : '',
+                                )
+                                : '',
                         ),
                         actionContent: () => div(
                             { class: 'flex-row' },
@@ -237,14 +242,19 @@ const TestSuites = (/** @type Properties */ props) => {
                             { class: 'flex-row fx-justify-space-between fx-flex-align-content' },
                             div(
                                 { class: 'flex-column' },
-                                Link({ emit,
-                                    href: 'test-suites:definitions',
-                                    params: { test_suite_id: testSuite.id, project_code: projectSummary.project_code },
-                                    label: `View ${testSuite.test_ct ?? 0} test definitions`,
-                                    right_icon: 'chevron_right',
-                                    right_icon_size: 20,
-                                    class: 'mb-4',
-                                }),
+                                testSuite.suite_type === 'contract'
+                                    ? withTooltip(
+                                        span({ class: 'mb-4 text-secondary' }, `View ${testSuite.test_ct ?? 0} test definitions`),
+                                        { text: "Viewing a contract's tests is coming soon.", position: 'bottom' },
+                                    )
+                                    : Link({ emit,
+                                        href: 'test-suites:definitions',
+                                        params: { test_suite_id: testSuite.id, project_code: projectSummary.project_code },
+                                        label: `View ${testSuite.test_ct ?? 0} test definitions`,
+                                        right_icon: 'chevron_right',
+                                        right_icon_size: 20,
+                                        class: 'mb-4',
+                                    }),
                                 Caption({ content: 'Description', style: 'margin-bottom: 2px;' }),
                                 span({'data-testid': 'test-suite-description'}, testSuite.test_suite_description ?? '--'),
                             ),
@@ -291,7 +301,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                         color: 'primary',
                                         type: 'stroked',
                                         style: 'margin-top: 16px; min-width: 180px;',
-                                        disabled: !testSuite.last_complete_profile_run_id,
+                                        disabled: testSuite.suite_type !== 'contract' && !testSuite.last_complete_profile_run_id,
                                         onclick: () => emit('GenerateTestsClicked', {payload: testSuite.id}),
                                     }),
                                 ]
@@ -352,129 +362,26 @@ const TestSuites = (/** @type Properties */ props) => {
                 ),
             );
         },
-        // Add/Edit test suite form dialog (driven by Python prop)
+        // Edit test suite form dialog (driven by Python prop)
         () => {
             const info = formDialogInfo.val;
             if (!info) return div();
-            const isEdit = info.mode === 'edit';
-            const tableGroups = info.table_groups ?? [];
-            const severityOptions = [
-                { value: null, label: 'Inherit' },
-                { value: 'Log', label: 'Log' },
-                { value: 'Fail', label: 'Failed' },
-                { value: 'Warning', label: 'Warning' },
-            ];
             const formResult = info.result;
-            const showObservabilitySection = van.state(false);
             return Dialog(
                 {
-                    title: info.title ?? (isEdit ? 'Edit Test Suite' : 'Add Test Suite'),
+                    title: 'Edit Test Suite',
                     open: formDialogOpen,
                     onClose: closeFormDialog,
                     width: '52rem',
                 },
                 div(
                     { class: 'flex-column fx-gap-3' },
-                    div(
-                        { class: 'flex-row fx-gap-3' },
-                        Input({
-                            label: 'Test Suite Name',
-                            value: formState.testSuiteName,
-                            disabled: isEdit,
-                            style: 'flex: 1;',
-                            validators: [required],
-                            onChange: (value, validity) => {
-                                formState.testSuiteName.val = value;
-                                formValidity.testSuiteName.val = validity.valid;
-                            },
-                        }),
-                        Select({
-                            label: 'Table Group',
-                            value: formState.tableGroupId,
-                            options: tableGroups,
-                            allowNull: false,
-                            required: true,
-                            disabled: isEdit,
-                            style: 'flex: 1;',
-                            onChange: (value) => {
-                                formState.tableGroupId.val = value;
-                                formValidity.tableGroupId.val = !!value;
-                            },
-                            portalClass: 'ts-form--select',
-                        }),
-                    ),
-                    div(
-                        { class: 'flex-row fx-gap-3' },
-                        Input({
-                            label: 'Test Suite Description',
-                            value: formState.description,
-                            style: 'flex: 1;',
-                            onChange: (value) => { formState.description.val = value; },
-                        }),
-                        Select({
-                            label: 'Severity',
-                            value: formState.severity,
-                            options: severityOptions,
-                            allowNull: false,
-                            style: 'flex: 1;',
-                            onChange: (value) => { formState.severity.val = value; },
-                            portalClass: 'ts-form--select',
-                        }),
-                    ),
-                    div(
-                        { class: 'flex-row fx-flex-wrap fx-gap-4' },
-                        Checkbox({
-                            name: 'export-to-observability',
-                            label: 'Export to Observability',
-                            checked: formState.exportToObservability,
-                            onChange: (value) => { formState.exportToObservability.val = value; },
-                        }),
-                        Checkbox({
-                            name: 'dq-score-exclude',
-                            label: 'Exclude from quality scoring',
-                            checked: formState.dqScoreExclude,
-                            onChange: (value) => { formState.dqScoreExclude.val = value; },
-                        }),
-                        Checkbox({
-                            name: 'deactivate-invalid-tests',
-                            label: 'Automatically deactivate tests that fail validation',
-                            help: 'At the start of each run, tests whose table or column is missing, or whose column type changed, are deactivated. Otherwise, these tests report an error on each run until the problem is fixed.',
-                            checked: formState.deactivateInvalidTests,
-                            onChange: (value) => { formState.deactivateInvalidTests.val = value; },
-                        }),
-                    ),
-                    ExpanderToggle({
-                        expandLabel: 'Observability overrides',
-                        collapseLabel: 'Observability overrides',
-                        labelPosition: 'left',
-                        onExpand: () => { showObservabilitySection.val = true; },
-                        onCollapse: () => { showObservabilitySection.val = false; },
+                    TestSuiteFields({
+                        state: formState,
+                        validity: formValidity,
+                        tableGroups: info.table_groups ?? [],
+                        mode: 'edit',
                     }),
-                    () => showObservabilitySection.val
-                        ? div(
-                            { class: 'flex-row fx-gap-3' },
-                            Input({
-                                label: 'Component Key',
-                                value: formState.componentKey,
-                                placeholder: 'Optional',
-                                style: 'flex: 1;',
-                                onChange: (value) => { formState.componentKey.val = value; },
-                            }),
-                            Input({
-                                label: 'Component Type',
-                                value: formState.componentType,
-                                disabled: true,
-                                style: 'flex: 1;',
-                            }),
-                            Input({
-                                label: 'Component Name',
-                                value: formState.componentName,
-                                placeholder: 'Optional',
-                                style: 'flex: 1;',
-                                onChange: (value) => { formState.componentName.val = value; },
-                            }),
-                        )
-                        : '',
                     formResult
                         ? Alert({ type: formResult.success ? 'success' : 'error' }, formResult.message)
                         : '',
@@ -483,24 +390,14 @@ const TestSuites = (/** @type Properties */ props) => {
                         Button({
                             type: 'flat',
                             color: 'primary',
-                            label: isEdit ? 'Save' : 'Add',
+                            label: 'Save',
                             width: 'auto',
                             style: 'width: auto;',
                             disabled: saveDisabled,
                             onclick: () => emit('SaveTestSuiteForm', {
                                 payload: {
-                                    mode: info.mode,
-                                    test_suite_id: info.test_suite_id ?? null,
-                                    test_suite: formState.testSuiteName.val,
-                                    table_groups_id: formState.tableGroupId.val,
-                                    test_suite_description: formState.description.val,
-                                    severity: formState.severity.val,
-                                    export_to_observability: formState.exportToObservability.val,
-                                    dq_score_exclude: formState.dqScoreExclude.val,
-                                    deactivate_invalid_tests: formState.deactivateInvalidTests.val,
-                                    component_key: formState.componentKey.val,
-                                    component_type: formState.componentType.val,
-                                    component_name: formState.componentName.val,
+                                    test_suite_id: info.test_suite_id,
+                                    ...testSuiteFormPayload(formState),
                                 },
                             }),
                         }),
@@ -508,6 +405,17 @@ const TestSuites = (/** @type Properties */ props) => {
                 ),
             );
         },
+        // Add test suite wizard, cached so a rerun does not rebuild it
+        (() => {
+            let node = null;
+            const wizardState = van.state(null);
+            return () => {
+                const wizard = getValue(props.add_wizard);
+                if (!wizard) { node = null; return div(); }
+                wizardState.val = wizard;
+                return (node ??= TestSuiteWizard({ emit, wizard: wizardState }));
+            };
+        })(),
         // Observability export dialog (pure JS — no Python round-trip for open)
         () => {
             const ts = exportTestSuite.val;
@@ -583,6 +491,7 @@ const TestSuites = (/** @type Properties */ props) => {
                         dialog: { title: info.title ?? 'Generate Tests', open: true },
                         test_suite_id: info.test_suite_id,
                         test_suite_name: info.test_suite_name,
+                        is_contract: info.is_contract ?? false,
                         generation_sets: info.generation_sets ?? [],
                         selected_generation_sets: info.selected_generation_sets ?? [],
                         generation_set_test_types: info.generation_set_test_types ?? {},
@@ -717,10 +626,6 @@ stylesheet.replace(`
     text-transform: initial;
 }
 
-.ts-form--select {
-    max-height: 220px !important;
-}
-
 .tg-test-suites--card-title small {
     margin: 0;
     margin-top: 4px;
@@ -730,6 +635,14 @@ stylesheet.replace(`
     font-weight: 400;
     color: var(--caption-text-color);
     text-transform: initial;
+}
+
+.tg-test-suites--version-row {
+    margin-top: 6px;
+}
+
+.tg-test-suites--card-title .tg-test-suites--version-row small {
+    margin-top: 0;
 }
 `);
 

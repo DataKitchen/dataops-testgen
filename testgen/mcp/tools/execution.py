@@ -10,7 +10,7 @@ from testgen.common.enums import JOB_STATUS_LABEL, JobKey, JobSource, SuiteType
 from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import EXTERNAL_URL_MAX_LENGTH, JobExecution, validate_caller_metadata
-from testgen.common.models.suite_version import SuiteVersion, VersionState, version_state
+from testgen.common.models.suite_version import SuiteVersion, VersionState, format_version, version_state
 from testgen.common.models.table_group import TableGroup, validate_schema_name
 from testgen.common.models.test_definition import TestDefinition
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
@@ -18,7 +18,6 @@ from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
     MCP_SUITE_TYPES,
     DocGroup,
-    format_version,
     parse_uuid,
     resolve_contract_version,
     resolve_table_group,
