@@ -111,7 +111,7 @@ class TestCriteria(StrEnum):
 # (both column-scoped, Pattern / regex, with baseline_value + threshold_value params).
 _DEFINED_RULE_TESTS = frozenset({
     "Dupe_Rows", "Unique", "Email_Format", "Street_Addr_Pattern",
-    "Valid_Characters", "Valid_Month", "Valid_US_Zip", "Valid_US_Zip3",
+    "Valid_Characters", "Valid_Month", "Valid_US_Zip", "Valid_US_Zip3", "Valid_US_CA_Zip",
 })
 # The user asserts the expected value/pattern the column should hold (a constant, a regex
 # baseline, or simply that a value is present). Enumerated for the same reason as above.

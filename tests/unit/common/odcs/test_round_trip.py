@@ -81,6 +81,7 @@ _TERMS: list[tuple[str, str | None, str | None, dict]] = [
     ("Email_Format", "c_email", "string", {"threshold_value": "2"}),
     ("Valid_US_Zip", "c_zip", "string", {"threshold_value": "2"}),
     ("Valid_US_Zip3", "c_zip3", "string", {"threshold_value": "2"}),
+    ("Valid_US_CA_Zip", "c_zip_us_ca", "string", {"threshold_value": "2"}),
     ("US_State", "c_state", "string", {"threshold_value": "2"}),
     ("Constant", "c_constant", "string", {"baseline_value": "'it''s'", "threshold_value": "0"}),
     ("Constant", "c_constant_date", "date", {"baseline_value": "'2026-01-01'", "threshold_value": "0"}),

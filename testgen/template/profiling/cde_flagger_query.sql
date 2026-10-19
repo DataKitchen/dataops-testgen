@@ -17,7 +17,7 @@ WITH cde_selects
            AND ROUND(100.0 * (value_ct - COALESCE(zero_length_ct, 0.0) - COALESCE(filled_value_ct, 0.0))::DEC(15, 3) /
                      NULLIF(record_ct::DEC(15, 3), 0), 0) > 75
            AND ((p.functional_table_type ILIKE '%Entity'
-            AND p.functional_data_type IN ('Entity Name', 'City', 'State', 'Zip', 'Code', 'Category'))
+            AND p.functional_data_type IN ('Entity Name', 'City', 'State', 'Zip', 'Zip3', 'Zip US/CA', 'Code', 'Category'))
             OR (p.functional_table_type ILIKE '%Domain'
                AND p.functional_data_type IN ('Category', 'Code'))
             OR (p.functional_table_type ILIKE '%Summary'

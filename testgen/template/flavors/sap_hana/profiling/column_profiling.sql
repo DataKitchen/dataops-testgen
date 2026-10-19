@@ -78,6 +78,10 @@ WITH whole_table_measures AS (
       WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
                 AND "{COL_NAME}" NOT LIKE '%://%'
            THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'EMAIL'
+      WHEN SUM(CASE WHEN REPLACE_REGEXPR('[A-Za-z]' IN REPLACE_REGEXPR('[0-9]' IN "{COL_NAME}" WITH '9') WITH 'A') IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9')
+           THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9
+       AND SUM(CASE WHEN REPLACE_REGEXPR('[A-Za-z]' IN REPLACE_REGEXPR('[0-9]' IN "{COL_NAME}" WITH '9') WITH 'A') IN ('A9A 9A9', 'A9A9A9')
+           THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) >= 0.01 THEN 'ZIP_US_CA'
       WHEN SUM(CASE WHEN REPLACE_REGEXPR('[0-9]' IN "{COL_NAME}" WITH '9') IN ('99999', '999999999', '99999-9999')
            THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'ZIP_USA'
       WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^[[:alnum:]_[:space:]-]+\.(txt|csv|tsv|dat|doc|pdf|xlsx)$'

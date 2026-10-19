@@ -264,6 +264,8 @@ WHERE profile_run_id = :PROFILE_RUN_ID
 -- 3. Assign ADDRESS RELATED FIELDS, PHONE AND EMAIL
 /*
  Zip - Length must be less than or equal to 11. We're also looking at the column name
+ Zip US/CA - US zip codes mixed with Canadian postal codes, by the standard pattern and the column name
+ Zip3 - Three-digit regional prefixes, by the most frequent pattern and the column name
  Email - Check column name and top patterns. frequent_patterns must have @ and .
  Phone - Length must be less than or equal to 11. We're also looking at the column name
  Address - Column name check. If the field is populated then it should have at least 4 distinct pattern count
@@ -275,7 +277,14 @@ WHERE profile_run_id = :PROFILE_RUN_ID
 
 UPDATE profile_results
 SET functional_data_type =
-        CASE WHEN (std_pattern_match = 'ZIP_USA' AND (column_name ILIKE '%zip%' OR column_name ILIKE '%postal%'))
+        CASE WHEN std_pattern_match = 'ZIP_US_CA' AND (column_name ILIKE '%zip%' OR column_name ILIKE '%postal%')
+                THEN 'Zip US/CA'
+            -- Ahead of the Zip rule, whose numeric branch also accepts three-digit values.
+            WHEN general_type = 'A' AND (column_name ILIKE '%zip%' OR column_name ILIKE '%postal%')
+              AND fn_frequent_value(frequent_patterns, 1) = 'NNN'
+              AND fn_frequent_ct(frequent_patterns, 1)::FLOAT / NULLIF(value_ct, 0)::FLOAT > 0.9
+                THEN 'Zip3'
+            WHEN (std_pattern_match = 'ZIP_USA' AND (column_name ILIKE '%zip%' OR column_name ILIKE '%postal%'))
                -- Numeric values of at most 9 characters, with blanks allowed: five-digit and ZIP+4 codes, including
                -- ones stored as numbers that lost their leading zeros. Postal codes with letters, such as UK and
                -- Canadian ones, stay out.
@@ -305,7 +314,7 @@ INNER JOIN profile_results z
    ON (c.profile_run_id = z.profile_run_id
   AND  c.table_name = z.table_name
   AND  c.position + 2 = z.position
-  AND  'Zip' = z.functional_data_type)
+  AND  z.functional_data_type IN ('Zip', 'Zip3', 'Zip US/CA'))
 INNER JOIN profile_results s
    ON (c.profile_run_id = s.profile_run_id
   AND  c.table_name = s.table_name
@@ -313,7 +322,7 @@ INNER JOIN profile_results s
   AND  'State' = s.functional_data_type)
  WHERE c.profile_run_id = :PROFILE_RUN_ID
    AND LOWER(c.column_name) SIMILAR TO '%c(|i)ty%'
-   AND c.functional_data_type NOT IN ('State', 'Zip')
+   AND c.functional_data_type NOT IN ('State', 'Zip', 'Zip3', 'Zip US/CA')
    AND profile_results.id = c.id;
 
 -- Assign Name

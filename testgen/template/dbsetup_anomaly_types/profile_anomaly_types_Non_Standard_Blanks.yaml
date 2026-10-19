@@ -6,7 +6,7 @@ profile_anomaly_types:
   anomaly_description: |-
     Values representing missing data may be unexpected or inconsistent. Non-standard values may include empty strings as opposed to nulls, dummy entries such as "MISSING" or repeated characters that may have been used to bypass entry requirements, processing artifacts such as "NULL", or spreadsheet artifacts such as "NA", "ERROR".
   anomaly_criteria: |-
-    (p.zero_length_ct > 0 OR (p.filled_value_ct > 0 AND (p.numeric_ct <> p.value_ct OR functional_data_type IN ('Phone', 'Zip'))))
+    (p.zero_length_ct > 0 OR (p.filled_value_ct > 0 AND (p.numeric_ct <> p.value_ct OR functional_data_type IN ('Phone', 'Zip', 'Zip3', 'Zip US/CA'))))
   detail_expression: |-
     'Dummy Values: ' || p.filled_value_ct::VARCHAR || ', Empty String: ' || p.zero_length_ct::VARCHAR || ', Null: ' || p.null_value_ct::VARCHAR || ', Records: ' || p.record_ct::VARCHAR
   issue_likelihood: Definite

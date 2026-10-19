@@ -79,6 +79,10 @@ WITH whole_table_measures AS (
       WHEN SUM( CASE WHEN REGEXP_LIKE("{COL_NAME}", '^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$')
                       AND "{COL_NAME}" NOT LIKE '%://%'
            THEN 1 END) > CAST(0.9 * COUNT("{COL_NAME}") AS BIGINT) THEN 'EMAIL'
+      WHEN SUM( CASE WHEN REGEXP_LIKE(REGEXP_REPLACE(REGEXP_REPLACE("{COL_NAME}", '[0-9]', '9', 'g'), '[A-Za-z]', 'A', 'g'), '^(99999|999999999|99999-9999|A9A 9A9|A9A9A9)$')
+           THEN 1 END) > CAST(0.9 * COUNT("{COL_NAME}") AS BIGINT)
+       AND SUM( CASE WHEN REGEXP_LIKE(REGEXP_REPLACE(REGEXP_REPLACE("{COL_NAME}", '[0-9]', '9', 'g'), '[A-Za-z]', 'A', 'g'), '^(A9A 9A9|A9A9A9)$')
+           THEN 1 END) >= 0.01 * COUNT("{COL_NAME}") THEN 'ZIP_US_CA'
       WHEN SUM( CASE WHEN REGEXP_LIKE(REGEXP_REPLACE("{COL_NAME}", '[0-9]', '9', 'g'), '^(99999|999999999|99999-9999)$')
            THEN 1 END) > CAST(0.9 * COUNT("{COL_NAME}") AS BIGINT) THEN 'ZIP_USA'
       WHEN SUM( CASE WHEN REGEXP_LIKE("{COL_NAME}", '^[\w\s\-]+\.(txt|csv|tsv|dat|doc|pdf|xlsx)$')

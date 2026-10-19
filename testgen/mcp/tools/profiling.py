@@ -770,6 +770,7 @@ _STD_PATTERN_LABELS = {
     "PHONE_USA": "Phone (USA)",
     "EMAIL": "Email",
     "ZIP_USA": "Zip Code (USA)",
+    "ZIP_US_CA": "Zip Code (US/Canada)",
     "FILE_NAME": "Filename",
     "CREDIT_CARD": "Credit Card",
     "DELIMITED_DATA": "Delimited Data",

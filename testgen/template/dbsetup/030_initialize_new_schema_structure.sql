@@ -558,6 +558,8 @@ INSERT INTO dq_score_weight_defaults (weight_scope, semantic_type, default_weigh
     ('column', 'City',                   1.5),
     ('column', 'State',                  1.5),
     ('column', 'Zip',                    1.5),
+    ('column', 'Zip3',                   1.5),
+    ('column', 'Zip US/CA',              1.5),
     ('column', 'Date Stamp',             1.5),
     ('column', 'DateTime Stamp',         1.5),
     ('column', 'Process Date Stamp',     1.0),
