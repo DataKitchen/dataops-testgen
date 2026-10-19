@@ -6,6 +6,7 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 
+from testgen.common import contract_service
 from testgen.common.connection_schema import (
     URL_FIELD,
     FlavorMode,
@@ -886,17 +887,23 @@ def resolve_contract_version(suite: TestSuite, version: int | None) -> SuiteVers
     """
     if version is None:
         return None
-    if suite.suite_type != SuiteType.CONTRACT:
-        raise MCPUserError(f"Test suite `{suite.id}` is not a contract, so it keeps no versions.")
-    target = SuiteVersion.for_number(suite.id, version)
-    if target is None:
-        highest = get_current_session().scalar(
-            select(func.max(SuiteVersion.version)).where(SuiteVersion.test_suite_id == suite.id)
-        )
-        raise MCPUserError(
-            f"Contract `{suite.test_suite}` has no version {version}. Its versions are v1\u2013v{highest}."
-        )
-    return target
+    try:
+        return contract_service.version_by_number(suite, version)
+    except contract_service.NotAContractError as error:
+        raise not_a_contract_error(suite) from error
+    except contract_service.UnknownVersionError as error:
+        raise unknown_version_error(error) from error
+
+
+def not_a_contract_error(suite: TestSuite) -> MCPUserError:
+    return MCPUserError(f"Test suite `{suite.id}` is not a contract, so it keeps no versions.")
+
+
+def unknown_version_error(error: contract_service.UnknownVersionError) -> MCPUserError:
+    return MCPUserError(
+        f"Contract `{error.suite.test_suite}` has no version {error.version}. "
+        f"Its versions are v1\u2013v{error.highest}."
+    )
 
 
 def resolve_test_suite(test_suite_id: str) -> TestSuite:

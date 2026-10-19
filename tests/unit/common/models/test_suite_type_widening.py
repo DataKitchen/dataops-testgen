@@ -56,6 +56,7 @@ ORM_READS: list[Callable] = [
     lambda **kw: TestResult.select_history(uuid4(), **kw),
     lambda **kw: TestResult.search_results(**kw),
     lambda **kw: TestResult.failure_trend(start_date=date(2026, 1, 1), end_date=date(2026, 1, 2), **kw),
+    lambda **kw: TestSuite.list_for_project("demo", **kw),
 ]
 
 

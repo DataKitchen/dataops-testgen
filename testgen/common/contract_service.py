@@ -10,6 +10,7 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any, NamedTuple
 from uuid import UUID, uuid4
 
@@ -23,13 +24,15 @@ from testgen.commands.test_generation import (
     run_contract_generation,
 )
 from testgen.common.contract_rules import RuleResolver, document_rules, rule_label
-from testgen.common.enums import SuiteType
+from testgen.common.enums import JobStatus, SuiteType
 from testgen.common.generation_set_service import CONTRACT_GENERATION_SET
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
-from testgen.common.models.suite_version import SuiteVersion
+from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.suite_version import ContractState, SuiteVersion, VersionState, version_state
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import MANAGED_TEST_TYPES, TestDefinition
+from testgen.common.models.test_run import TestRun, TestRunSummary
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.odcs import render, serialize
 from testgen.common.odcs.quality_rules import (
@@ -127,6 +130,161 @@ def version_for_export(suite: TestSuite, version: int | None = None) -> SuiteVer
     if resolved is None:
         raise ValueError("This contract has no version to export.")
     return resolved
+
+
+class NotAContractError(ValueError):
+    """Raised when a version is asked of a suite that keeps none."""
+
+    def __init__(self, suite: TestSuite) -> None:
+        super().__init__(f"Test suite {suite.id} is not a contract and keeps no versions.")
+        self.suite = suite
+
+
+class UnknownVersionError(ValueError):
+    """Raised when a contract holds no version with the number asked for."""
+
+    def __init__(self, suite: TestSuite, version: int, highest: int | None) -> None:
+        super().__init__(f"Contract {suite.id} has no version {version}.")
+        self.suite = suite
+        self.version = version
+        self.highest = highest
+
+
+def version_by_number(suite: TestSuite, version: int) -> SuiteVersion:
+    """The contract's version carrying ``version``.
+
+    Raises ``NotAContractError`` for a suite that keeps no versions and ``UnknownVersionError``,
+    carrying the highest number the contract holds, when it holds no version with that number.
+    """
+    if suite.suite_type != SuiteType.CONTRACT:
+        raise NotAContractError(suite)
+    numbered = SuiteVersion.for_number(suite.id, version)
+    if numbered is None:
+        highest = get_current_session().scalar(
+            select(func.max(SuiteVersion.version)).where(SuiteVersion.test_suite_id == suite.id)
+        )
+        raise UnknownVersionError(suite, version, highest)
+    return numbered
+
+
+class NoActiveTestsError(ValueError):
+    """Raised when a run is asked of a contract version that holds no active tests."""
+
+    def __init__(self, suite: TestSuite, version: SuiteVersion, state: VersionState) -> None:
+        super().__init__(f"Version {version.version} of contract {suite.id} has no active tests to run.")
+        self.suite = suite
+        self.version = version
+        self.state = state
+
+
+@dataclass(frozen=True)
+class RunTarget:
+    """The contract version a run checks, and its state when the run is submitted."""
+
+    version: SuiteVersion
+    state: VersionState
+
+    @property
+    def counts_as_status(self) -> bool:
+        """Whether the run is a verification of the agreement in force."""
+        return self.state == VersionState.ACTIVE
+
+    @property
+    def note(self) -> str | None:
+        """Why the run will not count as the contract's status, when it will not."""
+        if self.state == VersionState.DRAFT:
+            return "This run previews a version that is not frozen, so it will not count as the contract's status."
+        if self.state == VersionState.SUPERSEDED:
+            return "This run checks a superseded version, so it will not count as the contract's status."
+        return None
+
+
+def run_target(suite: TestSuite, version: int | None = None) -> RunTarget | None:
+    """The contract version a run of ``suite`` checks; ``None`` for a suite that keeps no versions.
+
+    With no ``version``, the version in force, or the draft when nothing is frozen yet. Raises
+    ``NotAContractError`` when a version is asked of a suite that keeps none,
+    ``UnknownVersionError`` when the contract holds no version with that number, and
+    ``NoActiveTestsError`` when the version holds no active tests.
+    """
+    if version is None and suite.suite_type != SuiteType.CONTRACT:
+        return None
+    if version is not None:
+        target = version_by_number(suite, version)
+    else:
+        target = SuiteVersion.get(get_current_session().scalar(select(SuiteVersion.for_run(suite.id))))
+    state = version_state(target.frozen_at, SuiteVersion.is_active(target.id, suite.id))
+    _, active_tests = TestDefinition.list_for_suite(
+        suite.id, test_active=True, version_id=target.id, limit=1, suite_types=(SuiteType.CONTRACT,)
+    )
+    if not active_tests:
+        raise NoActiveTestsError(suite, target, state)
+    return RunTarget(target, state)
+
+
+def import_destination(suite: TestSuite, *, preview: bool) -> tuple[int, VersionState]:
+    """The number and state of the version an import into ``suite`` lands in.
+
+    The draft where one exists, otherwise the version in force. A preview into a frozen version
+    names the draft that applying the import would open.
+    """
+    version = version_for_export(suite)
+    if preview and version.frozen_at is not None:
+        return SuiteVersion.next_version_for(suite.id), VersionState.DRAFT
+    return version.version, version_state(version.frozen_at, SuiteVersion.is_active(version.id, suite.id))
+
+
+class VerificationUnavailable(StrEnum):
+    nothing_frozen = "nothing_frozen"
+    not_run_since_frozen = "not_run_since_frozen"
+    latest_run_incomplete = "latest_run_incomplete"
+
+
+@dataclass(frozen=True)
+class ContractStatus:
+    """A contract's versions and the latest run that verified the agreement in force.
+
+    ``latest_verification`` is the latest completed run of the active version that started after
+    it was frozen. ``incomplete_run`` is the latest such run when it has not completed. When there
+    is no verification, ``unavailable`` says why.
+    """
+
+    active: SuiteVersion | None
+    draft: SuiteVersion | None
+    latest_verification: TestRunSummary | None
+    incomplete_run: TestRunSummary | None
+    unavailable: VerificationUnavailable | None
+
+    @property
+    def counted_from(self) -> SuiteVersion | None:
+        """The version the suite's test count reflects: the draft, else the active version."""
+        return self.draft or self.active
+
+
+def contract_status(suite: TestSuite) -> ContractStatus:
+    """The contract's active and draft versions and its latest verification."""
+    _assert_contract(suite)
+    state = SuiteVersion.states_for([suite.id]).get(suite.id) or ContractState(active=None, draft=None)
+    active, draft = state.active, state.draft
+    if active is None:
+        return ContractStatus(active, draft, None, None, VerificationUnavailable.nothing_frozen)
+
+    latest = _run_summary(TestRun.latest_verification(active))
+    if latest is None:
+        return ContractStatus(active, draft, None, None, VerificationUnavailable.not_run_since_frozen)
+    if latest.status == JobStatus.COMPLETED:
+        return ContractStatus(active, draft, latest, None, None)
+
+    completed = _run_summary(TestRun.latest_verification(active, JobExecution.status == JobStatus.COMPLETED))
+    unavailable = None if completed else VerificationUnavailable.latest_run_incomplete
+    return ContractStatus(active, draft, completed, latest, unavailable)
+
+
+def _run_summary(run: TestRun | None) -> TestRunSummary | None:
+    if run is None:
+        return None
+    summaries, _ = TestRun.select_summary(test_run_ids=[run.id], suite_types=(SuiteType.CONTRACT,))
+    return summaries[0] if summaries else None
 
 
 def export_version(version: SuiteVersion) -> ExportedDocument:

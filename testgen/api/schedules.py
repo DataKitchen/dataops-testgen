@@ -18,7 +18,7 @@ from testgen.api.deps import (
 from testgen.api.enums import SCHEDULE_KIND_FROM_JOB_KEY, SCHEDULE_KIND_TO_JOB_KEY, ScheduleKind
 from testgen.api.schemas import ErrorResponse, ScheduleCreate, ScheduleListResponse, ScheduleResponse
 from testgen.common.cron_service import describe_cron, normalize_cron, validate_schedule
-from testgen.common.enums import JobKey
+from testgen.common.enums import TEST_SUITE_TYPES, JobKey
 from testgen.common.models import get_current_session
 from testgen.common.models.scheduler import JobSchedule
 from testgen.common.models.table_group import TableGroup
@@ -58,10 +58,14 @@ def create_profiling_schedule(
     responses=_create_responses,
 )
 def create_test_run_schedule(
-    test_suite: TestSuite = resolve_test_suite("edit"),  # noqa: B008
+    test_suite: TestSuite = resolve_test_suite("edit", TEST_SUITE_TYPES),  # noqa: B008
     body: ScheduleCreate = Body(...),  # noqa: B008
 ) -> ScheduleResponse:
-    """Run a test suite's tests on a recurring schedule."""
+    """Run a test suite's or a contract's tests on a recurring schedule.
+
+    Each scheduled run of a contract verifies the version active when it runs, or previews the
+    draft when no version has been frozen.
+    """
     return _create(test_suite.project_code, JobKey.run_tests, {"test_suite_id": str(test_suite.id)}, body)
 
 

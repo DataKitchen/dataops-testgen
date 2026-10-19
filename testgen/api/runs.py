@@ -54,12 +54,13 @@ from testgen.api.schemas import (
     TestResultListResponse,
     TestRunResponse,
     TestRunResult,
+    TestRunVersion,
 )
 from testgen.common.database.table_group_service import schema_label_for_table_group
+from testgen.common.enums import TEST_SUITE_TYPES, JobKey, JobStatus
 from testgen.common.enums import Disposition as DbDisposition
 from testgen.common.enums import ImpactDimension as DbImpactDimension
 from testgen.common.enums import IssueLikelihood as DbIssueLikelihood
-from testgen.common.enums import JobKey, JobStatus
 from testgen.common.enums import PiiRisk as DbPiiRisk
 from testgen.common.models import get_current_session
 from testgen.common.models.hygiene_issue import HygieneIssue, HygieneIssueListRow, HygieneIssueType
@@ -110,7 +111,10 @@ def _profiling_run_schema_is_reported(job_id: UUID) -> bool:
     response_model=TestRunResponse,
 )
 def get_test_run(job: JobExecution = resolve_job("view", JobExecution.job_key == JobKey.run_tests)):  # noqa: B008
-    """Get a test run by the job execution ID that created it."""
+    """Get a test run by the job execution ID that created it.
+
+    A contract's run names the version it checked, and whether it counts as the contract's status.
+    """
     test_run = TestRun.get(job.id)
 
     result = None
@@ -138,6 +142,16 @@ def get_test_run(job: JobExecution = resolve_job("view", JobExecution.job_key ==
         external_url=job.external_url,
         metadata=job.caller_metadata,
         result=result,
+        version=_run_version(job.id) if test_run else None,
+    )
+
+
+def _run_version(job_id: UUID) -> TestRunVersion | None:
+    run_version = TestRun.run_version(job_id)
+    if run_version is None:
+        return None
+    return TestRunVersion(
+        number=run_version.number, state=run_version.state, counts_as_status=run_version.counts_as_status
     )
 
 
@@ -243,7 +257,7 @@ def list_test_run_results(
     else:
         clauses.append(TestResult.disposition == DISPOSITION_TO_DB[disposition].value)
 
-    items, total = TestResult.list_for_run(job.id, *clauses, page=page, limit=limit)
+    items, total = TestResult.list_for_run(job.id, *clauses, page=page, limit=limit, suite_types=TEST_SUITE_TYPES)
     schema_is_reported = _test_run_schema_is_reported(job.id)
     return TestResultListResponse(
         items=[_to_item(row, schema_is_reported) for row in items],

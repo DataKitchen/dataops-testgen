@@ -2,15 +2,15 @@ from typing import Annotated
 
 from pydantic import Field
 
-from testgen.common.enums import JobStatus, SuiteType
+from testgen.common import contract_service
+from testgen.common.contract_service import VerificationUnavailable
+from testgen.common.enums import SuiteType
 from testgen.common.generation_set_service import list_generation_sets
 from testgen.common.models import with_database_session
 from testgen.common.models.data_table import DataTable
-from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
 from testgen.common.models.suite_version import ContractState, SuiteVersion, VersionState, format_version
-from testgen.common.models.test_result import TestResultStatus
-from testgen.common.models.test_run import TestRun
+from testgen.common.models.test_run import run_verdict
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
@@ -243,8 +243,8 @@ def get_test_suite(
 
 def _render_contract_block(doc: MdDoc, suite: TestSuite) -> None:
     """Append the contract's active and draft versions and its latest verification verdict to ``doc``."""
-    state = SuiteVersion.states_for([suite.id]).get(suite.id) or ContractState(active=None, draft=None)
-    active, draft = state.active, state.draft
+    status = contract_service.contract_status(suite)
+    active, draft = status.active, status.draft
     doc.heading(2, "Contract")
     if active:
         label = f' — "{active.label}"' if active.label else ""
@@ -255,47 +255,29 @@ def _render_contract_block(doc: MdDoc, suite: TestSuite) -> None:
     else:
         doc.field("Active version", "None yet")
     doc.field("Draft", format_version(draft.version, VersionState.DRAFT) if draft else "None")
-    counted = draft or active
-    if counted:
+    if counted := status.counted_from:
         doc.field(
             "Tests counted from",
             format_version(counted.version, VersionState.DRAFT if draft else VersionState.ACTIVE),
         )
 
-    if active is None:
+    if status.unavailable == VerificationUnavailable.nothing_frozen:
         doc.text("Verification unavailable: no version has been frozen yet, so runs of the draft are previews.")
         return
     active_label = format_version(active.version, VersionState.ACTIVE)
-    run = TestRun.latest_verification(active)
-    summaries, _ = (
-        TestRun.select_summary(test_run_ids=[run.id], suite_types=MCP_SUITE_TYPES) if run else ([], 0)
-    )
-    if not summaries:
+    if status.unavailable == VerificationUnavailable.not_run_since_frozen:
         doc.text(f"Verification unavailable: {active_label} has not run since it was frozen.")
         return
-    summary = summaries[0]
-    unfinished = None
-    if summary.status != JobStatus.COMPLETED:
-        unfinished = f"(`{run.id}`) is {summary.status_label}."
-        run = TestRun.latest_verification(active, JobExecution.status == JobStatus.COMPLETED)
-        summaries, _ = (
-            TestRun.select_summary(test_run_ids=[run.id], suite_types=MCP_SUITE_TYPES) if run else ([], 0)
-        )
-        if not summaries:
-            doc.text(f"Verification unavailable: the latest run of {active_label} {unfinished}")
-            return
-        summary = summaries[0]
-    if summary.failed_ct:
-        verdict = TestResultStatus.Failed
-    elif summary.error_ct:
-        verdict = TestResultStatus.Error
-    elif summary.warning_ct:
-        verdict = TestResultStatus.Warning
-    else:
-        verdict = TestResultStatus.Passed
+    incomplete = status.incomplete_run
+    unfinished = f"(`{incomplete.job_execution_id}`) is {incomplete.status_label}." if incomplete else None
+    summary = status.latest_verification
+    if summary is None:
+        doc.text(f"Verification unavailable: the latest run of {active_label} {unfinished}")
+        return
     doc.field(
         "Latest verification",
-        f"{verdict.value} — run `{run.id}` (started {format_datetime(summary.started_at)}); "
+        f"{run_verdict(summary).value} — run `{summary.job_execution_id}` "
+        f"(started {format_datetime(summary.started_at)}); "
         f"{summary.test_ct or 0} tests: {summary.passed_ct or 0} passed, {summary.failed_ct or 0} failed, "
         f"{summary.warning_ct or 0} warnings, {summary.error_ct or 0} errors",
     )

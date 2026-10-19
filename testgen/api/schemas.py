@@ -35,17 +35,30 @@ from testgen.api.enums import (
     ResultStatus,
     ScheduleKind,
     TableState,
+    TestSuiteType,
 )
+from testgen.common.contract_service import VerificationUnavailable
 from testgen.common.enums import JobSource, JobStatus, PublicJobKey, RegenerationGroup
 from testgen.common.file_declaration_schema import HEADER_DESCRIPTION, FileDeclarationShape, FileDeclarationSpec
 from testgen.common.models.job_execution import EXTERNAL_URL_MAX_LENGTH, validate_caller_metadata
+from testgen.common.models.suite_version import VersionState
 from testgen.common.models.table_group import (
     SCHEMA_NAME_MAX_LENGTH,
     SCHEMA_NAME_PATTERN,
     table_group_defaults,
 )
 from testgen.common.models.test_suite import MONITOR_SETTING_DEFAULTS
-from testgen.common.test_definition_export_import_service import ImportConfig, ImportPayload, ImportResponse
+from testgen.common.test_definition_export_import_service import (
+    ContractVersion,
+    ImportConfig,
+    ImportPayload,
+    ImportResponse,
+)
+
+TestSuiteTypeField = Annotated[
+    TestSuiteType,
+    Field(description="`regular` for a test suite, or `contract` for a data contract."),
+]
 
 SchemaName = Annotated[
     str | None,
@@ -120,6 +133,14 @@ class TestRunRequest(BaseModel):
             "bytes. Stored with the run and shown on the test results page."
         ),
     )
+    version: StrictInt | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Contracts only. The number of the contract version to run. Omit to run the active version, or the "
+            "draft when no version has been frozen."
+        ),
+    )
 
     @field_validator("metadata")
     @classmethod
@@ -175,6 +196,20 @@ class TestRunResult(BaseModel):
     result_counts: ResultCounts
 
 
+class TestRunVersion(BaseModel):
+    """The contract version a run checked."""
+
+    number: int
+    state: VersionState = Field(
+        description="The version's state as of this request: `draft`, `active` (the agreement in force), or `superseded`."
+    )
+    counts_as_status: bool = Field(
+        description="Whether the run verified the agreement in force when it started: its version was frozen before "
+        "the run started and no later version had been frozen. False for a preview, which stays a preview after its "
+        "version is frozen, and for a check of a version already superseded."
+    )
+
+
 class TestRunResponse(BaseModel):
     """Test run returned by GET /test-runs/{id}."""
 
@@ -187,6 +222,7 @@ class TestRunResponse(BaseModel):
     external_url: str | None = None
     metadata: dict[str, Any] | None = None
     result: TestRunResult | None = None
+    version: TestRunVersion | None = Field(default=None, description="Contracts only. The version the run checked.")
 
 
 class TestResultItem(BaseModel):
@@ -479,9 +515,26 @@ class TestGenerationRequest(BaseModel):
     )
 
 
+class TestRunSubmittedResponse(JobSubmittedResponse):
+    """Returned on 202 Accepted after a test run is submitted."""
+
+    version: ContractVersion | None = Field(default=None, description="Contracts only. The version the run checks.")
+    counts_as_status: bool | None = Field(
+        default=None,
+        description="Contracts only. Whether the run verifies the active version and so counts as the contract's "
+        "status. False for a preview of the draft and for a check of a superseded version.",
+    )
+    note: str | None = Field(
+        default=None, description="Contracts only. Why the run will not count as the contract's status."
+    )
+
+
 class TestGenerationSubmittedResponse(JobSubmittedResponse):
     """Returned on 202 Accepted after a test generation job is submitted."""
 
+    version: ContractVersion | None = Field(
+        default=None, description="Contracts only. The draft the job generates into."
+    )
     regenerate: list[RegenerationGroup] | None = Field(
         default=None,
         description="Contracts only. The groups the job regenerates.",
@@ -1288,9 +1341,22 @@ class TestSuiteItem(BaseModel):
     table_group_id: UUID
     table_group_name: str | None = None
     description: str | None = None
-    test_count: int = Field(description="Test definitions in the suite.")
+    suite_type: TestSuiteTypeField
+    test_count: int = Field(
+        description="Test definitions in the suite. For a contract, those of its draft, else of its active version."
+    )
+    active_version: int | None = Field(
+        default=None,
+        description="Contracts only. The number of the active version, the agreement in force. Null when no "
+        "version has been frozen.",
+    )
+    draft_version: int | None = Field(
+        default=None, description="Contracts only. The number of the draft. Null when the contract has no draft."
+    )
     latest_run: TestSuiteLatestRun | None = Field(
-        default=None, description="The last completed test run. Null when the suite has never completed a run."
+        default=None,
+        description="The last completed test run. Null when the suite has never completed a run. For a contract, "
+        "the last completed run that checked the version active when the run finished.",
     )
 
 
@@ -1301,11 +1367,67 @@ class TestSuiteListResponse(BaseModel):
     total: int
 
 
+class ContractActiveVersion(BaseModel):
+    """The contract's active version: the highest frozen version, and so the agreement in force."""
+
+    number: int
+    label: str | None = None
+    frozen_at: datetime
+
+
+class ContractRun(BaseModel):
+    """A test run of the contract's active version."""
+
+    job_execution_id: UUID = Field(description="The run's job ID, for `GET /test-runs/{job_id}`.")
+    status: JobStatus
+
+
+class ContractVerification(BaseModel):
+    """The latest completed run of the active version that started after the version was frozen."""
+
+    job_execution_id: UUID = Field(description="The run's job ID, for `GET /test-runs/{job_id}`.")
+    result: ResultStatus = Field(
+        description="The run's outcome by its worst result: `failed`, else `error`, else `warning`, else `passed`."
+    )
+    started_at: datetime | None = None
+    test_count: int | None = Field(default=None, description="Tests the run executed.")
+    result_counts: ResultCounts
+
+
+class ContractStatusResponse(BaseModel):
+    """A contract's versions and the latest run that verified the agreement in force."""
+
+    active_version: ContractActiveVersion | None = Field(
+        default=None, description="Null when no version has been frozen."
+    )
+    draft_version: int | None = Field(default=None, description="The draft's number. Null when there is no draft.")
+    tests_counted_from: int | None = Field(
+        default=None,
+        description="The version the test count in the test-suite list reflects: the draft, else the active "
+        "version.",
+    )
+    latest_verification: ContractVerification | None = Field(
+        default=None, description="Null when the active version has no completed run since it was frozen."
+    )
+    incomplete_run: ContractRun | None = Field(
+        default=None,
+        description="The latest run of the active version, when it has not completed. A completed verification "
+        "before it, if any, is in `latest_verification`.",
+    )
+    verification_unavailable: VerificationUnavailable | None = Field(
+        default=None,
+        description="When `latest_verification` is null, why: `nothing_frozen` (runs of the draft are previews), "
+        "`not_run_since_frozen`, or `latest_run_incomplete` (the active version's latest run did not complete, and "
+        "no earlier run did).",
+    )
+
+
 class TestSuiteResponse(BaseModel):
     """A test suite's configuration."""
 
     test_suite_id: UUID
     test_suite_name: str
+    suite_type: TestSuiteTypeField
     project_code: str
     connection_id: int
     table_group_id: UUID
@@ -1332,6 +1454,56 @@ class TestSuiteResponse(BaseModel):
         description="Whether this is its table group's default test suite, which the table group's first "
         "profiling run generates tests into."
     )
+    contract: ContractStatusResponse | None = Field(
+        default=None, description="Contracts only. Its versions and its latest verification."
+    )
+
+
+class ContractGeneration(BaseModel):
+    """What generating a contract's tables did."""
+
+    profiled: bool = Field(description="Whether the table group had been profiled.")
+    tables_declared: list[str] = Field(description="The tables the contract declares.")
+    tables_not_in_catalog: list[str] = Field(
+        description="Declared tables the data catalog holds no columns for. Their schema is empty."
+    )
+    tables_not_profiled: list[str] = Field(
+        description="Declared tables profiling has no results for. Their metadata comes from the data catalog "
+        "alone and they have no tests besides schema conformance. Profile the table group, then regenerate the "
+        "contract.",
+    )
+    quality_test_count: int = Field(description="Tests the contract holds, schema conformance tests aside.")
+
+
+class ContractCustomServer(BaseModel):
+    """Why the contract's server entry uses the custom type."""
+
+    server_type: str | None = Field(
+        description="The standard server type the connection maps to. Null when it maps to none."
+    )
+    missing_fields: list[str] = Field(
+        description="Fields `server_type` requires that the connection does not supply."
+    )
+
+
+class TestSuiteCreatedResponse(TestSuiteResponse):
+    """A test suite or contract just created."""
+
+    generation: ContractGeneration | None = Field(
+        default=None,
+        description="Contracts created with `table_names` only. Null when generation failed; see "
+        "`generation_failed`.",
+    )
+    generation_failed: bool | None = Field(
+        default=None,
+        description="Contracts only. Whether generating the contract's tables failed. The contract is kept; "
+        "submit test generation for it to retry.",
+    )
+    custom_server: ContractCustomServer | None = Field(
+        default=None,
+        description="Contracts only. Present when the contract's server entry uses the custom type, because the "
+        "connection type maps to no standard server type or the connection does not supply the fields it requires.",
+    )
 
 
 class TestSuiteCreate(BaseModel):
@@ -1345,6 +1517,15 @@ class TestSuiteCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     test_suite_name: str = Field(description="Up to 200 characters.")
+    suite_type: TestSuiteType = Field(
+        default=TestSuiteType.regular,  # type: ignore[attr-defined]
+        description="`regular` for a test suite, or `contract` for a data contract.",
+    )
+    table_names: list[str] | None = Field(
+        default=None,
+        description="Contracts only. Tables of the table group the contract declares. The contract is generated "
+        "for them before the response returns. Omit to create the contract with no tables declared.",
+    )
     description: str | None = None
     default_severity: DefaultSeverityInput | None = Field(
         default=None,
@@ -1378,6 +1559,7 @@ class TestSuiteCreate(BaseModel):
     )
 
     @field_validator(
+        "suite_type",
         "component_type",
         "exclude_from_quality_score",
         "deactivate_invalid_tests",

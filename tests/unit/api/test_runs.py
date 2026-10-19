@@ -30,7 +30,7 @@ from testgen.api.runs import (
     list_test_run_results,
     router,
 )
-from testgen.common.enums import JobStatus
+from testgen.common.enums import TEST_SUITE_TYPES, JobStatus
 from testgen.common.models.hygiene_issue import (
     HygieneIssue,
     HygieneIssueCounts,
@@ -40,8 +40,10 @@ from testgen.common.models.hygiene_issue import (
 )
 from testgen.common.models.profile_result import ColumnProfileRow, ColumnSort, ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunHistoryRow
+from testgen.common.models.suite_version import VersionState
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_result import ResultStatusCounts, TestResult, TestResultStatus, TestRunResultRow
+from testgen.common.models.test_run import RunVersion
 from testgen.common.pii_masking import PII_REDACTED
 
 pytestmark = pytest.mark.unit
@@ -161,9 +163,11 @@ def test_get_test_run_completed(mock_tr_cls, mock_result_cls, mock_session):
         passed=90, failed=5, warning=3, error=2, log=0, dismissed=12,
     )
     mock_session.return_value.scalar.return_value = TABLE_GROUP_ID
+    mock_tr_cls.run_version.return_value = None
 
     result = get_test_run(job)
 
+    assert result.version is None
     assert result.id == job.id
     assert result.status == "completed"
     assert result.test_suite_id == TEST_SUITE_ID
@@ -173,6 +177,43 @@ def test_get_test_run_completed(mock_tr_cls, mock_result_cls, mock_session):
     assert result.result.result_counts.passed == 90
     assert result.result.result_counts.failed == 5
     assert result.result.result_counts.dismissed == 12
+
+
+FROZEN = datetime(2026, 9, 12, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("run_version", "expected"),
+    [
+        (RunVersion(3, FROZEN, 3, datetime(2026, 9, 13, 9, 0), 3), (3, VersionState.ACTIVE, True)),
+        (RunVersion(3, FROZEN, 4, datetime(2026, 9, 13, 9, 0), 3), (3, VersionState.SUPERSEDED, True)),
+        (RunVersion(3, FROZEN, 4, datetime(2026, 9, 20, 9, 0), 4), (3, VersionState.SUPERSEDED, False)),
+        (RunVersion(4, None, 3, datetime(2026, 9, 13, 9, 0), 3), (4, VersionState.DRAFT, False)),
+        (RunVersion(3, FROZEN, 3, datetime(2026, 9, 10, 9, 0), None), (3, VersionState.ACTIVE, False)),
+    ],
+    ids=[
+        "verification", "verification-since-superseded", "check-of-a-superseded-version", "draft-preview",
+        "preview-of-a-version-frozen-since",
+    ],
+)
+@patch(f"{MODULE}.get_current_session")
+@patch(f"{MODULE}.TestResult")
+@patch(f"{MODULE}.TestRun")
+def test_get_test_run_names_a_contract_runs_version(
+    mock_tr_cls, mock_result_cls, mock_session, run_version, expected
+):
+    mock_session.return_value.scalar.return_value = TABLE_GROUP_ID
+    mock_tr_cls.get.return_value = _mock_test_run()
+    mock_result_cls.count_by_status.return_value = ResultStatusCounts(
+        passed=1, failed=0, warning=0, error=0, log=0, dismissed=0,
+    )
+    mock_tr_cls.run_version.return_value = run_version
+    job = _mock_job()
+
+    result = get_test_run(job)
+
+    mock_tr_cls.run_version.assert_called_once_with(job.id)
+    assert (result.version.number, result.version.state, result.version.counts_as_status) == expected
 
 
 @patch(f"{MODULE}.TestRun")
@@ -254,7 +295,7 @@ def test_list_results_envelope_and_mapping(mock_list):
     assert item.disposition == Disposition.no_decision  # NULL -> no_decision (not confirmed)
     # test_run_id (job.id) is the scope; page/limit are forwarded as kwargs.
     assert mock_list.call_args.args[0] == job.id
-    assert mock_list.call_args.kwargs == {"page": 2, "limit": 5}
+    assert mock_list.call_args.kwargs == {"page": 2, "limit": 5, "suite_types": TEST_SUITE_TYPES}
 
 
 @patch.object(TestResult, "list_for_run", return_value=([], 0))

@@ -14,8 +14,14 @@ from sqlalchemy.dialects import postgresql
 from testgen.api.deps import db_session, get_authorized_user
 from testgen.api.schemas import TestSuiteCreate
 from testgen.api.test_suites import router
-from testgen.common.enums import SuiteType
+from testgen.commands.test_generation import ContractGenerationResult
+from testgen.common.contract_creation import ContractCreation
+from testgen.common.contract_service import ContractStatus, VerificationUnavailable
+from testgen.common.enums import TEST_SUITE_TYPES, JobStatus, SuiteType
+from testgen.common.models.suite_version import ContractState
+from testgen.common.models.test_run import TestRunSummary
 from testgen.common.models.test_suite import TestSuite, TestSuiteListItem
+from testgen.common.odcs.servers import CustomServerReason
 
 pytestmark = pytest.mark.unit
 
@@ -44,6 +50,7 @@ def _list_item(**overrides) -> TestSuiteListItem:
         "table_groups_id": TG_ID,
         "table_groups_name": "client_42",
         "test_suite_description": "Order checks",
+        "suite_type": SuiteType.REGULAR,
         "test_count": 12,
         "latest_run_id": RUN_ID,
         "latest_run_started_at": NOW,
@@ -102,7 +109,10 @@ def test_list_test_suites_renames_columns_for_the_consumer(mock_cls, _perm):
         "table_group_id": str(TG_ID),
         "table_group_name": "client_42",
         "description": "Order checks",
+        "suite_type": "regular",
         "test_count": 12,
+        "active_version": None,
+        "draft_version": None,
         "latest_run": {
             "job_execution_id": str(RUN_ID),
             "started_at": "2026-09-28T12:00:00Z",
@@ -146,7 +156,46 @@ def test_list_test_suites_turns_the_query_string_into_filters():
         f"test_suites.table_groups_id = '{TG_ID}'",
         "test_suites.test_suite = 'Orders'",
     ]
-    assert mock_list.call_args.kwargs == {"page": 2, "limit": 20}
+    assert mock_list.call_args.kwargs == {"page": 2, "limit": 20, "suite_types": TEST_SUITE_TYPES}
+
+
+@pytest.mark.parametrize(
+    ("query", "suite_types"),
+    [("?suite_type=contract", (SuiteType.CONTRACT,)), ("?suite_type=regular", (SuiteType.REGULAR,))],
+)
+def test_list_test_suites_narrows_to_one_suite_type(query, suite_types):
+    resp, mock_list = _list_clauses(query)
+
+    assert resp.status_code == 200
+    assert mock_list.call_args.kwargs["suite_types"] == suite_types
+
+
+def test_list_test_suites_rejects_the_monitor_type():
+    resp, mock_list = _list_clauses("?suite_type=monitor")
+
+    assert resp.status_code == 422
+    mock_list.assert_not_called()
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch(f"{MODULE}.SuiteVersion.states_for")
+@patch(f"{MODULE}.TestSuite")
+def test_list_test_suites_names_a_contracts_active_and_draft_versions(mock_cls, mock_states, _perm):
+    contract_id = uuid4()
+    mock_cls.list_for_project.return_value = (
+        [_list_item(), _list_item(id=contract_id, suite_type=SuiteType.CONTRACT, latest_run_id=None)], 2
+    )
+    mock_states.return_value = {
+        contract_id: ContractState(active=MagicMock(version=3), draft=MagicMock(version=4)),
+    }
+
+    items = _client().get("/api/v1/projects/demo/test-suites").json()["items"]
+
+    mock_states.assert_called_once_with([contract_id])
+    assert [(item["suite_type"], item["active_version"], item["draft_version"]) for item in items] == [
+        ("regular", None, None),
+        ("contract", 3, 4),
+    ]
 
 
 def test_list_test_suites_without_filters_passes_no_clauses():
@@ -214,6 +263,7 @@ def test_get_test_suite_returns_its_configuration():
     assert resp.json() == {
         "test_suite_id": str(TS_ID),
         "test_suite_name": "Orders",
+        "suite_type": "regular",
         "project_code": "demo",
         "connection_id": 3,
         "table_group_id": str(TG_ID),
@@ -227,6 +277,7 @@ def test_get_test_suite_returns_its_configuration():
         "component_name": "Orders",
         "generation_sets": ["Standard"],
         "is_default": True,
+        "contract": None,
     }
 
 
@@ -244,14 +295,90 @@ def test_get_test_suite_is_not_default_when_its_table_group_points_elsewhere():
     assert resp.json()["generation_sets"] == []
 
 
-def test_get_test_suite_resolves_only_regular_suites():
-    """The suite is looked up narrowed to regular suites, so a monitor or contract suite's id
+def test_get_test_suite_resolves_regular_suites_and_contracts():
+    """The suite is looked up narrowed to regular suites and contracts, so a monitor suite's id
     gets the same 404 as a suite that does not exist."""
     resp, mock_deps_cls, _ = _get(None)
 
     assert resp.status_code == 404
-    mock_deps_cls.suite_type.in_.assert_called_once_with((SuiteType.REGULAR,))
+    mock_deps_cls.suite_type.in_.assert_called_once_with(TEST_SUITE_TYPES)
     mock_deps_cls.get.assert_called_once_with(TS_ID, mock_deps_cls.suite_type.in_.return_value)
+
+
+FROZEN = datetime(2026, 9, 12, 14, 3, tzinfo=UTC)
+
+
+def _run_summary(**overrides) -> TestRunSummary:
+    fields = {
+        "job_execution_id": RUN_ID, "test_run_id": RUN_ID, "job_schedule_id": None,
+        "status": JobStatus.COMPLETED, "created_at": NOW, "started_at": NOW, "completed_at": NOW,
+        "active_seconds": 5.0, "error_message": None, "progress": [], "table_groups_name": "client_42",
+        "test_suite": "Orders", "project_code": "demo", "project_name": "Demo", "test_ct": 6, "passed_ct": 4,
+        "warning_ct": 1, "failed_ct": 1, "error_ct": 0, "log_ct": 0, "dismissed_ct": 0,
+        "dq_score_testing": None, "total_count": 1,
+    }
+    return TestRunSummary(**{**fields, **overrides})
+
+
+def _get_contract(status: ContractStatus):
+    with patch(f"{MODULE}.contract_service.contract_status", return_value=status) as mock_status:
+        resp, _, _ = _get(_suite(suite_type=SuiteType.CONTRACT), table_group=MagicMock(default_test_suite_id=None))
+    mock_status.assert_called_once()
+    return resp.json()
+
+
+def test_get_test_suite_gives_a_contract_its_versions_and_verification():
+    active = MagicMock(version=3, label="Q3 agreement", frozen_at=FROZEN)
+    status = ContractStatus(
+        active=active, draft=MagicMock(version=4), latest_verification=_run_summary(),
+        incomplete_run=None, unavailable=None,
+    )
+
+    body = _get_contract(status)
+
+    assert body["suite_type"] == "contract"
+    assert body["contract"] == {
+        "active_version": {"number": 3, "label": "Q3 agreement", "frozen_at": "2026-09-12T14:03:00Z"},
+        "draft_version": 4,
+        "tests_counted_from": 4,
+        "latest_verification": {
+            "job_execution_id": str(RUN_ID),
+            "result": "failed",
+            "started_at": "2026-09-28T12:00:00Z",
+            "test_count": 6,
+            "result_counts": {"passed": 4, "failed": 1, "warning": 1, "error": 0, "log": 0, "dismissed": 0},
+        },
+        "incomplete_run": None,
+        "verification_unavailable": None,
+    }
+
+
+def test_get_test_suite_says_why_a_contract_with_nothing_frozen_has_no_verification():
+    status = ContractStatus(
+        active=None, draft=MagicMock(version=1), latest_verification=None, incomplete_run=None,
+        unavailable=VerificationUnavailable.nothing_frozen,
+    )
+
+    contract = _get_contract(status)["contract"]
+
+    assert (contract["active_version"], contract["draft_version"], contract["tests_counted_from"]) == (None, 1, 1)
+    assert contract["latest_verification"] is None
+    assert contract["verification_unavailable"] == "nothing_frozen"
+
+
+def test_get_test_suite_names_a_contracts_incomplete_latest_run():
+    newest = uuid4()
+    status = ContractStatus(
+        active=MagicMock(version=3, label=None, frozen_at=FROZEN), draft=None, latest_verification=None,
+        incomplete_run=_run_summary(job_execution_id=newest, status=JobStatus.ERROR),
+        unavailable=VerificationUnavailable.latest_run_incomplete,
+    )
+
+    contract = _get_contract(status)["contract"]
+
+    assert contract["incomplete_run"] == {"job_execution_id": str(newest), "status": "error"}
+    assert contract["verification_unavailable"] == "latest_run_incomplete"
+    assert contract["tests_counted_from"] == 3
 
 
 def test_get_test_suite_asks_for_view_permission():
@@ -469,6 +596,131 @@ def test_create_test_suite_rejects_a_malformed_body(body):
 
     assert resp.status_code == 422
     mock_save.assert_not_called()
+
+
+_NO_VERIFICATION = ContractStatus(
+    active=None, draft=MagicMock(version=1), latest_verification=None, incomplete_run=None,
+    unavailable=VerificationUnavailable.nothing_frozen,
+)
+
+
+def _post_contract(body: dict, *, catalog=("orders", "customers"), generation=None, failed=False, reason=None):
+    def create(suite, table_group, connection, table_names):
+        suite.id = TS_ID
+        return ContractCreation(
+            suite=suite, custom_server_reason=reason, generation=generation, generation_failed=failed
+        )
+
+    with (
+        patch(f"{MODULE}.contract_document.catalog_table_names", return_value=list(catalog)),
+        patch(f"{MODULE}.contract_creation.create_contract", side_effect=create) as mock_create,
+        patch(f"{MODULE}.Connection.get"),
+        patch(f"{MODULE}.resolve_generation_profile_run", return_value=MagicMock()),
+        patch(f"{MODULE}.contract_service.contract_status", return_value=_NO_VERIFICATION),
+    ):
+        resp, mock_save, _, table_group = _post({"test_suite_name": "Orders", "suite_type": "contract", **body})
+    return resp, mock_create, mock_save, table_group
+
+
+def test_create_contract_generates_its_tables_and_reports_the_result():
+    generation = ContractGenerationResult(
+        term_count=7, tables_declared=["orders", "customers"], tables_not_in_catalog=[],
+        tables_not_profiled=["customers"],
+    )
+
+    resp, mock_create, mock_save, _ = _post_contract({"table_names": ["orders", "customers"]}, generation=generation)
+
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["suite_type"] == "contract"
+    assert body["contract"]["draft_version"] == 1
+    assert body["generation"] == {
+        "profiled": True,
+        "tables_declared": ["orders", "customers"],
+        "tables_not_in_catalog": [],
+        "tables_not_profiled": ["customers"],
+        "quality_test_count": 7,
+    }
+    assert body["generation_failed"] is False
+    assert body["custom_server"] is None
+    suite, _, _, table_names = mock_create.call_args.args
+    assert suite.suite_type == SuiteType.CONTRACT
+    assert table_names == ["orders", "customers"]
+    mock_save.assert_not_called()
+
+
+def test_create_contract_without_tables_is_not_generated():
+    resp, mock_create, _, _ = _post_contract({})
+
+    assert resp.status_code == 201
+    assert mock_create.call_args.args[3] is None
+    assert resp.json()["generation"] is None
+
+
+def test_create_contract_keeps_the_contract_when_generation_fails():
+    resp, _, _, _ = _post_contract({"table_names": ["orders"]}, failed=True)
+
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["test_suite_id"] == str(TS_ID)
+    assert (body["generation"], body["generation_failed"]) == (None, True)
+
+
+def test_create_contract_names_why_its_server_entry_is_custom():
+    reason = CustomServerReason(server_type=None, missing_fields=())
+
+    resp, _, _, _ = _post_contract({}, reason=reason)
+
+    assert resp.json()["custom_server"] == {"server_type": None, "missing_fields": []}
+
+
+@pytest.mark.parametrize(
+    ("body", "code"),
+    [
+        ({"table_names": ["orders", "ghost", "phantom"]}, "unknown_tables"),
+        ({"set_as_default": True}, "set_as_default_not_allowed"),
+        ({"generation_sets": ["Standard"]}, "invalid_test_suite"),
+    ],
+    ids=["tables-not-in-catalog", "set-as-default", "non-contract-generation-set"],
+)
+def test_create_contract_refuses_fields_that_do_not_apply(body, code):
+    resp, mock_create, mock_save, table_group = _post_contract(body)
+
+    assert resp.status_code == 400
+    assert [entry["code"] for entry in _error_entries(resp)] == [code]
+    mock_create.assert_not_called()
+    mock_save.assert_not_called()
+    table_group.save.assert_not_called()
+
+
+def test_create_contract_names_the_tables_not_in_the_catalog():
+    resp, _, _, _ = _post_contract({"table_names": ["orders", "ghost", "phantom"]})
+
+    assert "ghost, phantom" in _error_entries(resp)[0]["detail"]
+
+
+def test_create_regular_suite_refuses_table_names():
+    resp, mock_save, _, _ = _post({"test_suite_name": "Orders", "table_names": ["orders"]})
+
+    assert resp.status_code == 400
+    assert [entry["code"] for entry in _error_entries(resp)] == ["table_names_not_allowed"]
+    mock_save.assert_not_called()
+
+
+def test_create_regular_suite_reports_its_type_and_no_contract():
+    resp, _, _, _ = _post({"test_suite_name": "Orders"})
+
+    body = resp.json()
+    assert body["suite_type"] == "regular"
+    assert body["contract"] is None
+    assert (body["generation"], body["generation_failed"], body["custom_server"]) == (None, None, None)
+
+
+def test_create_regular_suite_accepts_an_empty_table_list():
+    resp, mock_save, _, _ = _post({"test_suite_name": "Orders", "table_names": []})
+
+    assert resp.status_code == 201
+    mock_save.assert_called_once()
 
 
 def test_create_test_suite_asks_for_edit_permission():

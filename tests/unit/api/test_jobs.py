@@ -21,9 +21,13 @@ from testgen.api.jobs import (
     submit_test_run,
 )
 from testgen.api.schemas import TestGenerationRequest, TestRunRequest
+from testgen.common import contract_service
+from testgen.common.contract_service import RunTarget
 from testgen.common.enums import JobKey, PublicJobKey, SuiteType
 from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.suite_version import SuiteVersion, VersionState
 from testgen.common.models.table_group import SCHEMA_NAME_MAX_LENGTH
+from testgen.common.test_definition_export_import_service import ContractVersion
 
 pytestmark = pytest.mark.unit
 
@@ -261,12 +265,36 @@ def _submit_contract(regenerate=None, *, profiled=True):
         patch(f"{MODULE}.TableGroup") as mock_tg_cls,
         patch(f"{MODULE}.resolve_generation_profile_run", return_value=uuid4() if profiled else None),
         patch(f"{MODULE}.JobExecution") as mock_je_cls,
+        patch(f"{MODULE}.TestDefinition.resolve_writable", return_value=(DRAFT_ID, {})),
+        patch(f"{MODULE}.SuiteVersion.get", return_value=MagicMock(version=5)),
     ):
         mock_tg_cls.get.return_value = MagicMock(table_groups_name="orders_tg")
         mock_je_cls.submit.return_value = _mock_job(job_key="run-test-generation")
         body = TestGenerationRequest(regenerate=regenerate) if regenerate is not None else None
         result = submit_test_generation(test_suite, body)
     return result, mock_je_cls.submit
+
+
+DRAFT_ID = uuid4()
+
+
+def test_submit_test_generation_names_the_draft_a_contract_generates_into():
+    result, _ = _submit_contract()
+
+    assert result.version == ContractVersion(number=5, state=VersionState.DRAFT)
+
+
+def test_submit_test_generation_names_no_version_for_a_regular_suite():
+    with (
+        patch(f"{MODULE}.resolve_generation_sets", return_value=["Standard"]),
+        patch(f"{MODULE}.JobExecution") as mock_je_cls,
+        patch(f"{MODULE}.TestDefinition.resolve_writable") as resolve_writable,
+    ):
+        mock_je_cls.submit.return_value = _mock_job(job_key="run-test-generation")
+        result = submit_test_generation(_mock_test_suite(), None)
+
+    assert result.version is None
+    resolve_writable.assert_not_called()
 
 
 def test_submit_test_generation_submits_a_contract_regenerating_everything_by_default():
@@ -518,3 +546,105 @@ def test_submit_test_run_passes_the_link_and_metadata_separately(mock_je_cls):
     call = mock_je_cls.submit.call_args.kwargs
     assert call["external_url"] == "https://ci.example.com/runs/8891"
     assert call["caller_metadata"] == {"order_run_id": "8891"}
+
+
+# --- submit_test_run on contracts ---
+
+
+def _run_contract(body=None, *, target=None, error=None):
+    test_suite = _mock_test_suite(suite_type=SuiteType.CONTRACT)
+    with (
+        patch(f"{MODULE}.contract_service.run_target", return_value=target, side_effect=error) as run_target,
+        patch(f"{MODULE}.JobExecution") as mock_je_cls,
+    ):
+        mock_je_cls.submit.return_value = _mock_job(job_key="run-tests")
+        result = submit_test_run(test_suite, body)
+    return result, mock_je_cls.submit, run_target
+
+
+def test_submit_test_run_stamps_a_contract_run_with_its_version():
+    version = SuiteVersion(id=uuid4(), version=3, frozen_at=datetime(2026, 9, 12, tzinfo=UTC))
+    result, submit, run_target = _run_contract(target=RunTarget(version, VersionState.ACTIVE))
+
+    assert run_target.call_args.args[1] is None
+    assert submit.call_args.kwargs["kwargs"]["version_id"] == str(version.id)
+    assert result.version == ContractVersion(number=3, state=VersionState.ACTIVE)
+    assert result.counts_as_status is True
+    assert result.note is None
+
+
+@pytest.mark.parametrize(
+    ("state", "note"),
+    [
+        (VersionState.DRAFT, "previews a version that is not frozen"),
+        (VersionState.SUPERSEDED, "checks a superseded version"),
+    ],
+)
+def test_submit_test_run_says_when_a_contract_run_will_not_count(state, note):
+    version = SuiteVersion(id=uuid4(), version=2)
+    result, _, run_target = _run_contract(TestRunRequest(version=2), target=RunTarget(version, state))
+
+    assert run_target.call_args.args[1] == 2
+    assert result.counts_as_status is False
+    assert note in result.note
+
+
+def test_submit_test_run_refuses_a_contract_version_with_no_active_tests():
+    suite = _mock_test_suite(suite_type=SuiteType.CONTRACT)
+    error = contract_service.NoActiveTestsError(suite, SuiteVersion(id=uuid4(), version=4), VersionState.DRAFT)
+
+    with pytest.raises(HTTPException) as excinfo:
+        _run_contract(TestRunRequest(version=4), error=error)
+
+    assert excinfo.value.status_code == 400
+    assert excinfo.value.detail["errors"] == [
+        {"code": "no_active_tests", "detail": "v4 draft of this contract has no active tests to run."}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (contract_service.NotAContractError(MagicMock()), "not_a_contract"),
+        (contract_service.UnknownVersionError(MagicMock(), 9, 3), "unknown_version"),
+    ],
+)
+def test_submit_test_run_refuses_a_version_the_suite_does_not_hold(error, code):
+    with pytest.raises(HTTPException) as excinfo:
+        _run_contract(TestRunRequest(version=9), error=error)
+
+    assert excinfo.value.status_code == 400
+    assert excinfo.value.detail["errors"][0]["code"] == code
+
+
+def test_submit_test_run_names_no_version_for_a_regular_suite():
+    with patch(f"{MODULE}.JobExecution") as mock_je_cls:
+        mock_je_cls.submit.return_value = _mock_job(job_key="run-tests")
+        result = submit_test_run(_mock_test_suite(), None)
+
+    assert (result.version, result.counts_as_status, result.note) == (None, None, None)
+
+
+@pytest.mark.parametrize("version", [0, -1, "2", 1.5])
+def test_test_run_request_rejects_a_version_that_is_not_a_positive_number(version):
+    with pytest.raises(ValidationError):
+        TestRunRequest(version=version)
+
+
+@pytest.mark.parametrize(
+    ("path", "suite_types"),
+    [
+        ("test-runs", (SuiteType.REGULAR, SuiteType.CONTRACT)),
+        ("test-generation", (SuiteType.REGULAR, SuiteType.CONTRACT)),
+    ],
+)
+def test_suite_submissions_resolve_regular_suites_and_contracts(path, suite_types):
+    with (
+        patch("testgen.api.deps.TestSuite") as mock_deps_cls,
+        patch("testgen.api.deps.has_project_permission", return_value=True),
+    ):
+        mock_deps_cls.get.return_value = None
+        resp = TestClient(_client_with_overrides()).post(f"/api/v1/test-suites/{uuid4()}/{path}")
+
+    assert resp.status_code == 404
+    mock_deps_cls.suite_type.in_.assert_called_once_with(suite_types)
