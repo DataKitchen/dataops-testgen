@@ -7,7 +7,6 @@ from testgen.common.enums import JobKey, JobStatus
 from testgen.common.models import with_database_session
 from testgen.common.models.job_execution import QUEUED_MESSAGE, JobExecution
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY
-from testgen.common.models.suite_version import format_version, version_state
 from testgen.common.models.test_run import TestRun, TestRunSummary
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
@@ -359,9 +358,8 @@ def _render_test_run_section(doc: MdDoc, run: TestRunSummary) -> None:
     doc.field("Submitted", run.created_at)
     doc.field("Started", run.started_at or "—")
     doc.field("Ended", run.completed_at or "In progress")
-    if run.version_number is not None:
-        state = version_state(run.version_frozen_at, run.version_number == run.active_version_number)
-        doc.field("Version", format_version(run.version_number, state))
+    if run.version_label is not None:
+        doc.field("Version", run.version_label)
         if run.is_preview:
             doc.field("Preview", "Yes")
     duration = format_run_duration(run.active_seconds, run.status)
