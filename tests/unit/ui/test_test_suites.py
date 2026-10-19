@@ -221,6 +221,31 @@ def test_only_a_test_suite_warns_about_the_tests_generation_replaces(session_sta
     assert data["refresh_warning"] == (warning if warned else None)
 
 
+@pytest.mark.parametrize(("suite_type", "noted"), [(SuiteType.CONTRACT, False), (SuiteType.REGULAR, True)])
+def test_only_a_test_suite_notes_the_test_types_a_sampled_profile_cannot_support(session_state, suite_type, noted):
+    unavailable = {"LOV_Match": "Value Match"}
+    with (
+        patch.object(
+            view.TestSuite, "get",
+            return_value=SimpleNamespace(id="abc", test_suite="orders", table_groups_id="tg", suite_type=suite_type),
+        ),
+        patch.object(view, "list_generation_sets", return_value=["Standard"]),
+        patch.object(view, "resolve_generation_sets", return_value=["Standard"]),
+        patch.object(view, "get_generation_set_members", return_value={}),
+        patch.object(view, "get_overriding_test_types", return_value={}),
+        patch.object(view, "get_test_suite_refresh_warning", return_value=None),
+        patch.object(view, "get_value_hash_warning", return_value=None),
+        patch.object(view, "get_sampled_unavailable_test_types", return_value=unavailable) as sampled_unavailable,
+    ):
+        data = view.build_generate_tests_data("abc")
+
+    assert data["sampled_unavailable_test_types"] == (unavailable if noted else {})
+    if noted:
+        sampled_unavailable.assert_called_once_with("tg")
+    else:
+        sampled_unavailable.assert_not_called()
+
+
 @pytest.mark.usefixtures("db_session_mock")
 def test_generating_a_test_suite_sends_its_sets_whatever_the_payload_claims(session_state):
     with (

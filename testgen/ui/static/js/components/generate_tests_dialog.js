@@ -85,6 +85,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
             ? Alert({ type: 'warn' }, span(valueHashWarning))
             : '',
         () => {
+            if (isContract) return '';
             const selectedTypes = new Set(selectedSets.val.flatMap(s => setMembers[s] ?? []));
             const names = Object.entries(sampledUnavailable)
                 .filter(([testType]) => selectedTypes.has(testType))
