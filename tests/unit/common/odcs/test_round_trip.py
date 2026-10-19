@@ -12,11 +12,10 @@ from testgen.common.clean_sql import parse_value_list
 from testgen.common.flavors import SqlFlavorCode
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestDefinition, TestType
+from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES, TestDefinition, TestType
 from testgen.common.odcs import render
 from testgen.common.odcs.quality_rules import (
     DECLARATION_TEST_TYPES,
-    EXCLUDED_TEST_TYPES,
     RULE_MAPPINGS,
     ResolvedTerm,
     RuleScope,
@@ -211,7 +210,7 @@ def round_trip() -> tuple[list[TestDefinition], dict, dict[str, ResolvedTerm]]:
 def test_the_round_trip_covers_every_routed_and_declared_type(round_trip):
     terms, _, _ = round_trip
     assert {term.test_type for term in terms} >= set(RULE_MAPPINGS) | DECLARATION_TEST_TYPES
-    assert not {term.test_type for term in terms} & set(EXCLUDED_TEST_TYPES)
+    assert not {term.test_type for term in terms} & NON_PUBLIC_TEST_TYPES
 
 
 def test_the_rendered_document_validates(round_trip):
