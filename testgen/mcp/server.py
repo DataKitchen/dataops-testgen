@@ -13,11 +13,17 @@ from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 
 from testgen import settings
-from testgen.common.auth import AuthError, decode_jwt_token
+from testgen.common.auth import AuthError, authorize_token, decode_jwt_token
 from testgen.common.mixpanel_service import MixpanelService
-from testgen.common.models import POOL_MAX_OVERFLOW, POOL_SIZE, session_limiter
+from testgen.common.models import (
+    POOL_MAX_OVERFLOW,
+    POOL_SIZE,
+    get_current_session,
+    session_limiter,
+    with_database_session,
+)
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPUserError
-from testgen.mcp.permissions import get_mcp_username, set_mcp_token, set_mcp_username
+from testgen.mcp.permissions import get_mcp_username, set_mcp_username
 from testgen.mcp.services.source_data_protection import (
     SourceDataProtectionMode,
     mcp_source_data_env_mode,
@@ -99,22 +105,35 @@ def _build_server_instructions(source_data_protected: bool) -> str:
     return _SERVER_INSTRUCTIONS_HEADER + middle + _SERVER_INSTRUCTIONS_FOOTER
 
 
+@with_database_session
+def _authorize_token(token: str, username: str) -> None:
+    authorize_token(token, username, get_current_session())
+
+
 class JWTTokenVerifier:
-    """Verify JWT Bearer tokens for MCP server authentication."""
+    """Verify JWT Bearer tokens for MCP server authentication.
+
+    A token is rejected when its JWT is invalid or expired, its user does not exist, or it has been
+    revoked, so the client receives a 401 it can answer by refreshing or signing in again.
+    """
 
     async def verify_token(self, token: str) -> AccessToken | None:
         try:
             payload = decode_jwt_token(token)
-            set_mcp_username(payload["username"])
-            set_mcp_token(token)
-            return AccessToken(
-                token=token,
-                client_id=payload["username"],
-                scopes=[],
-                expires_at=int(payload["exp"]),
-            )
+            username = payload["username"]
+            expires_at = int(payload["exp"])
         except (AuthError, KeyError):
             return None
+
+        try:
+            async with session_limiter():
+                await anyio.to_thread.run_sync(_authorize_token, token, username)
+        except AuthError as err:
+            LOG.warning(f"MCP token rejected for {username}: {err}")
+            return None
+
+        set_mcp_username(username)
+        return AccessToken(token=token, client_id=username, scopes=[], expires_at=expires_at)
 
 
 def _configure_mcp_logging() -> None:

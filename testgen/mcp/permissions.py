@@ -16,7 +16,6 @@ LOG = logging.getLogger("testgen")
 _NOT_SET = object()
 
 _mcp_username: contextvars.ContextVar[str | None] = contextvars.ContextVar("mcp_username", default=None)
-_mcp_token: contextvars.ContextVar[str | None] = contextvars.ContextVar("mcp_token", default=None)
 _mcp_project_permissions: contextvars.ContextVar["ProjectPermissions | object"] = contextvars.ContextVar(
     "mcp_project_permissions", default=_NOT_SET
 )
@@ -77,35 +76,30 @@ def set_mcp_username(username: str | None) -> None:
     _mcp_username.set(username)
 
 
-def set_mcp_token(token: str | None) -> None:
-    """Store the raw bearer token (called by JWTTokenVerifier)."""
-    _mcp_token.set(token)
-
-
 def get_mcp_username() -> str | None:
     """Return the authenticated username for the current MCP request (or None)."""
     return _mcp_username.get()
 
 
 def get_authorized_mcp_user() -> User:
-    """Get the authenticated and authorized User for the current MCP request.
+    """Get the authenticated User for the current MCP request.
 
-    Checks user existence and token revocation status.
+    Token revocation is checked by JWTTokenVerifier on every HTTP request. It is not checked here:
+    a tool handler runs in its MCP session's context, which holds the values set by the request that
+    opened the session, not by the request carrying the call.
     Must be called within @with_database_session scope.
     """
-    from testgen.common.auth import AuthError, authorize_token
+    from testgen.common.auth import AuthError, authorize_user
     from testgen.common.models import get_current_session
 
     username = _mcp_username.get()
     if not username:
         raise RuntimeError("No authenticated user in MCP context")
 
-    token_str = _mcp_token.get()
-    session = get_current_session()
     try:
-        return authorize_token(token_str or "", username, session)
+        return authorize_user(username, get_current_session())
     except AuthError as err:
-        LOG.warning("MCP token authorization failed: %s", err)
+        LOG.warning(f"MCP user lookup failed: {err}")
         raise MCPAuthenticationError(
             "Authentication failed: your access token is no longer valid. Please sign in again."
         ) from err
