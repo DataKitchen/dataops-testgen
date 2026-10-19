@@ -36,7 +36,7 @@ from testgen.api.enums import (
     ScheduleKind,
     TableState,
 )
-from testgen.common.enums import JobSource, JobStatus, PublicJobKey
+from testgen.common.enums import JobSource, JobStatus, PublicJobKey, RegenerationGroup
 from testgen.common.file_declaration_schema import HEADER_DESCRIPTION, FileDeclarationShape, FileDeclarationSpec
 from testgen.common.models.job_execution import EXTERNAL_URL_MAX_LENGTH, validate_caller_metadata
 from testgen.common.models.table_group import (
@@ -466,6 +466,30 @@ class TestGenerationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     generation_sets: list[str] | None = None
+    regenerate: list[RegenerationGroup] | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Contracts only. What to regenerate; omit to refresh everything. `tests`: tests from the latest "
+            "profiling, locked tests kept. `profiling`: functional types, keys, formats, and profiled values. "
+            "`governance`: descriptions, tags, classification, and the critical data element, PII, and excluded "
+            "data element flags, from the data catalog. Replaces edits made to these in the contract. Columns "
+            "and their types are always refreshed."
+        ),
+    )
+
+
+class TestGenerationSubmittedResponse(JobSubmittedResponse):
+    """Returned on 202 Accepted after a test generation job is submitted."""
+
+    regenerate: list[RegenerationGroup] | None = Field(
+        default=None,
+        description="Contracts only. The groups the job regenerates.",
+    )
+    note: str | None = Field(
+        default=None,
+        description="Contracts only. What the job skips because the table group has not been profiled.",
+    )
 
 
 # --- Monitors ---
