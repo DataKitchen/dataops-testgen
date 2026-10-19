@@ -9,6 +9,8 @@ import streamlit as st
 from testgen import settings
 from testgen.commands.run_observability_exporter import export_test_results
 from testgen.commands.test_generation import (
+    TESTS_NEED_PROFILING,
+    ContractGenerationResult,
     resolve_generation_profile_run,
     run_test_generation,
 )
@@ -17,7 +19,7 @@ from testgen.common.contract_document import catalog_table_names
 from testgen.common.contract_import import ContractImportPlan, ContractTermReason, prepare_import
 from testgen.common.contract_service import InvalidContractDocumentError
 from testgen.common.database.test_suite_service import validate_test_suite_fields
-from testgen.common.enums import TEST_SUITE_TYPES, JobSource, SuiteType
+from testgen.common.enums import TEST_SUITE_TYPES, JobSource, RegenerationGroup, SuiteType
 from testgen.common.flavors import FLAVOR_CODE_TO_LABEL
 from testgen.common.generation_set_service import (
     DEFAULT_GENERATION_SET,
@@ -409,14 +411,66 @@ _FORM_DEFAULTS = {
 }
 
 
+_REGENERATION_GROUP_TEXT = {
+    RegenerationGroup.TESTS: (
+        "Tests",
+        "Regenerates the contract's tests from the latest profiling. Locked tests are kept.",
+    ),
+    RegenerationGroup.PROFILING: (
+        "Profiling",
+        "Updates functional types, keys, formats, and the values profiling observed.",
+    ),
+    RegenerationGroup.GOVERNANCE: (
+        "Descriptions and governance",
+        "Updates descriptions, tags, classification, PII, and other attributes from the data catalog. "
+        "Replaces edits made to these in the contract.",
+    ),
+}
+
+
+def contract_regeneration_message(
+    contract_name: str, requested: list[str], result: ContractGenerationResult
+) -> str:
+    """The result message for a contract regeneration of the ``requested`` groups: what was
+    regenerated, and what profiling could not supply."""
+    if not result.groups:
+        return (
+            f"No tests were regenerated for the contract '{contract_name}' because none of its tables have been "
+            "profiled."
+        )
+    regenerated = ", ".join(_REGENERATION_GROUP_TEXT[group][0] for group in result.groups)
+    message = f"Regeneration completed for the contract '{contract_name}': {regenerated}."
+    if not result.tables_not_profiled:
+        return message
+    skipped = []
+    if RegenerationGroup.TESTS in requested:
+        skipped.append("Tests")
+    if RegenerationGroup.PROFILING in requested:
+        skipped.append("the values profiling observed" if skipped else "The values profiling observed")
+    if skipped:
+        message += f" {' and '.join(skipped)} were not refreshed for tables that have not been profiled."
+    return message
+
+
 def build_generate_tests_data(test_suite_id: str) -> dict:
     generate_suite = TestSuite.get(test_suite_id)
     is_contract = generate_suite.suite_type == SuiteType.CONTRACT
+    contract_data = {}
+    if is_contract:
+        profiled = resolve_generation_profile_run(TableGroup.get(generate_suite.table_groups_id)) is not None
+        contract_data = {
+            "regeneration_groups": [
+                {"value": str(group), "label": label, "help": help_text}
+                for group, (label, help_text) in _REGENERATION_GROUP_TEXT.items()
+            ],
+            "tests_disabled_reason": None if profiled else TESTS_NEED_PROFILING,
+        }
     return {
         "title": "Generate Tests",
         "test_suite_id": str(generate_suite.id),
         "test_suite_name": generate_suite.test_suite,
         "is_contract": is_contract,
+        **contract_data,
         "generation_sets": [] if is_contract else list_generation_sets(),
         "selected_generation_sets": [] if is_contract else resolve_generation_sets(generate_suite, None),
         "generation_set_test_types": {} if is_contract else get_generation_set_members(),
@@ -424,7 +478,7 @@ def build_generate_tests_data(test_suite_id: str) -> dict:
         "sampled_unavailable_test_types": (
             {} if is_contract else get_sampled_unavailable_test_types(str(generate_suite.table_groups_id))
         ),
-        "refresh_warning": None if is_contract else get_test_suite_refresh_warning(str(generate_suite.id)),
+        "refresh_warning": get_test_suite_refresh_warning(str(generate_suite.id)),
         "value_hash_test_types": sorted(VALUE_HASH_TEST_TYPES),
         "value_hash_warning": None if is_contract else get_value_hash_warning(str(generate_suite.table_groups_id)),
         "lock_result": st.session_state.get(GENERATE_TESTS_LOCK_RESULT_KEY),
@@ -437,8 +491,18 @@ def generate_tests_confirmed(data: dict) -> None:
     selected_id = data.get("test_suite_id")
     is_contract = TestSuite.get(selected_id).suite_type == SuiteType.CONTRACT
     selected_sets = None if is_contract else data.get("generation_sets")
+    ts_name = data.get("test_suite_name", "")
     try:
-        run_test_generation(selected_id, selected_sets)
+        regenerate = data.get("regenerate") if is_contract else None
+        result = run_test_generation(selected_id, selected_sets, regenerate=regenerate)
+        if is_contract:
+            # The dialog stays open to show what was regenerated; closing it clears the result.
+            requested = list(RegenerationGroup) if regenerate is None else regenerate
+            st.session_state[GENERATE_TESTS_RESULT_KEY] = {
+                "success": True, "message": contract_regeneration_message(ts_name, requested, result),
+            }
+            st.cache_data.clear()
+            return
         st.cache_data.clear()
         st.session_state.pop(GENERATE_TESTS_DIALOG_KEY, None)
         st.session_state.pop(GENERATE_TESTS_RESULT_KEY, None)

@@ -11,11 +11,19 @@
  * @property {boolean} success
  * @property {string} message
  *
+ * @typedef RegenerationGroup
+ * @type {object}
+ * @property {string} value
+ * @property {string} label
+ * @property {string} help
+ *
  * @typedef Properties
  * @type {object}
  * @property {string} test_suite_id
  * @property {string} test_suite_name
  * @property {boolean?} is_contract
+ * @property {RegenerationGroup[]?} regeneration_groups
+ * @property {string?} tests_disabled_reason
  * @property {string[]} generation_sets
  * @property {string[]} selected_generation_sets
  * @property {Object.<string, string[]>} generation_set_test_types
@@ -32,6 +40,7 @@ import van from '/app/static/js/van.min.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { Alert } from '/app/static/js/components/alert.js';
+import { Checkbox } from '/app/static/js/components/checkbox.js';
 import { Select } from '/app/static/js/components/select.js';
 import { SampledProfileGapsHelp } from '/app/static/js/components/sampled_profile_gaps.js';
 import { getValue, loadStylesheet } from '/app/static/js/utils.js';
@@ -67,10 +76,30 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
     const valueHashWarning = getValue(props.value_hash_warning);
     const sampledUnavailable = getValue(props.sampled_unavailable_test_types) ?? {};
     const selectedSets = van.state(storedSets.filter((s) => generationSets.includes(s)));
-    const submitDisabled = van.derive(() => !isContract && selectedSets.val.length === 0);
+    const regenerationGroups = getValue(props.regeneration_groups) ?? [];
+    const testsDisabledReason = getValue(props.tests_disabled_reason);
+    const groupChecked = Object.fromEntries(
+        regenerationGroups.map(({ value }) => [value, van.state(!(value === 'tests' && testsDisabledReason))]),
+    );
+    const selectedGroups = van.derive(() => regenerationGroups.map(({ value }) => value).filter(value => groupChecked[value].val));
+    const testsSelected = van.derive(() => !isContract || selectedGroups.val.includes('tests'));
+    const submitDisabled = van.derive(() => isContract ? selectedGroups.val.length === 0 : selectedSets.val.length === 0);
+
+    const question = isContract
+        ? div(
+            span('Generate tests for the contract '),
+            strong({}, testSuiteName),
+            span('?'),
+        )
+        : div(
+            span('Execute test generation for the test suite '),
+            strong({}, testSuiteName),
+            span('?'),
+        );
 
     const content = div(
         { class: 'flex-column fx-gap-3 generate-tests--wrapper' },
+        isContract ? question : '',
         !isContract && generationSets.length > 0
             ? Select({
                 label: 'Generation Sets',
@@ -80,6 +109,26 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                 options: generationSets.map(s => ({ value: s, label: s })),
                 portalClass: 'generate-tests--select',
             })
+            : '',
+        isContract
+            ? div(
+                { class: 'flex-column fx-gap-2' },
+                div({ class: 'text-caption' }, 'Regenerate'),
+                ...regenerationGroups.map(({ value, label, help }) => {
+                    const disabled = value === 'tests' && !!testsDisabledReason;
+                    return div(
+                        { class: 'flex-column fx-gap-1' },
+                        Checkbox({
+                            name: `regenerate-${value}`,
+                            label,
+                            checked: groupChecked[value],
+                            disabled,
+                            onChange: (checked) => groupChecked[value].val = checked,
+                        }),
+                        div({ class: 'text-secondary text-small pl-5' }, disabled ? testsDisabledReason : help),
+                    );
+                }),
+            )
             : '',
         () => valueHashWarning && selectedSets.val.some(s => (setMembers[s] ?? []).some(t => valueHashTypes.has(t)))
             ? Alert({ type: 'warn' }, span(valueHashWarning))
@@ -104,13 +153,14 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
         },
         () => {
             const warning = getValue(props.refresh_warning);
-            if (!warning || !warning.test_ct) return '';
+            if (!warning || !warning.test_ct || !testsSelected.val) return '';
 
+            const scope = isContract ? 'contract' : 'test suite';
             let message = '';
             if (warning.unlocked_edits_ct > 0) {
-                message = 'Manual changes have been made to auto-generated tests in this test suite that have not been locked. ';
+                message = `Manual changes have been made to auto-generated tests in this ${scope} that have not been locked. `;
             } else if (warning.unlocked_test_ct > 0) {
-                message = 'Auto-generated tests are present in this test suite that have not been locked. ';
+                message = `Auto-generated tests are present in this ${scope} that have not been locked. `;
             }
 
             const selected = selectedSets.val;
@@ -133,7 +183,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                     overriddenCount += count;
                 }
             }
-            const doomedCount = uncoveredCount + overriddenCount;
+            const doomedCount = isContract ? 0 : uncoveredCount + overriddenCount;
             const removedSets = storedSets.filter(s => !selected.includes(s));
 
             let deselectionMessage = '';
@@ -174,20 +224,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                     : '',
             );
         },
-        isContract
-            ? div(
-                div(
-                    span('Generate tests for the contract '),
-                    strong({}, testSuiteName),
-                    span('?'),
-                ),
-                div({ class: 'text-secondary' }, 'Regenerates the contract\'s draft from the tables it declares.'),
-            )
-            : div(
-                span('Execute test generation for the test suite '),
-                strong({}, testSuiteName),
-                span('?'),
-            ),
+        isContract ? '' : question,
         () => {
             const result = getValue(props.result) ?? {};
             return result.message
@@ -206,7 +243,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                     disabled: submitDisabled,
                     onclick: () => emit('GenerateTestsConfirmed', {
                         payload: isContract
-                            ? { test_suite_id: testSuiteId, test_suite_name: testSuiteName, is_contract: true }
+                            ? { test_suite_id: testSuiteId, test_suite_name: testSuiteName, is_contract: true, regenerate: selectedGroups.val }
                             : { test_suite_id: testSuiteId, test_suite_name: testSuiteName, generation_sets: selectedSets.val },
                     }),
                 }),

@@ -1,10 +1,13 @@
 from testgen.commands.test_generation import resolve_generation_profile_run
 from testgen.common.database.database_service import get_flavor_service
+from testgen.common.enums import SuiteType
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
+from testgen.common.models.test_definition import MANAGED_TEST_TYPES, TestDefinition
+from testgen.common.models.test_suite import TestSuite
 from testgen.common.sampling_requirements import sampled_profile_gaps
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
 
@@ -14,8 +17,11 @@ def get_test_suite_refresh_warning(test_suite_id: str) -> dict | None:
     """Counts backing the Generate Tests refresh warning, or None when there is nothing to warn about.
 
     ``unlocked_counts_by_type`` lets the dialog compute, per selection, how many tests a
-    de-selected generation set would delete.
+    de-selected generation set would delete. Managed test types are left out, since every
+    generation reconciles them whatever is locked.
     """
+    managed = ", ".join(f"'{test_type}'" for test_type in sorted(MANAGED_TEST_TYPES))
+    unmanaged = f"td.test_type NOT IN ({managed})"
     totals = fetch_one_from_db(
         f"""
         SELECT
@@ -25,7 +31,8 @@ def get_test_suite_refresh_warning(test_suite_id: str) -> dict | None:
         FROM test_definitions td
         WHERE td.test_suite_id = :test_suite_id
             AND td.version_id = {SuiteVersion.resolved_for_sql("td.test_suite_id")}
-            AND td.last_auto_gen_date IS NOT NULL;
+            AND td.last_auto_gen_date IS NOT NULL
+            AND {unmanaged};
         """,
         {"test_suite_id": test_suite_id},
     )
@@ -40,6 +47,7 @@ def get_test_suite_refresh_warning(test_suite_id: str) -> dict | None:
         WHERE td.test_suite_id = :test_suite_id
             AND td.version_id = {SuiteVersion.resolved_for_sql("td.test_suite_id")}
             AND td.last_auto_gen_date IS NOT NULL
+            AND {unmanaged}
             AND COALESCE(td.lock_refresh, 'N') = 'N'
         GROUP BY td.test_type;
         """,
@@ -104,6 +112,10 @@ def get_value_hash_warning(table_group_id: str) -> str | None:
 
 @with_database_session
 def lock_edited_tests(test_suite_id: str) -> None:
+    """Lock the suite's edited, unlocked auto-generated tests. A contract's lock lands on its draft,
+    which is opened when there is none, so a frozen version is never written."""
+    if TestSuite.get(test_suite_id).suite_type == SuiteType.CONTRACT:
+        TestDefinition.resolve_write_target(test_suite_id)
     execute_db_query(
         f"""
         UPDATE test_definitions

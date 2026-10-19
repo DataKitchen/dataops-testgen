@@ -374,3 +374,12 @@ class SuiteType(StrEnum):
 
 
 TEST_SUITE_TYPES: tuple[SuiteType, ...] = (SuiteType.REGULAR, SuiteType.CONTRACT)
+
+
+class RegenerationGroup(StrEnum):
+    """What a contract regeneration refreshes besides declaring the catalog's columns and refreshing
+    their types: its terms, what profiling infers, or the descriptions and governance attributes
+    people write."""
+    TESTS = "tests"
+    PROFILING = "profiling"
+    GOVERNANCE = "governance"

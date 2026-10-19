@@ -15,13 +15,14 @@ from testgen.commands.test_generation import ContractGenerationResult
 from testgen.common.contract_creation import ContractCreation, ContractImportCreation
 from testgen.common.contract_import import ContractTermReason, TermChange
 from testgen.common.contract_service import InvalidContractDocumentError
-from testgen.common.enums import SuiteType
+from testgen.common.enums import RegenerationGroup, SuiteType
 from testgen.common.models.project import Project
 from testgen.common.models.suite_version import ContractState
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.odcs.servers import CustomServerReason, ServerType
 from testgen.common.test_definition_export_import_service import ImportAction
 from testgen.ui.views import test_suites as view
+from testgen.ui.views.dialogs import generate_tests_dialog as dialog
 
 pytestmark = pytest.mark.unit
 
@@ -188,37 +189,119 @@ def test_project_summary_counts_contracts():
 
 
 @pytest.mark.usefixtures("db_session_mock")
-def test_generating_a_contract_sends_no_generation_sets(session_state):
+def test_generating_a_contract_sends_its_groups_and_no_generation_sets(session_state):
+    result = ContractGenerationResult(3, ["orders"], [], [], [RegenerationGroup.TESTS])
     with (
         patch.object(view.TestSuite, "get", return_value=SimpleNamespace(suite_type=SuiteType.CONTRACT)),
-        patch.object(view, "run_test_generation") as generate,
+        patch.object(view, "run_test_generation", return_value=result) as generate,
+    ):
+        view.generate_tests_confirmed({
+            "test_suite_id": "abc", "test_suite_name": "orders", "generation_sets": ["Standard"],
+            "regenerate": ["tests"],
+        })
+
+    generate.assert_called_once_with("abc", None, regenerate=["tests"])
+
+
+@pytest.mark.usefixtures("db_session_mock")
+def test_a_contracts_dialog_stays_open_and_says_what_was_regenerated(session_state):
+    session_state[view.GENERATE_TESTS_DIALOG_KEY] = "abc"
+    result = ContractGenerationResult(
+        3, ["orders", "lines"], [], ["lines"], [RegenerationGroup.PROFILING, RegenerationGroup.GOVERNANCE],
+    )
+    with (
+        patch.object(view.TestSuite, "get", return_value=SimpleNamespace(suite_type=SuiteType.CONTRACT)),
+        patch.object(view, "run_test_generation", return_value=result),
     ):
         view.generate_tests_confirmed(
-            {"test_suite_id": "abc", "test_suite_name": "orders", "generation_sets": ["Standard"]},
+            {"test_suite_id": "abc", "test_suite_name": "orders", "regenerate": ["profiling", "governance"]},
         )
 
-    generate.assert_called_once_with("abc", None)
+    assert session_state[view.GENERATE_TESTS_DIALOG_KEY] == "abc"
+    assert session_state[view.GENERATE_TESTS_RESULT_KEY] == {
+        "success": True,
+        "message": (
+            "Regeneration completed for the contract 'orders': Profiling, Descriptions and governance. "
+            "The values profiling observed were not refreshed for tables that have not been profiled."
+        ),
+    }
 
 
-@pytest.mark.parametrize(("suite_type", "warned"), [(SuiteType.CONTRACT, False), (SuiteType.REGULAR, True)])
-def test_only_a_test_suite_warns_about_the_tests_generation_replaces(session_state, suite_type, warned):
-    warning = {"test_ct": 64}
+def test_a_contract_regeneration_without_profiling_says_nothing_about_profiled_values():
+    result = ContractGenerationResult(3, ["orders"], [], ["orders"], [RegenerationGroup.GOVERNANCE])
+
+    assert view.contract_regeneration_message("orders", ["governance"], result) == (
+        "Regeneration completed for the contract 'orders': Descriptions and governance."
+    )
+
+
+def test_a_contract_regeneration_says_when_requested_tests_found_no_profiled_table():
+    result = ContractGenerationResult(0, ["orders"], [], ["orders"], [])
+
+    assert view.contract_regeneration_message("orders", ["tests"], result) == (
+        "No tests were regenerated for the contract 'orders' because none of its tables have been profiled."
+    )
+
+
+def test_a_contract_regeneration_names_every_part_profiling_could_not_supply():
+    result = ContractGenerationResult(
+        3, ["orders", "lines"], [], ["lines"], [RegenerationGroup.TESTS, RegenerationGroup.PROFILING],
+    )
+
+    assert view.contract_regeneration_message("orders", ["tests", "profiling"], result) == (
+        "Regeneration completed for the contract 'orders': Tests, Profiling. "
+        "Tests and the values profiling observed were not refreshed for tables that have not been profiled."
+    )
+
+
+def _generate_tests_data(suite_type: SuiteType, *, profiled: bool = True) -> dict:
     with (
         patch.object(
             view.TestSuite, "get",
             return_value=SimpleNamespace(id="abc", test_suite="orders", table_groups_id="tg", suite_type=suite_type),
         ),
+        patch.object(view.TableGroup, "get"),
+        patch.object(view, "resolve_generation_profile_run", return_value="run" if profiled else None),
         patch.object(view, "list_generation_sets", return_value=["Standard"]),
         patch.object(view, "resolve_generation_sets", return_value=["Standard"]),
         patch.object(view, "get_generation_set_members", return_value={}),
         patch.object(view, "get_overriding_test_types", return_value={}),
-        patch.object(view, "get_test_suite_refresh_warning", return_value=warning),
+        patch.object(view, "get_test_suite_refresh_warning", return_value={"test_ct": 64}),
         patch.object(view, "get_value_hash_warning", return_value=None),
         patch.object(view, "get_sampled_unavailable_test_types", return_value={}),
     ):
-        data = view.build_generate_tests_data("abc")
+        return view.build_generate_tests_data("abc")
 
-    assert data["refresh_warning"] == (warning if warned else None)
+
+@pytest.mark.parametrize("suite_type", [SuiteType.CONTRACT, SuiteType.REGULAR])
+def test_both_suite_kinds_carry_the_warning_about_the_tests_generation_replaces(session_state, suite_type):
+    assert _generate_tests_data(suite_type)["refresh_warning"] == {"test_ct": 64}
+
+
+def test_a_contracts_dialog_offers_the_three_regeneration_groups(session_state):
+    data = _generate_tests_data(SuiteType.CONTRACT)
+
+    assert [(group["value"], group["label"]) for group in data["regeneration_groups"]] == [
+        ("tests", "Tests"), ("profiling", "Profiling"), ("governance", "Descriptions and governance"),
+    ]
+    assert data["regeneration_groups"][0]["help"] == (
+        "Regenerates the contract's tests from the latest profiling. Locked tests are kept."
+    )
+    assert data["tests_disabled_reason"] is None
+    assert data["generation_sets"] == []
+
+
+def test_an_unprofiled_contracts_dialog_disables_tests_with_its_reason(session_state):
+    data = _generate_tests_data(SuiteType.CONTRACT, profiled=False)
+
+    assert data["tests_disabled_reason"] == "The table group has not been profiled. Run profiling to regenerate tests."
+
+
+def test_a_test_suites_dialog_offers_no_regeneration_groups(session_state):
+    data = _generate_tests_data(SuiteType.REGULAR)
+
+    assert "regeneration_groups" not in data
+    assert data["generation_sets"] == ["Standard"]
 
 
 @pytest.mark.parametrize(("suite_type", "noted"), [(SuiteType.CONTRACT, False), (SuiteType.REGULAR, True)])
@@ -229,6 +312,8 @@ def test_only_a_test_suite_notes_the_test_types_a_sampled_profile_cannot_support
             view.TestSuite, "get",
             return_value=SimpleNamespace(id="abc", test_suite="orders", table_groups_id="tg", suite_type=suite_type),
         ),
+        patch.object(view.TableGroup, "get"),
+        patch.object(view, "resolve_generation_profile_run", return_value="run"),
         patch.object(view, "list_generation_sets", return_value=["Standard"]),
         patch.object(view, "resolve_generation_sets", return_value=["Standard"]),
         patch.object(view, "get_generation_set_members", return_value={}),
@@ -252,11 +337,28 @@ def test_generating_a_test_suite_sends_its_sets_whatever_the_payload_claims(sess
         patch.object(view.TestSuite, "get", return_value=SimpleNamespace(suite_type=SuiteType.REGULAR)),
         patch.object(view, "run_test_generation") as generate,
     ):
-        view.generate_tests_confirmed(
-            {"test_suite_id": "abc", "test_suite_name": "orders", "generation_sets": ["Standard"], "is_contract": True},
-        )
+        view.generate_tests_confirmed({
+            "test_suite_id": "abc", "test_suite_name": "orders", "generation_sets": ["Standard"], "is_contract": True,
+            "regenerate": ["tests"],
+        })
 
-    generate.assert_called_once_with("abc", ["Standard"])
+    generate.assert_called_once_with("abc", ["Standard"], regenerate=None)
+
+
+@pytest.mark.usefixtures("db_session_mock")
+@pytest.mark.parametrize(("suite_type", "opens_draft"), [(SuiteType.CONTRACT, True), (SuiteType.REGULAR, False)])
+def test_locking_edited_tests_of_a_contract_lands_on_its_draft(suite_type, opens_draft):
+    events = []
+    with (
+        patch.object(dialog.TestSuite, "get", return_value=SimpleNamespace(suite_type=suite_type)),
+        patch.object(
+            dialog.TestDefinition, "resolve_write_target", side_effect=lambda _id: events.append("draft") or ("v", {}),
+        ),
+        patch.object(dialog, "execute_db_query", side_effect=lambda *_: events.append("lock")),
+    ):
+        dialog.lock_edited_tests("abc")
+
+    assert events == (["draft", "lock"] if opens_draft else ["lock"])
 
 
 MIB = 1024 * 1024
