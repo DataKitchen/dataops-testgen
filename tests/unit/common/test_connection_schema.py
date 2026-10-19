@@ -902,8 +902,16 @@ def _storage_conn(code: str, parameters: dict, secrets: dict | None = None) -> C
 @pytest.mark.parametrize(
     ("code", "modes"),
     [
-        ("s3", [ConnectionMode.ACCESS_KEYS, ConnectionMode.IAM_ROLE]),
-        ("azure_blob", [ConnectionMode.ACCOUNT_KEY, ConnectionMode.MANAGED_IDENTITY, ConnectionMode.SERVICE_PRINCIPAL]),
+        ("s3", [ConnectionMode.ACCESS_KEYS, ConnectionMode.IAM_ROLE, ConnectionMode.PUBLIC]),
+        (
+            "azure_blob",
+            [
+                ConnectionMode.ACCOUNT_KEY,
+                ConnectionMode.MANAGED_IDENTITY,
+                ConnectionMode.SERVICE_PRINCIPAL,
+                ConnectionMode.PUBLIC,
+            ],
+        ),
     ],
 )
 def test_storage_codes_offer_the_form_strategies_in_form_order(code, modes):
@@ -919,6 +927,8 @@ def test_storage_codes_offer_the_form_strategies_in_form_order(code, modes):
         ("azure_blob", "account_key", ConnectionMode.ACCOUNT_KEY),
         ("azure_blob", "managed_identity", ConnectionMode.MANAGED_IDENTITY),
         ("azure_blob", "service_principal", ConnectionMode.SERVICE_PRINCIPAL),
+        ("s3", "public", ConnectionMode.PUBLIC),
+        ("azure_blob", "public", ConnectionMode.PUBLIC),
     ],
 )
 def test_a_storage_connections_mode_is_read_from_its_strategy(code, strategy, mode):

@@ -52,7 +52,8 @@ const TableGroupTest = (preview, options) => {
     const verifyingAccess = van.state(false);
     van.derive(() => {
         const p = getValue(preview);
-        if (p && Object.values(p.tables ?? {}).some(({ can_access }) => can_access != null)) {
+        // A failed preview runs no access checks, so it never reports can_access.
+        if (p && (p.success === false || Object.values(p.tables ?? {}).some(({ can_access }) => can_access != null))) {
             verifyingAccess.val = false;
         }
     });
@@ -62,12 +63,20 @@ const TableGroupTest = (preview, options) => {
         () => getValue(preview)
             ? div(
                 { class: 'flex-row fx-justify-space-between fx-align-flex-end' },
-                span({ class: 'text-caption text-right' }, '* Approximate row counts based on server statistics'),
-                options.onVerifyAccess
+                span(
+                    { class: 'text-caption text-right' },
+                    getValue(preview).stats?.approx_record_ct != null
+                        ? '* Approximate row counts based on server statistics'
+                        : '* Row counts are available after the first profiling or test run',
+                ),
+                options.onVerifyAccess && getValue(preview).success === true
                     ? Button({
                         label: 'Verify Access',
                         width: 'fit-content',
                         type: 'stroked',
+                        icon: 'info',
+                        tooltip: 'The preview lists the tables and columns TestGen found, which does not confirm it can read their data. Verify Access runs a query on each table to check read access.',
+                        tooltipPosition: 'top-left',
                         loading: verifyingAccess,
                         onclick: () => {
                             verifyingAccess.val = true;
