@@ -6,6 +6,7 @@ text, while neutralising unexpected exceptions.
 """
 
 import functools
+import inspect
 import logging
 
 LOG = logging.getLogger("testgen")
@@ -56,7 +57,23 @@ def mcp_error_handler(fn):
 
     - ``MCPUserError`` (including ``MCPPermissionDenied``) → ``str(e)`` as the response.
     - Any other exception → traceback logged, neutral message returned.
+
+    A coroutine function is wrapped in a coroutine function.
     """
+
+    if inspect.iscoroutinefunction(fn):
+
+        @functools.wraps(fn)
+        async def async_wrapper(*args, **kwargs):
+            try:
+                return await fn(*args, **kwargs)
+            except MCPUserError as e:
+                return str(e)
+            except Exception:
+                LOG.exception("Unhandled error in MCP handler '%s'", fn.__name__)
+                return "An unexpected error occurred."
+
+        return async_wrapper
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):

@@ -65,7 +65,7 @@ def test_no_more_handlers_run_at_once_than_the_session_limit():
 
     async def main():
         limiter = anyio.CapacityLimiter(2)
-        with patch("testgen.mcp.server.session_limiter", return_value=limiter):
+        with patch("testgen.mcp.workers.session_limiter", return_value=limiter):
             wrapped = _run_on_worker_thread(tool)
             await asyncio.gather(*(wrapped() for _ in range(6)))
 
@@ -84,8 +84,8 @@ def test_busy_mcp_handlers_leave_session_slots_for_rest_requests():
         session = anyio.CapacityLimiter(4)
         mcp = anyio.CapacityLimiter(2)
         with (
-            patch("testgen.mcp.server.session_limiter", return_value=session),
-            patch("testgen.mcp.server._mcp_limiter", return_value=mcp),
+            patch("testgen.mcp.workers.session_limiter", return_value=session),
+            patch("testgen.mcp.workers.mcp_limiter", return_value=mcp),
         ):
             wrapped = _run_on_worker_thread(blocked_tool)
             calls = [asyncio.create_task(wrapped()) for _ in range(5)]
@@ -113,3 +113,13 @@ def test_registered_handlers_are_async_and_keep_their_parameters():
 
     prompts = {prompt.name: prompt for prompt in server._prompt_manager.list_prompts()}
     assert "test_suite" in [argument.name for argument in prompts["investigate_failures"].arguments]
+
+
+def test_a_coroutine_tool_receives_the_context_without_exposing_it():
+    server = build_mcp_server(api_base_url="https://testgen.example.com")
+    tool = {tool.name: tool for tool in server._tool_manager.list_tools()}["delete_tests"]
+
+    assert tool.is_async
+    assert tool.context_kwarg == "ctx"
+    assert "ctx" not in tool.parameters["properties"]
+    assert "confirmation_token" in tool.parameters["properties"]
