@@ -117,11 +117,13 @@ def get_test_run_summaries(
     test_suite_id: str | int | None = None,
     page: int = 1,
     page_size: int = 20,
+    test_run_ids: tuple[str, ...] | None = None,
 ) -> tuple[list[TestRunSummary], int]:
     return _detached(TestRun.select_summary(
         project_code=project_code,
         table_group_id=table_group_id,
         test_suite_id=test_suite_id,
+        test_run_ids=list(test_run_ids) if test_run_ids else None,
         page=page,
         page_size=page_size,
         suite_types=TEST_SUITE_TYPES,

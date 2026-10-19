@@ -49,11 +49,13 @@ from testgen.ui.queries.source_data_queries import (
     get_test_issue_source_query,
     get_test_issue_source_query_custom,
 )
+from testgen.ui.services.contract_run_service import run_version_block
 from testgen.ui.services.database_service import fetch_df_from_db, fetch_one_from_db
 from testgen.ui.services.query_cache import (
     get_connection,
     get_table_group_minimal,
     get_test_run_minimal,
+    get_test_run_summaries,
     get_test_suite,
     get_test_suite_minimal,
     select_test_definitions_where,
@@ -243,6 +245,7 @@ class TestResultsPage(Page):
             filter_options = test_result_queries.get_filter_options(run_id)
 
             test_suite = get_test_suite_minimal(run.test_suite_id)
+            run_summaries, _ = get_test_run_summaries(run.project_code, test_run_ids=(run_id,))
 
         items = dataframe_to_json_records(df)
         summary = get_test_result_summary(run_id)
@@ -544,6 +547,7 @@ class TestResultsPage(Page):
                 "items": items,
                 "summary": summary,
                 "score": score,
+                "contract_version": run_version_block(run_summaries[0]) if run_summaries else None,
                 "filters": {
                     "status": None if status_cleared else effective_status,
                     "table_name": table_name,
