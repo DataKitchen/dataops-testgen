@@ -25,7 +25,7 @@ test_types:
   default_parm_prompts: |-
     Frequent Patterns at Baseline
   default_parm_help: |-
-    The five most frequent patterns with their counts, most frequent first, written as pattern (count) and separated by a comma and a space, for example `AA-NNNN (230), AA-NNN (12)`. A pattern replaces each lower-case letter with a, each upper-case letter with A and each digit with N.
+    The five most frequent patterns with their counts, most frequent first, written as pattern (count) and separated by a comma and a space, for example AA-NNNN (230), AA-NNN (12). A pattern replaces each lower-case letter with a, each upper-case letter with A and each digit with N.
   default_parm_required: Y
   default_severity: Fail
   run_type: QUERY

@@ -541,6 +541,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             definitions: van.derive(() => getValue(props.edit_table_monitors_dialog)?.definitions ?? []),
             metric_test_type: van.derive(() => getValue(props.edit_table_monitors_dialog)?.metric_test_type),
             result: van.derive(() => getValue(props.edit_table_monitors_dialog)?.result),
+            validate_result: van.derive(() => getValue(props.edit_table_monitors_dialog)?.validate_result),
             dialog: van.derive(() => getValue(props.edit_table_monitors_dialog)?.dialog),
         }),
         SchemaChangesDialog({ emit,

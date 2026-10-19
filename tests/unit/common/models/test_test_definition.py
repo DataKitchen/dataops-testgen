@@ -18,8 +18,8 @@ from testgen.common.models.test_definition import (
     Severity,
     TestDefinition,
     TestDefinitionSummary,
-    _required_fields_for,
     one_of_fields_for,
+    required_fields_for,
 )
 
 
@@ -50,17 +50,19 @@ def make_td(**fields) -> TestDefinition:
     return td
 
 
-# -- _required_fields_for -----------------------------------------------------
+# -- required_fields_for -----------------------------------------------------
 
 
-def test_required_fields_column_scope_adds_column_name():
-    tt = make_test_type(scope="column")
-    assert "column_name" in _required_fields_for(tt)
+@pytest.mark.parametrize("scope", ["column", "custom", "referential"])
+def test_required_fields_adds_column_name(scope):
+    tt = make_test_type(scope=scope)
+    assert "column_name" in required_fields_for(tt)
 
 
-def test_required_fields_table_scope_no_column_name():
-    tt = make_test_type(code="Row_Ct", scope="table", param_columns=set(), default_parm_columns=None)
-    assert "column_name" not in _required_fields_for(tt)
+@pytest.mark.parametrize("scope", ["table", "tablegroup"])
+def test_required_fields_no_column_name(scope):
+    tt = make_test_type(code="Row_Ct", scope=scope, param_columns=set(), default_parm_columns=None)
+    assert "column_name" not in required_fields_for(tt)
 
 
 def test_required_fields_custom_query_required_via_flag():
@@ -72,7 +74,7 @@ def test_required_fields_custom_query_required_via_flag():
         default_parm_columns="custom_query,match_column_names",
         default_parm_required="Y,N",
     )
-    required = _required_fields_for(tt)
+    required = required_fields_for(tt)
     assert "custom_query" in required
     assert "match_column_names" not in required
 
@@ -86,7 +88,7 @@ def test_required_fields_custom_query_optional_when_flag_off():
         default_parm_columns="custom_query",
         default_parm_required="N",
     )
-    assert "custom_query" not in _required_fields_for(tt)
+    assert "custom_query" not in required_fields_for(tt)
 
 
 def test_required_fields_parses_default_parm_required():
@@ -97,7 +99,7 @@ def test_required_fields_parses_default_parm_required():
         default_parm_columns="custom_query,threshold_value,baseline_value",
         default_parm_required="Y,Y,N",
     )
-    required = _required_fields_for(tt)
+    required = required_fields_for(tt)
     assert "custom_query" in required
     assert "threshold_value" in required
     assert "baseline_value" not in required
@@ -106,18 +108,18 @@ def test_required_fields_parses_default_parm_required():
 def test_required_fields_null_required_means_no_param_extras():
     # No default_parm_required flags → only the scope-implied fields (column_name + table_name).
     tt = make_test_type(scope="column", default_parm_required=None)
-    assert _required_fields_for(tt) == {"column_name", "table_name"}
+    assert required_fields_for(tt) == {"column_name", "table_name"}
 
 
 def test_required_fields_table_name_required_for_physical_scope():
     for scope in ("column", "table", "referential", "custom"):
         tt = make_test_type(scope=scope)
-        assert "table_name" in _required_fields_for(tt), scope
+        assert "table_name" in required_fields_for(tt), scope
 
 
 def test_required_fields_table_name_not_required_for_tablegroup():
     tt = make_test_type(code="Schema_Drift", scope="tablegroup", param_columns=set(), default_parm_columns=None)
-    assert "table_name" not in _required_fields_for(tt)
+    assert "table_name" not in required_fields_for(tt)
 
 
 def test_required_fields_table_name_not_required_for_custom_type():
@@ -127,7 +129,7 @@ def test_required_fields_table_name_not_required_for_custom_type():
         param_columns={"custom_query"},
         default_parm_columns="custom_query",
     )
-    assert "table_name" not in _required_fields_for(tt)
+    assert "table_name" not in required_fields_for(tt)
 
 
 def _bounded_test_type() -> MagicMock:
@@ -146,8 +148,8 @@ def test_one_of_fields_parses_a_flags_in_configured_order():
         default_parm_required="Y,A,A",
     )
     assert one_of_fields_for(tt) == ["lower_tolerance", "upper_tolerance"]
-    assert "lower_tolerance" not in _required_fields_for(tt)
-    assert "custom_query" in _required_fields_for(tt)
+    assert "lower_tolerance" not in required_fields_for(tt)
+    assert "custom_query" in required_fields_for(tt)
 
 
 def test_one_of_fields_empty_without_a_flags():
@@ -307,8 +309,16 @@ def test_validate_missing_table_name_rejected():
 def test_validate_custom_type_accepts_missing_table_name():
     # CUSTOM supplies its own FROM via custom_query; the table is only an output label.
     tt = make_test_type(code="CUSTOM", scope="custom", param_columns={"custom_query"}, default_parm_columns="custom_query")
-    td = make_td(custom_query="SELECT 1", table_name=None)
+    td = make_td(custom_query="SELECT 1", table_name=None, column_name="Late orders")
     td.validate(tt)  # no raise
+
+
+def test_validate_custom_type_requires_test_focus():
+    tt = make_test_type(code="CUSTOM", scope="custom", param_columns={"custom_query"}, default_parm_columns="custom_query")
+    td = make_td(custom_query="SELECT 1", table_name=None, column_name=None)
+    with pytest.raises(InvalidTestDefinitionFields) as exc_info:
+        td.validate(tt)
+    assert "column_name" in exc_info.value.errors
 
 
 def test_validate_custom_scope_non_custom_type_requires_table_name():
@@ -589,6 +599,14 @@ def test_validate_one_of_rejects_when_all_blank():
         td.validate(_bounded_test_type())
     assert set(exc_info.value.errors) == {"lower_tolerance", "upper_tolerance"}
     assert "at least one of `lower_tolerance`, `upper_tolerance`" in exc_info.value.errors["lower_tolerance"]
+
+
+@pytest.mark.parametrize("value", ["   ", "\t"])
+def test_validate_rejects_a_required_field_of_only_whitespace(value):
+    td = make_td(column_name=value, threshold_value="0")
+    with pytest.raises(InvalidTestDefinitionFields) as exc_info:
+        td.validate(make_test_type(scope="custom"))
+    assert "column_name" in exc_info.value.errors
 
 
 @pytest.mark.parametrize(

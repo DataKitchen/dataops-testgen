@@ -63,6 +63,7 @@
  * @property {boolean} qualifiesTableRefsWithSchema
  * @property {boolean?} hideHeader Hide the test-type name/description header (when the host already shows it).
  * @property {string[]?} excludeColumns Columns the host renders itself (e.g. paired next to their main-side counterpart) and that this form should skip.
+ * @property {Object<string, (Element | Function)>?} fieldFooters Content rendered directly below a parameter field, keyed by column.
  * @property {(changes: object, valid: boolean) => void} onChange
  */
 
@@ -97,6 +98,14 @@ const PARAMETER_CONFIG = {
     subset_condition: { placeholder: 'No filter — applies to all rows' },
 };
 
+// Example values for parameters whose meaning depends on the test type. Shown on required fields too.
+const EXAMPLE_PLACEHOLDERS = {
+    Metric_Trend: { custom_query: 'e.g. SUM(amount)' },
+    Condition_Flag: { custom_query: 'e.g. quantity_shipped > quantity_ordered' },
+    CUSTOM: { custom_query: 'e.g. SELECT order_id, order_total FROM {DATA_SCHEMA}.orders WHERE order_total < 0' },
+    SQL_Metric: { custom_query: 'e.g. SELECT COUNT(*) AS late_orders FROM {DATA_SCHEMA}.orders WHERE shipped_date IS NULL' },
+};
+
 /**
  * @param {TestDefinition} definition
  * @returns {string[]} the columns listed in default_parm_columns, in the test type's configured order
@@ -120,9 +129,10 @@ const buildParamFieldConfigs = (definition, qualifiesTableRefsWithSchema = true)
         .map((column, index) => {
             const config = PARAMETER_CONFIG[column] || { type: 'text' };
             const isRequired = paramFlags[index] === 'Y';
+            const example = EXAMPLE_PLACEHOLDERS[definition.test_type]?.[column];
             return {
                 ...config,
-                placeholder: isRequired ? undefined : config.placeholder,
+                placeholder: example ?? (isRequired ? undefined : config.placeholder),
                 column,
                 oneOf: paramFlags[index] === 'A',
                 label: paramLabels[index] || capitalize(column.replaceAll('_', ' ')),
@@ -184,6 +194,7 @@ const renderParamField = (config, getCurrentValue, onValueChange, onValidityChan
                 name: column,
                 label: config.label,
                 help: config.help,
+                placeholder: config.placeholder,
                 value: getCurrentValue(),
                 height: 100,
                 validators: config.validators,
@@ -308,7 +319,10 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
                         renderField(group[1]),
                     );
                 }
-                return renderField(group[0]);
+                const footer = props.fieldFooters?.[group[0].column];
+                return footer
+                    ? [renderField(group[0]), div({ class: 'td-form--field-wide' }, footer)]
+                    : renderField(group[0]);
             }),
         ),
         () => oneOfMissing.val

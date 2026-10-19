@@ -23,7 +23,7 @@ test_types:
   default_parm_prompts: |-
     Date Column for Time Windows,Time Window in Days,Record Subset Condition,Threshold Failure Count
   default_parm_help: |-
-    |||The number of mismatched value combinations that are acceptable before the test fails.
+    ||Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.|The number of mismatched value combinations that are acceptable before the test fails.
   default_parm_required: Y,Y,N,N
   default_severity: Fail
   run_type: QUERY

@@ -4,7 +4,7 @@ test_types:
   test_name_short: Maximum Value
   test_name_long: All values at or below set maximum
   test_description: |-
-    Tests that maximum value present in column is no higher than maximum value in baseline data.
+    Tests that maximum value present in column is no higher than the baseline maximum.
   except_message: |-
     Maximum column value greater than baseline.
   measure_uom: Values over limit

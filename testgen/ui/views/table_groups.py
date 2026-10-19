@@ -166,6 +166,7 @@ class TableGroupsPage(Page):
             st.session_state[TG_RUN_PROFILING_RESULT_KEY] = {"success": success, "message": message, "show_link": show_link}
             if success and not show_link:
                 get_profiling_run_summaries.clear()
+                get_project_summary.clear()
                 st.session_state.pop(TG_RUN_PROFILING_DIALOG_KEY, None)
                 st.session_state.pop(TG_RUN_PROFILING_RESULT_KEY, None)
 

@@ -103,7 +103,7 @@ IMPORT_REASON_LABELS: dict[ImportReason, str] = {
     ImportReason.managed_test_type: "Test type cannot be imported",
     ImportReason.invalid_table: "Table not in the data catalog",
     ImportReason.invalid_column: "Column not in the data catalog",
-    ImportReason.missing_external_id: "Missing external ID",
+    ImportReason.missing_external_id: "Missing external ID (required to match a manual test)",
     ImportReason.missing_required_field: "Missing a required field",
     ImportReason.absent: "Not in the file",
 }
@@ -126,6 +126,10 @@ class TestDefinitionExport(BaseModel):
     test_type: str
     external_id: UUID | None = None
     last_auto_gen_date: datetime | None = None
+
+    # Provenance
+    profiling_as_of_date: datetime | None = None
+    last_manual_update: datetime | None = None
 
     # Definition fields
     table_name: str | None = None
@@ -292,9 +296,12 @@ class ImportStrictViolation(Exception):
         self.result = result
 
 
-# Fields that must never be written from the import payload on update.
-# These are either identity fields (set once on create) or determined by matching logic.
-_UPDATE_EXCLUDE_FIELDS = frozenset({"test_type", "last_auto_gen_date", "external_id"})
+# Exported for reference only: import stamps its own values on every definition it writes.
+_PROVENANCE_FIELDS = frozenset({"profiling_as_of_date", "last_manual_update"})
+
+# Fields that must never be written from the import payload on update: identity fields (set once on
+# create), fields determined by matching logic, and provenance.
+_UPDATE_EXCLUDE_FIELDS = frozenset({"test_type", "last_auto_gen_date", "external_id"}) | _PROVENANCE_FIELDS
 
 # The columns needed for matching and policy decisions, plus every field the file can carry, so a
 # matched definition is validated as it would be saved.
@@ -645,6 +652,8 @@ def _create_td(
 
     # Set fields from the payload (only explicitly provided ones)
     for field_name in td_import.model_fields_set:
+        if field_name in _PROVENANCE_FIELDS:
+            continue
         if field_name in ("last_auto_gen_date", "external_id", "lock_refresh"):
             continue  # handled specially below
         setattr(td, field_name, getattr(td_import, field_name))

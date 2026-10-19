@@ -82,8 +82,8 @@ def create_test_suite(
     severity_default: Annotated[
         str | None,
         Field(
-            description="Optional default severity applied to tests that do not set their own. Accepts `Fail` or "
-            "`Warning`.",
+            description="Optional default severity applied to tests that do not set their own. Accepts `Fail`, "
+            "`Warning`, or `Log`.",
         ),
     ] = None,
     dq_score_exclude: Annotated[
@@ -192,7 +192,7 @@ def update_test_suite(
     ] = None,
     severity_default: Annotated[
         str | None,
-        Field(description="New default severity for tests that do not set their own. Accepts `Fail` or `Warning`."),
+        Field(description="New default severity for tests that do not set their own. Accepts `Fail`, `Warning`, or `Log`."),
     ] = None,
     dq_score_exclude: Annotated[
         bool | None,

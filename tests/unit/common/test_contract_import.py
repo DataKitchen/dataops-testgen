@@ -40,12 +40,14 @@ _PARAMETERS = {
     "Text_Length_Range": "lower_tolerance,upper_tolerance,threshold_value",
     "Avg_Shift": "baseline_value_ct,baseline_avg,baseline_sd,threshold_value",
     "LOV_Match": "baseline_value,threshold_value",
+    "Condition_Flag": "custom_query,threshold_value",
 }
 _TABLE_SCOPED = {"Dupe_Rows", "SQL_Metric", "Row_Ct", "Schema_Conformance"}
+_CUSTOM_SCOPED = {"Condition_Flag"}
 _TEST_TYPES = {
     code: TestType(
         test_type=code, default_parm_columns=columns, test_name_short=code.replace("_", " "),
-        test_scope="table" if code in _TABLE_SCOPED else "column",
+        test_scope="table" if code in _TABLE_SCOPED else "custom" if code in _CUSTOM_SCOPED else "column",
     )
     for code, columns in {**_PARAMETERS, "Schema_Conformance": ""}.items()
 }
@@ -284,6 +286,21 @@ def test_a_rule_naming_a_managed_test_type_is_kept_unverifiable():
     assert "orders: rule 3" in split.unverifiable_rules
 
 
+def test_a_custom_rule_takes_its_column_name_from_its_implementation():
+    document = _document()
+    document["schema"][0]["quality"].append({
+        "type": "custom", "engine": "testgen",
+        "implementation": {"column_name": "Shipped within order", "custom_query": "qty_shipped > qty"},
+        "customProperties": [{"property": "testType", "value": "Condition_Flag", "vendor": "testgen"}],
+    })
+
+    split = _split(document)
+
+    term = next(term for term in split.terms if term.test_type == "Condition_Flag")
+    assert term.column_name == "Shipped within order"
+    assert term.parameters["custom_query"] == "qty_shipped > qty"
+
+
 def test_a_column_duplicate_rule_names_its_column_in_the_grouping_not_the_column():
     document = _document()
     document["schema"][0]["properties"][0]["quality"][1]["unit"] = "rows"
@@ -379,6 +396,17 @@ def _baseline(test_type="Required", column="email", term_id=None, **values) -> _
 
 def _plan(incoming, baseline):
     return plan_changes(incoming, baseline, schema_name="public", declared_parameters=_DECLARED)
+
+
+def test_a_term_missing_a_required_field_is_named_by_its_rule_id():
+    changes = _plan([
+        _incoming("Condition_Flag", column=None, term_id="rule-a", custom_query="qty < 0", threshold_value="0"),
+        _incoming("Condition_Flag", column="Valid", term_id="rule-b", custom_query="qty > 9", threshold_value="0"),
+    ], [])
+
+    problems = contract_import._invalid_terms(changes, _TEST_TYPES, "public")
+
+    assert problems == ["orders rule rule-a (Condition Flag): column_name required for test type `Condition Flag`"]
 
 
 def test_a_rule_whose_column_changed_updates_its_term_rather_than_replacing_it():

@@ -7,11 +7,13 @@
  * @property {TestDefinition[]} definitions
  * @property {object} metric_test_type
  * @property {{ success: boolean, timestamp: string }?} result
+ * @property {{ success: boolean, message: string, metric_id: string, timestamp: string }?} validate_result
  * @property {{ open: boolean, title: string }?} dialog
  */
 
 import van from '/app/static/js/van.min.js';
 import { getValue, loadStylesheet } from '/app/static/js/utils.js';
+import { Alert } from '/app/static/js/components/alert.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Card } from '/app/static/js/components/card.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
@@ -30,11 +32,6 @@ const EditTableMonitors = (/** @type Properties */ props) => {
     loadStylesheet('edit-table-monitors', stylesheet);
 
     const dialogOpen = van.state(false);
-    van.derive(() => {
-        const d = getValue(props.dialog);
-        if (d?.open) dialogOpen.val = true;
-        else dialogOpen.val = false;
-    });
 
     const updatedDefinitions = van.state({}); // { [id]: changes } - only changes for existing definitions
     const newMetrics = van.state({}); // { [tempId]: metric }
@@ -73,6 +70,32 @@ const EditTableMonitors = (/** @type Properties */ props) => {
     });
     const selectedItem = van.state({ type: 'Freshness_Trend', id: null });
 
+    // Result of the last Validate click, hidden once that metric's expression changes
+    const validation = van.state(null);
+    let validatedExpression = null;
+    let lastValidateTimestamp = null;
+    van.derive(() => {
+        const result = getValue(props.validate_result);
+        if (result && result.timestamp !== lastValidateTimestamp) {
+            lastValidateTimestamp = result.timestamp;
+            validation.val = result;
+        }
+    });
+
+    // The component outlives the dialog, so each opening starts from the saved state
+    van.derive(() => {
+        const isOpen = !!getValue(props.dialog)?.open;
+        if (isOpen && !dialogOpen.rawVal) {
+            updatedDefinitions.val = {};
+            newMetrics.val = {};
+            deletedMetricIds.val = [];
+            formStates.val = {};
+            validation.val = null;
+            selectedItem.val = { type: 'Freshness_Trend', id: null };
+        }
+        dialogOpen.val = isOpen;
+    });
+
     const content = div(
         div(
             { class: 'edit-monitors flex-row fx-align-stretch' },
@@ -104,6 +127,7 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                             const tempId = `temp_${Date.now()}`;
                             const newMetric = {
                                 _tempId: tempId,
+                                test_type: 'Metric_Trend',
                                 column_name: '',
                                 custom_query: '',
                                 history_calculation: 'PREDICT',
@@ -174,10 +198,38 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                         ? newMetrics.rawVal[id]
                         : { ...existingMetrics.val[id], ...updatedDefinitions.rawVal[id] };
 
+                    let latestExpression = metricDefinition.custom_query ?? '';
+
+                    const validateFooter = div(
+                        Button({
+                            type: 'stroked',
+                            color: 'basic',
+                            label: 'Validate',
+                            width: 'auto',
+                            onclick: () => {
+                                validatedExpression = latestExpression;
+                                emit('ValidateMetric', { payload: { metric_id: id, custom_query: validatedExpression } });
+                            },
+                        }),
+                        () => {
+                            const result = validation.val;
+                            return result?.metric_id === id
+                                ? Alert({ type: result.success ? 'success' : 'error', class: 'mt-2' }, result.message)
+                                : '';
+                        },
+                    );
+
                     return TestDefinitionForm({
                         definition: metricDefinition,
                         class: 'edit-monitors--form',
+                        fieldFooters: { custom_query: validateFooter },
                         onChange: (changes, state) => {
+                            latestExpression = 'custom_query' in changes
+                                ? changes.custom_query ?? ''
+                                : metricDefinition.custom_query ?? '';
+                            if (validation.rawVal?.metric_id === id && latestExpression !== validatedExpression) {
+                                validation.val = null;
+                            }
                             if (isNew) {
                                 newMetrics.val = {
                                     ...newMetrics.val,

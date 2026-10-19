@@ -14,7 +14,14 @@ from testgen.common.database.flavor.duckdb_flavor_service import container_path_
 from testgen.common.generation_set_service import get_generation_set_members
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssueType
-from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES, TestDefinition, TestType
+from testgen.common.models.test_definition import (
+    COLUMN_NAME_SCOPES,
+    NON_PUBLIC_TEST_TYPES,
+    TestDefinition,
+    TestType,
+    one_of_fields_for,
+    required_fields_for,
+)
 from testgen.common.odcs.quality_rules import (
     DECLARATION_LOGICAL_TYPES,
     NEAR_STANDARD_CUSTOM_TEST_TYPES,
@@ -81,13 +88,29 @@ def get_test_type(
 
 def _append_type_parameters(doc: MdDoc, tt: TestType) -> None:
     """Add parameter definitions section from test type metadata."""
-    if not tt.param_fields:
+    fields = list(tt.param_fields)
+    if tt.test_scope in COLUMN_NAME_SCOPES:
+        fields.insert(0, ("column_name", tt.column_name_prompt or "Column", tt.column_name_help or ""))
+    if not fields:
         return
 
+    required = required_fields_for(tt)
+    one_of = set(one_of_fields_for(tt))
+
+    def requirement(column: str) -> str:
+        if column in required:
+            return "Yes"
+        if column in one_of:
+            return "One of group"
+        return "No"
+
     doc.heading(2, "Parameters")
+    doc.text("Every parameter can be set directly, including baseline values.")
+    if one_of:
+        doc.text("Of the parameters marked `One of group`, at least one must be set.")
     doc.table(
-        headers=["Parameter", "Field", "Description"],
-        rows=[[prompt, column, help_text or None] for column, prompt, help_text in tt.param_fields],
+        headers=["Parameter", "Field", "Required", "Description"],
+        rows=[[prompt, column, requirement(column), help_text or None] for column, prompt, help_text in fields],
         code=[1],
     )
 
@@ -446,6 +469,7 @@ def glossary_resource() -> str:
 - **Hygiene Issue** — A potential data-quality concern detected by a profiling run (e.g. PII columns, non-standard blanks, mixed types).
 - **Test Suite** — A collection of test definitions scoped to a table group.
 - **Test Definition** — A configured test with parameters, thresholds, and target table/column.
+- **Baseline** — Expected values stored as a test's parameters (for example `baseline_value`, `baseline_ct`, `baseline_avg`), which the test compares the data against. Test generation fills them from profiling, and they can also be set directly when creating or editing a test.
 - **Test Run** — An execution of a test suite producing test results.
 - **Test Result** — The outcome of a single test definition within a test run.
 
@@ -467,7 +491,7 @@ def glossary_resource() -> str:
 - **Warning** — Data does not meet test criteria. Severity configured as Warning.
 - **Failed** — Data does not meet test criteria. Severity configured as Fail.
 - **Error** — Test could not execute (e.g., missing table or permission issue).
-- **Log** — Informational result recorded for reference.
+- **Log** — Result recorded without passing or failing. Severity configured as Log.
 
 ## Hygiene Issue Likelihood
 

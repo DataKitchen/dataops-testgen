@@ -21,7 +21,7 @@ test_types:
   default_parm_prompts: |-
     Record Subset Condition,Fingerprint Expression
   default_parm_help: |-
-    Condition defining a subset of records in main table|String expression combining key column measures into a distinct representation of table state
+    Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.|String expression combining key column measures into a distinct representation of table state
   default_parm_required: N,Y
   default_severity: Log
   run_type: QUERY

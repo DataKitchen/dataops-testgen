@@ -53,7 +53,6 @@ class ScoreDropEmailTemplate(BaseNotificationTemplate):
             })
         return {
             "scorecard": getattr(definition, "name", None),
-            "project": ctx.get("project_name"),
             "categories": categories,
         }
 

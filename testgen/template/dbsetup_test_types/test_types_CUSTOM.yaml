@@ -4,7 +4,7 @@ test_types:
   test_name_short: Custom Test
   test_name_long: Custom-defined business rule
   test_description: |-
-    Custom SQL Query Test. A highly flexible business-rule test covering any rule that can be checked by a SQL query against one or more tables in the database.
+    Custom SQL Query Test. A highly flexible business-rule test covering any rule that can be checked by a SQL query against one or more tables.
   except_message: |-
     Records failed the test definition.
   measure_uom: Failing records
@@ -18,13 +18,13 @@ test_types:
   column_name_prompt: |-
     Test Focus
   column_name_help: |-
-    Specify a brief descriptor of the focus of this test that is unique within this Test Suite for the Table and Test Type. This distinguishes this test from others of the same type on the same table. Example: `Order Total Matches Detail` if you are testing that the total in one table matches the sum of lines in another.
+    Specify a brief descriptor of the focus of this test that is unique within this Test Suite for the Table and Test Type. This distinguishes this test from others of the same type on the same table. Example: "Order Total Matches Detail" if you are testing that the total in one table matches the sum of lines in another.
   default_parm_columns: custom_query,match_column_names,skip_errors
   default_parm_values: null
   default_parm_prompts: |-
     Custom SQL Query Returning Failing Records,PII Redactable Columns,Threshold Failure Count
   default_parm_help: |-
-    Query should return the records that fail the test. The test passes if no records are returned. Results of the query will be shown when you click `Review Source Data` for a failed test, so be sure to include enough data in your results to follow-up. A query can refer to any tables in the database. You must hard-code the schema or use `{DATA_SCHEMA}` to represent the schema defined for the Table Group.|Comma-separated list of result column names that contain PII data and should be redacted for users without PII viewing permissions. Leave blank if no columns need redacting.|The number of failing records the query can return before the test fails.
+    Query that returns the records failing the test. The test passes when it returns none. Its results are shown as the source data of a failed test, so include the columns needed to follow up. Hard-code the schema or use {DATA_SCHEMA} for the schema of the Table Group. Example: SELECT order_id, order_total FROM {DATA_SCHEMA}.orders WHERE order_total < 0.|Comma-separated list of result column names that contain PII data and should be redacted for users without PII viewing permissions. Leave blank if no columns need redacting.|The number of failing records the query can return before the test fails.
   default_parm_required: Y,N,N
   default_severity: Fail
   run_type: QUERY
@@ -37,7 +37,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    This business-rule test is highly flexible, covering any rule that can be checked by a SQL query against one or more tables in the database. In operation, the user-defined query is embedded within a parent query returning the count of failing records identified. Any row returned by the query is interpreted as a single failing record in the test. Note that this query is run independently of other tests, and that performance will be slower, depending in large part on the efficiency of the query you write. Interpretation is based on the user-defined meaning of the test. Your query might be written to return failing records in individual rows identified by joining tables. Or it might return a failing row based on a multi-column aggregate condition, returning a single row if the condition fails. This query is run separately when you click `Review Source Data` from Test Results, so be sure to include enough data in your results to follow-up.
+    This business-rule test is highly flexible, covering any rule that can be checked by a SQL query against one or more tables. In operation, the user-defined query is embedded within a parent query returning the count of failing records identified. Any row returned by the query is interpreted as a single failing record in the test. Note that this query is run independently of other tests, and that performance will be slower, depending in large part on the efficiency of the query you write. Interpretation is based on the user-defined meaning of the test. Your query might be written to return failing records in individual rows identified by joining tables. Or it might return a failing row based on a multi-column aggregate condition, returning a single row if the condition fails. The query runs again to show the source data of a failed test, so include enough data in its results to follow up.
   active: Y
   ai_redact_values: true
   algorithm: Custom SQL

@@ -27,7 +27,7 @@ test_types:
   default_parm_prompts: |-
     Frequent Values at Baseline
   default_parm_help: |-
-    The ten most frequent values with their counts, most frequent first, written as value (count) and separated by a comma and a space, for example `Open (120), Closed (45)`. Values with equal counts are listed in byte order, and blank values are not counted.
+    The ten most frequent values with their counts, most frequent first, written as value (count) and separated by a comma and a space, for example Open (120), Closed (45). Values with equal counts are listed in byte order, and blank values are not counted.
   default_parm_required: Y
   default_severity: Fail
   run_type: QUERY

@@ -537,6 +537,7 @@ def save_test_suite_form(data: dict) -> None:
     st.session_state.pop("ts_form_dialog:result", None)
     st.session_state.pop(EDIT_DIALOG_KEY, None)
     get_test_suite_summaries.clear()
+    get_project_summary.clear()
     st.toast("Changes have been saved successfully.", icon=":material/check:")
 
 
@@ -562,6 +563,7 @@ def execute_ts_delete(test_suite_id: str) -> None:
         st.toast(f"Test Suite {test_suite_name} has been deleted.", icon=":material/check:")
     st.session_state.pop("ts_delete_dialog", None)
     get_test_suite_summaries.clear()
+    get_project_summary.clear()
 
 
 @with_database_session

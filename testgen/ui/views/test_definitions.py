@@ -918,7 +918,7 @@ def get_excel_report_data(
     for key in ["test_active_display", "lock_refresh_display", "flagged_display"]:
         data[key] = data[key].apply(lambda val: val if val == "Yes" else None)
 
-    for key in ["profiling_as_of_date", "last_manual_update"]:
+    for key in ["last_auto_gen_date", "profiling_as_of_date", "last_manual_update"]:
         data[key] = data[key].apply(
             lambda val: date_service.format_friendly_datetime(datetime.strptime(val, "%Y-%m-%d %H:%M:%S"), "%b %-d %Y, %-I:%M %p")
             if (val and not pd.isna(val) and val != "NaT")
@@ -936,8 +936,9 @@ def get_excel_report_data(
         "lock_refresh_display": {"header": "Locked"},
         "flagged_display": {"header": "Flagged"},
         "urgency": {"header": "Severity"},
-        "profiling_as_of_date": {"header": "From profiling as-of (UTC)"},
-        "last_manual_update": {"header": "Last manual update (UTC)"},
+        "last_auto_gen_date": {"header": "Last generated"},
+        "profiling_as_of_date": {"header": "From profiling as-of"},
+        "last_manual_update": {"header": "Last manual update"},
     }
     return get_excel_file_data(
         data,

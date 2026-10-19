@@ -1265,6 +1265,38 @@ class Test_import_create:
 
         assert created_td.last_manual_update >= before
 
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_create_ignores_provenance_from_the_file(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+        session.execute.return_value.all.return_value = []
+        session.scalar.return_value = None
+
+        ts = _make_test_suite()
+        td = _make_import_td(
+            test_type="Alpha",
+            table_name="t1",
+            profiling_as_of_date=datetime(2020, 1, 1),
+            last_manual_update=datetime(2020, 1, 2),
+        )
+        config = _make_config(mode=ImportMode.apply, on_new=OnNew.create)
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        before = datetime.now(UTC)
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
+            with _patched_td_class() as mock_td_cls:
+                created_td = MagicMock(id=uuid4())
+                mock_td_cls.return_value = created_td
+                import_definitions(ts, config, _make_payload(td))
+
+        assert created_td.profiling_as_of_date is None
+        assert created_td.last_manual_update >= before
+
 
 # --- Import: apply — update behavior ---
 
