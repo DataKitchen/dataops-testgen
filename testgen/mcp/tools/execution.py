@@ -5,8 +5,12 @@ from typing import Annotated
 from pydantic import Field
 from sqlalchemy import select
 
-from testgen.commands.test_generation import resolve_generation_profile_run
-from testgen.common.enums import JOB_STATUS_LABEL, JobKey, JobSource, SuiteType
+from testgen.commands.test_generation import (
+    parse_regeneration_groups,
+    resolve_generation_profile_run,
+    unprofiled_regeneration_note,
+)
+from testgen.common.enums import JOB_STATUS_LABEL, JobKey, JobSource, RegenerationGroup, SuiteType
 from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import EXTERNAL_URL_MAX_LENGTH, JobExecution, validate_caller_metadata
@@ -140,6 +144,16 @@ def generate_tests(
         list[str] | None,
         Field(description="Generation set names, e.g. from ``testgen://generation-sets``."),
     ] = None,
+    regenerate: Annotated[
+        list[str] | None,
+        Field(description=(
+            "Contracts only. What to regenerate; omit to refresh everything. `tests`: tests from the latest "
+            "profiling, locked tests kept. `profiling`: functional types, keys, formats, and profiled values. "
+            "`governance`: descriptions, tags, classification, and the critical data element, PII, and excluded "
+            "data element flags, from the data catalog. Replaces edits made to these in the contract. Columns "
+            "and their types are always refreshed."
+        )),
+    ] = None,
 ) -> str:
     """Submit a test-generation job for a test suite or a contract.
     Auto-creates test definitions from the latest profiling results for the table group;
@@ -159,19 +173,25 @@ def generate_tests(
     ``profile_table_comparison`` on (see ``get_table_group``).
     """
     suite = resolve_test_suite(test_suite_id)
+    if regenerate is not None and suite.suite_type != SuiteType.CONTRACT:
+        raise MCPUserError("`regenerate` applies to contracts only. Omit it for a test suite.")
     try:
         resolved_sets = resolve_generation_sets(suite, generation_sets)
     except ValueError as error:
         raise MCPUserError(str(error)) from error
     note = None
+    groups: list[RegenerationGroup] = []
     if suite.suite_type == SuiteType.CONTRACT:
         table_group = TableGroup.get(suite.table_groups_id)
-        if resolve_generation_profile_run(table_group) is None:
-            note = (
-                f"Table group `{table_group.table_groups_name}` has not been profiled, so the contract's metadata "
-                "is generated from the data catalog alone and no tests are generated besides schema conformance. "
-                "Run profiling with `run_profiling`, then generate again."
+        profiled = resolve_generation_profile_run(table_group) is not None
+        try:
+            groups = parse_regeneration_groups(
+                list(RegenerationGroup) if regenerate is None else regenerate, has_profiling_run=profiled
             )
+        except ValueError as error:
+            raise MCPUserError(str(error)) from error
+        if not profiled and (skipped := unprofiled_regeneration_note(table_group.table_groups_name, groups)):
+            note = f"{skipped} Run profiling with `run_profiling`, then generate again."
 
     version_label = None
     if suite.suite_type == SuiteType.CONTRACT:
@@ -181,7 +201,11 @@ def generate_tests(
 
     job = JobExecution.submit(
         job_key=JobKey.run_test_generation,
-        kwargs={"test_suite_id": str(suite.id), "generation_sets": resolved_sets},
+        kwargs={
+            "test_suite_id": str(suite.id),
+            "generation_sets": resolved_sets,
+            **({"regenerate": [str(group) for group in groups]} if groups else {}),
+        },
         source=JobSource.mcp,
         project_code=suite.project_code,
     )
@@ -193,6 +217,7 @@ def generate_tests(
         "list_tests",
         poll_hint="to verify the new definitions appear",
         version=version_label,
+        regenerate=groups,
         note=note,
     ).render()
 
@@ -247,6 +272,7 @@ def _render_submission(
     poll_tool: str,
     poll_hint: str = "to track status",
     version: str | None = None,
+    regenerate: list[RegenerationGroup] | None = None,
     note: str | None = None,
 ) -> MdDoc:
     doc = MdDoc()
@@ -256,6 +282,8 @@ def _render_submission(
     doc.field("Status", "Pending")
     if version:
         doc.field("Version", version)
+    if regenerate:
+        doc.field("Regenerate", ", ".join(f"`{group}`" for group in regenerate))
     if note:
         doc.text(note)
     doc.text(f"Use `{poll_tool}` {poll_hint}.")

@@ -1,9 +1,8 @@
 import pytest
 
 from testgen.common.flavors import SqlFlavorCode
-from testgen.common.models.test_definition import TestDefinition, TestType
+from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES, TestDefinition, TestType
 from testgen.common.odcs.quality_rules import (
-    EXCLUDED_TEST_TYPES,
     RULE_MAPPINGS,
     RuleMapping,
     RuleScope,
@@ -206,15 +205,15 @@ def test_a_marker_for_a_custom_routed_type_resolves_on_its_declared_node():
     assert resolved.test_type == "CUSTOM"
 
 
-def test_a_marker_naming_an_excluded_type_declines_and_does_not_raise():
-    """An ``EXCLUDED_TEST_TYPES`` member is in the catalogue, so a marker naming one passes
+def test_a_marker_naming_a_non_public_type_declines_and_does_not_raise():
+    """A ``NON_PUBLIC_TEST_TYPES`` member is in the catalogue, so a marker naming one passes
     the membership check and reaches the scope lookup with nothing declared. Resolution
     answers a rule it cannot place by declining it: an incoming document is a counterparty's,
     and failing the import over one is not this path's to do. (``rule_scope`` raises on
     the same input, for the rendering path, where such a term is our own inconsistency.)
     """
-    known = frozenset(EXCLUDED_TEST_TYPES)
-    for test_type_code in EXCLUDED_TEST_TYPES:
+    known = NON_PUBLIC_TEST_TYPES
+    for test_type_code in NON_PUBLIC_TEST_TYPES:
         rule = {
             "type": "text",
             "customProperties": [{"property": "testType", "value": test_type_code, "vendor": "testgen"}],

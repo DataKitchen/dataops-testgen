@@ -492,6 +492,8 @@ const TestSuites = (/** @type Properties */ props) => {
                         test_suite_id: info.test_suite_id,
                         test_suite_name: info.test_suite_name,
                         is_contract: info.is_contract ?? false,
+                        regeneration_groups: info.regeneration_groups ?? [],
+                        tests_disabled_reason: info.tests_disabled_reason,
                         generation_sets: info.generation_sets ?? [],
                         selected_generation_sets: info.selected_generation_sets ?? [],
                         generation_set_test_types: info.generation_set_test_types ?? {},

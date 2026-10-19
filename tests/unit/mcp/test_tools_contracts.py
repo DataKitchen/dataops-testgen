@@ -2,6 +2,7 @@
 
 import copy
 import hashlib
+import re
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -10,20 +11,24 @@ import pytest
 import yaml
 
 from testgen import settings
-from testgen.common.contract_service import InvalidContractDocumentError
+from testgen.common.contract_service import CheckableRuleError, InvalidContractDocumentError, SavedMetadata
 from testgen.common.enums import JobStatus
 from testgen.common.models.suite_version import SuiteVersion, SuiteVersionListItem
+from testgen.common.models.test_definition import TestDefinition
 from testgen.common.odcs.render import OrphanedTermError
 from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND
-from testgen.mcp.exceptions import MCPUserError
+from testgen.mcp.exceptions import MCPPermissionDenied, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 from testgen.mcp.tools.contracts import (
+    _with_placeholders,
+    diff_contract_versions,
     discard_contract_draft,
     export_contract,
     freeze_contract_version,
     get_contract_metadata,
     list_contract_versions,
     split_document,
+    update_contract_metadata,
 )
 
 pytestmark = pytest.mark.unit
@@ -484,20 +489,29 @@ _DOCUMENT_WITH_SOURCE_VALUES = {
 }
 
 
-def test_metadata_under_protection_omits_fields_that_can_carry_source_values(db_session_mock):
+def test_metadata_under_protection_shows_a_placeholder_for_each_value_that_can_come_from_the_data(db_session_mock):
     out, _ = _read_metadata(_contract(), _draft(document=_DOCUMENT_WITH_SOURCE_VALUES), protected=True)
 
     document = yaml.safe_load(out.split("```yaml\n", 1)[1].split("```", 1)[0])
     amount, status = document["schema"][0]["properties"]
-    assert amount == {"name": "amount", "logicalType": "number"}
-    assert status["logicalTypeOptions"] == {"minLength": 2, "maxLength": 8}
-    assert status["customProperties"] == [
-        {"property": "owner", "value": "ops"},
-        {"property": "profiledValues", "value": {"minLength": 2, "maxLength": 8}},
+    hidden = [
+        amount["logicalTypeOptions"]["minimum"],
+        amount["logicalTypeOptions"]["maximum"],
+        amount["customProperties"][0]["value"]["minimum"],
+        amount["examples"],
+        amount["enum"],
+        status["quality"][0]["arguments"],
+        status["quality"][0]["mustBe"],
+        document["schema"][0]["quality"][0]["mustBeGreaterThan"],
     ]
-    assert status["quality"] == [{"metric": "invalidValues"}, {"type": "sql"}]
-    assert document["schema"][0]["quality"] == [{"metric": "rowCount", "description": "Has rows"}]
-    assert "Omitted Fields" in out
+    assert all(_PLACEHOLDER.fullmatch(value) for value in hidden)
+    assert len(set(hidden)) == len(hidden), "equal values (the two 0.5 minimums) must not share a placeholder"
+    assert status["logicalTypeOptions"] == {"minLength": 2, "maxLength": 8}
+    assert status["customProperties"] == _DOCUMENT_WITH_SOURCE_VALUES["schema"][0]["properties"][1]["customProperties"]
+    assert status["quality"][1]["query"] == "SELECT COUNT(*) FROM orders WHERE status = 'open'"
+    visible = _PLACEHOLDER.sub("", out)
+    assert "0.5" not in visible and "120" not in visible and "42.0" not in visible
+    assert "Hidden Fields" in out
     assert "list_tests" in out
     assert "export_contract" not in out
 
@@ -515,7 +529,7 @@ def test_metadata_without_protection_returns_every_field(db_session_mock):
 
     document = yaml.safe_load(out.split("```yaml\n", 1)[1].split("```", 1)[0])
     assert document == _DOCUMENT_WITH_SOURCE_VALUES
-    assert "Omitted Fields" not in out
+    assert "Hidden Fields" not in out
 
 
 # --- list_contract_versions, freeze_contract_version, discard_contract_draft ---
@@ -638,3 +652,496 @@ def test_discarding_when_the_service_refuses_is_a_user_error(db_session_mock):
     error = ValueError("This contract has no frozen version behind its draft; discarding it would leave ...")
     with pytest.raises(MCPUserError, match="no frozen version behind its draft"):
         _discard(_contract(), error=error)
+
+
+# --- get_contract_metadata narrowing ---
+
+
+_WIDE_DOCUMENT = {
+    "apiVersion": ODCS_API_VERSION, "kind": ODCS_KIND, "id": "orders-contract", "version": "4.0.0",
+    "support": [{"channel": "#orders", "url": "https://chat.example.com/orders"}],
+    "schema": [
+        {"name": "orders", "properties": [{"name": "amount", "logicalType": "number"}, {"name": "placed_at"}]},
+        {"name": "customers", "properties": [{"name": "email", "logicalType": "string"}]},
+    ],
+}
+
+
+def _narrowed(out):
+    return yaml.safe_load(out.split("```yaml\n", 1)[1].split("```", 1)[0])
+
+
+def test_metadata_narrows_to_one_section(db_session_mock):
+    out, _ = _read_metadata(_contract(), _draft(document=_WIDE_DOCUMENT), section="support")
+
+    assert _narrowed(out) == {"support": _WIDE_DOCUMENT["support"]}
+    assert "**Filters:** section `support`" in out
+
+
+def test_metadata_narrows_to_one_table_without_the_rest_of_the_schema(db_session_mock):
+    out, _ = _read_metadata(_contract(), _draft(document=_WIDE_DOCUMENT), table_name="orders")
+
+    assert _narrowed(out) == {"schema": [_WIDE_DOCUMENT["schema"][0]]}
+    assert "customers" not in out
+
+
+def test_metadata_narrows_to_one_column_inside_its_table(db_session_mock):
+    out, _ = _read_metadata(_contract(), _draft(document=_WIDE_DOCUMENT), table_name="orders", column_name="amount")
+
+    assert _narrowed(out) == {"schema": [{"name": "orders", "properties": [{"name": "amount", "logicalType": "number"}]}]}
+    assert "**Filters:** table `orders`, column `amount`" in out
+
+
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        ({"column_name": "amount"}, "`column_name` requires `table_name`"),
+        ({"table_name": "orders", "section": "support"}, "Tables are in the `schema` section"),
+        ({"section": "price"}, "no `price` section. Its sections are `apiVersion`"),
+        ({"table_name": "invoices"}, "no table `invoices`. Its tables are `orders`, `customers`"),
+        ({"table_name": "orders", "column_name": "email"}, "declares no column `email`. Its columns are `amount`, `placed_at`"),
+    ],
+)
+def test_metadata_narrowing_errors_name_what_exists(db_session_mock, kwargs, message):
+    with pytest.raises(MCPUserError, match=re.escape(message)):
+        _read_metadata(_contract(), _draft(document=_WIDE_DOCUMENT), **kwargs)
+
+
+# --- update_contract_metadata ---
+
+
+def _saved(version_id, **fields):
+    return SavedMetadata(
+        version_id=version_id,
+        unverifiable_rules=fields.get("unverifiable_rules", []),
+        unresolved_declarations=fields.get("unresolved_declarations", []),
+        untested_declarations=fields.get("untested_declarations", []),
+        overridden_declarations=fields.get("overridden_declarations", []),
+        problems=fields.get("problems", []),
+    )
+
+
+def _update(suite, current, *, saved=None, error=None, protected=False, **kwargs):
+    landed = SuiteVersion(id=uuid4(), version=5)
+    with (
+        _patch_perms(),
+        patch(f"{MODULE}.mcp_source_data_protected", return_value=protected),
+        patch(f"{MODULE}.resolve_contract", return_value=suite),
+        patch.object(SuiteVersion, "draft_for", return_value=current),
+        patch.object(SuiteVersion, "get", return_value=landed),
+        patch(
+            f"{MODULE}.contract_service.save_metadata_document",
+            return_value=saved or _saved(landed.id), side_effect=error,
+        ) as save,
+    ):
+        return update_contract_metadata(test_suite_id=str(suite.id), **kwargs), save
+
+
+def test_a_merge_patch_changes_one_field_and_keeps_every_other_section(db_session_mock):
+    out, save = _update(_contract(), _draft(document=_WIDE_DOCUMENT), patch={"description": {"purpose": "Orders"}})
+
+    document = save.call_args.args[1]
+    assert document == {**_WIDE_DOCUMENT, "description": {"purpose": "Orders"}}
+    assert "**Version:** v5 draft" in out
+
+
+def test_a_merge_patch_replaces_a_list_whole(db_session_mock):
+    _, save = _update(_contract(), _draft(document=_WIDE_DOCUMENT), patch={"schema": [{"name": "orders"}]})
+
+    assert save.call_args.args[1]["schema"] == [{"name": "orders"}]
+
+
+def test_replace_mode_stores_the_patch_as_the_document(db_session_mock):
+    replacement = {"name": "Orders", "schema": []}
+    _, save = _update(_contract(), _draft(document=_WIDE_DOCUMENT), patch=replacement, mode="replace")
+
+    assert save.call_args.args[1] == replacement
+
+
+def test_a_checkable_rule_is_refused_with_its_path(db_session_mock):
+    error = CheckableRuleError(["$.schema[0].quality[0]: orders: orders-rows is checked by the Row Count test type"])
+    with pytest.raises(MCPUserError) as raised:
+        _update(_contract(), _draft(document=_WIDE_DOCUMENT), patch={"name": "x"}, error=error)
+
+    assert "No changes saved" in str(raised.value)
+    assert "`create_test`" in str(raised.value)
+    assert "$.schema[0].quality[0]" in str(raised.value)
+
+
+def test_an_invalid_result_is_refused_with_its_path(db_session_mock):
+    error = InvalidContractDocumentError(["$.status: 42 is not of type 'string'"])
+    with pytest.raises(MCPUserError, match=r"\$\.status: 42"):
+        _update(_contract(), _draft(document=_WIDE_DOCUMENT), patch={"status": 42}, error=error)
+
+
+def test_the_response_lists_what_no_test_checks(db_session_mock):
+    saved = _saved(
+        uuid4(),
+        unverifiable_rules=["orders.amount: amount-dupes"],
+        untested_declarations=["orders.amount: Maximum Value"],
+        unresolved_declarations=["orders.amount: logicalTypeOptions.exclusiveMinimum"],
+        problems=["$.status: 42 is not of type 'string'"],
+    )
+    out, _ = _update(_contract(), _draft(document=_WIDE_DOCUMENT), patch={"name": "x"}, saved=saved)
+
+    assert "## Stored as unverifiable (1)" in out
+    assert "## Declarations with no test (1)" in out
+    assert "## Declarations no test checks (1)" in out
+    assert "## Problems the document already had (1)" in out
+
+
+def test_an_unknown_mode_is_refused(db_session_mock):
+    with pytest.raises(MCPUserError, match="Invalid mode `patch`"):
+        _update(_contract(), _draft(), patch={}, mode="patch")
+
+
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_updating_metadata_without_edit_is_denied_before_the_contract_is_looked_up(mock_compute, db_session_mock):
+    mock_compute.return_value = ProjectPermissions(memberships={"demo": "role_c"}, permission="edit", username="test_user")
+    with (
+        patch(f"{MODULE}.resolve_contract") as resolve,
+        pytest.raises(MCPPermissionDenied),
+    ):
+        update_contract_metadata(test_suite_id=str(uuid4()), patch={"name": "x"})
+
+    resolve.assert_not_called()
+
+
+# --- diff_contract_versions ---
+
+_EARLIER = datetime(2026, 9, 1, tzinfo=UTC)
+_LATER = datetime(2026, 10, 1, tzinfo=UTC)
+
+
+def _term(term_id, **fields):
+    return TestDefinition(
+        id=uuid4(), contract_term_id=term_id, test_type=fields.pop("test_type", "Required"),
+        table_name=fields.pop("table_name", "orders"), column_name=fields.pop("column_name", "amount"),
+        last_auto_gen_date=fields.pop("last_auto_gen_date", _EARLIER),
+        last_manual_update=fields.pop("last_manual_update", None), **fields,
+    )
+
+
+def _diff(suite, source, target, before, after, **kwargs):
+    terms = {source.id: {term.contract_term_id: term for term in before}, target.id: {term.contract_term_id: term for term in after}}
+    with (
+        _patch_perms(),
+        patch(f"{MODULE}.resolve_contract", return_value=suite),
+        patch(f"{MODULE}.resolve_contract_version", side_effect=lambda _suite, number: source if number == source.version else target),
+        patch.object(SuiteVersion, "draft_for", return_value=target),
+        patch.object(SuiteVersion, "is_active", return_value=True),
+        patch(f"{MODULE}._terms_by_identity", side_effect=lambda version_id: terms[version_id]),
+        patch(f"{MODULE}._test_type_labels", return_value={"Required": "Required Entry", "Max_Val": "Maximum Value"}),
+        patch(f"{MODULE}.mcp_source_data_protected", return_value=kwargs.pop("protected", False)),
+    ):
+        return diff_contract_versions(test_suite_id=str(suite.id), from_version=source.version, **kwargs)
+
+
+def test_a_diff_tells_a_regenerated_term_from_an_edited_one(db_session_mock):
+    before = [
+        _term("max-amount", test_type="Max_Val", baseline_value="100"),
+        _term("amount-required", threshold_value="0"),
+    ]
+    after = [
+        _term("max-amount", test_type="Max_Val", baseline_value="120", last_auto_gen_date=_LATER),
+        _term("amount-required", threshold_value="5", last_manual_update=_LATER),
+    ]
+    out = _diff(_contract(), _frozen(3), _draft(4), before, after)
+
+    assert "| Regenerated | max-amount | Maximum Value | orders | amount | baseline_value |" in out
+    assert "| Edited | amount-required | Required Entry | orders | amount | threshold_value |" in out
+    assert "**Regenerated:** 1" in out and "**Edited:** 1" in out
+
+
+def test_a_term_whose_column_changed_reads_as_one_change(db_session_mock):
+    out = _diff(
+        _contract(), _frozen(3), _draft(4),
+        [_term("amount-required")], [_term("amount-required", column_name="total", last_manual_update=_LATER)],
+    )
+
+    assert "**Edited:** 1" in out
+    assert "**Added:**" not in out and "**Removed:**" not in out
+    assert "| `column_name` | amount | total |" in out
+
+
+def test_a_diff_lists_added_and_removed_terms(db_session_mock):
+    out = _diff(_contract(), _frozen(3), _draft(4), [_term("gone")], [_term("new")])
+
+    assert "**Added:** 1" in out and "**Removed:** 1" in out
+
+
+def test_a_diff_pages_its_terms(db_session_mock):
+    after = [_term(f"term-{index:02}", column_name=f"col_{index:02}") for index in range(5)]
+    out = _diff(_contract(), _frozen(3), _draft(4), [], after, limit=2, page=2)
+
+    assert "term-02" in out and "term-03" in out
+    assert "term-00" not in out and "term-04" not in out
+    assert "## Metadata document" not in out
+
+
+def test_a_diff_lists_the_metadata_document_changes_by_path(db_session_mock):
+    source = _frozen(3)
+    source.metadata_document = {"name": "Orders", "schema": [{"name": "orders", "description": "Old"}, {"name": "gone"}]}
+    target = _draft(4, document={"name": "Orders", "team": {"name": "Data"}, "schema": [{"name": "orders", "description": "New"}]})
+
+    out = _diff(_contract(), source, target, [], [])
+
+    assert "| `$.schema[orders].description` | Changed |" in out
+    assert "| `$.schema[gone]` | Removed |" in out
+    assert "| `$.team` | Added |" in out
+
+
+def test_a_diff_hides_calibration_values_under_protection(db_session_mock):
+    out = _diff(
+        _contract(), _frozen(3), _draft(4),
+        [_term("max-amount", test_type="Max_Val", baseline_value="100")],
+        [_term("max-amount", test_type="Max_Val", baseline_value="120", last_auto_gen_date=_LATER)],
+        protected=True,
+    )
+
+    assert "120" not in out
+    assert "**Omitted Fields:** baseline_value" in out
+
+
+def test_a_diff_of_a_version_with_itself_is_refused(db_session_mock):
+    version = _frozen(3)
+    with pytest.raises(MCPUserError, match="both v3"):
+        _diff(_contract(), version, version, [], [], to_version=3)
+
+
+_PLACEHOLDER = re.compile(r"<hidden:[0-9a-f]{16}\.[0-9a-f]{16}>")
+
+
+@pytest.fixture(autouse=True)
+def _placeholder_key():
+    with patch(f"{MODULE}.get_jwt_signing_key", return_value=b"k" * 32):
+        yield
+
+
+_PROTECTED_DOCUMENT = {
+    "schema": [{
+        "name": "orders",
+        "quality": [
+            {"type": "text", "description": "Few late", "mustBeLessThan": 5},
+            {"type": "text", "description": "Some rows", "mustBeGreaterThan": 0},
+        ],
+        "properties": [
+            {"name": "amount", "description": "Old", "logicalTypeOptions": {"maximum": 500, "multipleOf": 1}, "examples": [12.5]},
+            {"name": "status", "enum": ["open"]},
+        ],
+    }],
+}
+
+
+def _protected_write(edit, document=_PROTECTED_DOCUMENT):
+    read_back = _with_placeholders(document)
+    edit(read_back["schema"][0])
+    _, save = _update(_contract(), _draft(document=document), patch={"schema": read_back["schema"]}, protected=True)
+    return save.call_args.args[1]["schema"][0]
+
+
+def test_under_protection_a_write_built_from_a_read_keeps_the_hidden_values(db_session_mock):
+    table = _protected_write(lambda table: table["properties"][0].update(description="New"))
+
+    expected = copy.deepcopy(_PROTECTED_DOCUMENT["schema"][0])
+    expected["properties"][0]["description"] = "New"
+    assert table == expected
+
+
+def test_under_protection_hidden_values_follow_reordered_removed_and_edited_rules(db_session_mock):
+    def edit(table):
+        late, rows = table["quality"]
+        late["description"] = "Very few late"
+        table["quality"] = [{"type": "text", "description": "New"}, rows, late]
+
+    table = _protected_write(edit)
+
+    assert table["quality"] == [
+        {"type": "text", "description": "New"},
+        {"type": "text", "description": "Some rows", "mustBeGreaterThan": 0},
+        {"type": "text", "description": "Very few late", "mustBeLessThan": 5},
+    ]
+
+
+def test_under_protection_each_read_gives_new_placeholders_that_all_resolve(db_session_mock):
+    first, second = _with_placeholders(_PROTECTED_DOCUMENT), _with_placeholders(_PROTECTED_DOCUMENT)
+    assert first["schema"][0]["properties"][1]["enum"] != second["schema"][0]["properties"][1]["enum"]
+
+    second["schema"][0]["properties"][1]["enum"] = first["schema"][0]["properties"][1]["enum"]
+    _, save = _update(_contract(), _draft(document=_PROTECTED_DOCUMENT), patch={"schema": second["schema"]}, protected=True)
+
+    assert save.call_args.args[1]["schema"] == _PROTECTED_DOCUMENT["schema"]
+
+
+def test_under_protection_a_renamed_column_keeps_its_hidden_values(db_session_mock):
+    table = _protected_write(lambda table: table["properties"][0].update(name="order_amount"))
+
+    assert table["properties"][0] == {**_PROTECTED_DOCUMENT["schema"][0]["properties"][0], "name": "order_amount"}
+
+
+def test_under_protection_a_placeholder_left_out_removes_its_value(db_session_mock):
+    def edit(table):
+        del table["properties"][1]["enum"]
+        late = table["quality"][0]
+        late["mustBeGreaterThan"] = 1
+        del late["mustBeLessThan"]
+
+    table = _protected_write(edit)
+
+    assert table["properties"][1] == {"name": "status"}
+    assert table["quality"][0] == {"type": "text", "description": "Few late", "mustBeGreaterThan": 1}
+
+
+def _refused_protected_write(edit):
+    read_back = _with_placeholders(_PROTECTED_DOCUMENT)
+    edit(read_back["schema"][0])
+    with patch(f"{MODULE}.contract_service.save_metadata_document") as save, pytest.raises(MCPUserError) as raised:
+        _update(_contract(), _draft(document=_PROTECTED_DOCUMENT), patch={"schema": read_back["schema"]}, protected=True)
+    save.assert_not_called()
+    return str(raised.value)
+
+
+def test_under_protection_a_placeholder_moved_where_reads_show_it_is_refused(db_session_mock):
+    def edit(table):
+        table["properties"][1]["description"] = f"Values: {table['properties'][1]['enum']}"
+
+    message = _refused_protected_write(edit)
+
+    assert "`$.schema[0].properties[1].description`" in message
+    assert "open" not in message
+
+
+def test_under_protection_a_placeholder_nested_inside_a_hidden_field_is_refused(db_session_mock):
+    def edit(table):
+        table["properties"][0]["examples"] = [table["properties"][1]["enum"]]
+
+    assert "`$.schema[0].properties[0].examples[0]`" in _refused_protected_write(edit)
+
+
+def test_a_placeholder_for_a_value_the_contract_no_longer_holds_is_refused(db_session_mock):
+    def edit(table):
+        table["properties"][1]["enum"] = "<hidden:0123456789abcdef.0123456789abcdef>"
+
+    message = _refused_protected_write(edit)
+
+    assert "`$.schema[0].properties[1].enum`" in message
+    assert "get_contract_metadata" in message
+
+
+def test_under_protection_the_document_changes_name_a_hidden_field_and_nothing_inside_it(db_session_mock):
+    def column(examples):
+        return {"name": "orders", "properties": [{"name": "amount", "examples": examples}]}
+
+    source = _frozen(3)
+    source.metadata_document = {"schema": [column([{"name": "Jane Doe", "ssn": "123"}, {"name": "John Roe"}])]}
+    target = _draft(4, document={"schema": [column([{"name": "Jane Doe", "ssn": "999"}])]})
+
+    out = _diff(_contract(), source, target, [], [], protected=True)
+
+    assert "| `$.schema[orders].properties[amount].examples` | Changed |" in out
+    assert "Jane" not in out and "John" not in out
+
+
+def test_under_protection_an_unchanged_hidden_value_is_not_a_document_change(db_session_mock):
+    document = {"schema": [{"name": "orders", "properties": [{"name": "amount", "examples": [12.5]}]}]}
+    source = _frozen(3)
+    source.metadata_document = copy.deepcopy(document)
+
+    out = _diff(_contract(), source, _draft(4, document=document), [], [], protected=True)
+
+    assert "## Metadata document\n\nNo change." in out
+
+
+def test_a_merge_patch_is_not_refused_for_placeholder_text_the_stored_document_already_holds(db_session_mock):
+    stored = {"name": "Orders", "description": {"usage": "Copied <hidden:0123456789abcdef.0123456789abcdef> from a read"}}
+    _, save = _update(_contract(), _draft(document=stored), patch={"name": "Orders v2"}, protected=True)
+
+    assert save.call_args.args[1] == {**stored, "name": "Orders v2"}
+
+
+def test_under_protection_a_rules_recorded_baselines_are_hidden(db_session_mock):
+    rule = {
+        "metric": "rowCount",
+        "mustBeBetween": [90, 110],
+        "customProperties": [
+            {"property": "testType", "value": "Row_Ct_Pct", "vendor": "testgen"},
+            {"property": "baselineCount", "value": 100, "vendor": "testgen"},
+            {"property": "thresholdPercent", "value": 10, "vendor": "testgen"},
+        ],
+    }
+
+    properties = _with_placeholders({"quality": [rule]})["quality"][0]["customProperties"]
+
+    assert properties[0]["value"] == "Row_Ct_Pct"
+    assert all(_PLACEHOLDER.fullmatch(entry["value"]) for entry in properties[1:])
+
+
+def test_a_write_without_placeholders_does_not_need_the_signing_key(db_session_mock):
+    with patch(f"{MODULE}.get_jwt_signing_key", side_effect=AttributeError("no signing key configured")):
+        _, save = _update(_contract(), _draft(document=_PROTECTED_DOCUMENT), patch={"name": "Orders v2"})
+
+    assert save.call_args.args[1]["name"] == "Orders v2"
+
+
+def test_without_protection_a_write_replaces_what_it_sends(db_session_mock):
+    sent = copy.deepcopy(_PROTECTED_DOCUMENT["schema"])
+    del sent[0]["properties"][0]["examples"]
+    _, save = _update(_contract(), _draft(document=_PROTECTED_DOCUMENT), patch={"schema": sent})
+
+    assert save.call_args.args[1]["schema"] == sent
+
+
+def test_under_protection_validation_problems_name_only_the_path(db_session_mock):
+    error = InvalidContractDocumentError(["$.schema[0].properties[0].examples: '123-45-6789' is not of type 'array'"])
+    with pytest.raises(MCPUserError) as raised:
+        _update(_contract(), _draft(document=_WIDE_DOCUMENT), patch={"name": "x"}, error=error, protected=True)
+
+    assert "123-45-6789" not in str(raised.value)
+    assert "$.schema[0].properties[0].examples: does not match the ODCS schema." in str(raised.value)
+
+
+def test_the_update_lists_what_changed_by_path(db_session_mock):
+    landed = SuiteVersion(id=uuid4(), version=5, metadata_document={**_WIDE_DOCUMENT, "description": {"purpose": "x"}, "schema": []})
+    with (
+        _patch_perms(),
+        patch(f"{MODULE}.mcp_source_data_protected", return_value=False),
+        patch(f"{MODULE}.resolve_contract", return_value=_contract()),
+        patch.object(SuiteVersion, "draft_for", return_value=_draft(document=_WIDE_DOCUMENT)),
+        patch.object(SuiteVersion, "get", return_value=landed),
+        patch(f"{MODULE}.contract_service.save_metadata_document", return_value=_saved(landed.id)),
+    ):
+        out = update_contract_metadata(test_suite_id=str(uuid4()), patch={})
+
+    assert "## Changes" in out
+    assert "| `$.description` | Added |" in out
+    assert "| `$.schema[orders]` | Removed |" in out
+
+
+def test_freezing_under_protection_names_only_the_path_of_each_problem(db_session_mock):
+    error = InvalidContractDocumentError(["$.schema[0].properties[0].examples: '123-45-6789' is not of type 'array'"])
+    with (
+        patch(f"{MODULE}.mcp_source_data_protected", return_value=True),
+        pytest.raises(MCPUserError) as raised,
+    ):
+        _freeze(_contract(), error=error)
+
+    assert "123-45-6789" not in str(raised.value)
+    assert "$.schema[0].properties[0].examples: does not match the ODCS schema." in str(raised.value)
+
+
+def test_a_diff_page_past_the_last_says_so(db_session_mock):
+    after = [_term(f"term-{index}", column_name=f"col_{index}") for index in range(3)]
+    out = _diff(_contract(), _frozen(3), _draft(4), [], after, limit=2, page=5)
+
+    assert "No tests on page 5 (total: 3)." in out
+    assert "## Tests" not in out
+
+
+def test_values_a_column_stores_alike_are_not_a_change(db_session_mock):
+    out = _diff(
+        _contract(), _frozen(3), _draft(4),
+        [_term("amount-required", window_days=None, history_lookback=None, test_description="")],
+        [_term("amount-required", window_days=0, history_lookback=0, test_description=None)],
+    )
+
+    assert "No test changed." in out

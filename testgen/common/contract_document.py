@@ -3,13 +3,16 @@
 Every function here works on the document only. Nothing writes back to the catalog, the
 profiling results or the table group.
 
-Every field the catalog or profiling supplies is refreshed on each generation: it takes the
-source's value, and is removed when the source has none. What profiling observed goes in a
-column's ``profiledValues`` custom property, never in ``logicalTypeOptions``: a bound there is a
-constraint every reader enforces, so it holds only what was agreed. Fields no source supplies are
-left as they are. A table or column the catalog no longer holds keeps its descriptor, so Schema
-Conformance reports the drift, and a column the profiling run has no results for keeps its
-profiled values.
+Each generation declares the catalog's columns and refreshes their physical and logical types.
+The other fields the catalog or profiling supplies fall in two groups, each refreshed only when a
+generation asks for it: profiling (functional types, keys, granularity, formats and profiled
+values) and governance (descriptions, tags, classification and the critical, PII and excluded
+flags). A refreshed field takes the source's value, and is removed when the source has none. What
+profiling observed goes in a column's ``profiledValues`` custom property, never in
+``logicalTypeOptions``: a bound there is a constraint every reader enforces, so it holds only what
+was agreed. Fields no source supplies are left as they are. A table or column the catalog no
+longer holds keeps its descriptor, so Schema Conformance reports the drift, and a column the
+profiling run has no results for keeps its profiled values.
 """
 
 import math
@@ -182,12 +185,9 @@ def _refresh_governance(
         _set_custom_property(node, "criticalDataElement", _flag(critical_data_element))
 
 
-def _refresh_column(prop: dict, column: DataColumnChars, table: DataTable | None) -> None:
-    """Refresh a column descriptor from its catalog column: types, governance, markers and string
-    format. An excluded column loses its profiled values too, since profiling skips it."""
-    _set_field(prop, "physicalType", column.db_data_type)
-    _set_field(prop, "logicalType", column.logical_type)
-    _set_custom_property(prop, "functionalDataType", column.functional_data_type)
+def _refresh_column_governance(prop: dict, column: DataColumnChars, table: DataTable | None) -> None:
+    """Refresh a column descriptor's governance from its catalog column: description, tags,
+    classification and the critical, PII and excluded flags."""
     _refresh_governance(
         prop,
         column.description,
@@ -197,6 +197,25 @@ def _refresh_column(prop: dict, column: DataColumnChars, table: DataTable | None
     )
     _set_custom_property(prop, "pii", _flag(column.pii_flag))
     _set_custom_property(prop, EXCLUDED_MARKER, _flag(column.excluded_data_element))
+
+
+def _refresh_column_types(prop: dict, column: DataColumnChars) -> None:
+    """Refresh a column descriptor's physical and logical types from its catalog column. A changed
+    logical type drops the string format and profiled values derived from the previous one."""
+    if prop.get("logicalType") not in (None, column.logical_type):
+        options = dict(prop.get("logicalTypeOptions") or {})
+        options.pop("format", None)
+        _set_field(prop, "logicalTypeOptions", options or None)
+        _set_custom_property(prop, PROFILED_VALUES, None)
+    _set_field(prop, "physicalType", column.db_data_type)
+    _set_field(prop, "logicalType", column.logical_type)
+
+
+def _refresh_column_profiling(prop: dict, column: DataColumnChars) -> None:
+    """Refresh a column descriptor's functional type and string format from its catalog column. A
+    column the catalog excludes gets no format and loses its profiled values, since profiling skips
+    it."""
+    _set_custom_property(prop, "functionalDataType", column.functional_data_type)
 
     string_format = (
         _FUNCTIONAL_TYPE_FORMATS.get(column.functional_data_type)
@@ -276,52 +295,71 @@ def _refresh_primary_key(properties: list[dict], columns: list[DataColumnChars])
             return
 
 
-def refresh_tables(document: dict, table_group: TableGroup, table_names: list[str]) -> dict[str, int]:
+def refresh_tables(
+    document: dict,
+    table_group: TableGroup,
+    table_names: list[str],
+    *,
+    profiling: bool = True,
+    governance: bool = True,
+) -> dict[str, int]:
     """Declare each table on ``document`` and refresh the tables and their columns from the data
     catalog.
 
-    A table not declared yet is appended, and so is a catalog column not declared yet. Each table and
-    column carries only the tags set at its own level. A column is a critical data element when it or its table is one.
-    Profiling's table type becomes the table's granularity, its identifying column the primary key,
-    and its recognized formats string formats. A column excluded from testing stays declared, since
-    the live table holds it, but is marked excluded and gets no primary key, format or profiled
-    values. A table the catalog does not hold is left as it is, and so is a column, apart from its
-    primary key.
+    A table not declared yet is appended, and so is a catalog column not declared yet, and each
+    column's physical and logical types are refreshed. With ``profiling``, the functional types,
+    granularity, primary key and string formats are refreshed: profiling's table type becomes the
+    table's granularity, its identifying column the primary key, and its recognized formats string
+    formats. With ``governance``, each table's and column's description, tags, classification and
+    flags are refreshed; each carries only the tags set at its own level, and a column is a
+    critical data element when it or its table is one.
+
+    A column the catalog excludes from testing stays declared, since the live table holds it. With
+    ``profiling``, it gets no primary key, format or profiled values, whatever its own excluded
+    marker says; the marker itself is governance. A table the catalog does not hold is left as it
+    is, and so is a column, apart from its primary key when ``profiling`` is set.
 
     Updates ``document`` in place. Returns the number of catalog columns found for each table.
     """
     if document.get("schema") is None:
         document["schema"] = []
-    schema = document["schema"]
+    declared = document["schema"]
     column_counts: dict[str, int] = {}
 
     for table_name in table_names:
-        descriptor = next((entry for entry in schema if entry["name"] == table_name), None)
+        descriptor = next((entry for entry in declared if entry["name"] == table_name), None)
         if descriptor is None:
             descriptor = {"name": table_name}
-            schema.append(descriptor)
+            declared.append(descriptor)
 
         columns = catalog_columns(table_group.id, table_name)
         column_counts[table_name] = len(columns)
-        descriptor["properties"] = _merge_properties(descriptor.get("properties") or [], columns)
+        properties = descriptor["properties"] = _merge_properties(descriptor.get("properties") or [], columns)
 
         table = _catalog_table(table_group.id, table_name)
         if table is not None:
-            _refresh_governance(
-                descriptor,
-                table.description,
-                bool(table.critical_data_element),
-                {tag: getattr(table, tag, None) for tag in TAG_FIELDS},
-                is_property=False,
-            )
-            _refresh_table_type(descriptor, table)
+            if governance:
+                _refresh_governance(
+                    descriptor,
+                    table.description,
+                    bool(table.critical_data_element),
+                    {tag: getattr(table, tag, None) for tag in TAG_FIELDS},
+                    is_property=False,
+                )
+            if profiling:
+                _refresh_table_type(descriptor, table)
 
         by_name = {column.column_name: column for column in columns}
-        for prop in descriptor["properties"]:
+        for prop in properties:
             if (column := by_name.get(prop.get("name"))) is not None:
-                _refresh_column(prop, column, table)
+                _refresh_column_types(prop, column)
+                if profiling:
+                    _refresh_column_profiling(prop, column)
+                if governance:
+                    _refresh_column_governance(prop, column, table)
 
-        _refresh_primary_key(descriptor["properties"], columns)
+        if profiling:
+            _refresh_primary_key(properties, columns)
 
     return column_counts
 
@@ -341,15 +379,29 @@ def _profiled_value(logical_type: str, raw: Any) -> Any:
     return int(value) if value.is_integer() else value
 
 
-def fill_profiled_values(document: dict, profile_run_id: UUID, table_names: list[str]) -> None:
+def fill_profiled_values(
+    document: dict, table_groups_id: UUID, profile_run_id: UUID, table_names: list[str]
+) -> None:
     """Refresh each declared column's ``profiledValues`` from the profiling run.
 
     The values follow the column's ``logicalType``: the observed minimum and maximum for a number,
     integer, date or timestamp, and the observed shortest and longest length for a string. A column
-    marked excluded gets none. Values the run no longer supplies are removed; a column the run has
-    no results for is left as it is. The entry's description dates the run.
+    the data catalog excludes gets none, whatever its excluded marker says; the marker decides only
+    for a column the catalog no longer holds. Values the run no longer supplies are removed; a column
+    the run has no results for is left as it is. The entry's description dates the run.
     """
     session = get_current_session()
+    catalog_excluded = {
+        (row.table_name, row.column_name): bool(row.excluded_data_element)
+        for row in session.execute(
+            select(DataColumnChars.table_name, DataColumnChars.column_name, DataColumnChars.excluded_data_element)
+            .where(
+                DataColumnChars.table_groups_id == table_groups_id,
+                DataColumnChars.table_name.in_(table_names),
+                DataColumnChars.drop_date.is_(None),
+            )
+        )
+    }
     started = session.scalar(select(ProfilingRun.profiling_starttime).where(ProfilingRun.id == profile_run_id))
     description = (
         f"Values TestGen profiling observed{f' on {started.date().isoformat()}' if started else ''}. "
@@ -368,12 +420,13 @@ def fill_profiled_values(document: dict, profile_run_id: UUID, table_names: list
         if table["name"] not in table_names:
             continue
         for prop in table.get("properties") or []:
-            profile = profiles.get((table["name"], prop.get("name")))
+            column_key = (table["name"], prop.get("name"))
+            profile = profiles.get(column_key)
             if profile is None:
                 continue
             logical_type = prop.get("logicalType")
             values = {}
-            if not is_excluded(prop):
+            if not catalog_excluded.get(column_key, is_excluded(prop)):
                 for key, field in _PROFILED_VALUE_SOURCES.get(logical_type, ()):
                     if (value := _profiled_value(logical_type, getattr(profile, field, None))) is not None:
                         values[key] = value

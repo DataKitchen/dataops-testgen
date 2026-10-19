@@ -1,3 +1,4 @@
+import copy
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
@@ -10,12 +11,14 @@ from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 
 from testgen.commands.test_generation import ContractGenerationResult
 from testgen.common import contract_document, contract_service
+from testgen.common.contract_rules import RuleResolver
 from testgen.common.data_catalog_service import TAG_FIELDS
 from testgen.common.enums import SuiteType
 from testgen.common.flavors import SqlFlavorCode
 from testgen.common.models.suite_version import SuiteVersion
-from testgen.common.models.test_definition import TestDefinition
+from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.odcs import render, serialize
+from testgen.common.odcs.quality_rules import is_unverifiable_marker, mark_unverifiable
 from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, CustomServerReason, ServerBlock, ServerType
 from testgen.common.odcs.validation import validate_document
 from tests.unit.sql_assertions import equality_conjunct
@@ -281,40 +284,78 @@ def test_discarding_the_contracts_only_version_is_refused():
     session.delete.assert_not_called()
 
 
-def test_save_metadata_document_writes_to_the_resolved_version_and_returns_its_id():
+_RULE_TEST_TYPES = {
+    code: TestType(
+        test_type=code, default_parm_columns=columns, test_name_short=code.replace("_", " "),
+        test_scope="table" if code == "Row_Ct" else "column",
+    )
+    for code, columns in {"Row_Ct": "threshold_value", "Required": "threshold_value", "Max_Val": "baseline_value,threshold_value"}.items()
+}
+
+
+def _metadata(**overrides) -> dict:
+    return {
+        "apiVersion": ODCS_API_VERSION, "kind": ODCS_KIND, "id": "orders-contract", "version": "2.0.0",
+        "name": "Orders",
+        "schema": [{
+            "name": "orders",
+            "quality": [{"type": "text", "description": "Orders arrive by 6am."}],
+            "properties": [{"name": "amount", "logicalType": "number"}],
+        }],
+        **overrides,
+    }
+
+
+def _rows_rule(rule_id="orders-rows"):
+    return {"id": rule_id, "metric": "rowCount", "unit": "rows", "mustBeGreaterOrEqualTo": 1}
+
+
+@contextmanager
+def _save_stubs(stored, *, terms=(), draft_version=2):
     suite = _suite()
-    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
-    document = {"schema": [{"name": "orders"}]}
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=draft_version, metadata_document=stored)
     session = MagicMock()
+    session.scalars.return_value = list(terms)
+    calls = []
+    session.commit.side_effect = lambda: calls.append("commit")
+    resolver = RuleResolver(test_types=_RULE_TEST_TYPES, flavor=SqlFlavorCode.POSTGRESQL, qualify_tables=True)
     with (
         patch.object(SuiteVersion, "draft_for", return_value=draft),
         patch.object(SuiteVersion, "get", return_value=draft),
         patch("testgen.common.contract_service.get_current_session", return_value=session),
-        patch("testgen.common.contract_service.reconcile_contract_conformance"),
+        patch("testgen.common.contract_service.TableGroup"),
+        patch("testgen.common.contract_service.Connection"),
+        patch.object(RuleResolver, "for_table_group", return_value=resolver),
+        patch.object(render, "_terms_for_version", return_value=[]),
+        patch(
+            "testgen.common.contract_service.reconcile_contract_conformance",
+            side_effect=lambda *_args, **_kwargs: calls.append("reconcile"),
+        ),
         patch.object(TestDefinition, "assign_missing_term_ids"),
     ):
-        version_id = contract_service.save_metadata_document(suite, document)
+        yield suite, draft, calls
 
-    assert version_id == draft.id
-    assert draft.metadata_document == document
+
+def test_saving_a_document_writes_it_to_the_draft_and_returns_the_version():
+    document = _metadata(description={"purpose": "Order facts"})
+    with _save_stubs(_metadata()) as (suite, draft, _):
+        saved = contract_service.save_metadata_document(suite, document)
+
+    assert saved.version_id == draft.id
+    assert draft.metadata_document["description"] == {"purpose": "Order facts"}
+    assert saved.problems == []
 
 
 def test_saving_a_document_marks_it_modified_even_when_it_is_the_drafts_own_object():
     """A caller that edits the draft's document in place and passes it back hands the column the
     object it already holds; without the flag no UPDATE is issued and the commit stores nothing."""
-    suite = _suite()
-    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, metadata_document={"schema": []})
-    document = draft.metadata_document
-    document["schema"].append({"name": "orders"})
+    stored = _metadata()
     with (
-        patch.object(SuiteVersion, "draft_for", return_value=draft),
-        patch.object(SuiteVersion, "get", return_value=draft),
-        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
-        patch("testgen.common.contract_service.reconcile_contract_conformance"),
-        patch.object(TestDefinition, "assign_missing_term_ids"),
+        _save_stubs(stored) as (suite, draft, _),
         patch("testgen.common.contract_service.flag_modified") as flagged,
     ):
-        contract_service.save_metadata_document(suite, document)
+        stored["name"] = "Orders v2"
+        contract_service.save_metadata_document(suite, stored)
 
     flagged.assert_called_once_with(draft, "metadata_document")
 
@@ -322,24 +363,241 @@ def test_saving_a_document_marks_it_modified_even_when_it_is_the_drafts_own_obje
 def test_saving_a_document_reconciles_conformance_tests_after_committing_it():
     """Conformance generation reads the declared tables on its own connection, so the document
     has to be committed before it runs or the reconciliation sees the previous declaration."""
-    suite = _suite()
-    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
-    session = MagicMock()
-    calls = []
-    session.commit.side_effect = lambda: calls.append("commit")
-    with (
-        patch.object(SuiteVersion, "draft_for", return_value=draft),
-        patch.object(SuiteVersion, "get", return_value=draft),
-        patch("testgen.common.contract_service.get_current_session", return_value=session),
-        patch(
-            "testgen.common.contract_service.reconcile_contract_conformance",
-            side_effect=lambda *_args, **_kwargs: calls.append("reconcile"),
-        ),
-        patch.object(TestDefinition, "assign_missing_term_ids"),
-    ):
-        contract_service.save_metadata_document(suite, {"schema": [{"name": "orders"}]})
+    with _save_stubs(_metadata()) as (suite, _, calls):
+        contract_service.save_metadata_document(suite, _metadata(name="Orders v2"))
 
     assert calls == ["commit", "reconcile"]
+
+
+def test_a_rule_a_test_type_checks_is_refused_with_its_path_and_nothing_is_stored():
+    document = _metadata()
+    document["schema"][0]["quality"].append(_rows_rule())
+    stored = _metadata()
+    with _save_stubs(stored) as (suite, draft, calls):
+        with pytest.raises(contract_service.CheckableRuleError) as raised:
+            contract_service.save_metadata_document(suite, document)
+
+    assert raised.value.problems == [
+        "$.schema[0].quality[1]: orders: orders-rows is checked by the Row Ct test type."
+    ]
+    assert draft.metadata_document is stored
+    assert calls == []
+
+
+def test_a_rule_no_test_type_checks_is_stored_marked_unverifiable():
+    document = _metadata()
+    document["schema"][0]["properties"][0]["quality"] = [
+        {"id": "amount-dupes", "metric": "duplicateValues", "unit": "percent", "mustBeLessOrEqualTo": 1}
+    ]
+    with _save_stubs(_metadata()) as (suite, draft, _):
+        saved = contract_service.save_metadata_document(suite, document)
+
+    rule = draft.metadata_document["schema"][0]["properties"][0]["quality"][0]
+    assert any(is_unverifiable_marker(entry) for entry in rule["customProperties"])
+    assert saved.unverifiable_rules == ["orders.amount: amount-dupes"]
+
+
+def test_a_rule_already_stored_at_the_same_place_is_kept():
+    stored = _metadata()
+    stored["schema"][0]["quality"].append(_rows_rule())
+    with _save_stubs(stored) as (suite, draft, _):
+        saved = contract_service.save_metadata_document(suite, {**copy.deepcopy(stored), "name": "Orders v2"})
+
+    assert draft.metadata_document["name"] == "Orders v2"
+    assert saved.unverifiable_rules == []
+
+
+def test_a_root_field_testgen_sets_cannot_be_changed():
+    with _save_stubs(_metadata()) as (suite, _, _calls):
+        with pytest.raises(contract_service.OwnedFieldError, match=r"\$\.id: `id` cannot be changed"):
+            contract_service.save_metadata_document(suite, _metadata(id="another-contract"))
+
+
+def test_root_fields_testgen_sets_are_kept_when_left_out():
+    document = _metadata()
+    for key in ("apiVersion", "kind", "id", "version"):
+        del document[key]
+    with _save_stubs(_metadata()) as (suite, draft, _):
+        contract_service.save_metadata_document(suite, document)
+
+    assert draft.metadata_document["id"] == "orders-contract"
+    assert draft.metadata_document["version"] == "2.0.0"
+
+
+def test_a_document_the_save_makes_invalid_is_refused_naming_the_path():
+    document = _metadata(status=42)
+    with _save_stubs(_metadata()) as (suite, _, calls):
+        with pytest.raises(contract_service.InvalidContractDocumentError) as raised:
+            contract_service.save_metadata_document(suite, document)
+
+    assert [problem.split(":")[0] for problem in raised.value.problems] == ["$.status"]
+    assert calls == []
+
+
+def test_problems_the_stored_document_already_had_are_returned_rather_than_refused():
+    stored = _metadata(status=42)
+    with _save_stubs(stored) as (suite, _, _calls):
+        saved = contract_service.save_metadata_document(suite, {**copy.deepcopy(stored), "name": "Orders v2"})
+
+    assert [problem.split(":")[0] for problem in saved.problems] == ["$.status"]
+
+
+def _invalid_rule(**fields):
+    return mark_unverifiable({"type": "library", "description": "No metric.", **fields})
+
+
+def test_editing_an_item_that_was_already_invalid_is_not_refused():
+    stored = _metadata()
+    stored["schema"][0]["quality"] = [_invalid_rule()]
+    document = copy.deepcopy(stored)
+    document["schema"][0]["quality"] = [_invalid_rule(name="needs-metric", description="Still no metric.")]
+    with _save_stubs(stored) as (suite, draft, _calls):
+        saved = contract_service.save_metadata_document(suite, document)
+
+    assert draft.metadata_document["schema"][0]["quality"][0]["name"] == "needs-metric"
+    assert {problem.split(":")[0] for problem in saved.problems} == {"$.schema[0].quality[0]"}
+
+
+def test_an_invalid_item_added_beside_one_that_was_already_invalid_is_refused():
+    stored = _metadata()
+    stored["schema"][0]["quality"] = [_invalid_rule(name="needs-metric")]
+    document = copy.deepcopy(stored)
+    document["schema"][0]["quality"].insert(0, _invalid_rule(name="also-needs-metric"))
+    with _save_stubs(stored) as (suite, _, calls):
+        with pytest.raises(contract_service.InvalidContractDocumentError) as raised:
+            contract_service.save_metadata_document(suite, document)
+
+    assert {problem.split(":")[0] for problem in raised.value.problems} == {"$.schema[0].quality[0]"}
+    assert calls == []
+
+
+@pytest.mark.parametrize(("extra", "refused"), [({}, False), ({"other": 2}, True)])
+def test_an_unknown_key_is_new_only_when_the_item_did_not_already_have_it(extra, refused):
+    stored = _metadata()
+    stored["schema"][0]["quality"] = [mark_unverifiable({"type": "text", "description": "Late", "stray": 1})]
+    document = copy.deepcopy(stored)
+    document["schema"][0]["quality"][0].update(description="Very late", **extra)
+    with _save_stubs(stored) as (suite, _, calls):
+        if refused:
+            with pytest.raises(contract_service.InvalidContractDocumentError):
+                contract_service.save_metadata_document(suite, document)
+        else:
+            contract_service.save_metadata_document(suite, document)
+
+    assert (calls == []) is refused
+
+
+def test_a_document_its_terms_cannot_render_into_is_refused():
+    def rendered(_version, document):
+        if not document["schema"]:
+            raise render.OrphanedTermError("Term 'amount-required' names table 'orders', which this document does not declare.")
+        return document
+
+    with (
+        _save_stubs(_metadata()) as (suite, _, calls),
+        patch.object(render, "render_document", side_effect=rendered),
+    ):
+        with pytest.raises(contract_service.InvalidContractDocumentError, match="does not declare"):
+            contract_service.save_metadata_document(suite, _metadata(schema=[]))
+
+    assert calls == []
+
+
+def _declared_term(test_type, **fields):
+    return TestDefinition(test_type=test_type, table_name="orders", column_name="amount", threshold_value="0", **fields)
+
+
+def test_a_changed_column_reports_declarations_nothing_checks():
+    document = _metadata()
+    document["schema"][0]["properties"][0].update(required=True, logicalTypeOptions={"maximum": 500, "exclusiveMinimum": 0})
+    with _save_stubs(_metadata(), terms=[_declared_term("Required")]) as (suite, _, _calls):
+        saved = contract_service.save_metadata_document(suite, document)
+
+    assert saved.unresolved_declarations == ["orders.amount: logicalTypeOptions.exclusiveMinimum"]
+    assert saved.untested_declarations == ["orders.amount: Max Val"]
+    assert saved.overridden_declarations == []
+
+
+def test_a_declaration_a_test_sets_to_another_value_is_reported():
+    stored = _metadata()
+    stored["schema"][0]["properties"][0]["logicalTypeOptions"] = {"maximum": 100}
+    document = copy.deepcopy(stored)
+    document["schema"][0]["properties"][0]["logicalTypeOptions"] = {"maximum": 200}
+    with _save_stubs(stored, terms=[_declared_term("Max_Val", baseline_value="100")]) as (suite, _, _calls):
+        saved = contract_service.save_metadata_document(suite, document)
+
+    assert saved.overridden_declarations == ["orders.amount: Max Val"]
+    assert saved.untested_declarations == []
+
+
+@pytest.mark.parametrize(("declared", "overridden"), [(200, []), (100, ["orders.amount: Max Val"])])
+def test_of_two_tests_declaring_the_same_field_the_first_in_render_order_is_compared(declared, overridden):
+    document = _metadata()
+    document["schema"][0]["properties"][0]["logicalTypeOptions"] = {"maximum": declared}
+    terms = [_declared_term("Max_Val", baseline_value="200"), _declared_term("Max_Val", baseline_value="100")]
+    with _save_stubs(_metadata(), terms=terms) as (suite, _, _calls):
+        saved = contract_service.save_metadata_document(suite, document)
+
+    assert saved.overridden_declarations == overridden
+
+
+def test_an_unchanged_declaration_is_not_reported():
+    stored = _metadata()
+    stored["schema"][0]["properties"][0].update(logicalTypeOptions={"exclusiveMinimum": 0}, description="Old")
+    document = copy.deepcopy(stored)
+    document["schema"][0]["properties"][0]["description"] = "New"
+    with _save_stubs(stored) as (suite, _, _calls):
+        saved = contract_service.save_metadata_document(suite, document)
+
+    assert saved.unresolved_declarations == []
+
+
+def test_a_problem_the_document_had_is_still_allowed_after_a_table_is_inserted_ahead_of_it():
+    stored = _metadata()
+    stored["schema"][0]["properties"][0]["logicalType"] = 42
+    document = copy.deepcopy(stored)
+    document["schema"].insert(0, {"name": "customers"})
+    with _save_stubs(stored) as (suite, draft, _calls):
+        saved = contract_service.save_metadata_document(suite, document)
+
+    assert {problem.split(":")[0] for problem in saved.problems} == {"$.schema[1].properties[0].logicalType"}
+    assert [table["name"] for table in draft.metadata_document["schema"]] == ["customers", "orders"]
+
+
+def test_the_stored_document_is_read_again_so_an_edit_made_in_place_is_still_checked():
+    stored = _metadata()
+    with _save_stubs(stored) as (suite, draft, _calls):
+        session = contract_service.get_current_session()
+        session.refresh.side_effect = lambda version, _attrs: setattr(version, "metadata_document", _metadata())
+        draft.metadata_document["schema"][0]["quality"].append(_rows_rule())
+        with pytest.raises(contract_service.CheckableRuleError):
+            contract_service.save_metadata_document(suite, draft.metadata_document)
+
+
+def test_saving_onto_a_frozen_only_contract_lands_in_its_new_draft():
+    suite = _suite()
+    frozen = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=3, metadata_document=_metadata(version="3.0.0"))
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=4, metadata_document=_metadata(version="4.0.0"))
+    resolver = RuleResolver(test_types=_RULE_TEST_TYPES, flavor=SqlFlavorCode.POSTGRESQL, qualify_tables=True)
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=None),
+        patch.object(SuiteVersion, "in_force_for", return_value=frozen),
+        patch.object(TestDefinition, "resolve_write_target", return_value=(draft.id, {})) as route,
+        patch.object(SuiteVersion, "get", return_value=draft),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock(execute=MagicMock(return_value=[]))),
+        patch("testgen.common.contract_service.TableGroup"),
+        patch("testgen.common.contract_service.Connection"),
+        patch.object(RuleResolver, "for_table_group", return_value=resolver),
+        patch.object(render, "_terms_for_version", return_value=[]),
+        patch("testgen.common.contract_service.reconcile_contract_conformance"),
+    ):
+        saved = contract_service.save_metadata_document(suite, _metadata(version="3.0.0", name="Orders v4"))
+
+    route.assert_called_once_with(suite.id)
+    assert saved.version_id == draft.id
+    assert draft.metadata_document["name"] == "Orders v4"
+    assert draft.metadata_document["version"] == "4.0.0"
+    assert frozen.metadata_document["name"] == "Orders"
 
 
 def test_initializing_a_contract_creates_a_first_draft_with_the_prefilled_document():

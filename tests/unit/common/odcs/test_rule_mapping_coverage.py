@@ -4,13 +4,13 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
+from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES
 from testgen.common.odcs.quality_rules import (
     _INEXACT_FAMILIES,
     _LIBRARY_ROWS,
-    CUSTOM_ROUTING_REASONS,
     DECLARATION_TEST_TYPES,
     EMAIL_PATTERN,
-    EXCLUDED_TEST_TYPES,
+    NEAR_STANDARD_CUSTOM_TEST_TYPES,
     RULE_MAPPINGS,
     US_STATE_VALID_VALUES,
     US_ZIP3_PATTERN,
@@ -39,22 +39,8 @@ def _catalogue_test_types() -> set[str]:
     return set(_catalogue_entries())
 
 
-def test_every_exclusion_carries_a_reason():
-    assert all(reason.strip() for reason in EXCLUDED_TEST_TYPES.values())
-
-
-def test_only_run_history_types_are_excluded():
-    assert set(EXCLUDED_TEST_TYPES) == {
-        "Volume_Trend", "Freshness_Trend", "Metric_Trend", "Schema_Drift",
-    }
-
-
 def test_the_mapping_names_no_test_type_the_catalogue_does_not_have():
     assert not set(RULE_MAPPINGS) - _catalogue_test_types()
-
-
-def test_the_exclusions_name_no_test_type_the_catalogue_does_not_have():
-    assert not set(EXCLUDED_TEST_TYPES) - _catalogue_test_types()
 
 
 def test_a_library_row_carries_a_metric_and_a_scope_and_nothing_else_does():
@@ -84,8 +70,8 @@ def test_every_row_carries_a_dimension():
 def test_every_catalogue_type_routes_to_exactly_one_shape():
     for test_type in _catalogue_test_types():
         shape = rule_shape(test_type)
-        if test_type in EXCLUDED_TEST_TYPES:
-            assert shape is None, f"{test_type} is excluded but routes to {shape}"
+        if test_type in NON_PUBLIC_TEST_TYPES:
+            assert shape is None, f"{test_type} is not public but routes to {shape}"
         else:
             assert shape in (RuleShape.LIBRARY, RuleShape.SQL, RuleShape.CUSTOM), (
                 f"{test_type} routes to {shape!r}"
@@ -121,12 +107,11 @@ def test_the_declaration_types_are_the_decided_seven():
     }
 
 
-def test_every_custom_routing_reason_names_a_custom_catalogue_type():
+def test_every_near_standard_custom_type_is_a_custom_catalogue_type():
     catalogue = _catalogue_test_types()
-    for test_type, reason in CUSTOM_ROUTING_REASONS.items():
-        assert reason.strip(), f"{test_type} carries no reason"
+    for test_type in NEAR_STANDARD_CUSTOM_TEST_TYPES:
         assert test_type in catalogue, f"{test_type} is not in the catalogue"
-        assert rule_shape(test_type) is RuleShape.CUSTOM, f"{test_type} has a reason to stay custom but is routed"
+        assert rule_shape(test_type) is RuleShape.CUSTOM, f"{test_type} is listed as custom but is routed"
         assert test_type not in DECLARATION_TEST_TYPES
 
 
@@ -191,7 +176,7 @@ def test_scope_is_derived_from_the_catalogue_not_declared():
     column: a free-text label, a list of columns, or nothing.
     """
     for test_type, entry in _catalogue_entries().items():
-        if test_type in EXCLUDED_TEST_TYPES or test_type == "Dupe_Rows":
+        if test_type in NON_PUBLIC_TEST_TYPES or test_type == "Dupe_Rows":
             continue
         names_one_column = (
             entry["test_scope"] == "column"
@@ -217,9 +202,10 @@ def test_a_scope_that_does_not_follow_the_term_never_varies_with_it(groupby_name
         assert rule_scope(term, stub) is baseline, test_type
 
 
-def test_an_excluded_type_is_refused_rather_than_placed():
-    for test_type in EXCLUDED_TEST_TYPES:
-        entry = _catalogue_entries()[test_type]
+def test_a_non_public_type_is_refused_rather_than_placed():
+    entries = _catalogue_entries()
+    for test_type in NON_PUBLIC_TEST_TYPES & set(entries):
+        entry = entries[test_type]
         term = SimpleNamespace(test_type=test_type, groupby_names=None)
         with pytest.raises(ValueError, match="no node to attach"):
             rule_scope(term, _test_type_stub(entry))

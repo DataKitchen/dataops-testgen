@@ -550,7 +550,7 @@ def test_a_column_the_catalog_does_not_hold_is_left_as_written():
 def _db_stubs(stack: ExitStack, *, draft=None, baseline=()):
     session = MagicMock()
     stack.enter_context(patch(f"{MODULE}.get_current_session", return_value=session))
-    stack.enter_context(patch(f"{MODULE}._all_test_types", return_value=_TEST_TYPES))
+    stack.enter_context(patch(f"{MODULE}.all_test_types", return_value=_TEST_TYPES))
     stack.enter_context(patch(f"{MODULE}._baseline_terms", return_value=list(baseline)))
     stack.enter_context(patch(f"{MODULE}.table_group_qualifies_table_refs", return_value=True))
     stack.enter_context(patch(f"{MODULE}.contract_document.catalog_table_names", return_value=["orders"]))
@@ -736,7 +736,7 @@ def test_an_update_settles_the_reference_schema_as_a_create_would(qualifies, exp
     )[0]
     with ExitStack() as stack:
         session = _db_stubs(stack)
-        stack.enter_context(patch(f"{MODULE}._all_test_types", return_value=test_types))
+        stack.enter_context(patch(f"{MODULE}.all_test_types", return_value=test_types))
         stack.enter_context(patch(f"{MODULE}.table_group_qualifies_table_refs", return_value=qualifies))
         stack.enter_context(patch(f"{MODULE}.resolve_write_target", return_value=(uuid4(), {})))
         stack.enter_context(patch(f"{MODULE}.SuiteVersion.get", return_value=MagicMock(version=2)))

@@ -1,5 +1,6 @@
 import dataclasses
 import logging
+from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from functools import cached_property
 from typing import Literal
@@ -15,7 +16,7 @@ from testgen.common.database.database_service import (
     get_flavor_service,
     replace_params,
 )
-from testgen.common.enums import SuiteType
+from testgen.common.enums import RegenerationGroup, SuiteType
 from testgen.common.generation_set_service import (
     CONTRACT_GENERATION_SET,
     MONITOR_GENERATION_SET,
@@ -48,13 +49,60 @@ class ContractGenerationResult:
     ``tables_not_in_catalog`` those of them the data catalog holds no columns for, and
     ``tables_not_profiled`` those of them with no results in the profiling run the generation read --
     every table when there is no profiling run to read. A table not profiled is generated from the data catalog
-    alone, with no Contract-set terms.
+    alone, with no Contract-set terms. ``groups`` lists what the generation regenerated, in
+    ``RegenerationGroup`` order; it leaves out tests when no table was profiled.
     """
 
     term_count: int
     tables_declared: list[str]
     tables_not_in_catalog: list[str]
     tables_not_profiled: list[str]
+    groups: list[RegenerationGroup] = dataclasses.field(default_factory=lambda: list(RegenerationGroup))
+
+
+TESTS_NEED_PROFILING = "The table group has not been profiled. Run profiling to regenerate tests."
+
+
+class TestsNeedProfilingError(ValueError):
+    """Tests alone were chosen for a regeneration on a table group with no profiling run."""
+
+    def __init__(self) -> None:
+        super().__init__(TESTS_NEED_PROFILING)
+
+
+def parse_regeneration_groups(values: Iterable[str], has_profiling_run: bool) -> list[RegenerationGroup]:
+    """The regeneration groups ``values`` names, in ``RegenerationGroup`` order.
+
+    Raises ``ValueError`` for an unknown value, naming the accepted ones, and for no value at all;
+    ``TestsNeedProfilingError`` for tests alone when the table group has no profiling run to generate
+    them from.
+    """
+    accepted = ", ".join(f"`{group}`" for group in RegenerationGroup)
+    requested = set()
+    for value in values:
+        try:
+            requested.add(RegenerationGroup(value))
+        except ValueError:
+            raise ValueError(f"Unknown regeneration group `{value}`. Accepted values: {accepted}.") from None
+    if not requested:
+        raise ValueError(f"Select at least one regeneration group: {accepted}.")
+    if requested == {RegenerationGroup.TESTS} and not has_profiling_run:
+        raise TestsNeedProfilingError
+    return [group for group in RegenerationGroup if group in requested]
+
+
+def unprofiled_regeneration_note(table_group_name: str, groups: list[RegenerationGroup]) -> str | None:
+    """What a regeneration of ``groups`` skips on a table group that has not been profiled, or None
+    when it skips nothing."""
+    skipped = [
+        text for group, text in (
+            (RegenerationGroup.TESTS, "no tests are regenerated besides schema conformance"),
+            (RegenerationGroup.PROFILING, "the values profiling observed are not refreshed"),
+        ) if group in groups
+    ]
+    if not skipped:
+        return None
+    return f"Table group `{table_group_name}` has not been profiled, so {' and '.join(skipped)}."
 
 
 @dataclasses.dataclass
@@ -73,7 +121,11 @@ def run_test_generation(
     test_types: list[str] | None = None,
     profile_run_id: UUID | None = None,
     table_names: list[str] | None = None,
-) -> None:
+    regenerate: list[str] | None = None,
+) -> ContractGenerationResult | None:
+    """Generate tests for a test suite or a contract. ``regenerate`` names the regeneration groups
+    of a contract, all of them when omitted, and is refused for any other suite. Returns a
+    contract's ``ContractGenerationResult``, and None for a regular suite."""
     if test_suite_id is None:
         raise ValueError("Test Suite ID was not specified")
 
@@ -83,6 +135,8 @@ def run_test_generation(
     test_suite = TestSuite.get(test_suite_id)
     if test_suite.suite_type == SuiteType.MONITOR:
         raise ValueError("Cannot run regular test generation for monitor suite")
+    if regenerate is not None and test_suite.suite_type != SuiteType.CONTRACT:
+        raise ValueError("Regeneration groups apply to contracts only.")
 
     resolved_sets = resolve_generation_sets(test_suite, generation_sets)
     LOG.info(f"Generating tests for generation sets: {', '.join(resolved_sets)}")
@@ -91,9 +145,15 @@ def run_test_generation(
     connection = Connection.get(table_group.connection_id)
 
     success = False
+    result = None
     try:
         if test_suite.suite_type == SuiteType.CONTRACT:
-            run_contract_generation(test_suite.id, table_names=table_names, profile_run_id=profile_run_id)
+            result = run_contract_generation(
+                test_suite.id,
+                table_names=table_names,
+                profile_run_id=profile_run_id,
+                groups=list(RegenerationGroup) if regenerate is None else regenerate,
+            )
         else:
             TestGeneration(
                 connection, table_group, test_suite, resolved_sets, test_types, profile_run_id,
@@ -112,6 +172,7 @@ def run_test_generation(
         )
         if success:
             test_suite.generation_sets = resolved_sets
+    return result
 
 
 def run_monitor_generation(
@@ -210,22 +271,30 @@ def run_contract_generation(
     profile_run_id: UUID | None = None,
     *,
     refresh_identity: bool = True,
+    groups: Iterable[str] = tuple(RegenerationGroup),
 ) -> ContractGenerationResult:
     """Generate a contract's draft: its metadata document from the data catalog and, when the
     table group has been profiled, its terms.
 
-    Creates the draft when there is none, then:
+    ``groups`` names what to regenerate. Raises ``ValueError`` for an empty or unknown choice, and
+    ``TestsNeedProfilingError`` for tests alone with no profiling run. The fields of a group left
+    out are not refreshed. Creates the draft when there is none, then:
 
     1. when ``table_names`` is omitted and the draft declares no tables, declares every table in
        the data catalog;
-    2. refreshes the contract's description and tags from the table group, unless
-       ``refresh_identity`` is false, and the descriptors of ``table_names`` -- or of every declared
-       table -- from the catalog;
-    3. with a completed profiling run, generates the Contract set's terms for those of the tables
-       the run profiled;
+    2. with governance, and unless ``refresh_identity`` is false, refreshes the contract's
+       description and tags from the table group; then declares the catalog columns of
+       ``table_names`` -- or of every declared table -- refreshes their types, and refreshes the
+       fields of profiling and governance when they are selected;
+    3. with tests and a completed profiling run, generates the Contract set's terms for those of the
+       tables the run profiled;
     4. gives each table the draft declares its Schema Conformance test, whatever ``table_names``
-       holds, and removes the test of a table it no longer declares;
-    5. with a completed profiling run, refreshes the values profiling observed on each column.
+       or ``groups`` holds, and removes the test of a table it no longer declares;
+    5. with profiling and a completed profiling run, refreshes the values profiling observed on
+       each column.
+
+    Which columns get terms, profiled values and a primary key follows the data catalog's
+    excluded flag, whether or not governance refreshes the document's marker.
 
     Generation deletes the unlocked generated terms of the tables it covers that it did not
     produce again, so it never covers a table the run has no results for: without a profiling
@@ -240,6 +309,8 @@ def run_contract_generation(
     test_suite, table_group, connection = _contract_context(test_suite_id)
     session = get_current_session()
     run_id = resolve_generation_profile_run(table_group, finishing_run_id=profile_run_id)
+    selected = parse_regeneration_groups(groups, has_profiling_run=run_id is not None)
+    profiling = RegenerationGroup.PROFILING in selected
 
     version_id, _ = TestDefinition.resolve_write_target(test_suite.id)
     draft = SuiteVersion.get(version_id)
@@ -248,15 +319,19 @@ def run_contract_generation(
         table_names = contract_document.declared_tables(document) or contract_document.catalog_table_names(
             table_group.id
         )
-    if refresh_identity:
+    if refresh_identity and RegenerationGroup.GOVERNANCE in selected:
         contract_document.refresh_identity(document, table_group)
-    column_counts = contract_document.refresh_tables(document, table_group, table_names)
+    column_counts = contract_document.refresh_tables(
+        document, table_group, table_names, profiling=profiling, governance=RegenerationGroup.GOVERNANCE in selected
+    )
     draft.metadata_document = document
     flag_modified(draft, "metadata_document")
     session.commit()
 
     profiled = contract_document.profiled_table_names(run_id, table_names) if run_id is not None else []
-    if profiled:
+    if RegenerationGroup.TESTS not in selected:
+        LOG.info("Tests are not selected for regeneration, so no contract terms are generated")
+    elif profiled:
         LOG.info(f"Generating contract terms for {len(profiled)} declared tables")
         TestGeneration(
             connection, table_group, test_suite, [CONTRACT_GENERATION_SET], profile_run_id=run_id,
@@ -266,11 +341,11 @@ def run_contract_generation(
         LOG.info("No profiling results for the tables, so no contract terms are generated")
     reconcile_contract_conformance(test_suite.id)
 
-    if run_id is not None:
+    if profiling and run_id is not None:
         # The document was committed before generation; reload it so a write committed meanwhile
         # is not overwritten by the copy held in memory.
         session.refresh(draft)
-        contract_document.fill_profiled_values(draft.metadata_document, run_id, table_names)
+        contract_document.fill_profiled_values(draft.metadata_document, table_group.id, run_id, table_names)
         flag_modified(draft, "metadata_document")
         session.flush()
 
@@ -279,6 +354,7 @@ def run_contract_generation(
         tables_declared=list(table_names),
         tables_not_in_catalog=[name for name in table_names if not column_counts.get(name)],
         tables_not_profiled=[name for name in table_names if name not in profiled],
+        groups=[group for group in selected if group != RegenerationGroup.TESTS or profiled],
     )
 
 
