@@ -61,22 +61,10 @@ def _session_mock(resolved_version=None, persisted_version=None) -> MagicMock:
     return session
 
 
-def _session_returning_terms(terms, notes=()) -> MagicMock:
-    """A session whose term query yields `terms` and whose note query yields `notes`.
-
-    One blanket `scalars` return value hands the note copy the test definitions back, which
-    fails on the first attribute a note does not have.
-    """
+def _session_returning_terms(terms) -> MagicMock:
+    """A session whose term query yields `terms`."""
     session = _session_mock()
-
-    def _scalars(statement, *args, **kwargs):
-        froms = statement.get_final_froms()
-        result = MagicMock()
-        name = getattr(froms[0], "name", None) if froms else None
-        result.all.return_value = terms if name == "test_definitions" else list(notes)
-        return result
-
-    session.scalars.side_effect = _scalars
+    session.scalars.return_value.all.return_value = terms
     return session
 
 
@@ -291,49 +279,16 @@ def test_an_existing_draft_receives_the_write_and_nothing_is_copied():
     assert id_map == {}
 
 
-def test_copy_to_version_carries_each_terms_notes_onto_its_copy():
-    """A note is bound to one definition by a cascading foreign key, so a copy that left the
-    notes behind would strand every annotation on the version being superseded.
-    """
-    source_id, target_id = uuid4(), uuid4()
-    term = TestDefinition(id=uuid4(), test_suite_id=uuid4(), version_id=source_id)
-    note = TestDefinitionNote(
-        id=uuid4(), test_definition_id=term.id, detail="checked with the data steward",
-        created_by="tester",
-    )
-    session = _session_returning_terms([term], notes=[note])
-    with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
-        id_map = TestDefinition.copy_to_version(source_id, target_id)
-
-    added = [call.args[0] for call in session.add.call_args_list]
-    copied_notes = [obj for obj in added if isinstance(obj, TestDefinitionNote)]
-    assert len(copied_notes) == 1
-    assert copied_notes[0].test_definition_id == id_map[term.id]
-    assert copied_notes[0].detail == "checked with the data steward"
-    assert copied_notes[0].created_by == "tester"
-    assert copied_notes[0] is not note
-
-
-def test_copy_to_version_reads_notes_of_exactly_the_terms_it_copied():
+def test_copy_to_version_leaves_notes_where_they_are():
     source_id, target_id = uuid4(), uuid4()
     term = TestDefinition(id=uuid4(), test_suite_id=uuid4(), version_id=source_id)
     session = _session_returning_terms([term])
     with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
         TestDefinition.copy_to_version(source_id, target_id)
 
-    note_query = session.scalars.call_args_list[-1].args[0]
-    assert note_query.get_final_froms()[0].name == "test_definition_notes"
-
-
-def test_a_version_with_no_terms_issues_no_note_query():
-    session = _session_returning_terms([])
-    with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
-        TestDefinition.copy_to_version(uuid4(), uuid4())
-
-    queried = [
-        call.args[0].get_final_froms()[0].name for call in session.scalars.call_args_list
-    ]
+    queried = [call.args[0].get_final_froms()[0].name for call in session.scalars.call_args_list]
     assert "test_definition_notes" not in queried
+    assert not [call for call in session.add.call_args_list if isinstance(call.args[0], TestDefinitionNote)]
 
 
 def test_a_new_manual_term_of_a_suite_owned_version_is_stamped_with_an_external_id():

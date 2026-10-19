@@ -975,6 +975,10 @@ CREATE UNIQUE INDEX uix_td_contract_term
    ON test_definitions (version_id, contract_term_id)
    WHERE contract_term_id IS NOT NULL;
 
+CREATE INDEX ix_td_suite_contract_term
+   ON test_definitions (test_suite_id, contract_term_id)
+   WHERE contract_term_id IS NOT NULL;
+
 -- Index test_runs
 CREATE INDEX ix_trun_ts_fk
    ON test_runs(test_suite_id);

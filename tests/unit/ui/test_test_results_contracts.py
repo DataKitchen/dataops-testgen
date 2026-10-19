@@ -134,3 +134,20 @@ def test_the_results_page_reads_the_runs_summary_by_its_id():
     calls: dict = {}
     _render(SuiteType.CONTRACT, _summary(), calls)
     assert calls["get_test_run_summaries"].kwargs["test_run_ids"] == ("r1",)
+
+
+def test_adding_a_note_looks_the_test_up_in_any_contract_version():
+    """A run's results point at the rows of the version it ran, which the suite stops resolving to
+    once a draft opens."""
+    handlers = _render(SuiteType.CONTRACT)
+    with (
+        patch.object(view, "st"),
+        patch.object(view, "session"),
+        patch.object(view, "_load_notes_dialog_data"),
+        patch.object(view.TestDefinition, "get_for_project", return_value=MagicMock()) as lookup,
+        patch.object(view.TestDefinitionNote, "add_note") as add_note,
+    ):
+        handlers["on_NoteAdded_change"]({"test_definition_id": "td", "text": "checked"})
+
+    lookup.assert_called_once_with("td", suite_types=view.TEST_SUITE_TYPES)
+    add_note.assert_called_once()
