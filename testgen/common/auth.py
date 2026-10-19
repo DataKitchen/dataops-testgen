@@ -43,14 +43,20 @@ def decode_jwt_token(token_str: str) -> dict:
         raise AuthError(f"Invalid token: {e}") from e
 
 
+def authorize_user(username: str, session) -> User:
+    """Return the user with this username, matched case-insensitively. Raises AuthError if there is none."""
+    user = session.scalars(select(User).where(func.lower(User.username) == func.lower(username))).first()
+    if user is None:
+        raise AuthError("User not found")
+    return user
+
+
 def authorize_token(token_str: str, username: str, session):
     """Verify the user exists and the token isn't revoked.
 
     Shared implementation for API and MCP authorization.
     """
-    user = session.scalars(select(User).where(func.lower(User.username) == func.lower(username))).first()
-    if user is None:
-        raise AuthError("User not found")
+    user = authorize_user(username, session)
 
     token_record = session.scalars(select(OAuth2Token).where(OAuth2Token.access_token == token_str)).first()
     if token_record and token_record.access_token_revoked_at:
