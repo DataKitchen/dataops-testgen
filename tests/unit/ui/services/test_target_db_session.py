@@ -7,7 +7,7 @@ from sqlalchemy.exc import DatabaseError
 
 from testgen.common.database.file_declarations import FileDeclaration
 from testgen.common.enums import FileFormat
-from testgen.ui.services.database_service import target_db_session
+from testgen.ui.services.database_service import fetch_from_target_db, target_db_session
 
 pytestmark = pytest.mark.unit
 
@@ -93,3 +93,40 @@ def test_a_table_group_carries_its_declarations_to_the_connection(mock_get_flavo
 
     assert mock_init.call_args.args[3] == [FileDeclaration(name="claims", uri="claims.csv", format=FileFormat.CSV)]
     assert "file_declarations" not in flavor_service.create_engine.call_args.args[0]
+
+
+def _two_table_group():
+    return MagicMock(
+        file_declarations=[
+            {"name": "claims", "uri": "claims.csv", "format": "csv"},
+            {"name": "members", "uri": "members.csv", "format": "csv"},
+        ]
+    )
+
+
+@patch(f"{MODULE}.initialize_connection")
+@patch(f"{MODULE}.resolve_connection_params", side_effect=lambda params, _schema=None: params)
+@patch(f"{MODULE}.get_flavor_service")
+def test_a_single_query_declares_only_the_tables_it_names(mock_get_flavor, _mock_resolve, mock_init):
+    """Declaring a table on object storage reads from the store, so a lookup declares only the tables its query names."""
+    flavor_service = mock_get_flavor.return_value
+    flavor_service.get_pre_connection_queries.return_value = []
+    flavor_service.declaration_failures.return_value = {}
+
+    fetch_from_target_db(_connection(), 'SELECT * FROM "main"."claims"', table_group=_two_table_group())
+
+    assert [declaration.name for declaration in mock_init.call_args.args[3]] == ["claims"]
+
+
+@patch(f"{MODULE}.initialize_connection")
+@patch(f"{MODULE}.resolve_connection_params", side_effect=lambda params, _schema=None: params)
+@patch(f"{MODULE}.get_flavor_service")
+def test_a_session_without_a_known_query_declares_every_table(mock_get_flavor, _mock_resolve, mock_init):
+    flavor_service = mock_get_flavor.return_value
+    flavor_service.get_pre_connection_queries.return_value = []
+    flavor_service.declaration_failures.return_value = {}
+
+    with target_db_session(_connection(), _two_table_group()):
+        pass
+
+    assert [declaration.name for declaration in mock_init.call_args.args[3]] == ["claims", "members"]

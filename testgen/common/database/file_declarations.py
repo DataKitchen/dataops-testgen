@@ -124,6 +124,21 @@ def parse_file_declarations(raw: list[dict[str, Any]] | None) -> list[FileDeclar
     return declarations
 
 
+def declarations_named_in(declarations: list[FileDeclaration], query: str) -> list[FileDeclaration]:
+    """Return the declarations whose name appears as a whole word in ``query``, ignoring case.
+
+    A superset of the tables the query reads: a name that appears only as a column is kept too.
+    Case is ignored because DuckDB resolves an unquoted name in any case. The match is textual, so
+    SQL that finds its tables at run time, such as a query over ``information_schema``, gets only
+    the views it names.
+    """
+    return [
+        declaration
+        for declaration in declarations
+        if re.search(rf"\b{re.escape(declaration.name)}\b", query, re.IGNORECASE)
+    ]
+
+
 def validate_file_declarations(raw: list[dict[str, Any]] | None, base_path: str) -> list[str]:
     """Return every rule a declaration list breaks, each prefixed with the table it belongs to."""
     entries = raw or []

@@ -74,7 +74,9 @@ const TableGroupStats = (props, stats) => {
         useApprox && !props.hideApproxCaption
             ? span(
                 { class: 'text-caption text-right mt-1' },
-                '* Approximate counts based on server statistics',
+                rowCount != null
+                    ? '* Approximate counts based on server statistics'
+                    : '* Counts are available after the first profiling or test run',
             )
             : null,
         warning
