@@ -19,6 +19,7 @@ def test_get_test_type_found(mock_tt_cls, _mock_resolve, db_session_mock):
     tt.test_scope = "column"
     tt.except_message = "Alpha truncation detected"
     tt.usage_notes = "Best for VARCHAR columns"
+    tt.exact_measures = None
     mock_tt_cls.get.return_value = tt
 
     from testgen.mcp.tools.reference import get_test_type
@@ -26,11 +27,28 @@ def test_get_test_type_found(mock_tt_cls, _mock_resolve, db_session_mock):
     result = get_test_type("Alpha Truncation")
 
     assert "Alpha Truncation" in result
+    assert "Requires Exact Profiling" not in result
     assert "Alpha_Trunc" not in result
     assert "Conformance" in result
     assert "Accuracy" in result
     assert "column" in result
     assert "truncated" in result.lower()
+
+
+@patch("testgen.mcp.tools.reference.resolve_test_type", return_value="Match_Lead_Space_Ct")
+@patch("testgen.mcp.tools.reference.TestType")
+def test_get_test_type_states_the_measures_it_needs_exact(mock_tt_cls, _mock_resolve, db_session_mock):
+    tt = MagicMock(test_type="Match_Lead_Space_Ct", test_name_short="Match Leading Space Count")
+    tt.exact_measures = ["lead_space_ct"]
+    tt.param_fields = []
+    mock_tt_cls.get.return_value = tt
+
+    from testgen.mcp.tools.reference import get_test_type
+
+    result = get_test_type("Match Leading Space Count")
+
+    assert "Leading Spaces. Not generated on a column profiled from a sample." in result
+    assert "lead_space_ct" not in result
 
 
 @patch("testgen.mcp.tools.reference.TestType")
@@ -150,6 +168,7 @@ def test_hygiene_issue_types_resource_basic(mock_type_cls, db_session_mock):
     t1.likelihood = "Potential PII"
     t1.description = "PII description."
     t1.suggested_action = "Handle PII carefully."
+    t1.exact_measures = None
     t2 = MagicMock()
     t2.name = "Non-Standard Blank Values"
     t2.impact_dimension = "Usability"
@@ -157,15 +176,19 @@ def test_hygiene_issue_types_resource_basic(mock_type_cls, db_session_mock):
     t2.likelihood = "Definite"
     t2.description = "Blanks description."
     t2.suggested_action = "Cleanse blanks."
+    t2.exact_measures = ["filled_value_ct", "zero_length_ct"]
     mock_type_cls.select_where.return_value = [t1, t2]
 
     from testgen.mcp.tools.reference import hygiene_issue_types_resource
 
     result = hygiene_issue_types_resource()
 
-    # Header order: Issue Type | Impact Dimension | Quality Dimension | Likelihood | Description | Suggested Action
     header_line = next(line for line in result.split("\n") if line.startswith("| Issue Type"))
-    assert header_line == "| Issue Type | Impact Dimension | Quality Dimension | Likelihood | Description | Suggested Action |"
+    assert header_line == (
+        "| Issue Type | Impact Dimension | Quality Dimension | Likelihood | Description | Suggested Action "
+        "| Requires Exact Profiling |"
+    )
+    assert "| Dummy Values, Zero Length |" in result
     # All values surface:
     assert "Personally Identifiable Information" in result
     assert "Non-Standard Blank Values" in result

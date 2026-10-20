@@ -41,6 +41,9 @@ TEST_TYPES_PARENT_CHILD_COLUMN_MAP = {
     },
 }
 
+# Optional columns a YAML may leave out, cleared on import so removing the key from a file takes effect
+OPTIONAL_PARENT_FIELDS = ("exact_measures",)
+
 # Columns to treat as literal blocks (embedded special chars)
 TEST_TYPES_LITERAL_FIELDS = {
     "test_types": [
@@ -209,6 +212,9 @@ def _process_yaml_for_import(
             """,
             {"generation_set": generation_set, "test_type": parent_id},
         ))
+
+    for field in OPTIONAL_PARENT_FIELDS:
+        parent.setdefault(field, None)
 
     columns = list(parent.keys())
 

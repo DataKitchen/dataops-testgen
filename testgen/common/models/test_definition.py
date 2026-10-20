@@ -669,6 +669,8 @@ class TestType(ParamFieldsMixin, Entity):
     """Whether a CAT test of this type fails when its measure is NULL, instead of passing."""
     column_general_types: list[str] | None = Column(postgresql.ARRAY(String))
     """General type codes of the columns a column-scope test of this type works on. None means any."""
+    exact_measures: list[str] | None = Column(postgresql.ARRAY(String))
+    """Profile measures this type needs measured exactly; it is not generated on a column where one is not."""
 
     # Unmapped columns: generation_template, result_visualization, result_visualization_params, overrides
 

@@ -141,6 +141,8 @@ class HygieneIssueType(Base):
     impact_dimension: str = Column(String)
     data_object: str = Column(String)
     detail_redactable: bool = Column(Boolean)
+    exact_measures: list[str] | None = Column(postgresql.ARRAY(String))
+    """Profile measures this issue needs measured exactly; it is not raised on a column where one is not."""
 
     # Unmapped: anomaly_type, anomaly_criteria, detail_expression,
     # dq_score_prevalence_formula, dq_score_risk_factor.

@@ -26,6 +26,7 @@ from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
@@ -112,6 +113,7 @@ class TestTypeParams:
     generation_template: str | None
     default_parm_columns: str | None
     default_parm_values: str | None
+    exact_measures: list[str] | None
 
 
 # Generate tests for a regular non-monitor test suite - don't use for monitors
@@ -478,7 +480,9 @@ class TestGeneration:
             params.update({
                 "TEST_TYPE": test_type.test_type,
                 # Replace these first since they may contain other params
-                "SELECTION_CRITERIA": test_type.selection_criteria,
+                "SELECTION_CRITERIA": ProfileResult.apply_exact_measures(
+                    test_type.selection_criteria, test_type.exact_measures
+                ),
                 "DEFAULT_PARM_COLUMNS": test_type.default_parm_columns,
                 "DEFAULT_PARM_COLUMNS_UPDATE": ",".join([
                     f"{column} = EXCLUDED.{column.strip()}"

@@ -9,6 +9,7 @@ profile_anomaly_types:
     \ data. "
   anomaly_criteria: |-
     (p.null_value_ct + p.filled_value_ct + p.zero_length_ct) = p.record_ct
+  exact_measures: [filled_value_ct, zero_length_ct]
   detail_expression: |-
     'Null: ' || p.null_value_ct::VARCHAR(10) || ', Dummy: ' || p.filled_value_ct::VARCHAR(10) || ', Zero Len: ' || p.zero_length_ct::VARCHAR(10)
   issue_likelihood: Possible

@@ -353,3 +353,66 @@ def test_column_general_types_applies_only_to_column_scope() -> None:
     result = validate_test_type_yaml(yaml)
     assert not result.ok
     assert "column_general_types: applies only to test_scope column." in result.errors
+
+
+# -- exact_measures ---------------------------------------------------------
+
+
+def test_exact_measures_accepts_profiling_measures() -> None:
+    result = validate_test_type_yaml(
+        _valid_parent_yaml("  selection_criteria: value_ct > 0\n  exact_measures: [lead_space_ct]\n")
+    )
+    assert result.ok, result.errors
+    assert result.parsed.parent["exact_measures"] == ["lead_space_ct"]
+
+
+def test_exact_measures_rejects_a_measure_never_taken_from_the_sample() -> None:
+    result = validate_test_type_yaml(
+        _valid_parent_yaml("  selection_criteria: value_ct > 0\n  exact_measures: [record_ct]\n")
+    )
+    assert not result.ok
+    assert "exact_measures: 'record_ct' is measured over every row even when profiling samples." in result.errors
+
+
+def test_exact_measures_rejects_a_padded_name() -> None:
+    result = validate_test_type_yaml(
+        _valid_parent_yaml("  selection_criteria: value_ct > 0\n  exact_measures: [' lead_space_ct']\n")
+    )
+    assert not result.ok
+    assert "exact_measures: ' lead_space_ct' is not a profiling measure." in result.errors
+
+
+def test_exact_measures_rejects_an_empty_list() -> None:
+    result = validate_test_type_yaml(_valid_parent_yaml("  selection_criteria: value_ct > 0\n  exact_measures: []\n"))
+    assert not result.ok
+    assert "exact_measures: must name at least one profiling measure." in result.errors
+
+
+@pytest.mark.parametrize("value", ["lead_space_ct", "[1]"])
+def test_exact_measures_rejects_anything_but_a_list_of_names(value: str) -> None:
+    result = validate_test_type_yaml(
+        _valid_parent_yaml(f"  selection_criteria: value_ct > 0\n  exact_measures: {value}\n")
+    )
+    assert not result.ok
+    assert "exact_measures: must be a list of profiling measure names." in result.errors
+
+
+def test_exact_measures_rejects_an_unknown_measure() -> None:
+    result = validate_test_type_yaml(
+        _valid_parent_yaml("  selection_criteria: value_ct > 0\n  exact_measures: [lead_spaces]\n")
+    )
+    assert not result.ok
+    assert "exact_measures: 'lead_spaces' is not a profiling measure." in result.errors
+
+
+def test_an_exact_token_naming_an_unknown_measure_is_rejected() -> None:
+    result = validate_test_type_yaml(_valid_parent_yaml("  selection_criteria: value_ct > 0 AND {EXACT:lead_spaces}\n"))
+    assert not result.ok
+    assert "selection_criteria: 'lead_spaces' is not a profiling measure." in result.errors
+
+
+@pytest.mark.parametrize("criteria", ["", "  selection_criteria: TEMPLATE\n"])
+def test_exact_measures_applies_only_to_selection_criteria(criteria: str) -> None:
+    result = validate_test_type_yaml(_valid_parent_yaml(f"{criteria}  exact_measures: [lead_space_ct]\n"))
+    assert not result.ok
+    assert "exact_measures: applies only to test types generated from selection_criteria." in result.errors

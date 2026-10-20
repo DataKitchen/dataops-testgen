@@ -40,6 +40,11 @@
  * @property {'csv' | 'parquet' | 'json'} format
  * @property {object?} options
  *
+ * @typedef SampledProfileGaps
+ * @type {object}
+ * @property {string[]} test_types
+ * @property {string[]} hygiene_issues
+ *
  * @typedef FormState
  * @type {object}
  * @property {boolean} dirty
@@ -56,6 +61,7 @@
  * @property {string?} schemaLabel
  * @property {boolean?} supportsValueHash
  * @property {boolean?} disablePiiFlag
+ * @property {SampledProfileGaps?} samplingGaps
  * @property {(tg: TableGroup, state: FormState) => void} onChange
  */
 import van from '../van.min.js';
@@ -70,6 +76,7 @@ import { Textarea } from './textarea.js';
 import { Icon } from './icon.js';
 import { Button } from './button.js';
 import { withTooltip } from './tooltip.js';
+import { SampledProfileGapsHelp } from './sampled_profile_gaps.js';
 
 // Flavors whose profiling sample clause cannot sample views — views are profiled in full.
 const SAMPLE_SKIPS_VIEWS_FLAVORS = ['mssql', 'postgresql'];
@@ -389,7 +396,7 @@ const TableGroupForm = (props) => {
             addScorecardDefinition,
         ),
         SamplingForm(
-            { setValidity: setFieldValidity, sampleSkipsViews },
+            { setValidity: setFieldValidity, sampleSkipsViews, samplingGaps: getValue(props.samplingGaps) },
             profileUseSampling,
             profileSamplePercent,
             profileSampleMinCount,
@@ -771,14 +778,39 @@ const SamplingForm = (
                     },
                 }),
             ),
-            () => (getValue(options.sampleSkipsViews) && profileUseSampling.val)
-                ? div(
-                    { class: 'flex-row fx-align-center fx-gap-1' },
-                    Icon({ style: 'color: var(--orange); font-size: 18px;' }, 'warning'),
-                    span('Views are profiled in full on this database — sampling applies only to tables and materialized views.'),
-                )
-                : '',
+            () => profileUseSampling.val ? SamplingDisclaimers(getValue(options.sampleSkipsViews), options.samplingGaps) : '',
         ),
+    );
+};
+
+const SamplingDisclaimers = (/** @type boolean */ sampleSkipsViews, /** @type SampledProfileGaps? */ gaps) => {
+    const testTypes = gaps?.test_types ?? [];
+    const hygieneIssues = gaps?.hygiene_issues ?? [];
+    const lines = [];
+    if (sampleSkipsViews) {
+        lines.push(span('Views are profiled in full on this database — sampling applies only to tables and materialized views.'));
+    }
+    if (testTypes.length || hygieneIssues.length) {
+        const parts = [];
+        if (testTypes.length) {
+            parts.push(`${testTypes.length} test ${testTypes.length === 1 ? 'type is' : 'types are'} not generated`);
+        }
+        if (hygieneIssues.length) {
+            parts.push(`${hygieneIssues.length} hygiene ${hygieneIssues.length === 1 ? 'issue is' : 'issues are'} not detected`);
+        }
+        lines.push(div(
+            { class: 'flex-row fx-align-center fx-gap-1' },
+            span(`On tables profiled from a sample, ${parts.join(' and ')}.`),
+            SampledProfileGapsHelp({ testTypes, hygieneIssues }),
+        ));
+    }
+    if (!lines.length) {
+        return '';
+    }
+    return div(
+        { class: 'flex-row fx-align-center fx-gap-2' },
+        Icon({ style: 'color: var(--orange); font-size: 18px;' }, 'warning'),
+        div({ class: 'flex-column fx-gap-1' }, ...lines),
     );
 };
 

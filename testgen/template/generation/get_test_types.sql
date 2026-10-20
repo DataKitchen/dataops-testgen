@@ -2,7 +2,8 @@ SELECT t.test_type,
   t.selection_criteria,
   t.generation_template,
   t.default_parm_columns,
-  t.default_parm_values
+  t.default_parm_values,
+  t.exact_measures
 FROM test_types t
   -- Only active test types
 WHERE t.active = 'Y'

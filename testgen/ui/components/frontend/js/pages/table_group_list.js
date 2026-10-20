@@ -104,6 +104,7 @@ const TableGroupList = (props) => {
                 results: van.derive(() => getValue(props.wizard)?.results),
                 standard_cron_sample: van.derive(() => getValue(props.wizard)?.standard_cron_sample),
                 monitor_cron_sample: van.derive(() => getValue(props.wizard)?.monitor_cron_sample),
+                sampling_gaps: van.derive(() => getValue(props.wizard)?.sampling_gaps),
             }));
         }
     });
@@ -131,6 +132,7 @@ const TableGroupList = (props) => {
                 can_view_pii: van.derive(() => getValue(props.permissions)?.can_view_pii),
                 table_group_preview: van.derive(() => getValue(props.edit_dialog)?.table_group_preview),
                 result: van.derive(() => getValue(props.edit_dialog)?.result),
+                sampling_gaps: van.derive(() => getValue(props.edit_dialog)?.sampling_gaps),
             }));
         }
     });
