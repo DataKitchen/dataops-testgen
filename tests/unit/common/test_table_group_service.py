@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from testgen import settings
-from testgen.common.database.column_chars import ObjectType
+from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.database.table_group_service import (
     SchemaMove,
     apply_schema_move,
@@ -514,6 +514,24 @@ def test_preview_verify_access_partial_failure_sets_footer(mock_session, mock_sq
     )
 
 
+@patch(f"{MODULE}.resolve_connection_params")
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+@patch(f"{MODULE}.target_db_session")
+def test_preview_verify_access_probes_a_connection_read_through_its_api(mock_session, mock_sql_cls, _mock_resolve):
+    """A connection whose metadata comes from an API opens no preview session, so the probes need their own."""
+    sql_generator = mock_sql_cls.return_value
+    sql_generator.flavor_service.metadata_via_api = True
+    sql_generator.flavor_service.get_schema_columns.return_value = [ColumnChars(**_column_row("customer", "id"))]
+    sql_generator.filter_schema_columns.side_effect = lambda columns: columns
+    sql_generator.verify_access.return_value = ("SELECT 1", None)
+    _session(mock_session, lambda _query: [{"col": 1}])
+
+    preview, _data_chars, _sql_gen = preview_table_group(_tg(), connection=_conn(), verify_access=True)
+
+    assert mock_session.call_count == 1
+    assert preview["tables"]["customer"]["can_access"] is True
+
+
 @patch(f"{MODULE}.RefreshDataCharsSQL")
 @patch(f"{MODULE}.target_db_session")
 def test_preview_connection_failure_marks_unsuccessful(mock_session, mock_sql_cls):
@@ -782,6 +800,46 @@ def test_a_declaration_that_failed_is_not_counted(mock_session, mock_sql_cls):
     preview_table_group(table_group, connection=_files_conn(), verify_access=False)
 
     assert sql_generator.get_file_counts.call_args.kwargs["skip"] == {"missing": "No files matched this path."}
+
+
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+@patch(f"{MODULE}.target_db_session")
+def test_verifying_access_reuses_the_preview_session(mock_session, mock_sql_cls):
+    """A second session on a file connection would build every declaration's view again."""
+    table_group, sql_generator = _files_preview(
+        mock_session,
+        mock_sql_cls,
+        rows=[_column_row("claims", "id")],
+        declarations=[{"name": "claims", "uri": "claims.csv", "format": "csv"}],
+    )
+    sql_generator.verify_access.return_value = ("SELECT 1 FROM claims", None)
+
+    preview, _, _ = preview_table_group(table_group, connection=_files_conn(), verify_access=True)
+
+    assert mock_session.call_count == 1
+    assert preview["tables"]["claims"]["can_access"] is True
+
+
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+@patch(f"{MODULE}.target_db_session")
+def test_verifying_access_marks_a_declaration_that_failed_inaccessible(mock_session, mock_sql_cls):
+    table_group, sql_generator = _files_preview(
+        mock_session,
+        mock_sql_cls,
+        rows=[_column_row("claims", "id")],
+        declarations=[
+            {"name": "claims", "uri": "claims.csv", "format": "csv"},
+            {"name": "missing", "uri": "absent.csv", "format": "csv"},
+        ],
+        failures={"missing": "No files matched this path."},
+    )
+    sql_generator.verify_access.side_effect = lambda name: (f"SELECT 1 FROM {name}", None)
+
+    preview, _, _ = preview_table_group(table_group, connection=_files_conn(), verify_access=True)
+
+    assert preview["tables"]["claims"]["can_access"] is True
+    assert preview["tables"]["missing"]["can_access"] is False
+    assert [call.args[0] for call in sql_generator.verify_access.call_args_list] == ["claims"]
 
 
 # --- write_table_group_catalog ---

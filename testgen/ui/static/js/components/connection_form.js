@@ -1839,6 +1839,7 @@ const S3Form = (
                 options: [
                     { label: 'Access Keys', value: 'access_keys' },
                     { label: 'IAM Role', value: 'iam_role' },
+                    { label: 'Public', value: 'public' },
                 ],
                 value: strategy,
                 onChange: (value) => {
@@ -1856,6 +1857,12 @@ const S3Form = (
                     return div(
                         { class: 'flex-row p-4 fx-justify-center text-secondary' },
                         'Uses the AWS credentials of the environment running TestGen, such as an EC2 instance role.',
+                    );
+                }
+                if (strategy.val === 'public') {
+                    return div(
+                        { class: 'flex-row p-4 fx-justify-center text-secondary' },
+                        'Reads the bucket without credentials. The bucket must allow public listing and reading of objects under the base URI.',
                     );
                 }
                 return div(
@@ -1978,6 +1985,7 @@ const AzureBlobForm = (
                     { label: 'Account Key', value: 'account_key' },
                     { label: 'Managed Identity', value: 'managed_identity' },
                     { label: 'Service Principal', value: 'service_principal' },
+                    { label: 'Public', value: 'public' },
                 ],
                 value: strategy,
                 onChange: (value) => {
@@ -1988,7 +1996,9 @@ const AzureBlobForm = (
                     delete validityPerField['tenant_id'];
                     delete validityPerField['client_secret'];
                     // Entering a mode with inputs: hold Save disabled until they mount and validate.
-                    isValid.val = value === 'managed_identity' ? Object.values(validityPerField).every(v => v) : false;
+                    isValid.val = ['managed_identity', 'public'].includes(value)
+                        ? Object.values(validityPerField).every(v => v)
+                        : false;
                 },
                 layout: 'inline',
             }),
@@ -1998,6 +2008,12 @@ const AzureBlobForm = (
                     return div(
                         { class: 'flex-row p-4 fx-justify-center text-secondary' },
                         'Uses the managed identity of the environment running TestGen, such as an Azure VM or AKS pod.',
+                    );
+                }
+                if (mode === 'public') {
+                    return div(
+                        { class: 'flex-row p-4 fx-justify-center text-secondary' },
+                        'Reads the container without credentials. The container access level must be Container, which allows anonymous listing and reading of its blobs.',
                     );
                 }
                 if (mode === 'account_key') {

@@ -21,7 +21,7 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.engine.cursor import CursorResult
 
 from testgen.common.database.database_service import get_flavor_service, initialize_connection
-from testgen.common.database.file_declarations import parse_file_declarations
+from testgen.common.database.file_declarations import declarations_named_in, parse_file_declarations
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.models import get_current_session
 
@@ -79,15 +79,21 @@ class TargetQuery:
 
 @contextmanager
 def target_db_session(
-    connection: Connection, table_group: TableGroup | None
+    connection: Connection, table_group: TableGroup | None, *, only_query: str | None = None
 ) -> Iterator[TargetQuery]:
     """Open one target-database connection and yield a callable that runs queries on it.
 
     ``table_group`` is the group whose tables the queries read, or None when they read none. A
     flavor that reads files has no tables at all without its declarations.
+
+    ``only_query`` is the one query the session will run, when that is known up front. A flavor
+    that reads files then declares only the tables the query names, since declaring a table on
+    object storage reads from the store.
     """
     connection_params = connection.to_dict()
     declarations = parse_file_declarations(table_group.file_declarations) if table_group else []
+    if only_query is not None:
+        declarations = declarations_named_in(declarations, only_query)
     table_group_schema = table_group.table_group_schema if table_group else None
     flavor_service = get_flavor_service(connection.sql_flavor)
     resolved = resolve_connection_params(connection_params, table_group_schema)
@@ -125,5 +131,5 @@ def fetch_from_target_db(
     table_group: TableGroup | None,
 ) -> list[RowMapping]:
     """Run one query against the target database on a connection opened just for it."""
-    with target_db_session(connection, table_group) as run:
+    with target_db_session(connection, table_group, only_query=query) as run:
         return run(query, params)

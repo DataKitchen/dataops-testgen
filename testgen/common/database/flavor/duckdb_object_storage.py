@@ -40,12 +40,14 @@ SECRET_NAME = "tg_storage"  # noqa: S105 — the name DuckDB files the secret un
 class S3Strategy(StrEnum):
     ACCESS_KEYS = "access_keys"
     IAM_ROLE = "iam_role"
+    PUBLIC = "public"
 
 
 class AzureBlobStrategy(StrEnum):
     ACCOUNT_KEY = "account_key"
     MANAGED_IDENTITY = "managed_identity"
     SERVICE_PRINCIPAL = "service_principal"
+    PUBLIC = "public"
 
 
 _StrategyFields = tuple[tuple[str, ...], tuple[str, ...]]
@@ -164,6 +166,7 @@ class S3Store(ObjectStore):
     strategy_fields: ClassVar[dict[str, _StrategyFields]] = {
         S3Strategy.ACCESS_KEYS: ((ACCESS_KEY_ID_PARAMETER,), (SECRET_ACCESS_KEY_SECRET,)),
         S3Strategy.IAM_ROLE: ((), ()),
+        S3Strategy.PUBLIC: ((), ()),
     }
     location_label = "the base URI"
 
@@ -212,13 +215,16 @@ class S3Store(ObjectStore):
             # container credentials endpoint, then instance metadata. REFRESH re-resolves it when
             # the credentials it found expire, which temporary ones do within hours.
             return f"TYPE s3, PROVIDER credential_chain, REFRESH auto, REGION :region{url_style}", binds
+        if self.strategy(parameters) == S3Strategy.PUBLIC:
+            # A secret with no key sends its requests unsigned.
+            return f"TYPE s3, REGION :region{url_style}", binds
         binds |= {
             "key_id": _text(parameters, ACCESS_KEY_ID_PARAMETER),
             "secret": _text(secrets, SECRET_ACCESS_KEY_SECRET),
         }
         return f"TYPE s3, KEY_ID :key_id, SECRET :secret, REGION :region{url_style}", binds
 
-    def error_message(self, parameters: dict[str, Any] | None, raw: str) -> str | None:  # noqa: ARG002
+    def error_message(self, parameters: dict[str, Any] | None, raw: str) -> str | None:
         lowered = raw.lower()
         if "secret validation failure" in lowered:
             return (
@@ -237,6 +243,8 @@ class S3Store(ObjectStore):
         if "permanentredirect" in lowered or "authorizationheadermalformed" in lowered or "(http 301" in lowered:
             return "The bucket is in a different region than the one configured."
         if "(http 403" in lowered:
+            if self.strategy(parameters) == S3Strategy.PUBLIC:
+                return "Access was denied. The bucket must allow public listing and reading of objects under the base URI."
             return "Access was denied. The credentials must allow listing and reading objects under the base URI."
         if "(http 404" in lowered:
             # A declaration naming a prefix is read as one object, which the store reports as missing.
@@ -261,6 +269,7 @@ class AzureBlobStore(ObjectStore):
         AzureBlobStrategy.ACCOUNT_KEY: ((), (ACCOUNT_KEY_SECRET,)),
         AzureBlobStrategy.MANAGED_IDENTITY: ((), ()),
         AzureBlobStrategy.SERVICE_PRINCIPAL: ((CLIENT_ID_PARAMETER, TENANT_ID_PARAMETER), (CLIENT_SECRET_SECRET,)),
+        AzureBlobStrategy.PUBLIC: ((), ()),
     }
     location_label = "the container"
     # The default transport cannot find the system CA bundle on some Linux distributions, Debian
@@ -310,6 +319,9 @@ class AzureBlobStore(ObjectStore):
                 "client_secret": _text(secrets, CLIENT_SECRET_SECRET),
                 "account": account,
             }
+        if strategy == AzureBlobStrategy.PUBLIC:
+            # The config provider with no credential reads anonymously.
+            return "TYPE azure, PROVIDER config, ACCOUNT_NAME :account", {"account": account}
         # Workload identity is how a managed identity reaches a pod on AKS.
         return (
             "TYPE azure, PROVIDER credential_chain, CHAIN 'managed_identity;workload_identity', ACCOUNT_NAME :account",
@@ -337,6 +349,12 @@ class AzureBlobStore(ObjectStore):
             return (
                 "Access was denied. The identity needs a role that can list and read blobs in the "
                 "container, such as Storage Blob Data Reader."
+            )
+        if "noauthenticationinformation" in lowered:
+            # Azure answers an anonymous request for a container that does not exist the same way.
+            return (
+                "The container was not found or does not allow public access. The storage account must allow "
+                "anonymous blob access, and the container's anonymous access level must be Container."
             )
         if "blobnotfound" in lowered:
             return "The file was not found. To read the files in a folder, use a pattern such as sales/*.csv."

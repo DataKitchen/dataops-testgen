@@ -333,6 +333,7 @@ class AuthenticationMethod(StrEnum):
     access_keys = "access_keys"
     iam_role = "iam_role"
     account_key = "account_key"
+    public = "public"
 
 
 # ``ConnectionMode`` members are the display labels the connection form uses
@@ -349,6 +350,7 @@ AUTHENTICATION_FROM_MODE: dict[ConnectionMode, AuthenticationMethod] = {
     ConnectionMode.ACCESS_KEYS: AuthenticationMethod.access_keys,
     ConnectionMode.IAM_ROLE: AuthenticationMethod.iam_role,
     ConnectionMode.ACCOUNT_KEY: AuthenticationMethod.account_key,
+    ConnectionMode.PUBLIC: AuthenticationMethod.public,
 }
 
 
