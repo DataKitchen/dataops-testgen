@@ -32,7 +32,7 @@ const Code = (options, ...children) => {
 
     const el = div(
         { id: domId, class: `tg-code ${options.class ?? ''}`, 'data-testid': 'code' },
-        pre({}, codeEl),
+        div({ class: 'tg-code--scroll' }, pre({}, codeEl)),
         Icon(
             {
                 classes: 'tg-code--copy',
@@ -62,6 +62,11 @@ const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-code {
     position: relative;
+    display: flex;
+    flex-direction: column;
+}
+.tg-code--scroll {
+    min-height: 0;
     overflow-y: auto;
 }
 .tg-code pre {
