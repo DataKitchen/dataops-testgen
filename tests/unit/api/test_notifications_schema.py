@@ -282,24 +282,28 @@ def test_scope_check_compares_suite_type_by_value_not_identity():
     from fastapi import HTTPException
 
     from testgen.api import notifications as api
-    from testgen.common.enums import SuiteType
+    from testgen.common.enums import TEST_SUITE_TYPES, SuiteType
 
     def scope(stored_value, requested):
         entity = SimpleNamespace(project_code="P", suite_type=stored_value, id="s1")
         entity_class = SimpleNamespace(get=staticmethod(lambda _id: entity))
-        return api._require_scope(entity_class, "s1", "P", suite_type=requested)
+        return api._require_scope(entity_class, "s1", "P", suite_types=requested)
 
     # stored as the raw string, exactly as SQLAlchemy returns it
-    assert scope("regular", SuiteType.REGULAR) is not None
-    assert scope("monitor", SuiteType.MONITOR) is not None
+    assert scope("regular", TEST_SUITE_TYPES) is not None
+    assert scope("contract", TEST_SUITE_TYPES) is not None
+    assert scope("monitor", (SuiteType.MONITOR,)) is not None
 
-    with pytest.raises(HTTPException) as monitor_as_regular:
-        scope("monitor", SuiteType.REGULAR)
-    assert monitor_as_regular.value.status_code == 400
+    with pytest.raises(HTTPException) as monitor_as_test_suite:
+        scope("monitor", TEST_SUITE_TYPES)
+    assert monitor_as_test_suite.value.status_code == 400
+    assert "belongs to a monitor" in monitor_as_test_suite.value.detail["errors"][0]["detail"]
 
-    with pytest.raises(HTTPException) as regular_as_monitor:
-        scope("regular", SuiteType.MONITOR)
-    assert regular_as_monitor.value.status_code == 400
+    for stored in ("regular", "contract"):
+        with pytest.raises(HTTPException) as test_suite_as_monitor:
+            scope(stored, (SuiteType.MONITOR,))
+        assert test_suite_as_monitor.value.status_code == 400
+        assert "is not a monitor" in test_suite_as_monitor.value.detail["errors"][0]["detail"]
 
 
 def test_scope_check_ignores_suite_type_for_entities_without_one():

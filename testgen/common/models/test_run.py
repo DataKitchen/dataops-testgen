@@ -16,7 +16,7 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
-from testgen.common.models.suite_version import SuiteVersion, format_version, version_state
+from testgen.common.models.suite_version import SuiteVersion, VersionState, format_version, version_state
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_result import TestResult, TestResultStatus
 from testgen.common.models.test_suite import TestSuite
@@ -48,6 +48,41 @@ class TestRunMinimal(EntityMinimal):
     caller_metadata: dict | None
 
 
+@dataclass(frozen=True)
+class RunVersion:
+    """The contract version a run checked, with its state at read time."""
+
+    number: int
+    frozen_at: datetime | None
+    active_number: int | None
+    test_starttime: datetime | None
+    in_force_at_start: int | None = None
+    status: JobStatus | None = None
+
+    @property
+    def state(self) -> VersionState:
+        return version_state(self.frozen_at, self.number == self.active_number)
+
+    @property
+    def checked_version_in_force(self) -> bool:
+        """Whether the run's version was the highest frozen when the run started."""
+        return not self.is_preview and self.number == self.in_force_at_start
+
+    @property
+    def counts_as_status(self) -> bool:
+        """Whether the run completed a verification of the agreement in force when it started."""
+        return self.status == JobStatus.COMPLETED and self.checked_version_in_force
+
+    @property
+    def is_preview(self) -> bool:
+        """Whether the run checked the version before it was frozen."""
+        if self.frozen_at is None:
+            return True
+        if self.test_starttime is None:
+            return False
+        return self.test_starttime.replace(tzinfo=UTC) < self.frozen_at
+
+
 @dataclass
 class TestRunSummary(EntityMinimal):
     job_execution_id: UUID
@@ -77,36 +112,55 @@ class TestRunSummary(EntityMinimal):
     version_frozen_at: datetime | None = None
     active_version_number: int | None = None
     test_starttime: datetime | None = None
+    version_in_force_at_start: int | None = None
     version_discarded: bool = False
 
     STATUS_LABEL: ClassVar[dict[str, str]] = JOB_STATUS_LABEL
+
+    @property
+    def run_version(self) -> RunVersion | None:
+        """The contract version the run checked; ``None`` for a suite that keeps no versions or a discarded draft."""
+        if self.version_number is None:
+            return None
+        return RunVersion(
+            self.version_number,
+            self.version_frozen_at,
+            self.active_version_number,
+            self.test_starttime,
+            self.version_in_force_at_start,
+            self.status,
+        )
 
     @property
     def version_label(self) -> str | None:
         """The run's version as every surface names it, e.g. ``v3 active``, or None for an unversioned run."""
         if self.version_discarded:
             return "discarded draft"
-        if self.version_number is None:
+        if (run_version := self.run_version) is None:
             return None
-        state = version_state(self.version_frozen_at, self.version_number == self.active_version_number)
-        return format_version(self.version_number, state)
+        return format_version(run_version.number, run_version.state)
 
     @property
     def is_preview(self) -> bool:
         """Whether the run checked a version before it was frozen, including a draft since discarded."""
         if self.version_discarded:
             return True
-        if self.version_number is None:
-            return False
-        if self.version_frozen_at is None:
-            return True
-        if self.test_starttime is None:
-            return False
-        return self.test_starttime.replace(tzinfo=UTC) < self.version_frozen_at
+        return self.run_version is not None and self.run_version.is_preview
 
     @property
     def status_label(self) -> str:
         return self.STATUS_LABEL.get(self.status, self.status)
+
+
+def run_verdict(run: TestRunSummary) -> TestResultStatus:
+    """A run's outcome by its worst confirmed result: Failed, else Error, else Warning, else Passed."""
+    if run.failed_ct:
+        return TestResultStatus.Failed
+    if run.error_ct:
+        return TestResultStatus.Error
+    if run.warning_ct:
+        return TestResultStatus.Warning
+    return TestResultStatus.Passed
 
 
 @dataclass
@@ -275,6 +329,13 @@ class TestRun(Entity):
         ):
             return [], 0
 
+        # A test run shares its job's id. Postgres does not reliably push the outer filters into the grouped CTE.
+        results_filter = ""
+        if test_run_ids:
+            results_filter = "WHERE test_run_id IN :test_run_ids"
+        elif job_execution_id:
+            results_filter = "WHERE test_run_id = :job_execution_id"
+
         # Pending JEs (no tr row) surface in project-scope queries — the LEFT JOIN to
         # test_suites yields a NULL ts row that the ``ts.id IS NULL`` clause lets through —
         # but not in suite/TG-scoped queries, since the WHERE filter requires ts to match.
@@ -294,6 +355,7 @@ class TestRun(Entity):
                 SUM(CASE WHEN COALESCE(disposition, 'Confirmed') IN ('Dismissed', 'Inactive')
                     THEN 1 ELSE 0 END) AS dismissed_ct
             FROM test_results
+            {results_filter}
             GROUP BY test_run_id
         )
         SELECT
@@ -325,6 +387,10 @@ class TestRun(Entity):
             (SELECT MAX(av.version) FROM suite_versions av
                 WHERE av.test_suite_id = ts.id AND av.frozen_at IS NOT NULL) AS active_version_number,
             tr.test_starttime,
+            -- test_starttime is stored as UTC without a zone.
+            (SELECT MAX(fv.version) FROM suite_versions fv
+                WHERE fv.test_suite_id = ts.id
+                    AND fv.frozen_at <= tr.test_starttime AT TIME ZONE 'UTC') AS version_in_force_at_start,
             (tr.version_id IS NOT NULL
                 AND NOT EXISTS (SELECT 1 FROM suite_versions dv WHERE dv.id = tr.version_id)) AS version_discarded
         FROM job_executions je

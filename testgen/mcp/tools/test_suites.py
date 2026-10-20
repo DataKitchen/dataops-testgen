@@ -68,8 +68,7 @@ def create_test_suite(
     suite_type: Annotated[
         str,
         Field(
-            description="Kind of suite to create. Accepts `Regular` or `Contract`. Defaults to `Regular`. A "
-            "contract is not yet visible to the other test suite tools (listing, updating, running).",
+            description="Kind of suite to create. Accepts `Regular` or `Contract`. Defaults to `Regular`.",
         ),
     ] = "Regular",
     table_names: Annotated[
@@ -131,7 +130,7 @@ def create_test_suite(
     table_group = resolve_table_group(table_group_id)
     if table_names:
         if parsed_suite_type is not SuiteType.CONTRACT:
-            raise MCPUserError("`table_names` applies only to contracts. No changes saved.")
+            raise MCPUserError("`table_names` applies to contracts only. No changes saved.")
         catalog_tables = set(contract_document.catalog_table_names(table_group.id))
         if unknown := [name for name in table_names if name not in catalog_tables]:
             raise MCPUserError(

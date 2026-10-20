@@ -56,6 +56,7 @@ ORM_READS: list[Callable] = [
     lambda **kw: TestResult.select_history(uuid4(), **kw),
     lambda **kw: TestResult.search_results(**kw),
     lambda **kw: TestResult.failure_trend(start_date=date(2026, 1, 1), end_date=date(2026, 1, 2), **kw),
+    lambda **kw: TestSuite.list_for_project("demo", **kw),
 ]
 
 
@@ -116,6 +117,20 @@ def test_run_summary_can_narrow_to_one_version_and_selects_version_columns(sessi
     assert "sv.version AS version_number" in sql
     assert "LEFT JOIN suite_versions sv ON sv.id = tr.version_id AND sv.test_suite_id IS NOT NULL" in sql
     assert session_mock.execute.call_args.args[1]["version_id"] == str(version_id)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "results_filter"),
+    [
+        ({"test_run_ids": [uuid4(), uuid4()]}, "FROM test_results WHERE test_run_id IN :test_run_ids GROUP BY"),
+        ({"job_execution_id": uuid4()}, "FROM test_results WHERE test_run_id = :job_execution_id GROUP BY"),
+        ({"project_code": "demo"}, "FROM test_results GROUP BY"),
+    ],
+    ids=["by-run-ids", "by-job", "unfiltered"],
+)
+def test_run_summary_counts_only_the_runs_it_reads(session_mock, kwargs, results_filter):
+    TestRun.select_summary(**kwargs)
+    assert results_filter in " ".join(str(session_mock.execute.call_args.args[0]).split())
 
 
 def test_run_summary_without_a_version_does_not_narrow(session_mock):

@@ -10,22 +10,23 @@ from testgen.commands.test_generation import (
     resolve_generation_profile_run,
     unprofiled_regeneration_note,
 )
+from testgen.common import contract_service
 from testgen.common.enums import JOB_STATUS_LABEL, JobKey, JobSource, RegenerationGroup, SuiteType
 from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import EXTERNAL_URL_MAX_LENGTH, JobExecution, validate_caller_metadata
-from testgen.common.models.suite_version import SuiteVersion, VersionState, format_version, version_state
+from testgen.common.models.suite_version import SuiteVersion, VersionState, format_version
 from testgen.common.models.table_group import TableGroup, validate_schema_name
 from testgen.common.models.test_definition import TestDefinition
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
-    MCP_SUITE_TYPES,
     DocGroup,
+    not_a_contract_error,
     parse_uuid,
-    resolve_contract_version,
     resolve_table_group,
     resolve_test_suite,
+    unknown_version_error,
 )
 
 _DOC_GROUP = DocGroup.TRIGGER
@@ -79,23 +80,23 @@ def run_tests(
     if error := validate_caller_metadata(metadata):
         raise MCPUserError(f"metadata {error}.")
 
-    target = resolve_contract_version(suite, version)
+    try:
+        target = contract_service.run_target(suite, version)
+    except contract_service.NotAContractError as error:
+        raise not_a_contract_error(suite) from error
+    except contract_service.UnknownVersionError as error:
+        raise unknown_version_error(error) from error
+    except contract_service.NoActiveTestsError as error:
+        raise MCPUserError(
+            f"{format_version(error.version.version, error.state)} of contract `{suite.test_suite}` "
+            "has no active tests to run."
+        ) from error
     version_label = None
     note = None
-    if suite.suite_type == SuiteType.CONTRACT:
-        target = target or SuiteVersion.get(get_current_session().scalar(select(SuiteVersion.for_run(suite.id))))
-        _, term_total = TestDefinition.list_for_suite(
-            suite.id, test_active=True, version_id=target.id, limit=1, suite_types=MCP_SUITE_TYPES
-        )
-        state = version_state(target.frozen_at, SuiteVersion.is_active(target.id, suite.id))
-        version_label = format_version(target.version, state)
-        if term_total == 0:
-            raise MCPUserError(f"{version_label} of contract `{suite.test_suite}` has no active tests to run.")
-        kwargs["version_id"] = str(target.id)
-        if state == VersionState.DRAFT:
-            note = "This run previews a version that is not frozen, so it will not count as the contract's status."
-        elif state == VersionState.SUPERSEDED:
-            note = "This run checks a superseded version, so it will not count as the contract's status."
+    if target is not None:
+        version_label = format_version(target.version.version, target.state)
+        kwargs["version_id"] = str(target.version.id)
+        note = target.note
     job = JobExecution.submit(
         job_key=JobKey.run_tests,
         kwargs=kwargs,

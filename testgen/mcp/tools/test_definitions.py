@@ -1382,7 +1382,7 @@ def import_tests(
             f"{label} of contract `{suite.test_suite}` can no longer be edited. Nothing was applied."
         ) from err
     except RemovedInDraftError as err:
-        raise _removed_in_draft(err, suite) from err
+        raise MCPUserError(f"{_removed_in_draft(err, suite)} Nothing was applied.") from err
     except ValueError as err:
         raise MCPUserError(f"{err} Nothing was applied.") from err
     except ImportStrictViolation as err:
@@ -1401,11 +1401,7 @@ def import_tests(
         doc.text("Preview only — no changes were persisted. Re-run with `mode='apply'` to persist.")
     else:
         doc.heading(1, f"Test Definition Import into suite `{suite.test_suite}`")
-    if suite.suite_type == SuiteType.CONTRACT:
-        version = resolved_version(suite)
-        if preview and version is not None and version.frozen_at is not None:
-            doc.field("Version", format_version(version.version + 1, VersionState.DRAFT))
-        else:
-            _version_field(doc, suite, version)
+    if result.version is not None:
+        doc.field("Version", format_version(result.version.number, result.version.state))
     _append_import_result(doc, result, preview=preview)
     return doc.render()

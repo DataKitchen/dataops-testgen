@@ -14,6 +14,7 @@ from testgen.common.models.suite_version import (
     RemovedInDraftError,
     SuiteVersion,
     UnmatchedInDraftError,
+    VersionState,
 )
 from testgen.common.models.test_definition import ManagedTestDefinitionError, TestDefinition, TestDefinitionNote
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
@@ -1572,12 +1573,13 @@ def _make_export_document(definitions=None):
     )
 
 
-def _make_import_response(*, created=0, updated=0, skipped=0, deleted=0, items=None):
+def _make_import_response(*, created=0, updated=0, skipped=0, deleted=0, items=None, version=None):
     from testgen.common.test_definition_export_import_service import ImportResponse, ImportSummary
 
     return ImportResponse(
         summary=ImportSummary(created=created, updated=updated, skipped=skipped, deleted=deleted),
         items=items or [],
+        version=version,
     )
 
 
@@ -2812,28 +2814,25 @@ def test_bulk_update_matching_nothing_opens_no_draft(db_session_mock):
 
 
 def test_import_on_a_contract_names_the_version_written(db_session_mock):
+    from testgen.common.test_definition_export_import_service import ContractVersion
+
     suite = _contract_suite()
-    draft = SuiteVersion(id=uuid4(), version=4)
+    response = _make_import_response(created=2, version=ContractVersion(number=4, state=VersionState.DRAFT))
     with (
         patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
-        patch("testgen.mcp.tools.test_definitions.import_definitions", return_value=_make_import_response(created=2)),
-        patch("testgen.mcp.tools.test_definitions.resolved_version", return_value=draft),
+        patch("testgen.mcp.tools.test_definitions.import_definitions", return_value=response),
     ):
         out = import_tests(str(suite.id), payload='{"definitions": []}', mode="apply")
     assert "**Version:** v4 draft" in out
 
 
-def test_import_preview_on_a_frozen_only_contract_names_the_draft_an_apply_would_open(db_session_mock):
-    suite = _contract_suite()
-    active = SuiteVersion(id=uuid4(), version=3, frozen_at=datetime(2026, 9, 12, tzinfo=UTC))
+def test_import_into_a_regular_suite_names_no_version(db_session_mock):
     with (
-        patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
+        patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=_make_suite()),
         patch("testgen.mcp.tools.test_definitions.import_definitions", return_value=_make_import_response(created=2)),
-        patch("testgen.mcp.tools.test_definitions.resolved_version", return_value=active),
-        patch.object(SuiteVersion, "is_active", return_value=True),
     ):
-        out = import_tests(str(suite.id), payload='{"definitions": []}')
-    assert "**Version:** v4 draft" in out
+        out = import_tests(str(uuid4()), payload='{"definitions": []}', mode="apply")
+    assert "Version" not in out
 
 
 def test_import_naming_a_frozen_version_is_a_user_error(db_session_mock):
@@ -2883,7 +2882,7 @@ def test_import_naming_a_test_the_draft_removed_is_a_user_error(db_session_mock)
             side_effect=RemovedInDraftError(draft.id, [removed]),
         ),
         patch.object(SuiteVersion, "get", return_value=draft),
-        pytest.raises(MCPUserError, match=rf"Test `{removed}` was removed in v4 draft of contract `Orders`"),
+        pytest.raises(MCPUserError, match=rf"Test `{removed}` was removed in v4 draft of contract `Orders`\. Nothing was applied\.$"),
     ):
         import_tests(str(suite.id), payload='{"definitions": []}', mode="apply")
 

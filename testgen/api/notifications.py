@@ -50,7 +50,7 @@ from testgen.api.schemas import (
     WebhookDestinationResponse,
     WebhookDestinationUpdate,
 )
-from testgen.common.enums import SuiteType
+from testgen.common.enums import TEST_SUITE_TYPES, SuiteType
 from testgen.common.models import get_current_session
 from testgen.common.models.notification_destinations import (
     EmailDestination,
@@ -287,11 +287,10 @@ def create_rule(
     addressing = _resolve_addressing_in(payload.addressing, project_code)
     try:
         if isinstance(payload, TestRunRuleCreate):
-            # A ``test_run`` rule must not point at a monitor suite -- monitor
-            # suites are a parallel surface and their rules use the ``monitor_run``
-            # event. See CLAUDE.md 'Monitor suites are a parallel surface'.
+            # A ``test_run`` rule may point at a test suite or a contract, not a monitor
+            # suite: monitor suites' rules use the ``monitor_run`` event.
             if payload.test_suite_id is not None:
-                _require_scope(TestSuite, payload.test_suite_id, project_code, suite_type=SuiteType.REGULAR)
+                _require_scope(TestSuite, payload.test_suite_id, project_code, suite_types=TEST_SUITE_TYPES)
             rule = TestRunNotificationSettings.create(
                 project_code=project_code,
                 test_suite_id=payload.test_suite_id,
@@ -312,7 +311,7 @@ def create_rule(
             # suite/table-group mismatch is unrepresentable instead of merely
             # rejected. Matches how every other write endpoint derives its
             # parent scope (see ``submit_profiling`` / ``submit_test_run``).
-            suite = _require_scope(TestSuite, payload.test_suite_id, project_code, suite_type=SuiteType.MONITOR)
+            suite = _require_scope(TestSuite, payload.test_suite_id, project_code, suite_types=(SuiteType.MONITOR,))
             rule = MonitorNotificationSettings.create(
                 project_code=project_code,
                 table_group_id=suite.table_groups_id,
@@ -473,27 +472,21 @@ def _set_rule_enabled(rule: NotificationSettings, enabled: bool) -> RuleResponse
 # =====================================================================
 
 
-def _require_scope(entity_class, entity_id, project_code: str, *, suite_type: SuiteType | None = None):
-    """Load an entity and 400 if it isn't in ``project_code``, or is a suite of the wrong type."""
+def _require_scope(
+    entity_class, entity_id, project_code: str, *, suite_types: tuple[SuiteType, ...] | None = None
+):
+    """Load an entity and 400 if it isn't in ``project_code``, or is a suite of none of ``suite_types``."""
     entity = entity_class.get(entity_id)
     if entity is None or entity.project_code != project_code:
         raise api_error(400, "invalid_scope", f"Scope entity {entity_id} not found in this project.")
-    if suite_type is not None:
-        # Read the attribute rather than assuming the entity has it: this helper also
-        # resolves table groups and score definitions, which carry no suite type.
-        # Compare by value, not identity: the column round-trips as a plain string,
-        # so ``is`` against the enum member is False for every row.
-        actual = getattr(entity, "suite_type", None)
-        if suite_type == SuiteType.REGULAR and actual != SuiteType.REGULAR:
-            raise api_error(
-                400, "invalid_scope",
-                "This test suite belongs to a monitor -- use event=monitor_run instead.",
-            )
-        if suite_type == SuiteType.MONITOR and actual != SuiteType.MONITOR:
-            raise api_error(
-                400, "invalid_scope",
-                "This test suite is not a monitor -- use event=test_run instead.",
-            )
+    # Read the attribute rather than assuming the entity has it: this helper also
+    # resolves table groups and score definitions, which carry no suite type.
+    if suite_types is not None and getattr(entity, "suite_type", None) not in suite_types:
+        if SuiteType.MONITOR in suite_types:
+            raise api_error(400, "invalid_scope", "This test suite is not a monitor -- use event=test_run instead.")
+        raise api_error(
+            400, "invalid_scope", "This test suite belongs to a monitor -- use event=monitor_run instead."
+        )
     return entity
 
 

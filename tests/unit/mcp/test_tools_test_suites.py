@@ -377,7 +377,7 @@ def test_create_test_suite_refuses_table_names_for_a_regular_suite(db_session_mo
     ):
         from testgen.mcp.tools.test_suites import create_test_suite
 
-        with pytest.raises(MCPUserError, match="applies only to contracts"):
+        with pytest.raises(MCPUserError, match="applies to contracts only"):
             create_test_suite(table_group_id=str(tg.id), test_suite_name="Anything", table_names=["orders"])
 
     suite_cls.assert_not_called()
