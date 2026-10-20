@@ -22,6 +22,7 @@ from testgen.common.database.file_declarations import (
     URI_REQUIRED,
     FileDeclaration,
     create_view_statement,
+    declarations_named_in,
     has_embedded_credentials,
     is_inside_base_path,
     is_multi_file,
@@ -82,6 +83,34 @@ def test_an_entry_naming_a_format_testgen_cannot_read_is_skipped():
 
 def test_nothing_stored_parses_to_nothing():
     assert parse_file_declarations(None) == []
+
+
+# ---------------------------------------------------------------------------
+# Declarations a query names
+# ---------------------------------------------------------------------------
+
+
+def test_only_the_declarations_a_query_names_are_kept():
+    claims, members = declaration(name="claims"), declaration(name="members", uri="members.csv")
+
+    assert declarations_named_in([claims, members], 'SELECT * FROM "main"."claims" LIMIT 10') == [claims]
+
+
+def test_a_name_in_another_case_is_kept():
+    """DuckDB resolves an unquoted name in any case, so user SQL may not match the declared case."""
+    claims = declaration(name="claims")
+
+    assert declarations_named_in([claims], "select count(*) from MAIN.CLAIMS") == [claims]
+
+
+def test_a_name_inside_a_longer_name_is_not_kept():
+    orders = declaration(name="orders")
+
+    assert declarations_named_in([orders], 'SELECT * FROM "main"."orders_archive"') == []
+
+
+def test_a_query_naming_no_declaration_keeps_none():
+    assert declarations_named_in([declaration(name="claims")], "SELECT 1") == []
 
 
 # ---------------------------------------------------------------------------

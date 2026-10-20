@@ -17,7 +17,7 @@ from authlib.oauth2.rfc6749.authenticate_client import authenticate_none
 from authlib.oauth2.rfc6749.errors import InvalidRequestError
 from authlib.oauth2.rfc7009 import RevocationEndpoint
 from authlib.oauth2.rfc7636 import CodeChallenge
-from sqlalchemy import select, update
+from sqlalchemy import and_, case, or_, select, update
 
 from testgen import settings
 from testgen.common.auth import create_jwt_token
@@ -132,19 +132,9 @@ class RefreshTokenGrant(grants.RefreshTokenGrant):
         A rotated refresh token presented again may have been stolen, and the server cannot tell
         whether the legitimate client or an attacker sent it, so the whole chain is revoked.
         """
-        now = int(time.time())
-        result = get_current_session().execute(
-            update(OAuth2Token)
-            .where(
-                OAuth2Token.client_id == credential.client_id,
-                OAuth2Token.user_id == credential.user_id,
-                OAuth2Token.refresh_chain_issued_at == credential.refresh_chain_issued_at,
-                OAuth2Token.refresh_token_revoked_at == 0,
-            )
-            .values(access_token_revoked_at=now, refresh_token_revoked_at=now)
-        )
+        revoked = _revoke_chain(credential)
         LOG.warning(
-            f"Rotated refresh token presented again: revoked {result.rowcount} live tokens in its chain "
+            f"Rotated refresh token presented again: revoked {revoked} live tokens in its chain "
             f"(client_id={credential.client_id}, user_id={credential.user_id})"
         )
 
@@ -153,10 +143,40 @@ class RefreshTokenGrant(grants.RefreshTokenGrant):
         return session.scalars(select(User).where(User.id == credential.user_id)).first()
 
     def revoke_old_credential(self, credential):
-        now = int(time.time())
-        credential.access_token_revoked_at = now
+        """Revoke a public client's rotated refresh token. The old access token stays valid until it expires,
+        because a client may still be sending it on requests already under way.
+        """
         if self._rotates_refresh_token():
-            credential.refresh_token_revoked_at = now
+            credential.refresh_token_revoked_at = int(time.time())
+
+
+def _revoke_chain(credential: OAuth2Token) -> int:
+    """Revoke every live access and refresh token in the credential's rotation chain.
+
+    Access tokens outlive the rotation of their refresh token, so rotated rows have theirs revoked
+    too, while keeping their rotation time. Returns the number of rows that held a live token.
+    """
+    now = int(time.time())
+    access_live = and_(
+        OAuth2Token.access_token_revoked_at == 0,
+        OAuth2Token.issued_at + OAuth2Token.expires_in > now,
+    )
+    result = get_current_session().execute(
+        update(OAuth2Token)
+        .where(
+            OAuth2Token.client_id == credential.client_id,
+            OAuth2Token.user_id == credential.user_id,
+            OAuth2Token.refresh_chain_issued_at == credential.refresh_chain_issued_at,
+            or_(access_live, OAuth2Token.refresh_token_revoked_at == 0),
+        )
+        .values(
+            access_token_revoked_at=case((access_live, now), else_=OAuth2Token.access_token_revoked_at),
+            refresh_token_revoked_at=case(
+                (OAuth2Token.refresh_token_revoked_at == 0, now), else_=OAuth2Token.refresh_token_revoked_at
+            ),
+        )
+    )
+    return result.rowcount
 
 
 class TestGenRevocationEndpoint(RevocationEndpoint):
@@ -181,6 +201,8 @@ class TestGenRevocationEndpoint(RevocationEndpoint):
         else:
             token.access_token_revoked_at = now
             token.refresh_token_revoked_at = now
+            if request.client.token_endpoint_auth_method == OAuth2ClientAuthMethod.NONE:
+                _revoke_chain(token)
 
 
 class TestGenAuthorizationServer(AuthorizationServer):

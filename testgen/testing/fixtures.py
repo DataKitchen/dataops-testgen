@@ -16,7 +16,7 @@ import pytest
 
 from testgen import settings
 from testgen.common.audit.sinks import AUDIT_LOG_FILE_NAME, get_sink
-from testgen.mcp.permissions import set_mcp_token, set_mcp_username
+from testgen.mcp.permissions import set_mcp_username
 
 # Fictional role matrix for tests. role_a has full access (but NOT view_pii — several
 # tests rely on that to exercise the no-view_pii path), role_c is restricted, and
@@ -83,7 +83,6 @@ def mcp_user():
     Tests needing scoped access patch _compute_project_permissions directly.
     """
     set_mcp_username("test_user")
-    set_mcp_token("test_bearer_token")
     user = MagicMock()
     user.id = uuid4()
     user.name = None
@@ -93,7 +92,7 @@ def mcp_user():
     membership.role = "role_a"
 
     with (
-        patch("testgen.common.auth.authorize_token", return_value=user),
+        patch("testgen.common.auth.authorize_user", return_value=user),
         # Patch the session factory, not ``get_current_session``. ``database_session()``
         # calls ``get_current_session()`` to detect nesting, so a truthy return there makes
         # it reuse that value and never install a session in the thread-local — leaving
@@ -112,4 +111,3 @@ def mcp_user():
         )
         yield user
     set_mcp_username(None)
-    set_mcp_token(None)

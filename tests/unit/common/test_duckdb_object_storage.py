@@ -36,6 +36,7 @@ pytestmark = pytest.mark.unit
 S3_KEYS = {"base_uri": "s3://claims-bucket/monthly", "region": "us-east-1", "strategy": "access_keys", "access_key_id": "AKIAEXAMPLE"}
 S3_SECRETS = {"secret_access_key": "s3-secret-value"}
 S3_ROLE = {"base_uri": "s3://claims-bucket/monthly", "region": "us-east-1", "strategy": "iam_role"}
+S3_PUBLIC = {"base_uri": "s3://claims-bucket/monthly", "region": "us-east-1", "strategy": "public"}
 
 AZURE_KEY = {"storage_account": "claimsacct", "container": "claims", "strategy": "account_key"}
 AZURE_KEY_SECRETS = {"account_key": "YXp1cmUta2V5LXZhbHVl"}
@@ -53,6 +54,7 @@ S3_NO_CREDENTIALS = (
 )
 
 AZURE_MI = {"storage_account": "claimsacct", "container": "claims", "strategy": "managed_identity"}
+AZURE_PUBLIC = {"storage_account": "claimsacct", "container": "claims", "strategy": "public"}
 
 
 def connection_params(code: str, parameters: dict, secrets: dict | None = None) -> dict:
@@ -109,6 +111,8 @@ def validate(code: str, parameters: dict, secrets: dict | None = None) -> None:
         ("azure_blob", AZURE_KEY, AZURE_KEY_SECRETS),
         ("azure_blob", AZURE_SPN, AZURE_SPN_SECRETS),
         ("azure_blob", AZURE_MI, None),
+        ("s3", S3_PUBLIC, None),
+        ("azure_blob", AZURE_PUBLIC, None),
     ],
 )
 def test_every_strategy_validates_with_what_it_needs(code, parameters, secrets):
@@ -186,6 +190,18 @@ def test_a_strategy_that_reads_no_secret_keeps_none():
     assert secrets is None
 
 
+@pytest.mark.parametrize(
+    ("code", "public", "credentialed", "secrets"),
+    [("s3", S3_PUBLIC, S3_KEYS, S3_SECRETS), ("azure_blob", AZURE_PUBLIC, AZURE_SPN, AZURE_SPN_SECRETS)],
+)
+def test_the_public_strategy_keeps_no_credential(code, public, credentialed, secrets):
+    parameters, kept_secrets = DuckdbFlavorService().scrub_settings(
+        {**credentialed, "strategy": "public"}, secrets, code
+    )
+    assert parameters == public
+    assert kept_secrets is None
+
+
 def test_a_database_code_is_not_scrubbed():
     parameters = {"database_file": "/data/db.duckdb"}
     assert DuckdbFlavorService().scrub_settings(parameters, None, "duckdb") == (parameters, None)
@@ -229,14 +245,27 @@ def test_the_iam_role_strategy_refreshes_what_the_chain_found():
     assert binds == {"region": "us-east-1", "scope": "s3://claims-bucket/monthly/"}
 
 
-@pytest.mark.parametrize("parameters", [S3_KEYS, S3_ROLE])
+def test_the_public_s3_strategy_signs_nothing():
+    """A secret with no key sends unsigned requests, which a public bucket accepts."""
+    statement, binds = object_storage.STORES["s3"].create_secret_statement(S3_PUBLIC, {})
+    assert statement == "CREATE SECRET tg_storage (TYPE s3, REGION :region, SCOPE :scope)"
+    assert binds == {"region": "us-east-1", "scope": "s3://claims-bucket/monthly/"}
+
+
+def test_the_public_azure_strategy_names_only_the_account():
+    statement, binds = object_storage.STORES["azure_blob"].create_secret_statement(AZURE_PUBLIC, {})
+    assert statement == "CREATE SECRET tg_storage (TYPE azure, PROVIDER config, ACCOUNT_NAME :account, SCOPE :scope)"
+    assert binds == {"account": "claimsacct", "scope": "az://claims/"}
+
+
+@pytest.mark.parametrize("parameters", [S3_KEYS, S3_ROLE, S3_PUBLIC])
 def test_a_dotted_bucket_is_addressed_by_path(parameters):
     dotted = {**parameters, "base_uri": "s3://claims.data.bucket/monthly"}
     statement, _ = object_storage.STORES["s3"].create_secret_statement(dotted, S3_SECRETS)
     assert "URL_STYLE 'path'" in statement
 
 
-@pytest.mark.parametrize("parameters", [S3_KEYS, S3_ROLE])
+@pytest.mark.parametrize("parameters", [S3_KEYS, S3_ROLE, S3_PUBLIC])
 def test_an_undotted_bucket_keeps_the_default_addressing(parameters):
     statement, _ = object_storage.STORES["s3"].create_secret_statement(parameters, S3_SECRETS)
     assert "URL_STYLE" not in statement
@@ -249,7 +278,13 @@ def test_managed_identity_also_reaches_workload_identity():
 
 @pytest.mark.parametrize(
     ("code", "parameters", "expected"),
-    [("s3", S3_KEYS, ("httpfs",)), ("s3", S3_ROLE, ("httpfs", "aws")), ("azure_blob", AZURE_MI, ("azure",))],
+    [
+        ("s3", S3_KEYS, ("httpfs",)),
+        ("s3", S3_ROLE, ("httpfs", "aws")),
+        ("s3", S3_PUBLIC, ("httpfs",)),
+        ("azure_blob", AZURE_MI, ("azure",)),
+        ("azure_blob", AZURE_PUBLIC, ("azure",)),
+    ],
 )
 def test_each_strategy_loads_the_extension_that_reads_it(code, parameters, expected):
     assert object_storage.STORES[code].extensions(parameters) == expected
@@ -477,13 +512,19 @@ _AZURE_BAD_SPN = (
     '"AADSTS900021: Requested tenant identifier is not valid. Trace ID: 52f0dd76"}'
 )
 _AZURE_NO_ACCOUNT = "Fail to get a new connection for: https://nope.blob.core.windows.net. Could not resolve hostname"
+_AZURE_NOT_PUBLIC = (
+    "IO Error: AzureBlobStorageFileSystem Read to az://functional/* failed with NoAuthenticationInformation "
+    "Reason Phrase: Server failed to authenticate the request."
+)
 
 
 @pytest.mark.parametrize(
     ("code", "parameters", "raw", "expected"),
     [
         ("s3", S3_KEYS, _S3_BAD_KEY, "The access key was not accepted."),
-        ("s3", S3_KEYS, _S3_DENIED, "Access was denied."),
+        ("s3", S3_KEYS, _S3_DENIED, "Access was denied. The credentials must allow"),
+        ("s3", S3_PUBLIC, _S3_DENIED, "Access was denied. The bucket must allow public listing"),
+        ("azure_blob", AZURE_PUBLIC, _AZURE_NOT_PUBLIC, "The container was not found or does not allow public access."),
         ("s3", S3_KEYS, _S3_MISSING, "The file was not found. To read the files in a folder, use a pattern"),
         ("s3", S3_ROLE, "Secret Validation Failure: during `create`", S3_NO_CREDENTIALS),
         ("s3", S3_ROLE, _S3_ROLE_REJECTED, "The credentials found by the credential chain were not accepted."),

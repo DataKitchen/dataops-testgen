@@ -18,7 +18,7 @@ rules are form-shaped per-flavor logic, not model invariants.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TypedDict
@@ -48,7 +48,7 @@ from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal, validate_schema_name
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
-from testgen.ui.services.database_service import target_db_session
+from testgen.ui.services.database_service import TargetQuery, target_db_session
 from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
@@ -390,20 +390,9 @@ def preview_table_group(
     try:
         if connection is None:
             connection = Connection.get(table_group.connection_id)
-        preview, data_chars, sql_generator = _build_preview(table_group, connection)
+        preview, data_chars, sql_generator = _build_preview(table_group, connection, verify_access=verify_access)
 
         if verify_access and preview["success"]:
-            with target_db_session(connection, table_group) as run:
-                for table_name in list(preview["tables"]):
-                    # The probe query completing is the access signal — an unreadable table
-                    # raises. Its result set is empty for an empty table, so row count says
-                    # nothing about access.
-                    try:
-                        run(*sql_generator.verify_access(table_name))
-                    except Exception:
-                        preview["tables"][table_name]["can_access"] = False
-                    else:
-                        preview["tables"][table_name]["can_access"] = True
             if not all(t["can_access"] for t in preview["tables"].values()) and not preview["message"]:
                 preview["message"] = _INACCESSIBLE_MESSAGE
     except Exception as error:
@@ -431,17 +420,39 @@ def make_save_data_chars(
     return save
 
 
+def _probe_access(run: TargetQuery, sql_generator: RefreshDataCharsSQL, table_names: Iterable[str]) -> dict[str, bool]:
+    """Return whether each table can be read, keyed by table name."""
+    access: dict[str, bool] = {}
+    for table_name in table_names:
+        # The probe query completing is the access signal — an unreadable table
+        # raises. Its result set is empty for an empty table, so row count says
+        # nothing about access.
+        try:
+            run(*sql_generator.verify_access(table_name))
+        except Exception:
+            access[table_name] = False
+        else:
+            access[table_name] = True
+    return access
+
+
 def _build_preview(
     table_group: TableGroup,
     connection: Connection,
+    *,
+    verify_access: bool,
 ) -> tuple[TableGroupPreview, list[ColumnChars], RefreshDataCharsSQL]:
     sql_generator = RefreshDataCharsSQL(connection, table_group)
     schema_label = table_group_schema_label(connection.sql_flavor_code)
     declaration_failures: dict[str, str] = {}
+    access: dict[str, bool] | None = None
     if sql_generator.flavor_service.metadata_via_api:
         params = resolve_connection_params(connection.__dict__)
         api_columns = sql_generator.flavor_service.get_schema_columns(params, table_group.table_group_schema) or []
         data_chars = sql_generator.filter_schema_columns(api_columns)
+        if verify_access:
+            with target_db_session(connection, table_group) as run:
+                access = _probe_access(run, sql_generator, dict.fromkeys(c.table_name for c in data_chars))
     else:
         with target_db_session(connection, table_group) as run:
             rows = run(*sql_generator.get_schema_ddf())
@@ -461,6 +472,9 @@ def _build_preview(
                 for column in data_chars:
                     column.object_type = ObjectType.FILES
                     column.file_ct = file_count_map.get(column.table_name)
+            # In the same session, because on a file connection opening another rebuilds every view.
+            if verify_access:
+                access = _probe_access(run, sql_generator, dict.fromkeys(c.table_name for c in data_chars))
 
     preview: TableGroupPreview = {
         "stats": {
@@ -510,6 +524,12 @@ def _build_preview(
     elif len(data_chars) <= 0:
         preview["success"] = False
         preview["message"] = _NO_TABLES_MESSAGE
+
+    if access is not None and preview["success"]:
+        for table_name, table in tables.items():
+            # A declaration whose view could not be built is listed without columns, and has no
+            # view for a probe to read.
+            table["can_access"] = access.get(table_name, False)
 
     return preview, data_chars, sql_generator
 

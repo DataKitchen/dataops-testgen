@@ -38,6 +38,7 @@ class ConnectionMode(StrEnum):
     ACCESS_KEYS = "Access Keys"
     IAM_ROLE = "IAM Role"
     ACCOUNT_KEY = "Account Key"
+    PUBLIC = "Public"
 
 
 class Req(StrEnum):
@@ -245,6 +246,12 @@ FLAVOR_CONNECTION_SCHEMA: dict[str, FlavorSchema] = {
                 supports_url=False,
                 parameter_sets={STRATEGY_PARAMETER: S3Strategy.IAM_ROLE},
             ),
+            FlavorMode(
+                mode=ConnectionMode.PUBLIC,
+                fields=(_BASE_URI, _REGION),
+                supports_url=False,
+                parameter_sets={STRATEGY_PARAMETER: S3Strategy.PUBLIC},
+            ),
         ),
         url_field=None,
     ),
@@ -269,6 +276,12 @@ FLAVOR_CONNECTION_SCHEMA: dict[str, FlavorSchema] = {
                 fields=(_STORAGE_ACCOUNT, _CONTAINER, _BLOB_CLIENT_ID, _BLOB_TENANT_ID, _BLOB_CLIENT_SECRET),
                 supports_url=False,
                 parameter_sets={STRATEGY_PARAMETER: AzureBlobStrategy.SERVICE_PRINCIPAL},
+            ),
+            FlavorMode(
+                mode=ConnectionMode.PUBLIC,
+                fields=(_STORAGE_ACCOUNT, _CONTAINER),
+                supports_url=False,
+                parameter_sets={STRATEGY_PARAMETER: AzureBlobStrategy.PUBLIC},
             ),
         ),
         url_field=None,
