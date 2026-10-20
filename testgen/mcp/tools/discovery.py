@@ -1,13 +1,14 @@
 from typing import Annotated
 
 from pydantic import Field
+from sqlalchemy import func
 
 from testgen.common import contract_service
 from testgen.common.contract_service import VerificationUnavailable
 from testgen.common.enums import SuiteType
 from testgen.common.generation_set_service import list_generation_sets
 from testgen.common.models import with_database_session
-from testgen.common.models.data_table import DataTable
+from testgen.common.models.data_table import CatalogLevel, DataTable, parse_catalog_tags, table_cde
 from testgen.common.models.project import Project
 from testgen.common.models.suite_version import ContractState, SuiteVersion, VersionState, format_version
 from testgen.common.models.test_run import run_verdict
@@ -17,11 +18,19 @@ from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
     MCP_SUITE_TYPES,
     DocGroup,
+    build_contains_pattern,
+    format_catalog_tags_cell,
     format_flavor_label,
+    format_page_footer,
+    format_page_info,
+    format_semantic_table_type,
     parse_suite_type,
+    require_filter_text,
     resolve_connection,
     resolve_table_group,
     resolve_test_suite,
+    tag_filter_clauses,
+    tag_filter_description,
     validate_limit,
     validate_page,
 )
@@ -294,32 +303,107 @@ def _render_contract_block(doc: MdDoc, suite: TestSuite) -> None:
 @mcp_permission("catalog")
 def list_tables(
     table_group_id: Annotated[str, Field(description="The table group UUID.")],
+    semantic_table_type: Annotated[
+        str | None,
+        Field(
+            description="Matches tables whose semantic table type contains this text, ignoring case, e.g. `Summary`, "
+            "`Cumulative`, `Window Transaction`. Use `%` as a wildcard within the text. A semantic table type combines "
+            "a period, `Cumulative` (rows accumulate) or `Window` (older rows roll off), with a type: `Transaction`, "
+            "`Entity`, `Summary`, `Bridge`, or `Domain`. Tables not yet profiled never match.",
+        ),
+    ] = None,
+    cde: Annotated[
+        bool | None,
+        Field(description="When `true`, match tables flagged as a critical data element; when `false`, exclude them."),
+    ] = None,
+    data_source: Annotated[str | None, Field(description=tag_filter_description("data_source", CatalogLevel.TABLE))] = None,
+    source_system: Annotated[str | None, Field(description=tag_filter_description("source_system", CatalogLevel.TABLE))] = None,
+    source_process: Annotated[
+        str | None, Field(description=tag_filter_description("source_process", CatalogLevel.TABLE))
+    ] = None,
+    business_domain: Annotated[
+        str | None, Field(description=tag_filter_description("business_domain", CatalogLevel.TABLE))
+    ] = None,
+    stakeholder_group: Annotated[
+        str | None, Field(description=tag_filter_description("stakeholder_group", CatalogLevel.TABLE))
+    ] = None,
+    transform_level: Annotated[
+        str | None, Field(description=tag_filter_description("transform_level", CatalogLevel.TABLE))
+    ] = None,
+    aggregation_level: Annotated[
+        str | None, Field(description=tag_filter_description("aggregation_level", CatalogLevel.TABLE))
+    ] = None,
+    data_product: Annotated[str | None, Field(description=tag_filter_description("data_product", CatalogLevel.TABLE))] = None,
+    data_classification: Annotated[
+        str | None, Field(description=tag_filter_description("data_classification", CatalogLevel.TABLE))
+    ] = None,
     limit: Annotated[int, Field(description="Maximum number of tables per page (default 200, max 500).")] = 200,
     page: Annotated[int, Field(description="Page number, starting from 1 (default 1).")] = 1,
 ) -> str:
-    """List tables in a table group."""
+    """List tables in a table group with their semantic table type and catalog tags.
+
+    Filters combine with AND. Tag filters match the table's own value or, when it has none, the table group's.
+    """
     validate_page(page)
     validate_limit(limit, 500)
 
     tg = resolve_table_group(table_group_id)
-    project_codes = [tg.project_code]
 
-    offset = (page - 1) * limit
-    table_names = DataTable.select_table_names(tg.id, limit=limit, offset=offset, project_codes=project_codes)
-    total = DataTable.count_tables(tg.id, project_codes=project_codes)
+    tags = {
+        "data_source": data_source,
+        "source_system": source_system,
+        "source_process": source_process,
+        "business_domain": business_domain,
+        "stakeholder_group": stakeholder_group,
+        "transform_level": transform_level,
+        "aggregation_level": aggregation_level,
+        "data_product": data_product,
+        "data_classification": data_classification,
+    }
+    clauses = tag_filter_clauses(tags, CatalogLevel.TABLE)
+    if semantic_table_type is not None:
+        require_filter_text("semantic_table_type", semantic_table_type)
+        clauses.append(
+            func.replace(DataTable.functional_table_type, "-", " ").ilike(
+                build_contains_pattern(semantic_table_type.replace("-", " ")), escape="\\"
+            )
+        )
+    if cde is not None:
+        clauses.append(table_cde().is_(cde))
 
-    if not table_names:
+    tables, total = DataTable.list_for_table_group(*clauses, table_groups_id=tg.id, page=page, limit=limit)
+
+    if not tables:
         if page > 1:
             return f"No tables on page {page} (total: {total})."
+        if clauses:
+            return "No tables match the supplied filters."
         return f"No tables found for table group `{table_group_id}`."
 
     doc = MdDoc()
     doc.heading(1, f"Tables in Table Group `{table_group_id}`")
-    doc.text(f"Total tables: {total}. Showing {len(table_names)} (page {page}).")
-    doc.bullets([f"`{name}`" for name in table_names])
+    page_info = format_page_info(total, page, limit)
+    if page_info:
+        doc.text(page_info)
 
-    total_pages = (total + limit - 1) // limit
-    if page < total_pages:
-        doc.text(f"_Page {page} of {total_pages}. Use `page={page + 1}` for more._")
+    rows = []
+    any_inherited = False
+    for table in tables:
+        catalog_tags = parse_catalog_tags(table.catalog_tags)
+        any_inherited = any_inherited or any(tag.inherited_from for tag in catalog_tags)
+        rows.append([
+            table.table_name,
+            format_semantic_table_type(table.functional_table_type),
+            table.record_ct,
+            "Y" if table.critical_data_element else "",
+            format_catalog_tags_cell(catalog_tags),
+        ])
+    doc.table(["Table", "Semantic Table Type", "Records", "CDE", "Catalog Tags"], rows, code=[0])
+    if any_inherited:
+        doc.text("_A tag value marked (table group) is inherited from the table group._")
+
+    footer = format_page_footer(total, page, limit)
+    if footer:
+        doc.text(footer)
 
     return doc.render()

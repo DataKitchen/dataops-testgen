@@ -77,8 +77,8 @@ Please perform a profiling exploration:
 1. Call `get_data_inventory()` to see projects and table groups, with profiling status per group.
 2. Pick a table group that has been profiled.
 3. Call `list_profiling_summaries(table_group_id='...')` for the quality health overview (scores, hygiene issue counts, last profiled).
-4. Call `get_table(table_group_id='...', table_name='...')` for structural metadata, the column list, and table-level highlights.
-5. Call `list_column_profiles(table_group_id='...', table_name='...')` to scan all columns — datatype, null rates, distinct counts, quality scores, and hygiene issue counts per column.
+4. Call `get_table(table_group_id='...', table_name='...')` for structural metadata, catalog metadata, the latest profile, and the column list.
+5. Call `list_columns(table_group_id='...', table_name='...')` to scan all columns — datatype, null rates, distinct counts, quality scores, and hygiene issue counts per column.
 6. Summarize findings: which tables/columns have quality concerns, and which trends are worth investigating further.
 """
 

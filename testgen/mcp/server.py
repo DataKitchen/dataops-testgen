@@ -372,12 +372,12 @@ def build_mcp_server(
     )
     from testgen.mcp.tools.profiling import (
         generate_create_table_script,
+        get_column,
         get_column_frequent_values,
         get_column_patterns,
-        get_column_profile_detail,
         get_profiling_run,
         get_table,
-        list_column_profiles,
+        list_columns,
         list_profiling_runs,
         list_profiling_summaries,
         search_columns,
@@ -514,11 +514,11 @@ def build_mcp_server(
     tool_wrapper(generate_create_table_script)
     if not env_hides_source_only_tools:
         tool_wrapper(get_table_sample)
-    tool_wrapper(list_column_profiles)
+    tool_wrapper(list_columns)
     tool_wrapper(list_profiling_summaries)
     tool_wrapper(list_profiling_runs)
     tool_wrapper(get_profiling_run)
-    tool_wrapper(get_column_profile_detail)
+    tool_wrapper(get_column)
     if not env_hides_source_only_tools:
         tool_wrapper(get_column_frequent_values)
         tool_wrapper(get_column_patterns)

@@ -16,7 +16,7 @@ from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.flavor_service import FlavorService
 from testgen.common.models.connection import Connection
 from testgen.common.models.data_column import CreateScriptColumn, DataColumnChars
-from testgen.common.models.data_table import DataTable
+from testgen.common.models.data_table import CATALOG_TAG_LABELS, DataTable
 from testgen.common.models.table_group import TableGroup
 from testgen.common.pii_masking import get_pii_columns, mask_source_data_pii
 from testgen.ui.services.database_service import fetch_from_target_db
@@ -27,17 +27,7 @@ LOG = logging.getLogger("testgen")
 DESCRIPTION_MAX_LENGTH = 1000
 TAG_MAX_LENGTH = 40
 
-TAG_FIELDS = [
-    "data_source",
-    "source_system",
-    "source_process",
-    "business_domain",
-    "stakeholder_group",
-    "transform_level",
-    "aggregation_level",
-    "data_product",
-    "data_classification",
-]
+TAG_FIELDS = list(CATALOG_TAG_LABELS)
 
 # Metadata fields settable per target type, keyed by their data_*_chars column names.
 _TABLE_FIELDS = ("description", *TAG_FIELDS, "critical_data_element")

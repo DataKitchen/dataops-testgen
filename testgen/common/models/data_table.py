@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -13,10 +14,13 @@ from sqlalchemy import (
     and_,
     asc,
     case,
+    cast,
     func,
+    literal,
     select,
 )
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.sql.elements import ColumnElement
 
 from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.models import get_current_session
@@ -27,6 +31,58 @@ from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
+
+CATALOG_TAG_LABELS: dict[str, str] = {
+    "data_source": "Data source",
+    "source_system": "Source system",
+    "source_process": "Source process",
+    "business_domain": "Business domain",
+    "stakeholder_group": "Stakeholder group",
+    "transform_level": "Transform level",
+    "aggregation_level": "Aggregation level",
+    "data_product": "Data product",
+    "data_classification": "Data classification",
+}
+
+# Table groups have no aggregation level of their own.
+TABLE_GROUP_TAGS = tuple(tag for tag in CATALOG_TAG_LABELS if tag != "aggregation_level")
+
+
+class CatalogLevel(StrEnum):
+    """The catalog entity whose effective metadata is read."""
+
+    COLUMN = "column"
+    TABLE = "table"
+
+
+class CatalogSource(StrEnum):
+    """Where an inherited catalog value comes from."""
+
+    TABLE = "table"
+    TABLE_GROUP = "table group"
+
+
+@dataclass(frozen=True)
+class CatalogTag:
+    tag: str
+    label: str
+    value: str
+    inherited_from: CatalogSource | None
+
+
+def parse_catalog_tags(raw: dict | None) -> list[CatalogTag]:
+    """Turn a ``catalog_tags`` column (see :func:`catalog_tags_column`) into tags in display order."""
+    raw = raw or {}
+    return [
+        CatalogTag(
+            tag=tag,
+            label=label,
+            value=raw[tag][0],
+            inherited_from=CatalogSource(raw[tag][1]) if raw[tag][1] else None,
+        )
+        for tag, label in CATALOG_TAG_LABELS.items()
+        if tag in raw
+    ]
 
 
 @dataclass
@@ -48,14 +104,27 @@ class TableProfilingOverview:
     record_ct: int | None
     column_ct: int | None
     file_ct: int | None
+    functional_table_type: str | None
     dq_score_profiling: float | None
     dq_score_testing: float | None
+    description: str | None
+    critical_data_element: bool
+    catalog_tags: dict | None
     cde_count: int
     hygiene_issue_count: int
     latest_profile_id: UUID | None
     latest_profile_started_at: datetime | None
     latest_profile_job_execution_id: UUID | None
     columns: list[TableColumnSummary] = field(default_factory=list)
+
+
+@dataclass
+class TableCatalogSummary:
+    table_name: str
+    functional_table_type: str | None
+    record_ct: int | None
+    critical_data_element: bool
+    catalog_tags: dict | None
 
 
 class DataTable(Entity):
@@ -108,6 +177,25 @@ class DataTable(Entity):
         return list(get_current_session().scalars(query).all())
 
     @classmethod
+    def list_for_table_group(
+        cls, *clauses, table_groups_id: UUID, page: int, limit: int,
+    ) -> tuple[list[TableCatalogSummary], int]:
+        """List a table group's tables with their semantic table type, CDE flag, and effective catalog tags."""
+        query = (
+            select(
+                cls.table_name,
+                cls.functional_table_type,
+                cls.record_ct,
+                table_cde().label("critical_data_element"),
+                catalog_tags_column(CatalogLevel.TABLE),
+            )
+            .join(TableGroup, TableGroup.id == cls.table_groups_id)
+            .where(cls.table_groups_id == table_groups_id, cls.drop_date.is_(None), *clauses)
+            .order_by(asc(func.lower(cls.table_name)), asc(cls.table_name))
+        )
+        return cls._paginate(query, page=page, limit=limit, data_class=TableCatalogSummary)
+
+    @classmethod
     def list_column_chars(cls, table_groups_id: UUID, *clauses) -> list[ColumnChars]:
         """Read back the catalog a profiling run recorded, in place of querying the target.
 
@@ -143,17 +231,6 @@ class DataTable(Entity):
         return [ColumnChars(**row) for row in get_current_session().execute(query).mappings().all()]
 
     @classmethod
-    def count_tables(cls, table_groups_id: UUID, project_codes: list[str] | None = None) -> int:
-        query = select(func.count()).select_from(cls).where(
-            cls.table_groups_id == table_groups_id, cls.drop_date.is_(None)
-        )
-        if project_codes is not None:
-            query = query.join(TableGroup, cls.table_groups_id == TableGroup.id).where(
-                TableGroup.project_code.in_(project_codes)
-            )
-        return get_current_session().scalar(query) or 0
-
-    @classmethod
     def get_profiling_overview(
         cls, table_groups_id: UUID, table_name: str,
     ) -> TableProfilingOverview | None:
@@ -169,12 +246,17 @@ class DataTable(Entity):
                 cls.record_ct,
                 cls.column_ct,
                 cls.file_ct,
+                cls.functional_table_type,
                 cls.dq_score_profiling,
                 cls.dq_score_testing,
+                cls.description,
+                table_cde().label("critical_data_element"),
+                catalog_tags_column(CatalogLevel.TABLE),
                 cls.last_complete_profile_run_id.label("latest_profile_id"),
                 JobExecution.started_at.label("latest_profile_started_at"),
                 JobExecution.id.label("latest_profile_job_execution_id"),
             )
+            .join(TableGroup, TableGroup.id == cls.table_groups_id)
             .outerjoin(ProfilingRun, ProfilingRun.id == cls.last_complete_profile_run_id)
             .outerjoin(JobExecution, JobExecution.id == ProfilingRun.id)
             .where(
@@ -218,9 +300,10 @@ class DataTable(Entity):
         cde_count = session.scalar(
             select(func.count())
             .select_from(DataColumnChars)
+            .join(cls, cls.id == DataColumnChars.table_id)
             .where(
                 DataColumnChars.table_id == header["id"],
-                DataColumnChars.critical_data_element.is_(True),
+                column_cde().is_(True),
                 DataColumnChars.drop_date.is_(None),
             )
         ) or 0
@@ -243,3 +326,50 @@ class DataTable(Entity):
             hygiene_issue_count=hygiene_issue_count,
             columns=columns,
         )
+
+
+def table_cde() -> ColumnElement[bool]:
+    """A table's critical data element flag, with no value read as ``False``."""
+    return func.coalesce(DataTable.critical_data_element, False)
+
+
+def column_cde() -> ColumnElement[bool]:
+    """A column's critical data element flag: its own value or, when it has none, its table's.
+
+    The query must join :class:`DataTable`.
+    """
+    return func.coalesce(DataColumnChars.critical_data_element, DataTable.critical_data_element, False)
+
+
+def _tag_sources(tag: str, level: CatalogLevel) -> list[tuple[CatalogSource | None, ColumnElement]]:
+    sources: list[tuple[CatalogSource | None, ColumnElement]] = []
+    if level == CatalogLevel.COLUMN:
+        sources.append((None, getattr(DataColumnChars, tag)))
+    sources.append((CatalogSource.TABLE if level == CatalogLevel.COLUMN else None, getattr(DataTable, tag)))
+    if tag in TABLE_GROUP_TAGS:
+        sources.append((CatalogSource.TABLE_GROUP, getattr(TableGroup, tag)))
+    return sources
+
+
+def effective_tag(tag: str, level: CatalogLevel) -> ColumnElement[str]:
+    """A tag's value on a column or table, falling back to its table's and then its table group's.
+
+    The query must join :class:`DataTable` and :class:`TableGroup`.
+    """
+    return func.coalesce(*(column for _, column in _tag_sources(tag, level)))
+
+
+def catalog_tags_column(level: CatalogLevel) -> ColumnElement[dict]:
+    """Every tag that has an effective value, as ``{tag: [value, source]}``.
+
+    ``source`` is null for the column's or table's own value. The query must join
+    :class:`DataTable` and :class:`TableGroup`.
+    """
+    pairs: list = []
+    for tag in CATALOG_TAG_LABELS:
+        pairs.append(tag)
+        pairs.append(case(*(
+            (column.isnot(None), func.jsonb_build_array(column, cast(literal(source and source.value), String)))
+            for source, column in _tag_sources(tag, level)
+        )))
+    return func.jsonb_strip_nulls(func.jsonb_build_object(*pairs)).label("catalog_tags")
