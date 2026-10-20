@@ -14,7 +14,13 @@ from testgen.common.database.flavor.duckdb_flavor_service import container_path_
 from testgen.common.generation_set_service import get_generation_set_members
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssueType
-from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES, TestType
+from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES, TestDefinition, TestType
+from testgen.common.odcs.quality_rules import (
+    DECLARATION_LOGICAL_TYPES,
+    NEAR_STANDARD_CUSTOM_TEST_TYPES,
+    RULE_MAPPINGS,
+    property_declaration,
+)
 from testgen.common.sampling_requirements import requires_exact_label
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.tools.common import (
@@ -342,10 +348,91 @@ so partial inputs catch related variants (e.g. `ID` matches `ID`, `ID-FK`,
 """
 
 
+@with_database_session
+def contract_rule_mappings_resource() -> str:
+    """How a contract's tests appear in its ODCS document, and which ODCS rules import as tests."""
+    short_names = {tt.test_type: tt.test_name_short or tt.test_type for tt in TestType.select_where()}
+
+    def name(test_type: str) -> str:
+        return short_names.get(test_type, test_type)
+
+    doc = MdDoc()
+    doc.heading(1, "TestGen Contract Rule Mappings")
+    doc.text(
+        "A contract's tests are rendered into its exported ODCS document, and an imported document's rules "
+        "become tests where a test type checks exactly what the rule states. A rule no test type checks stays "
+        "in the contract's document, marked unverifiable, and is exported with it but never run."
+    )
+
+    doc.heading(2, "Quality rules")
+    doc.table(
+        headers=["Test Type", "Rule", "Node", "Operator", "Dimension"],
+        rows=[
+            [
+                name(test_type),
+                f"{mapping.shape.value} {mapping.metric.value} ({mapping.unit})" if mapping.metric else mapping.shape.value,
+                "column or table, by test" if mapping.scope_follows_term else mapping.scope.value,
+                mapping.operator.value,
+                mapping.dimension,
+            ]
+            for test_type, mapping in sorted(RULE_MAPPINGS.items(), key=lambda item: name(item[0]))
+        ],
+    )
+
+    doc.heading(2, "Column declarations")
+    doc.text(
+        "A test that allows no exceptions renders as a declaration on its column instead of a rule, when the "
+        "column declares one of the logical types listed."
+    )
+    doc.table(
+        headers=["Test Type", "Declares", "Logical Types"],
+        rows=[
+            [
+                name(test_type),
+                ", ".join(_declared_fields(test_type, logical_types)),
+                ", ".join(sorted(logical_types)) if logical_types else "any",
+            ]
+            for test_type, logical_types in sorted(DECLARATION_LOGICAL_TYPES.items(), key=lambda item: name(item[0]))
+        ],
+    )
+
+    doc.heading(2, "Custom rules")
+    doc.text(
+        "Every other test type renders as a `custom` rule with `engine: testgen`, which only TestGen runs. "
+        "These include test types close to a standard ODCS rule that check something the standard rule does not:"
+    )
+    doc.bullets(sorted(name(test_type) for test_type in NEAR_STANDARD_CUSTOM_TEST_TYPES))
+
+    doc.heading(2, "Importing")
+    doc.bullets([
+        "A rule TestGen exported carries its test type under the `testgen` vendor and imports as the same test.",
+        "Any other rule imports as a test only when it matches a row above exactly: a `library` rule counted in "
+        "`rows`, or a single-value `sql` rule, which imports as SQL Metric.",
+        "A `custom` rule imports only when its `engine` is `testgen`.",
+        "A column declaration listed above imports as its test, alongside the declaration, which stays in the document.",
+    ])
+    return doc.render()
+
+
+def _declared_fields(test_type: str, logical_types: frozenset[str] | None) -> list[str]:
+    """The property fields ``test_type`` declares, read off a sample term rendered as a declaration."""
+    logical_type = sorted(logical_types)[0] if logical_types else None
+    sample = TestDefinition(
+        test_type=test_type, threshold_value="0", baseline_value="2024-01-01" if logical_type in ("date", "timestamp") else "1",
+        lower_tolerance="1", upper_tolerance="2",
+    )
+    declaration = property_declaration(sample, logical_type) or {}
+    return [
+        f"{key}.{option}" if isinstance(value, dict) else key
+        for key, value in declaration.items()
+        for option in (value if isinstance(value, dict) else [None])
+    ]
+
+
 def glossary_resource() -> str:
     """Glossary of TestGen concepts.
 
-    Covers the entity hierarchy, result statuses, and quality dimensions.
+    Covers the entity hierarchy, contracts, result statuses, and quality dimensions.
     """
     return """\
 # TestGen Glossary
@@ -361,6 +448,18 @@ def glossary_resource() -> str:
 - **Test Definition** — A configured test with parameters, thresholds, and target table/column.
 - **Test Run** — An execution of a test suite producing test results.
 - **Test Result** — The outcome of a single test definition within a test run.
+
+## Contracts
+
+- **Contract** — A test suite that defines an agreement about a table group's data. It is kept in versions, and can be exported and imported as an ODCS document.
+- **Term** — A test in a contract. Each term belongs to one version, and keeps its rule ID across versions and in the exported document.
+- **Metadata document** — The part of a contract version's ODCS document that is not its tests: tables, columns, team, support, servers, and unverifiable terms.
+- **Draft** — The editable version of a contract. A contract has at most one draft. Changes to a contract are saved to its draft, which is created when the contract has none.
+- **Active version** — The latest frozen version. Contract runs use it unless a different version is specified.
+- **Superseded version** — A frozen version that a later frozen version has replaced. It is kept with its test runs, and cannot be changed.
+- **Freeze** — Making the draft the active version. A frozen version and its terms cannot be changed.
+- **Preview** — A test run of a contract's draft. Its results do not count toward the contract's status.
+- **Unverifiable term** — A quality rule in the metadata document that no test type checks. It is exported with the contract, but not run.
 
 ## Test Result Statuses
 

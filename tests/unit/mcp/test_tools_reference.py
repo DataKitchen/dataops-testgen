@@ -133,6 +133,9 @@ def test_glossary_resource():
     assert "Test Scopes" in result
     assert "Disposition" in result
     assert "Monitor Types" not in result
+    assert "## Contracts" in result
+    for term in ("Contract", "Term", "Draft", "Active version", "Superseded version", "Freeze", "Preview", "Unverifiable term"):
+        assert f"- **{term}** —" in result
 
     # Hygiene-issue additions (TG-1029):
     assert "Profiling Run" in result
@@ -453,3 +456,23 @@ def test_get_test_type_describes_non_public_type(mock_tt_cls, db_session_mock):
     assert "not found" not in result
     assert "# Volume Trend" in result
     assert "New tests of this type cannot be created" in result
+
+
+@patch("testgen.mcp.tools.reference.TestType.select_where")
+def test_contract_rule_mappings_resource_reads_the_mapping_tables(mock_select, db_session_mock):
+    from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES
+    from testgen.common.odcs.quality_rules import NEAR_STANDARD_CUSTOM_TEST_TYPES, RULE_MAPPINGS
+    from testgen.mcp.tools.reference import contract_rule_mappings_resource
+
+    mock_select.return_value = [MagicMock(test_type="Required", test_name_short="Required Entry")]
+
+    result = contract_rule_mappings_resource()
+
+    assert "| Required Entry | library nullValues (rows) | column | mustBeLessOrEqualTo | completeness |" in result
+    assert "| SQL_Metric | sql | table | mustBeBetween | accuracy |" in result
+    for test_type in [*RULE_MAPPINGS, *NEAR_STANDARD_CUSTOM_TEST_TYPES]:
+        assert test_type in result or test_type == "Required"
+    assert not any(test_type in result for test_type in NON_PUBLIC_TEST_TYPES), "non-public test types stay out"
+    assert "| Max_Val | logicalTypeOptions.maximum | integer, number |" in result
+    assert "| Unique | unique, required | any |" in result
+    assert "| Text_Length_Range | logicalTypeOptions.minLength, logicalTypeOptions.maxLength | string |" in result

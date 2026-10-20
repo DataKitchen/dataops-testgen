@@ -517,7 +517,7 @@ def delete_test_note(
 # user-set from calibrated for these fields (a `threshold_value` can be a
 # regex the user typed OR a numeric threshold calibrated by profiling), so
 # under source-data protection they are dropped uniformly.
-_CALIBRATION_SHAPED_PARAM_COLUMNS: frozenset[str] = frozenset({
+CALIBRATION_SHAPED_PARAM_COLUMNS: frozenset[str] = frozenset({
     "baseline_ct",
     "baseline_unique_ct",
     "baseline_value",
@@ -544,7 +544,7 @@ def _append_parameters_section(doc: MdDoc, td: TestDefinitionSummary, qualifies:
     hide_source_data = mcp_source_data_protected()
     rows = []
     for column, prompt, _help in td.param_fields:
-        if hide_source_data and column in _CALIBRATION_SHAPED_PARAM_COLUMNS:
+        if hide_source_data and column in CALIBRATION_SHAPED_PARAM_COLUMNS:
             continue
         if column == "match_schema_name" and not qualifies:
             continue
@@ -834,7 +834,7 @@ def update_test(
     # parameters section omits — writing one field would otherwise disclose its prior
     # value. Blanked per field rather than dropping the column, so the caller can still
     # see what changed for everything else.
-    hidden = _CALIBRATION_SHAPED_PARAM_COLUMNS if mcp_source_data_protected() else frozenset()
+    hidden = CALIBRATION_SHAPED_PARAM_COLUMNS if mcp_source_data_protected() else frozenset()
     rows = [
         [
             key,
@@ -1308,10 +1308,10 @@ def export_tests(
     # otherwise silently clear these on the target.
     exclude = None
     if mcp_source_data_protected():
-        exclude = {"definitions": {"__all__": set(_CALIBRATION_SHAPED_PARAM_COLUMNS)}}
+        exclude = {"definitions": {"__all__": set(CALIBRATION_SHAPED_PARAM_COLUMNS)}}
         doc.field(
             "Omitted Fields",
-            ", ".join(sorted(_CALIBRATION_SHAPED_PARAM_COLUMNS))
+            ", ".join(sorted(CALIBRATION_SHAPED_PARAM_COLUMNS))
             + " — re-importing this payload leaves them unchanged on the target.",
         )
 
@@ -1382,7 +1382,7 @@ def import_tests(
             f"{label} of contract `{suite.test_suite}` can no longer be edited. Nothing was applied."
         ) from err
     except RemovedInDraftError as err:
-        raise _removed_in_draft(err, suite) from err
+        raise MCPUserError(f"{_removed_in_draft(err, suite)} Nothing was applied.") from err
     except ValueError as err:
         raise MCPUserError(f"{err} Nothing was applied.") from err
     except ImportStrictViolation as err:
@@ -1401,11 +1401,7 @@ def import_tests(
         doc.text("Preview only — no changes were persisted. Re-run with `mode='apply'` to persist.")
     else:
         doc.heading(1, f"Test Definition Import into suite `{suite.test_suite}`")
-    if suite.suite_type == SuiteType.CONTRACT:
-        version = resolved_version(suite)
-        if preview and version is not None and version.frozen_at is not None:
-            doc.field("Version", format_version(version.version + 1, VersionState.DRAFT))
-        else:
-            _version_field(doc, suite, version)
+    if result.version is not None:
+        doc.field("Version", format_version(result.version.number, result.version.state))
     _append_import_result(doc, result, preview=preview)
     return doc.render()

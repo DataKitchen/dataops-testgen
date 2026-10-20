@@ -13,11 +13,17 @@ from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 
 from testgen import settings
-from testgen.common.auth import AuthError, decode_jwt_token
+from testgen.common.auth import AuthError, authorize_token, decode_jwt_token
 from testgen.common.mixpanel_service import MixpanelService
-from testgen.common.models import POOL_MAX_OVERFLOW, POOL_SIZE, session_limiter
+from testgen.common.models import (
+    POOL_MAX_OVERFLOW,
+    POOL_SIZE,
+    get_current_session,
+    session_limiter,
+    with_database_session,
+)
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPUserError
-from testgen.mcp.permissions import get_mcp_username, set_mcp_token, set_mcp_username
+from testgen.mcp.permissions import get_mcp_username, set_mcp_username
 from testgen.mcp.services.source_data_protection import (
     SourceDataProtectionMode,
     mcp_source_data_env_mode,
@@ -65,6 +71,9 @@ Hygiene issue types similarly have specific meanings. ALWAYS look them up using 
 
 Column profile fields are type-specific (different stats per Alpha / Numeric / Datetime / Boolean / Time / Other).
 ALWAYS look them up using the `testgen://column-profile-fields` resource.
+
+Contracts render their tests into ODCS documents. To know which test types become which ODCS rules, and which
+rules import back as tests, read the `testgen://contract-rule-mappings` resource.
 """
 
 _SERVER_INSTRUCTIONS_INVESTIGATING_FAILURES = """\
@@ -99,22 +108,35 @@ def _build_server_instructions(source_data_protected: bool) -> str:
     return _SERVER_INSTRUCTIONS_HEADER + middle + _SERVER_INSTRUCTIONS_FOOTER
 
 
+@with_database_session
+def _authorize_token(token: str, username: str) -> None:
+    authorize_token(token, username, get_current_session())
+
+
 class JWTTokenVerifier:
-    """Verify JWT Bearer tokens for MCP server authentication."""
+    """Verify JWT Bearer tokens for MCP server authentication.
+
+    A token is rejected when its JWT is invalid or expired, its user does not exist, or it has been
+    revoked, so the client receives a 401 it can answer by refreshing or signing in again.
+    """
 
     async def verify_token(self, token: str) -> AccessToken | None:
         try:
             payload = decode_jwt_token(token)
-            set_mcp_username(payload["username"])
-            set_mcp_token(token)
-            return AccessToken(
-                token=token,
-                client_id=payload["username"],
-                scopes=[],
-                expires_at=int(payload["exp"]),
-            )
+            username = payload["username"]
+            expires_at = int(payload["exp"])
         except (AuthError, KeyError):
             return None
+
+        try:
+            async with session_limiter():
+                await anyio.to_thread.run_sync(_authorize_token, token, username)
+        except AuthError as err:
+            LOG.warning(f"MCP token rejected for {username}: {err}")
+            return None
+
+        set_mcp_username(username)
+        return AccessToken(token=token, client_id=username, scopes=[], expires_at=expires_at)
 
 
 def _configure_mcp_logging() -> None:
@@ -255,12 +277,14 @@ def build_mcp_server(
         test_connection,
     )
     from testgen.mcp.tools.contracts import (
+        diff_contract_versions,
         discard_contract_draft,
         export_contract,
         freeze_contract_version,
         get_contract_metadata,
         import_contract,
         list_contract_versions,
+        update_contract_metadata,
     )
     from testgen.mcp.tools.data_catalog import update_catalog_metadata
     from testgen.mcp.tools.discovery import (
@@ -348,6 +372,7 @@ def build_mcp_server(
         column_profile_fields_resource,
         connection_parameters_index_resource,
         connection_parameters_resource,
+        contract_rule_mappings_resource,
         generation_sets_resource,
         get_test_type,
         glossary_resource,
@@ -548,6 +573,8 @@ def build_mcp_server(
     if not env_hides_source_only_tools:
         tool_wrapper(export_contract)
     tool_wrapper(get_contract_metadata)
+    tool_wrapper(update_contract_metadata)
+    tool_wrapper(diff_contract_versions)
     tool_wrapper(import_contract)
     tool_wrapper(update_catalog_metadata)
 
@@ -557,6 +584,7 @@ def build_mcp_server(
     safe_resource("testgen://hygiene-issue-types", hygiene_issue_types_resource)
     safe_resource("testgen://column-profile-fields", column_profile_fields_resource)
     safe_resource("testgen://glossary", glossary_resource)
+    safe_resource("testgen://contract-rule-mappings", contract_rule_mappings_resource)
     safe_resource("testgen://connection-parameters", connection_parameters_index_resource)
     safe_resource("testgen://connection-parameters/{flavor}", connection_parameters_resource)
 

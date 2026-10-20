@@ -9,7 +9,7 @@ single seam that normalizes them to the API surface — the DB is never changed.
 from enum import StrEnum
 
 from testgen.common.connection_schema import ConnectionMode
-from testgen.common.enums import PII_FLAG_PREFIX_TO_LABEL, JobKey
+from testgen.common.enums import PII_FLAG_PREFIX_TO_LABEL, TEST_SUITE_TYPES, JobKey
 from testgen.common.enums import Disposition as DbDisposition
 from testgen.common.enums import ImpactDimension as DbImpactDimension
 from testgen.common.enums import IssueLikelihood as DbIssueLikelihood
@@ -333,6 +333,7 @@ class AuthenticationMethod(StrEnum):
     access_keys = "access_keys"
     iam_role = "iam_role"
     account_key = "account_key"
+    public = "public"
 
 
 # ``ConnectionMode`` members are the display labels the connection form uses
@@ -349,6 +350,7 @@ AUTHENTICATION_FROM_MODE: dict[ConnectionMode, AuthenticationMethod] = {
     ConnectionMode.ACCESS_KEYS: AuthenticationMethod.access_keys,
     ConnectionMode.IAM_ROLE: AuthenticationMethod.iam_role,
     ConnectionMode.ACCOUNT_KEY: AuthenticationMethod.account_key,
+    ConnectionMode.PUBLIC: AuthenticationMethod.public,
 }
 
 
@@ -402,3 +404,7 @@ MonitorSensitivity = StrEnum("MonitorSensitivity", {m.name: m.value for m in Pre
 MonitorSensitivity.__doc__ = (
     "How readily monitors flag a deviation: ``high`` flags smaller deviations, ``low`` only large ones."
 )
+
+
+TestSuiteType = StrEnum("TestSuiteType", {m.value: m.value for m in TEST_SUITE_TYPES})  # type: ignore[misc]
+TestSuiteType.__doc__ = "The type of a test suite: ``regular`` or ``contract``."

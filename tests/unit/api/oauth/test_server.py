@@ -176,8 +176,10 @@ def test_refresh_token_replay_from_public_client_revokes_its_chain(mock_get_sess
     mock_session.execute.assert_called_once()
     statement = mock_session.execute.call_args.args[0]
     sql = str(statement.compile(dialect=postgresql.dialect()))
-    assert sql.startswith("UPDATE oauth2_tokens SET access_token_revoked_at=")
-    assert "refresh_token_revoked_at=" in sql
+    assert sql.startswith(
+        "UPDATE oauth2_tokens SET access_token_revoked_at=CASE WHEN (oauth2_tokens.access_token_revoked_at = "
+    )
+    assert "refresh_token_revoked_at=CASE WHEN (oauth2_tokens.refresh_token_revoked_at = " in sql
     where = str(statement.whereclause.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
     assert "oauth2_tokens.client_id = 'pub'" in where
     assert f"oauth2_tokens.user_id = '{token.user_id}'" in where
@@ -185,8 +187,11 @@ def test_refresh_token_replay_from_public_client_revokes_its_chain(mock_get_sess
         "coalesce(oauth2_tokens.refresh_token_chain_issued_at, oauth2_tokens.issued_at)"
         f" = {token.refresh_token_chain_issued_at}"
     ) in where
-    assert "oauth2_tokens.refresh_token_revoked_at = 0" in where
-    assert " OR " not in where
+    assert (
+        "(oauth2_tokens.access_token_revoked_at = 0 AND oauth2_tokens.issued_at + oauth2_tokens.expires_in > "
+    ) in where
+    assert " OR oauth2_tokens.refresh_token_revoked_at = 0)" in where
+    assert where.count(" OR ") == 1
     assert f"revoked 1 live tokens in its chain (client_id=pub, user_id={token.user_id})" in caplog.text
     assert "refresh_abc" not in caplog.text
 
@@ -230,33 +235,29 @@ def test_refresh_token_authenticate_returns_none_when_not_found(mock_get_session
     assert result is None
 
 
-def test_revoke_old_credential_revokes_access_but_keeps_refresh_live():
+def test_revoke_old_credential_keeps_confidential_client_tokens_live():
     grant = RefreshTokenGrant.__new__(RefreshTokenGrant)
     grant.request = MagicMock()
     grant.request.client.token_endpoint_auth_method = OAuth2ClientAuthMethod.CLIENT_SECRET_BASIC
-    credential = MagicMock()
-    credential.refresh_token_revoked_at = 0
+    credential = OAuth2Token(access_token_revoked_at=0, refresh_token_revoked_at=0)
 
-    before = int(time.time())
     grant.revoke_old_credential(credential)
-    after = int(time.time())
 
-    assert before <= credential.access_token_revoked_at <= after
+    assert credential.access_token_revoked_at == 0
     assert credential.refresh_token_revoked_at == 0
 
 
-def test_revoke_old_credential_revokes_refresh_for_public_client():
+def test_revoke_old_credential_revokes_only_refresh_for_public_client():
     grant = RefreshTokenGrant.__new__(RefreshTokenGrant)
     grant.request = MagicMock()
     grant.request.client.token_endpoint_auth_method = OAuth2ClientAuthMethod.NONE
-    credential = MagicMock()
-    credential.refresh_token_revoked_at = 0
+    credential = OAuth2Token(access_token_revoked_at=0, refresh_token_revoked_at=0)
 
     before = int(time.time())
     grant.revoke_old_credential(credential)
     after = int(time.time())
 
-    assert before <= credential.access_token_revoked_at <= after
+    assert credential.access_token_revoked_at == 0
     assert before <= credential.refresh_token_revoked_at <= after
 
 
@@ -657,7 +658,7 @@ def test_public_client_refresh_rotates_and_revokes_old_refresh_token(store, http
     assert second["refresh_token"] != first["refresh_token"]
     old = store.by_refresh(first["refresh_token"])
     assert old.refresh_token_revoked_at
-    assert old.access_token_revoked_at
+    assert not old.access_token_revoked_at
 
     reuse = http.post(
         "/oauth/token",
@@ -710,7 +711,7 @@ def test_confidential_client_refresh_keeps_refresh_token(store, http):
     assert resp.status_code == 200
     assert "refresh_token" not in resp.json()
     old = store.by_refresh(first["refresh_token"])
-    assert old.access_token_revoked_at
+    assert not old.access_token_revoked_at
     assert not old.refresh_token_revoked_at
 
 
@@ -793,6 +794,34 @@ def test_public_client_revokes_its_token_without_secret(store, http):
 
     assert resp.status_code == 200
     assert store.by_refresh(issued["refresh_token"]).refresh_token_revoked_at
+
+
+@pytest.mark.parametrize(
+    ("auth_method", "headers", "chain_revoked"),
+    [
+        pytest.param("none", {}, True, id="public"),
+        pytest.param("client_secret_basic", _basic("client", SECRET), False, id="confidential"),
+    ],
+)
+def test_revoking_a_refresh_token_revokes_a_public_clients_chain(store, http, auth_method, headers, chain_revoked):
+    store.add_client("client", auth_method)
+    form = _code_form("client" if auth_method == "none" else None, store.add_code("client"))
+    issued = http.post("/oauth/token", data=form, headers=headers).json()
+    form = {"token": issued["refresh_token"], "token_type_hint": "refresh_token"}
+    if auth_method == "none":
+        form["client_id"] = "client"
+
+    with patch("testgen.api.oauth.server._revoke_chain") as mock_revoke_chain:
+        resp = http.post("/oauth/revoke", data=form, headers=headers)
+
+    assert resp.status_code == 200
+    row = store.by_refresh(issued["refresh_token"])
+    assert row.access_token_revoked_at
+    assert row.refresh_token_revoked_at
+    if chain_revoked:
+        mock_revoke_chain.assert_called_once_with(row)
+    else:
+        mock_revoke_chain.assert_not_called()
 
 
 def test_public_client_revokes_with_a_bearer_header(store, http):

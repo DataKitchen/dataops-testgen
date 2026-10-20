@@ -61,11 +61,11 @@ def _run(suite, version=None, *, target=None, loaded=None, term_total=3, active=
 
     with (
         patch("testgen.mcp.tools.execution.resolve_test_suite", return_value=suite),
-        patch("testgen.mcp.tools.execution.resolve_contract_version", return_value=target),
-        patch("testgen.mcp.tools.execution.get_current_session") as session,
+        patch("testgen.common.contract_service.version_by_number", return_value=target),
+        patch("testgen.common.contract_service.get_current_session") as session,
         patch.object(SuiteVersion, "get", return_value=loaded),
         patch.object(SuiteVersion, "is_active", return_value=active),
-        patch("testgen.mcp.tools.execution.TestDefinition.list_for_suite", return_value=([], term_total)),
+        patch("testgen.common.contract_service.TestDefinition.list_for_suite", return_value=([], term_total)),
         patch("testgen.mcp.tools.execution.JobExecution.submit", return_value=MagicMock(id=uuid4())) as submit,
     ):
         session.return_value.scalar.return_value = uuid4()
@@ -104,12 +104,12 @@ def test_running_a_version_with_no_active_tests_is_refused(db_session_mock):
 
 def test_only_active_tests_count_toward_a_runnable_version(db_session_mock):
     draft = SuiteVersion(id=uuid4(), version=4)
-    with patch("testgen.mcp.tools.execution.TestDefinition.list_for_suite", return_value=([], 3)) as listing:
+    with patch("testgen.common.contract_service.TestDefinition.list_for_suite", return_value=([], 3)) as listing:
         from testgen.mcp.tools.execution import run_tests
 
         with (
             patch("testgen.mcp.tools.execution.resolve_test_suite", return_value=_contract_suite()),
-            patch("testgen.mcp.tools.execution.resolve_contract_version", return_value=draft),
+            patch("testgen.common.contract_service.version_by_number", return_value=draft),
             patch.object(SuiteVersion, "is_active", return_value=False),
             patch("testgen.mcp.tools.execution.JobExecution.submit", return_value=MagicMock(id=uuid4())),
         ):

@@ -1,16 +1,26 @@
 """MCP tools for data contracts — exporting a version, reading its metadata document, listing, freezing and
 discarding versions, and importing an ODCS document."""
 
+import copy
 import hashlib
+import hmac
+import json
+import re
+import secrets
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import Annotated
+from enum import StrEnum
+from typing import Annotated, Any
+from uuid import UUID
 
 import yaml
 from pydantic import Field
 from sqlalchemy import select
+from sqlalchemy.types import TypeDecorator
 
 from testgen import settings
 from testgen.common import contract_creation, contract_import, contract_service
+from testgen.common.auth import get_jwt_signing_key
 from testgen.common.contract_document import PROFILED_VALUES
 from testgen.common.contract_import import (
     ContractIdentityError,
@@ -18,16 +28,18 @@ from testgen.common.contract_import import (
     ContractImportPlan,
     ContractTermReason,
 )
-from testgen.common.contract_service import InvalidContractDocumentError
+from testgen.common.contract_service import CheckableRuleError, InvalidContractDocumentError, OwnedFieldError
 from testgen.common.database.test_suite_service import validate_test_suite_fields
 from testgen.common.enums import JOB_STATUS_LABEL, SuiteType
 from testgen.common.flavors import SqlFlavorCode
+from testgen.common.merge_patch import apply_merge_patch
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.suite_version import SuiteVersion, VersionState, format_version, version_state
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestType
+from testgen.common.models.test_definition import MANAGED_TEST_TYPES, TestDefinition, TestType
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.odcs.quality_rules import CONVERSION_PROPERTIES
 from testgen.common.test_definition_export_import_service import ImportAction
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import mcp_permission
@@ -38,12 +50,15 @@ from testgen.mcp.tools.common import (
     format_page_info,
     parse_enum,
     raise_validation_error,
+    render_diff_table,
     resolve_contract,
+    resolve_contract_version,
     resolve_table_group,
     validate_limit,
     validate_page,
 )
 from testgen.mcp.tools.markdown import MdDoc, format_datetime
+from testgen.mcp.tools.test_definitions import CALIBRATION_SHAPED_PARAM_COLUMNS
 
 _DOC_GROUP = DocGroup.CONTRACTS
 
@@ -110,9 +125,10 @@ class _DocumentChunk:
 
 
 # Document fields that can carry values from the source data: a column's value bounds, profiled
-# value bounds, examples and allowed values, and a quality rule's thresholds, arguments, query and
-# implementation. A value a person typed cannot be told apart from one taken from the data, so
-# under source-data protection they are dropped uniformly.
+# value bounds, examples and allowed values, and a quality rule's thresholds, arguments,
+# implementation and recorded baselines. A value a person typed cannot be told apart from one taken from the data, so
+# under source-data protection each is hidden uniformly. A rule's query is shown, as a test's
+# custom query is.
 _SOURCE_VALUE_TYPE_OPTIONS = frozenset({"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"})
 _SOURCE_VALUE_RULE_FIELDS = frozenset({
     "mustBe",
@@ -124,66 +140,167 @@ _SOURCE_VALUE_RULE_FIELDS = frozenset({
     "mustBeBetween",
     "mustNotBeBetween",
     "arguments",
-    "query",
     "implementation",
 })
 _SOURCE_VALUE_PROPERTY_FIELDS = frozenset({"examples", "enum"})
-_OMITTED_FIELDS = (
+_HIDDEN_FIELDS = (
     "`logicalTypeOptions` " + ", ".join(f"`{key}`" for key in sorted(_SOURCE_VALUE_TYPE_OPTIONS)),
-    f"`{PROFILED_VALUES}` `maximum`, `minimum`",
+    f"`{PROFILED_VALUES}` " + ", ".join(f"`{key}`" for key in sorted(_SOURCE_VALUE_TYPE_OPTIONS)),
     ", ".join(f"`{key}`" for key in sorted(_SOURCE_VALUE_PROPERTY_FIELDS)),
     "quality rule " + ", ".join(f"`{key}`" for key in sorted(_SOURCE_VALUE_RULE_FIELDS)),
+    "quality rule `testgen` " + ", ".join(f"`{key}`" for key in sorted(CONVERSION_PROPERTIES)),
 )
+_PLACEHOLDER = re.compile(r"<hidden:([0-9a-f]{16})\.([0-9a-f]{16})>")
+_NOT_FOUND = object()
 
 
-def _without_bounds(options: dict) -> dict:
-    return {option: value for option, value in options.items() if option not in _SOURCE_VALUE_TYPE_OPTIONS}
+@dataclass(frozen=True)
+class _HiddenSlot:
+    container: dict
+    key: str
+    path: str
 
 
-def _without_profiled_bounds(entries: list) -> list:
-    """``entries`` with the value bounds dropped from a ``profiledValues`` entry, and the entry
-    dropped when nothing else is left in it."""
-    kept = []
-    for entry in entries:
-        if (
-            isinstance(entry, dict) and entry.get("property") == PROFILED_VALUES
-            and isinstance(entry.get("value"), dict)
-        ):
-            if not (values := _without_bounds(entry["value"])):
-                continue
-            entry = {**entry, "value": values}
-        kept.append(entry)
-    return kept
-
-
-def _without_source_values(node: object) -> object:
-    """A copy of a metadata document node without the fields that can carry source-data values:
-    ``examples``, ``enum``, the value bounds of ``logicalTypeOptions`` and ``profiledValues``, and
-    quality-rule thresholds, arguments, queries and implementations."""
+def _hidden_slots(node: Any, path: str = "$", in_quality: bool = False) -> Iterator[_HiddenSlot]:
+    """Each field of a metadata document node that can carry source-data values: ``examples``,
+    ``enum``, the value bounds of ``logicalTypeOptions`` and ``profiledValues``, and quality-rule
+    thresholds, arguments, implementations and ``testgen`` baseline properties."""
     if isinstance(node, list):
-        return [_without_source_values(item) for item in node]
+        for index, item in enumerate(node):
+            yield from _hidden_slots(item, f"{path}[{index}]", in_quality)
+        return
     if not isinstance(node, dict):
-        return node
-    kept = {}
+        return
     for key, value in node.items():
-        if key in _SOURCE_VALUE_PROPERTY_FIELDS:
+        child = f"{path}.{key}"
+        if key in _SOURCE_VALUE_PROPERTY_FIELDS or (in_quality and key in _SOURCE_VALUE_RULE_FIELDS):
+            yield _HiddenSlot(node, key, child)
             continue
         if key == "logicalTypeOptions" and isinstance(value, dict):
-            value = _without_bounds(value)
-            if not value:
-                continue
+            yield from _bound_slots(value, child)
         elif key == "customProperties" and isinstance(value, list):
-            value = _without_profiled_bounds(value)
-            if not value:
-                continue
-        elif key == "quality" and isinstance(value, list):
-            value = [
-                {field: v for field, v in rule.items() if field not in _SOURCE_VALUE_RULE_FIELDS}
-                if isinstance(rule, dict) else rule
-                for rule in value
-            ]
-        kept[key] = _without_source_values(value)
-    return kept
+            for index, entry in enumerate(value):
+                if (
+                    isinstance(entry, dict) and entry.get("property") == PROFILED_VALUES
+                    and isinstance(entry.get("value"), dict)
+                ):
+                    yield from _bound_slots(entry["value"], f"{child}[{index}].value")
+                elif (
+                    in_quality and isinstance(entry, dict) and entry.get("vendor") == "testgen"
+                    and entry.get("property") in CONVERSION_PROPERTIES and "value" in entry
+                ):
+                    yield _HiddenSlot(entry, "value", f"{child}[{index}].value")
+        yield from _hidden_slots(value, child, in_quality=key == "quality")
+
+
+def _bound_slots(options: dict, path: str) -> Iterator[_HiddenSlot]:
+    for option in options:
+        if option in _SOURCE_VALUE_TYPE_OPTIONS:
+            yield _HiddenSlot(options, option, f"{path}.{option}")
+
+
+def _placeholder_key() -> bytes:
+    return hmac.new(get_jwt_signing_key(), b"contract-hidden-values", hashlib.sha256).digest()
+
+
+def _value_digest(key: bytes, salt: str, value: Any) -> str:
+    canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()
+    return hmac.new(key, salt.encode() + b"\0" + canonical, hashlib.sha256).hexdigest()[:16]
+
+
+def _placeholder(key: bytes, value: Any) -> str:
+    """A placeholder that stands for ``value`` in reads under source-data protection.
+
+    A random salt and a keyed digest of the salt with the value. Placeholders for equal values
+    differ, and without the server's key a placeholder can neither be traced back to its value
+    nor compared with another one.
+    """
+    salt = secrets.token_hex(8)
+    return f"<hidden:{salt}.{_value_digest(key, salt, value)}>"
+
+
+def _with_placeholders(node: Any) -> Any:
+    """A copy of a metadata document node with each value that can carry source data replaced by a placeholder."""
+    key = _placeholder_key()
+    masked = copy.deepcopy(node)
+    for slot in list(_hidden_slots(masked)):
+        slot.container[slot.key] = _placeholder(key, slot.container[slot.key])
+    return masked
+
+
+def _with_comparable_digests(node: Any, key: bytes) -> Any:
+    """A copy of a metadata document node with each value that can carry source data replaced by
+    an unsalted digest under ``key``, so equal values stay equal for a comparison."""
+    masked = copy.deepcopy(node)
+    for slot in list(_hidden_slots(masked)):
+        slot.container[slot.key] = _value_digest(key, "", slot.container[slot.key])
+    return masked
+
+
+def _resolve_placeholders(document: Any, stored: Any) -> Any:
+    """A copy of ``document`` with each placeholder replaced by the stored value it stands for.
+
+    A placeholder resolves only as the whole value of a field that can carry source data, so a
+    hidden value can never be moved where reads would show it.
+
+    Raises ``MCPUserError`` for a placeholder anywhere else, or one that stands for no value
+    ``stored`` holds.
+    """
+    key: bytes | None = None
+    stored_values = [slot.container[slot.key] for slot in _hidden_slots(stored)]
+    resolved = copy.deepcopy(document)
+    stale = []
+    for slot in list(_hidden_slots(resolved)):
+        value = slot.container[slot.key]
+        if isinstance(value, str) and (match := _PLACEHOLDER.fullmatch(value)):
+            salt, digest = match.groups()
+            key = key or _placeholder_key()
+            found = next(
+                (stored for stored in stored_values if hmac.compare_digest(_value_digest(key, salt, stored), digest)),
+                _NOT_FOUND,
+            )
+            if found is _NOT_FOUND:
+                stale.append(slot.path)
+                slot.container[slot.key] = None
+            else:
+                slot.container[slot.key] = copy.deepcopy(found)
+    if misplaced := _placeholder_paths(_blank_placeholder_slots(document), "$"):
+        raise MCPUserError(
+            "No changes saved. A `<hidden:…>` placeholder can only be the whole value of a field that reads "
+            f"hide. Found at: {', '.join(f'`{path}`' for path in misplaced)}."
+        )
+    if stale:
+        raise MCPUserError(
+            "No changes saved. These placeholders stand for values the contract no longer holds, so the document "
+            f"changed after it was read: {', '.join(f'`{path}`' for path in stale)}. Read it again with "
+            "`get_contract_metadata`."
+        )
+    return resolved
+
+
+def _blank_placeholder_slots(document: Any) -> Any:
+    blanked = copy.deepcopy(document)
+    for slot in list(_hidden_slots(blanked)):
+        if isinstance(slot.container[slot.key], str) and _PLACEHOLDER.fullmatch(slot.container[slot.key]):
+            slot.container[slot.key] = None
+    return blanked
+
+
+def _placeholder_paths(node: Any, path: str) -> list[str]:
+    if isinstance(node, str):
+        return [path] if _PLACEHOLDER.search(node) else []
+    if isinstance(node, list):
+        return [found for index, item in enumerate(node) for found in _placeholder_paths(item, f"{path}[{index}]")]
+    if isinstance(node, dict):
+        return [
+            found
+            for key, value in node.items()
+            for found in (
+                ([f"{path}.{key}"] if _PLACEHOLDER.search(str(key)) else [])
+                + _placeholder_paths(value, f"{path}.{key}")
+            )
+        ]
+    return []
 
 
 @mcp_source_data_only
@@ -245,6 +362,44 @@ def export_contract(
     return doc.render()
 
 
+def _narrow(
+    document: dict[str, Any], section: str | None, table_name: str | None, column_name: str | None
+) -> dict[str, Any]:
+    """The part of ``document`` a read asked for.
+
+    A table or column keeps the ``schema`` entries around it, so the result reads as a document
+    fragment rather than a bare value.
+    """
+    if column_name and not table_name:
+        raise MCPUserError("`column_name` requires `table_name`.")
+    if table_name:
+        if section not in (None, "schema"):
+            raise MCPUserError(f"Tables are in the `schema` section, not `{section}`. Omit `section` or pass `schema`.")
+        section = "schema"
+    if section is None:
+        return document
+    if section not in document:
+        present = ", ".join(f"`{key}`" for key in document) or "none"
+        raise MCPUserError(f"This document has no `{section}` section. Its sections are {present}.")
+    if not table_name:
+        return {section: document[section]}
+
+    tables = [table for table in document.get("schema") or [] if isinstance(table, dict)]
+    table = next((table for table in tables if table.get("name") == table_name), None)
+    if table is None:
+        names = ", ".join(f"`{table.get('name')}`" for table in tables) or "none"
+        raise MCPUserError(f"The document declares no table `{table_name}`. Its tables are {names}.")
+    if not column_name:
+        return {"schema": [table]}
+
+    properties = [prop for prop in table.get("properties") or [] if isinstance(prop, dict)]
+    prop = next((prop for prop in properties if prop.get("name") == column_name), None)
+    if prop is None:
+        names = ", ".join(f"`{prop.get('name')}`" for prop in properties) or "none"
+        raise MCPUserError(f"Table `{table_name}` declares no column `{column_name}`. Its columns are {names}.")
+    return {"schema": [{"name": table_name, "properties": [prop]}]}
+
+
 @with_database_session
 @mcp_permission("view")
 def get_contract_metadata(
@@ -258,6 +413,18 @@ def get_contract_metadata(
             "version in force.",
         ),
     ] = None,
+    section: Annotated[
+        str | None,
+        Field(description="Top-level key of the document to return, e.g. `schema`, `team`, or `support`."),
+    ] = None,
+    table_name: Annotated[
+        str | None,
+        Field(description="Table to return from the `schema` section. Implies `section='schema'`."),
+    ] = None,
+    column_name: Annotated[
+        str | None,
+        Field(description="Column of `table_name` to return. Requires `table_name`."),
+    ] = None,
     chunk: Annotated[
         int,
         Field(
@@ -266,18 +433,17 @@ def get_contract_metadata(
         ),
     ] = 1,
 ) -> str:
-    """Read one version of a contract's metadata document.
+    """Read a contract's metadata document, whole or one section, table, or column.
 
-    Returns the contract's descriptive half as ODCS YAML: its tables and columns with their types
-    and descriptions, governance attributes and servers. The contract's terms -- its tests -- are
-    not included; ``list_tests`` returns them, and, where source data is not protected,
-    ``export_contract`` returns the full document with them. A large document arrives in chunks: the first response says how many there are, and
-    appending them in order reproduces the document. Every chunk carries the whole document's
-    SHA-256; a chunk whose digest differs from the first means the document changed in between, so
-    start again from chunk 1.
+    Returns the document as ODCS YAML: tables and columns with their types and descriptions,
+    governance attributes, team, support, and servers. The contract's tests are not in it:
+    ``list_tests`` returns them, and, where source data is not protected, ``export_contract``
+    returns the full document with them. Change this document with ``update_contract_metadata``.
 
-    Under source-data protection, fields that can hold values from the data, such as observed
-    minimums and maximums, are left out, and the response lists them.
+    A large document arrives in chunks; append them in order. Every chunk carries the whole
+    document's SHA-256, and a different digest means the document changed: start again from chunk 1.
+
+    Under source-data protection, each value that can come from the data shows as a placeholder.
     """
     suite = resolve_contract(test_suite_id)
     try:
@@ -286,9 +452,9 @@ def get_contract_metadata(
         raise MCPUserError(str(e)) from e
 
     hide_source_data = mcp_source_data_protected()
-    document = target.metadata_document or {}
+    document = _narrow(target.metadata_document or {}, section, table_name, column_name)
     if hide_source_data:
-        document = _without_source_values(document)
+        document = _with_placeholders(document)
     text = yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
     selected = _DocumentChunk.select(text, chunk)
 
@@ -298,9 +464,21 @@ def get_contract_metadata(
         "Version",
         format_version(target.version, version_state(target.frozen_at, SuiteVersion.is_active(target.id, suite.id))),
     )
+    filters = [
+        f"{label} `{value}`"
+        for label, value in (("section", section), ("table", table_name), ("column", column_name))
+        if value
+    ]
+    if filters:
+        doc.field("Filters", ", ".join(filters))
     selected.add_fields(doc)
     if hide_source_data:
-        doc.field("Omitted Fields", "; ".join(_OMITTED_FIELDS))
+        doc.field("Hidden Fields", "; ".join(_HIDDEN_FIELDS))
+        doc.text(
+            "Each hidden value shows as a `<hidden:…>` placeholder. To keep a value when changing the document "
+            "with `update_contract_metadata`, send its placeholder back as the whole value of a hidden field; "
+            "leave it out to remove the value."
+        )
     if chunk == 1:
         doc.text(
             "The contract's terms are not included; `list_tests` returns them."
@@ -311,6 +489,335 @@ def get_contract_metadata(
     selected.add_body(doc, "get_contract_metadata")
 
     return doc.render()
+
+
+class MetadataUpdateMode(StrEnum):
+    MERGE = "merge"
+    REPLACE = "replace"
+
+
+@with_database_session
+@mcp_permission("edit")
+def update_contract_metadata(
+    test_suite_id: Annotated[str, Field(description="UUID of the contract, e.g. from `list_test_suites`.")],
+    patch: Annotated[
+        dict[str, Any],
+        Field(description="A JSON merge patch against the document, or with `mode='replace'` the whole document."),
+    ],
+    mode: Annotated[
+        str,
+        Field(description="`merge` (default) applies `patch` as a JSON merge patch; `replace` stores it as the document."),
+    ] = "merge",
+) -> str:
+    """Change a contract's metadata document, in its draft.
+
+    The change is saved to the contract's draft, opening one when there is none. `merge` follows
+    RFC 7386: an object merges into the document, `null` removes a field, and any other value
+    replaces what is there. An array is replaced whole, so to change one table in `schema` or one
+    column in its `properties`, send the whole list.
+
+    A quality rule that a test type checks is refused: add it as a test with `create_test`. A rule
+    no test type checks is saved marked unverifiable, and is exported with the contract but not
+    run. `apiVersion`, `kind`, `id`, and `version` cannot be changed. A change that would make the
+    document invalid is refused with the path of each problem, and nothing is saved.
+
+    Under source-data protection, send each `<hidden:…>` placeholder back to keep its value.
+    """
+    parsed_mode = parse_enum(mode, MetadataUpdateMode, "mode")
+    suite = resolve_contract(test_suite_id)
+    current = SuiteVersion.draft_for(suite.id) or SuiteVersion.in_force_for(suite.id)
+    if current is None:
+        raise MCPUserError(f"Contract `{suite.test_suite}` has no version to change.")
+    before = copy.deepcopy(current.metadata_document or {})
+    patch = _resolve_placeholders(patch, before)
+    document = patch if parsed_mode is MetadataUpdateMode.REPLACE else apply_merge_patch(before, patch)
+    hide_source_data = mcp_source_data_protected()
+
+    try:
+        saved = contract_service.save_metadata_document(suite, document)
+    except CheckableRuleError as e:
+        raise_validation_error(
+            e.problems,
+            "No changes saved. Test types check these rules, so add each one as a test with `create_test`:",
+        )
+    except OwnedFieldError as e:
+        raise_validation_error(e.problems, "No changes saved.")
+    except InvalidContractDocumentError as e:
+        raise_validation_error(
+            _problem_lines(e.problems, hide_source_data), "No changes saved. The document would not be valid ODCS:"
+        )
+    except ValueError as e:
+        raise MCPUserError(str(e)) from e
+
+    version = SuiteVersion.get(saved.version_id)
+    doc = MdDoc()
+    doc.heading(1, f"Contract `{suite.test_suite}` metadata updated")
+    doc.field("Version", format_version(version.version, VersionState.DRAFT))
+    doc.field("Mode", parsed_mode.value)
+    _render_document_changes(doc, before, version.metadata_document or {}, hide_source_data, heading="Changes")
+    if saved.unverifiable_rules:
+        doc.heading(2, f"Stored as unverifiable ({len(saved.unverifiable_rules)})")
+        doc.text("No test type checks these rules. They are exported with the contract and are not run.")
+        doc.bullets([_inline_text(label) for label in saved.unverifiable_rules])
+    if saved.untested_declarations:
+        doc.heading(2, f"Declarations with no test ({len(saved.untested_declarations)})")
+        doc.text("A test type checks these declarations, but the contract holds no such test on the column yet.")
+        doc.bullets([_inline_text(label) for label in saved.untested_declarations])
+    if saved.overridden_declarations:
+        doc.heading(2, f"Declarations set by a test ({len(saved.overridden_declarations)})")
+        doc.text(
+            "A test on the column declares these with a different value, and the exported contract shows the "
+            "test's value. To change it, change the test with `update_test`."
+        )
+        doc.bullets([_inline_text(label) for label in saved.overridden_declarations])
+    if saved.unresolved_declarations:
+        doc.heading(2, f"Declarations no test checks ({len(saved.unresolved_declarations)})")
+        doc.text("No test type checks exactly these declarations. They stay in the contract's document.")
+        doc.bullets([_inline_text(label) for label in saved.unresolved_declarations])
+    if saved.problems:
+        doc.heading(2, f"Problems the document already had ({len(saved.problems)})")
+        doc.text("Freezing this draft is refused until these are fixed.")
+        doc.bullets([_inline_text(problem) for problem in _problem_lines(saved.problems, hide_source_data)])
+    return doc.render()
+
+
+def _problem_lines(problems: list[str], hide_source_data: bool) -> list[str]:
+    """``problems``, each reduced to its path under source-data protection, since a validation
+    message quotes the value it rejects."""
+    if not hide_source_data:
+        return problems
+    return [
+        f"{problem.partition(': ')[0]}: does not match the ODCS schema." if problem.startswith("$") else problem
+        for problem in problems
+    ]
+
+
+# Columns a term's diff compares: what the term checks and how, never bookkeeping.
+_TERM_DIFF_FIELDS = (
+    "test_type", "schema_name", "table_name", "column_name", "test_description", "test_active", "severity",
+    "skip_errors", "baseline_ct", "baseline_unique_ct", "baseline_value", "baseline_value_ct", "threshold_value",
+    "baseline_sum", "baseline_avg", "baseline_sd", "lower_tolerance", "upper_tolerance", "subset_condition",
+    "groupby_names", "having_condition", "window_date_column", "window_days", "match_schema_name",
+    "match_table_name", "match_column_names", "match_subset_condition", "match_groupby_names",
+    "match_having_condition", "history_calculation", "history_calculation_upper", "history_lookback",
+    "custom_query", "lock_refresh", "impact_dimension", "external_url", "custom_metadata",
+)
+
+
+class TermChangeKind(StrEnum):
+    ADDED = "Added"
+    REMOVED = "Removed"
+    EDITED = "Edited"
+    REGENERATED = "Regenerated"
+    REGENERATED_AND_EDITED = "Regenerated and edited"
+    CHANGED = "Changed"
+
+
+@dataclass(frozen=True)
+class _TermChange:
+    kind: TermChangeKind
+    before: TestDefinition | None
+    after: TestDefinition | None
+    fields: list[str]
+
+    @property
+    def term(self) -> TestDefinition:
+        return self.after or self.before
+
+
+@with_database_session
+@mcp_permission("view")
+def diff_contract_versions(
+    test_suite_id: Annotated[str, Field(description="UUID of the contract, e.g. from `list_test_suites`.")],
+    from_version: Annotated[int, Field(description="Version number to compare from, e.g. from `list_contract_versions`.")],
+    to_version: Annotated[
+        int | None,
+        Field(description="Version number to compare to. Defaults to the draft where one exists, otherwise the version in force."),
+    ] = None,
+    limit: Annotated[int, Field(description="Maximum number of changed tests per page (default 20, max 100).")] = 20,
+    page: Annotated[int, Field(description="Page number, starting from 1 (default 1).")] = 1,
+) -> str:
+    """Compare two versions of a contract, test by test and in its metadata.
+
+    Lists the tests added, removed, or changed between the two versions. Each changed test shows the
+    fields that differ, and whether test generation rewrote it, someone edited it, or both. The
+    first page also lists what changed in the metadata document, by path.
+    """
+    validate_page(page)
+    validate_limit(limit, 100)
+    suite = resolve_contract(test_suite_id)
+    source = resolve_contract_version(suite, from_version)
+    target = (
+        resolve_contract_version(suite, to_version)
+        if to_version is not None
+        else SuiteVersion.draft_for(suite.id) or SuiteVersion.in_force_for(suite.id)
+    )
+    if target.id == source.id:
+        raise MCPUserError(f"`from_version` and `to_version` are both v{source.version}. Pick two different versions.")
+
+    changes = _term_changes(source.id, target.id)
+    counts = {kind: sum(1 for change in changes if change.kind is kind) for kind in TermChangeKind}
+    page_changes = changes[(page - 1) * limit : page * limit]
+    labels = _test_type_labels({change.term.test_type for change in page_changes})
+    hide_source_data = mcp_source_data_protected()
+
+    doc = MdDoc()
+    doc.heading(1, f"Contract `{suite.test_suite}`: {_version_label(source, suite)} to {_version_label(target, suite)}")
+    for kind, count in counts.items():
+        if count:
+            doc.field(kind.value, count)
+    if not changes:
+        doc.text("No test changed.")
+    if page == 1:
+        _render_document_changes(doc, source.metadata_document or {}, target.metadata_document or {}, hide_source_data)
+
+    if changes and not page_changes:
+        doc.text(f"No tests on page {page} (total: {len(changes)}).")
+    elif changes:
+        doc.heading(2, "Tests")
+        doc.text(format_page_info(len(changes), page, limit))
+        doc.table(
+            ["Change", "Rule ID", "Test Type", "Table", "Column", "Fields"],
+            [
+                [
+                    change.kind.value,
+                    change.term.contract_term_id,
+                    labels.get(change.term.test_type, change.term.test_type),
+                    change.term.table_name,
+                    change.term.column_name,
+                    ", ".join(change.fields) or None,
+                ]
+                for change in page_changes
+            ],
+        )
+        for change in page_changes:
+            if change.before is None or change.after is None:
+                continue
+            doc.heading(3, f"{change.kind.value}: {MdDoc.code(change.term.contract_term_id or str(change.term.id))}")
+            hidden = [field for field in change.fields if hide_source_data and field in CALIBRATION_SHAPED_PARAM_COLUMNS]
+            shown = [field for field in change.fields if field not in hidden]
+            render_diff_table(
+                doc,
+                {field: getattr(change.before, field) for field in shown},
+                {field: getattr(change.after, field) for field in shown},
+                attrs=shown,
+                labels={},
+            )
+            if hidden:
+                doc.field("Omitted Fields", ", ".join(hidden))
+        if footer := format_page_footer(len(changes), page, limit):
+            doc.text(footer)
+    return doc.render()
+
+
+def _version_label(version: SuiteVersion, suite: TestSuite) -> str:
+    is_active = version.frozen_at is not None and SuiteVersion.is_active(version.id, suite.id)
+    return format_version(version.version, version_state(version.frozen_at, is_active))
+
+
+def _term_changes(source_id: UUID, target_id: UUID) -> list[_TermChange]:
+    """Every test that differs between two versions, matched by rule ID, in table, column and test type order."""
+    before = _terms_by_identity(source_id)
+    after = _terms_by_identity(target_id)
+    changes = []
+    for key in before.keys() | after.keys():
+        old, new = before.get(key), after.get(key)
+        if old is None:
+            changes.append(_TermChange(TermChangeKind.ADDED, None, new, []))
+        elif new is None:
+            changes.append(_TermChange(TermChangeKind.REMOVED, old, None, []))
+        elif fields := [field for field in _TERM_DIFF_FIELDS if _stored_value(old, field) != _stored_value(new, field)]:
+            regenerated = new.last_auto_gen_date != old.last_auto_gen_date
+            edited = new.last_manual_update != old.last_manual_update
+            kind = (
+                TermChangeKind.REGENERATED_AND_EDITED if regenerated and edited
+                else TermChangeKind.REGENERATED if regenerated
+                else TermChangeKind.EDITED if edited
+                else TermChangeKind.CHANGED
+            )
+            changes.append(_TermChange(kind, old, new, fields))
+    return sorted(
+        changes,
+        key=lambda change: (
+            change.term.table_name or "", change.term.column_name or "", change.term.test_type,
+            change.term.contract_term_id or "",
+        ),
+    )
+
+
+def _stored_value(term: TestDefinition, field: str) -> Any:
+    """``term``'s ``field`` as its column stores it, so values the column stores alike compare equal.
+
+    An empty integer is stored as 0 when a test is written through the model, and as NULL when
+    generation writes it, so a copied test would otherwise differ from the one it was copied from.
+    """
+    value = getattr(term, field)
+    column_type = TestDefinition.__table__.c[field].type
+    return column_type.process_bind_param(value, None) if isinstance(column_type, TypeDecorator) else value
+
+
+def _terms_by_identity(version_id: UUID) -> dict[str, TestDefinition]:
+    rows = get_current_session().scalars(
+        select(TestDefinition).where(
+            TestDefinition.version_id == version_id,
+            TestDefinition.test_type.not_in(MANAGED_TEST_TYPES),
+        )
+    ).all()
+    # A row without a rule ID is keyed by its own id, which no other version shares.
+    return {row.contract_term_id or str(row.id): row for row in rows}
+
+
+def _render_document_changes(
+    doc: MdDoc, before: dict[str, Any], after: dict[str, Any], hide_source_data: bool, heading: str = "Metadata document"
+) -> None:
+    if hide_source_data:
+        key = secrets.token_bytes(32)
+        before, after = _with_comparable_digests(before, key), _with_comparable_digests(after, key)
+    changes = _document_changes(before, after, "$")
+    doc.heading(2, heading)
+    if not changes:
+        doc.text("No change.")
+        return
+    doc.table(["Path", "Change"], [[path, kind] for path, kind in changes], code=[0])
+
+
+def _document_changes(before: Any, after: Any, path: str) -> list[tuple[str, str]]:
+    """Each path at which ``after`` differs from ``before``: added, removed or changed.
+
+    Objects are compared key by key, and lists of named objects (tables, columns) item by name, as
+    ``schema[orders]``; any other list that differs is reported changed as a whole.
+    """
+    if before == after:
+        return []
+    if isinstance(before, dict) and isinstance(after, dict):
+        return _keyed_changes(before, after, lambda key: f"{path}.{key}")
+    if _is_named_list(before) and _is_named_list(after):
+        return _keyed_changes(
+            {item["name"]: item for item in before},
+            {item["name"]: item for item in after},
+            lambda name: f"{path}[{name}]",
+        )
+    return [(path, "Changed")]
+
+
+def _keyed_changes(before: dict, after: dict, child_path: Callable[[str], str]) -> list[tuple[str, str]]:
+    changes = []
+    for key in [*before, *(key for key in after if key not in before)]:
+        if key not in after:
+            changes.append((child_path(key), "Removed"))
+        elif key not in before:
+            changes.append((child_path(key), "Added"))
+        else:
+            changes += _document_changes(before[key], after[key], child_path(key))
+    return changes
+
+
+def _is_named_list(value: Any) -> bool:
+    return (
+        isinstance(value, list)
+        and all(isinstance(item, dict) and isinstance(item.get("name"), str) for item in value)
+        and len({item["name"] for item in value}) == len(value)
+    )
 
 
 @with_database_session
@@ -394,7 +901,7 @@ def freeze_contract_version(
     except InvalidContractDocumentError as e:
         raise MCPUserError(
             "The draft cannot be frozen because its document does not validate:\n"
-            + "\n".join(f"- {problem}" for problem in e.problems)
+            + "\n".join(f"- {problem}" for problem in _problem_lines(e.problems, mcp_source_data_protected()))
         ) from e
     except ValueError as e:
         raise MCPUserError(str(e)) from e

@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from testgen.api.deps import db_session, get_authorized_user
 from testgen.api.schedules import router
 from testgen.common.cron_service import describe_cron
-from testgen.common.enums import JobKey, SuiteType
+from testgen.common.enums import TEST_SUITE_TYPES, JobKey
 from testgen.common.models.scheduler import JobSchedule
 
 pytestmark = pytest.mark.unit
@@ -203,13 +203,13 @@ def test_create_schedule_404_without_edit_permission(url):
     assert added == []
 
 
-def test_create_test_run_schedule_resolves_only_regular_suites():
-    """The suite is looked up narrowed to regular suites, so a monitor suite's id finds nothing
-    and a monitor schedule cannot be created here."""
+def test_create_test_run_schedule_resolves_regular_suites_and_contracts():
+    """The suite is looked up narrowed to regular suites and contracts, so a monitor suite's id
+    finds nothing and a monitor schedule cannot be created here."""
     resp, added, _, mock_ts_cls = _post(TEST_RUN_URL, {"cron_expression": "0 3 * * *"}, parent=False)
 
     assert resp.status_code == 404
-    mock_ts_cls.suite_type.in_.assert_called_once_with((SuiteType.REGULAR,))
+    mock_ts_cls.suite_type.in_.assert_called_once_with(TEST_SUITE_TYPES)
     mock_ts_cls.get.assert_called_once_with(TS_ID, mock_ts_cls.suite_type.in_.return_value)
     assert added == []
 

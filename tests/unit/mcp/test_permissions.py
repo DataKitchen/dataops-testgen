@@ -13,7 +13,6 @@ from testgen.mcp.permissions import (
     get_authorized_mcp_user,
     get_project_permissions,
     mcp_permission,
-    set_mcp_token,
     set_mcp_username,
 )
 
@@ -21,11 +20,9 @@ from testgen.mcp.permissions import (
 @pytest.fixture(autouse=True)
 def _reset_contextvars():
     set_mcp_username(None)
-    set_mcp_token(None)
     tok = _mcp_project_permissions.set(_NOT_SET)
     yield
     set_mcp_username(None)
-    set_mcp_token(None)
     _mcp_project_permissions.reset(tok)
 
 
@@ -38,43 +35,30 @@ def test_get_authorized_mcp_user_raises_when_no_username():
 
 
 @patch("testgen.common.models.get_current_session")
-@patch("testgen.common.auth.authorize_token")
+@patch("testgen.common.auth.authorize_user")
 def test_get_authorized_mcp_user_translates_unknown_user_to_auth_error(mock_authorize, mock_get_session):
     """A valid-signature token whose user no longer exists surfaces a clean MCP auth error,
     not the generic 'unexpected error' the boundary returns for raw exceptions."""
     mock_authorize.side_effect = AuthError("User not found")
     set_mcp_username("ghost")
-    set_mcp_token("some_token")
 
     with pytest.raises(MCPAuthenticationError, match="no longer valid"):
         get_authorized_mcp_user()
 
 
 @patch("testgen.common.models.get_current_session")
-@patch("testgen.common.auth.authorize_token")
+@patch("testgen.common.auth.authorize_user")
 def test_get_authorized_mcp_user_returns_user(mock_authorize, mock_get_session):
     user = MagicMock()
     mock_authorize.return_value = user
     mock_session = MagicMock()
     mock_get_session.return_value = mock_session
     set_mcp_username("admin")
-    set_mcp_token("bearer_token")
 
     result = get_authorized_mcp_user()
 
     assert result is user
-    mock_authorize.assert_called_once_with("bearer_token", "admin", mock_session)
-
-
-@patch("testgen.common.models.get_current_session")
-@patch("testgen.common.auth.authorize_token")
-def test_get_authorized_mcp_user_translates_revoked_token_to_auth_error(mock_authorize, mock_get_session):
-    mock_authorize.side_effect = AuthError("Token has been revoked")
-    set_mcp_username("admin")
-    set_mcp_token("revoked_token")
-
-    with pytest.raises(MCPAuthenticationError, match="no longer valid"):
-        get_authorized_mcp_user()
+    mock_authorize.assert_called_once_with("admin", mock_session)
 
 
 # --- _compute_project_permissions ---

@@ -17,11 +17,19 @@ from sqlalchemy.sql.dml import Delete
 from testgen.api.deps import db_session, get_authorized_user
 from testgen.api.schemas import ErrorResponse, ImportRequest, ImportStrictError
 from testgen.api.test_definitions import router
-from testgen.common.enums import SuiteType
-from testgen.common.models.suite_version import FrozenVersionError, SuiteVersion
+from testgen.common.contract_service import NotAContractError, UnknownVersionError
+from testgen.common.enums import TEST_SUITE_TYPES, SuiteType
+from testgen.common.models.suite_version import (
+    FrozenVersionError,
+    RemovedInDraftError,
+    SuiteVersion,
+    UnmatchedInDraftError,
+    VersionState,
+)
 from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.test_definition_export_import_service import (
     _EXISTING_TD_COLUMNS,
+    ContractVersion,
     ExportDocument,
     ExportSource,
     ImportAction,
@@ -33,6 +41,7 @@ from testgen.common.test_definition_export_import_service import (
     ImportResponse,
     ImportStrictViolation,
     ImportSummary,
+    ImportTargetMissing,
     InvalidImportPayload,
     OnAbsence,
     OnMatch,
@@ -41,6 +50,7 @@ from testgen.common.test_definition_export_import_service import (
     TestDefinitionExport,
     _create_td,
     _update_td,
+    import_definitions,
 )
 from tests.unit.sql_assertions import scopes_to_a_version
 
@@ -1968,3 +1978,218 @@ def test_not_found_body_matches_the_declared_model(mock_suite_cls, _perm):
     assert _response_schema_ref(
         "/api/v1/test-suites/{test_suite_id}/test-definition-export", "get", "404"
     ) == {"ErrorResponse"}
+
+
+# --- Contracts ---
+
+
+def _contract_suite():
+    return _make_test_suite(suite_type=SuiteType.CONTRACT)
+
+
+def _import_raising(error):
+    from testgen.api.test_definitions import import_test_definitions
+
+    request = ImportRequest(config=_make_config(mode=ImportMode.apply), payload=_make_payload())
+    with (
+        patch(f"{ENDPOINT_MODULE}.import_definitions", side_effect=error),
+        patch.object(
+            SuiteVersion,
+            "get",
+            side_effect=lambda version_id: SuiteVersion(
+                id=version_id,
+                version={DRAFT_ID: 4}.get(version_id, 2),
+                frozen_at=None if version_id == DRAFT_ID else NOW,
+            ),
+        ),
+        patch.object(SuiteVersion, "is_active", return_value=False),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        import_test_definitions(body=request, test_suite=_contract_suite())
+    return exc_info.value
+
+
+DRAFT_ID = uuid4()
+NOW = datetime(2026, 9, 12, tzinfo=UTC)
+
+
+def test_import_names_a_superseded_row_it_cannot_match():
+    row = uuid4()
+    error = _import_raising(UnmatchedInDraftError(uuid4(), DRAFT_ID, [row]))
+
+    assert error.status_code == 409
+    [entry] = error.detail["errors"]
+    assert entry["code"] == "test_definition_superseded"
+    assert str(row) in entry["detail"]
+    assert "v2 superseded" in entry["detail"] and "v4 draft" in entry["detail"]
+    assert entry["detail"].endswith("Nothing was applied.")
+
+
+def test_import_refuses_a_frozen_version():
+    error = _import_raising(FrozenVersionError(uuid4()))
+
+    assert error.status_code == 409
+    assert error.detail["errors"][0]["code"] == "version_frozen"
+    assert error.detail["errors"][0]["detail"] == "v2 superseded can no longer be edited. Nothing was applied."
+
+
+def test_import_names_a_row_the_draft_removed():
+    row = uuid4()
+    error = _import_raising(RemovedInDraftError(DRAFT_ID, [row]))
+
+    assert error.status_code == 409
+    assert error.detail["errors"][0]["code"] == "test_definition_removed_in_draft"
+    assert f"{row} were removed in v4 draft" in error.detail["errors"][0]["detail"]
+
+
+def test_import_names_a_row_that_no_longer_exists():
+    row = uuid4()
+    error = _import_raising(ImportTargetMissing(row))
+
+    assert error.status_code == 409
+    assert error.detail["errors"] == [
+        {
+            "code": "test_definition_not_found",
+            "detail": f"Test definition {row} no longer exists. Nothing was applied.",
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("mode", "on_new", "expected"),
+    [
+        (ImportMode.apply, OnNew.skip, None),
+        (ImportMode.preview, OnNew.skip, None),
+        (ImportMode.preview, OnNew.create, ContractVersion(number=3, state=VersionState.DRAFT)),
+    ],
+    ids=["apply-writing-nothing", "preview-writing-nothing", "preview-writing-a-row"],
+)
+@patch(f"{SERVICE_MODULE}.DataTable")
+@patch(f"{SERVICE_MODULE}.TableGroup")
+@patch(f"{SERVICE_MODULE}.get_current_session")
+def test_a_contract_import_names_a_version_only_when_it_writes(
+    mock_session_fn, mock_tg_cls, mock_dt_cls, mode, on_new, expected
+):
+    mock_session_fn.return_value.execute.return_value.all.return_value = []
+    mock_tg_cls.get.return_value = _make_table_group()
+    mock_dt_cls.select_table_names.return_value = ["t1"]
+    suite = _make_test_suite(suite_type=SuiteType.CONTRACT)
+    td = _make_import_td(test_type="Alpha", table_name="t1")
+
+    with (
+        patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")),
+        patch(f"{SERVICE_MODULE}.contract_service.import_destination", return_value=(3, VersionState.DRAFT)),
+    ):
+        result = import_definitions(suite, _make_config(mode=mode, on_new=on_new), _make_payload(td))
+
+    assert result.version == expected
+
+
+@pytest.mark.parametrize(
+    ("tables", "expected"),
+    [
+        (["t9"], None),
+        (["t9", "t1"], ContractVersion(number=3, state=VersionState.DRAFT)),
+    ],
+    ids=["refused-writing-nothing", "refused-writing-a-row"],
+)
+@patch(f"{SERVICE_MODULE}.DataTable")
+@patch(f"{SERVICE_MODULE}.TableGroup")
+@patch(f"{SERVICE_MODULE}.get_current_session")
+def test_a_refused_strict_contract_import_names_a_version_only_when_it_would_write(
+    mock_session_fn, mock_tg_cls, mock_dt_cls, tables, expected
+):
+    mock_session_fn.return_value.execute.return_value.all.return_value = []
+    mock_tg_cls.get.return_value = _make_table_group()
+    mock_dt_cls.select_table_names.return_value = ["t1"]
+    suite = _make_test_suite(suite_type=SuiteType.CONTRACT)
+    tds = [_make_import_td(test_type="Alpha", table_name=table) for table in tables]
+
+    with (
+        patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")),
+        patch(f"{SERVICE_MODULE}.contract_service.import_destination", return_value=(3, VersionState.DRAFT)),
+        pytest.raises(ImportStrictViolation) as refused,
+    ):
+        import_definitions(suite, _make_config(mode=ImportMode.apply_strict), _make_payload(*tds))
+
+    assert refused.value.result.version == expected
+
+
+def test_export_of_a_contract_version_reads_that_version():
+    from testgen.api.test_definitions import export_test_definitions
+
+    suite = _contract_suite()
+    version = SuiteVersion(id=uuid4(), version=2)
+    with (
+        patch(f"{ENDPOINT_MODULE}.contract_service.version_by_number", return_value=version) as by_number,
+        patch(f"{ENDPOINT_MODULE}.export_definitions") as export,
+    ):
+        export_test_definitions(test_suite=suite, origin=Origin.both, table_name=None, test_type=None, version=2)
+
+    by_number.assert_called_once_with(suite, 2)
+    assert export.call_args.kwargs == {"version_id": version.id}
+
+
+def test_export_without_a_version_reads_what_the_suite_resolves_to():
+    from testgen.api.test_definitions import export_test_definitions
+
+    with patch(f"{ENDPOINT_MODULE}.export_definitions") as export:
+        export_test_definitions(
+            test_suite=_contract_suite(), origin=Origin.both, table_name=None, test_type=None, version=None
+        )
+
+    assert export.call_args.kwargs == {"version_id": None}
+
+
+@pytest.mark.parametrize(
+    ("error", "code", "detail"),
+    [
+        (
+            NotAContractError(MagicMock()),
+            "not_a_contract",
+            "This test suite is not a contract, so it keeps no versions.",
+        ),
+        (
+            UnknownVersionError(MagicMock(), 9, 3),
+            "unknown_version",
+            "This contract has no version 9. Its versions are v1\u2013v3.",
+        ),
+    ],
+)
+def test_export_refuses_a_version_the_suite_does_not_hold(error, code, detail):
+    from testgen.api.test_definitions import export_test_definitions
+
+    with (
+        patch(f"{ENDPOINT_MODULE}.contract_service.version_by_number", side_effect=error),
+        patch(f"{ENDPOINT_MODULE}.export_definitions") as export,
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        export_test_definitions(
+            test_suite=_make_test_suite(), origin=Origin.both, table_name=None, test_type=None, version=9
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail["errors"] == [{"code": code, "detail": detail}]
+    export.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [("get", "test-definition-export"), ("post", "test-definition-import")],
+)
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch("testgen.api.deps.TestSuite")
+def test_export_and_import_resolve_regular_suites_and_contracts(mock_suite_cls, _perm, method, path):
+    mock_suite_cls.get.return_value = None
+    body = {"json": ImportRequest(config=_make_config(), payload=_make_payload()).model_dump(mode="json")}
+
+    resp = getattr(_client(), method)(f"/api/v1/test-suites/{uuid4()}/{path}", **(body if method == "post" else {}))
+
+    assert resp.status_code == 404
+    mock_suite_cls.suite_type.in_.assert_called_once_with(TEST_SUITE_TYPES)
+
+
+def test_import_409_body_matches_the_declared_model():
+    assert _response_schema_ref("/api/v1/test-suites/{test_suite_id}/test-definition-import", "post", "409") == {
+        "ErrorResponse"
+    }

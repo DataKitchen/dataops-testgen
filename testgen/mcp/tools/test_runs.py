@@ -216,6 +216,7 @@ def get_test_run(
     doc.field("Submitted", summary.created_at)
     doc.field("Started", summary.started_at or "—")
     doc.field("Ended", summary.completed_at or "In progress")
+    _render_run_version(doc, summary)
     duration = format_run_duration(summary.active_seconds, summary.status)
     if duration:
         doc.field("Duration", duration)
@@ -358,10 +359,7 @@ def _render_test_run_section(doc: MdDoc, run: TestRunSummary) -> None:
     doc.field("Submitted", run.created_at)
     doc.field("Started", run.started_at or "—")
     doc.field("Ended", run.completed_at or "In progress")
-    if run.version_label is not None:
-        doc.field("Version", run.version_label)
-        if run.is_preview:
-            doc.field("Preview", "Yes")
+    _render_run_version(doc, run)
     duration = format_run_duration(run.active_seconds, run.status)
     if duration:
         doc.field("Duration", duration)
@@ -380,3 +378,20 @@ def _render_test_run_section(doc: MdDoc, run: TestRunSummary) -> None:
         doc.field("Dismissed", run.dismissed_ct)
     if run.dq_score_testing is not None:
         doc.field("Testing Score", f"{run.dq_score_testing:.1f}")
+
+
+def _render_run_version(doc: MdDoc, run: TestRunSummary) -> None:
+    """Add the contract version a run checked and, when the run does not count as the contract's status, why."""
+    if run.version_label is None:
+        return
+    doc.field("Version", run.version_label)
+    if run.is_preview:
+        doc.field("Preview", "Yes")
+        return
+    run_version = run.run_version
+    if not run_version.checked_version_in_force:
+        doc.field("Counts as contract status", "No, a later version was already frozen when it ran")
+    elif run_version.status not in JobStatus.terminal():
+        doc.field("Counts as contract status", "Not yet, the run has not completed")
+    elif not run_version.counts_as_status:
+        doc.field("Counts as contract status", "No, the run did not complete")

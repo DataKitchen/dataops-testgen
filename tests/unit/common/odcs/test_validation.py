@@ -9,7 +9,7 @@ import testgen
 from testgen.common.database.flavor.salesforce_data360_flavor_service import _TYPE_MAP
 from testgen.common.enums import OdcsDimension, OdcsLogicalType
 from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, ServerType
-from testgen.common.odcs.validation import validate_document
+from testgen.common.odcs.validation import schema_violations, validate_document
 
 pytestmark = pytest.mark.unit
 
@@ -145,3 +145,11 @@ def test_every_catalog_logical_type_is_in_the_schema_enum():
     for flavor, values in emitted.items():
         assert values, f"{flavor}: no logical types"
         assert values <= schema_values, f"{flavor}: {sorted(values - schema_values)} outside the ODCS enum"
+
+
+def test_a_violation_names_the_keys_an_object_may_not_have():
+    document = _minimal_document() | {"bogus": 1, "it's": 2}
+
+    unexpected = {violation.unexpected_keys for violation in schema_violations(document) if violation.path == "$"}
+
+    assert ("bogus", "it's") in unexpected

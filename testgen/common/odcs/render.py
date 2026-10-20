@@ -60,6 +60,17 @@ def _fill_root_fundamentals(document: dict[str, Any], version: SuiteVersion) -> 
         document["apiVersion"] = version.odcs_api_version or ODCS_API_VERSION
 
 
+# The order terms render in. Where two terms declare the same field of a property, the first
+# sets it and the other renders as a quality rule.
+TERM_ORDER = (
+    TestDefinition.table_name,
+    TestDefinition.column_name,
+    TestDefinition.test_type,
+    TestDefinition.contract_term_id,
+    TestDefinition.id,
+)
+
+
 def _terms_for_version(version_id: UUID) -> list[TestDefinition]:
     """Every active term stored against this exact version -- the ones execution runs.
 
@@ -71,13 +82,7 @@ def _terms_for_version(version_id: UUID) -> list[TestDefinition]:
     query = (
         select(TestDefinition)
         .where(TestDefinition.version_id == version_id, TestDefinition.test_active == True)
-        .order_by(
-            TestDefinition.table_name,
-            TestDefinition.column_name,
-            TestDefinition.test_type,
-            TestDefinition.contract_term_id,
-            TestDefinition.id,
-        )
+        .order_by(*TERM_ORDER)
     )
     return list(get_current_session().scalars(query))
 
@@ -311,9 +316,9 @@ def _drop_declarations(document: dict[str, Any]) -> None:
                     del prop["customProperties"]
 
 
-def render_document(version: SuiteVersion) -> dict[str, Any]:
+def render_document(version: SuiteVersion, metadata_document: dict[str, Any] | None = None) -> dict[str, Any]:
     """Merge ``version``'s stored metadata document with its terms, each rendered as a property
-    declaration or a quality rule.
+    declaration or a quality rule. ``metadata_document`` renders in place of the stored one.
 
     A term renders as a declaration when ``property_declaration`` finds one on its declared
     column that no earlier term contradicts (``_declare``), otherwise as a quality rule.
@@ -321,12 +326,13 @@ def render_document(version: SuiteVersion) -> dict[str, Any]:
     Returns a new document; the version's own ``metadata_document`` is never mutated. Raises
     ``OrphanedTermError`` if a term names a table the document does not declare, names a test
     type the catalogue no longer holds, or is column-scoped with no ``column_name`` to attach
-    its rule to; and ``ValueError`` (from ``rule_scope``) if a term's test type is excluded --
+    its rule to; and ``ValueError`` (from ``rule_scope``) if a term's test type is not public --
     none is ever silently dropped or placed somewhere its query would not mean what it claims.
     Terms of a managed test type are left out: they check what the document itself declares,
     so the document is already their assertion.
     """
-    document = copy.deepcopy(version.metadata_document) if version.metadata_document else {}
+    source = version.metadata_document if metadata_document is None else metadata_document
+    document = copy.deepcopy(source) if source else {}
     _fill_root_fundamentals(document, version)
     _drop_declarations(document)
 
