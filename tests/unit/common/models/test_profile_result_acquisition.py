@@ -33,3 +33,7 @@ def test_every_measure_column_declares_how_it_is_acquired():
     columns = {column.name for column in ProfileResult.__table__.columns}
 
     assert set(ProfileResult.measure_acquisition) == columns - NOT_MEASURES - UNWRITTEN_MEASURES
+
+
+def test_every_measure_has_a_display_label():
+    assert set(ProfileResult.measure_labels) == set(ProfileResult.measure_acquisition)

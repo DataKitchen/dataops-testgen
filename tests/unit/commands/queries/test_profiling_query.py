@@ -6,7 +6,12 @@ from uuid import UUID
 
 import pytest
 
-from testgen.commands.queries.profiling_query import ProfilingSQL, TableSampling, calculate_sampling_params
+from testgen.commands.queries.profiling_query import (
+    HygieneIssueType,
+    ProfilingSQL,
+    TableSampling,
+    calculate_sampling_params,
+)
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.models.profile_result import PercentileMethod, ProfileResult
 from testgen.common.read_file import read_template_sql_file
@@ -445,3 +450,35 @@ def test_a_type_not_hashed_records_no_value_hashes(general_type, hashed_types):
     assert "multiset_hash" not in query
     assert "epoch_sum" not in query
     assert "{MULTISET_HASH_TERM}" not in query
+
+
+# --- ProfilingSQL.detect_hygiene_issue ---
+
+
+def _no_values_issue(exact_measures: list[str] | None) -> HygieneIssueType:
+    return HygieneIssueType(
+        id="1006",
+        anomaly_type="No_Values",
+        data_object="Column",
+        anomaly_criteria="(p.null_value_ct + p.filled_value_ct + p.zero_length_ct) = p.record_ct",
+        detail_expression="'detail'",
+        dq_score_prevalence_formula="1.0",
+        dq_score_risk_factor="0.33",
+        exact_measures=exact_measures,
+    )
+
+
+def test_an_issue_declaring_sampled_measures_is_not_raised_on_a_sampled_column():
+    query, _params = _make_profiling_sql().detect_hygiene_issue(_no_values_issue(["filled_value_ct", "zero_length_ct"]))
+
+    assert (
+        "((p.null_value_ct + p.filled_value_ct + p.zero_length_ct) = p.record_ct\n) "
+        "AND (sample_ratio IS NULL OR value_ct = 0))"
+    ) in query
+
+
+def test_an_issue_declaring_nothing_keeps_its_criteria():
+    query, _params = _make_profiling_sql().detect_hygiene_issue(_no_values_issue(None))
+
+    assert "AND ((p.null_value_ct + p.filled_value_ct + p.zero_length_ct) = p.record_ct);" in query
+    assert "sample_ratio" not in query

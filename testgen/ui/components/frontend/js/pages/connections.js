@@ -61,6 +61,7 @@ const Connections = (props) => {
         results: van.derive(() => getValue(props.setup_wizard)?.results),
         standard_cron_sample: van.derive(() => getValue(props.setup_wizard)?.standard_cron_sample),
         monitor_cron_sample: van.derive(() => getValue(props.setup_wizard)?.monitor_cron_sample),
+        sampling_gaps: van.derive(() => getValue(props.setup_wizard)?.sampling_gaps),
     });
 
     return div(

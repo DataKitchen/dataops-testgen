@@ -151,6 +151,7 @@ const TableGroupWizard = (props) => {
     sqlFlavor: props.sqlFlavor,
     sqlFlavorCode: props.sqlFlavorCode,
     schemaLabel: props.schemaLabel,
+    samplingGaps: getValue(props.sampling_gaps),
     onChange: (updatedTableGroup, state) => {
       stepsState.tableGroup.val = updatedTableGroup;
       stepsValidity.tableGroup.val = state.valid;

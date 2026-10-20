@@ -13,7 +13,7 @@ test_types:
     general_type = 'A' AND frequent_values IS NOT NULL
     AND LENGTH((SELECT STRING_AGG((entry ->> 'value') || ' (' || (entry ->> 'ct') || ')', ', ' ORDER BY rank)
        FROM JSONB_ARRAY_ELEMENTS(COALESCE(frequent_values -> 'values', '[]'::JSONB)) WITH ORDINALITY AS t(entry, rank))) <= 1000
-    AND sample_ratio IS NULL
+  exact_measures: [frequent_values]
   generation_template: null
   dq_score_prevalence_formula: |-
     1

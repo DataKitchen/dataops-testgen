@@ -26,6 +26,7 @@ from testgen.common.models.table_group import TableGroup, TableGroupMinimal, def
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.monitor_service import enable_monitoring
+from testgen.common.sampling_requirements import sampled_profile_gaps
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
@@ -479,6 +480,7 @@ class TableGroupsPage(Page):
             "connections": wizard_connections,
             "table_group": table_group.to_dict(json_safe=True),
             "table_group_preview": table_group_preview,
+            "sampling_gaps": sampled_profile_gaps().to_props(),
             "steps": steps,
             "dialog": dialog,
             "results": {
@@ -600,6 +602,7 @@ class TableGroupsPage(Page):
             "connections": edit_connections,
             "table_group": table_group.to_dict(json_safe=True),
             "table_group_preview": table_group_preview,
+            "sampling_gaps": sampled_profile_gaps().to_props(),
             "result": result,
         }
         handlers = {

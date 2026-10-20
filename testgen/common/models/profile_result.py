@@ -1,4 +1,5 @@
 import math
+import re
 from collections.abc import Iterable, Mapping, MutableMapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -37,6 +38,13 @@ class ColumnSort(StrEnum):
 
     hygiene_severity = "hygiene_severity"
     table = "table"
+
+
+_EXACT_TOKEN = re.compile(r"\{EXACT:([^}]*)\}")
+
+
+def _token_names(names: str) -> list[str]:
+    return [name.strip() for name in names.split(",")]
 
 
 class PercentileMethod(StrEnum):
@@ -307,6 +315,115 @@ class ProfileResult(Entity):
         "distinct_value_hash": MeasureAcquisition.SAMPLEABLE,
     })
     """How each measure column is taken. See ``MeasureAcquisition``."""
+
+    measure_labels: ClassVar[Mapping[str, str]] = MappingProxyType({
+        "record_ct": "Row Count",
+        "value_ct": "Value Count",
+        "null_value_ct": "Null",
+        "distinct_value_ct": "Distinct Values",
+        "zero_value_ct": "Zero Values",
+        "min_length": "Minimum Length",
+        "max_length": "Maximum Length",
+        "avg_length": "Average Length",
+        "min_text": "Minimum Text",
+        "max_text": "Maximum Text",
+        "distinct_std_value_ct": "Distinct Standard Values",
+        "min_value": "Minimum Value",
+        "min_value_over_0": "Minimum Value > 0",
+        "max_value": "Maximum Value",
+        "avg_value": "Average Value",
+        "stdev_value": "Standard Deviation",
+        "fractional_sum": "Fractional Sum",
+        "sum_value": "Sum",
+        "min_date": "Minimum Date",
+        "max_date": "Maximum Date",
+        "before_1yr_date_ct": "Before 1 Year",
+        "before_5yr_date_ct": "Before 5 Years",
+        "before_20yr_date_ct": "Before 20 Years",
+        "before_100yr_date_ct": "Before 100 Years",
+        "within_1yr_date_ct": "Within 1 Year",
+        "within_1mo_date_ct": "Within 1 Month",
+        "future_date_ct": "Future Dates",
+        "distant_future_date_ct": "Distant Future Dates",
+        "date_days_present": "Days Present",
+        "date_weeks_present": "Weeks Present",
+        "date_months_present": "Months Present",
+        "boolean_true_ct": "True Count",
+        "percentile_25": "25th Percentile",
+        "percentile_50": "Median Value",
+        "percentile_75": "75th Percentile",
+        "zero_length_ct": "Zero Length",
+        "lead_space_ct": "Leading Spaces",
+        "quoted_value_ct": "Quoted Values",
+        "includes_digit_ct": "Includes Digits",
+        "filled_value_ct": "Dummy Values",
+        "upper_case_ct": "Upper Case",
+        "lower_case_ct": "Lower Case",
+        "non_alpha_ct": "Non-Alpha",
+        "non_printing_ct": "Non-Printing Characters",
+        "numeric_ct": "Numeric Values",
+        "date_ct": "Date Values",
+        "embedded_space_ct": "Embedded Spaces",
+        "frequent_patterns": "Frequent Patterns",
+        "avg_embedded_spaces": "Average Embedded Spaces",
+        "std_pattern_match": "Standard Pattern Match",
+        "distinct_pattern_ct": "Distinct Patterns",
+        "frequent_values": "Frequent Values",
+        "distinct_value_hash": "Distinct Value Hash",
+        "multiset_hash": "Value Hash",
+        "epoch_sum": "Epoch Sum",
+        "keyed_hash": "Keyed Value Hash",
+    })
+    """The display label of each measure in ``measure_acquisition``."""
+
+    @classmethod
+    def run_sampled(cls, profile_run_id: UUID) -> bool:
+        """Whether any column of a profiling run was profiled from a sample."""
+        query = select(cls.id).where(cls.profile_run_id == profile_run_id, cls.sample_ratio.is_not(None)).limit(1)
+        return get_current_session().scalar(query) is not None
+
+    @classmethod
+    def taken_from_sample(cls, measures: Iterable[str]) -> list[str]:
+        """The ``measures`` a sampled profile reads on the sample rather than over every row."""
+        return [
+            measure
+            for measure in measures
+            if cls.measure_acquisition.get(measure) in (MeasureAcquisition.SAMPLEABLE, MeasureAcquisition.SAMPLEABLE_COUNT)
+        ]
+
+    @classmethod
+    def exact_clause(cls, measures: Iterable[str]) -> str:
+        """SQL condition over unqualified ``profile_results`` columns that holds on a row where every
+        one of ``measures``, each taken from the sample on a sampled row, is exact.
+
+        Such a measure is exact on a row profiled without sampling, and on a row whose column holds
+        no values, where the sample has nothing to count. Raises ``ValueError`` for a name that is not
+        in ``measure_acquisition`` or names a measure a sampled profile does not take from the sample.
+        """
+        for measure in measures:
+            if measure not in cls.measure_acquisition:
+                raise ValueError(f"'{measure}' is not a profiling measure")
+            if not cls.taken_from_sample([measure]):
+                raise ValueError(f"'{measure}' is measured over every row even when profiling samples")
+        return "(sample_ratio IS NULL OR value_ct = 0)"
+
+    @staticmethod
+    def token_measures(criteria: str) -> set[str]:
+        """The measures named in the ``{EXACT:measure,...}`` tokens of ``criteria``."""
+        return {name for names in _EXACT_TOKEN.findall(criteria) for name in _token_names(names)}
+
+    @classmethod
+    def apply_exact_measures(cls, criteria: str, exact_measures: Iterable[str] | None) -> str:
+        """Render selection or detection criteria against a profile row.
+
+        Each ``{EXACT:measure,...}`` token in ``criteria`` is replaced by the ``exact_clause`` of the
+        measures it names. When ``exact_measures`` is given, the result also holds only where those
+        measures are exact.
+        """
+        rendered = _EXACT_TOKEN.sub(lambda match: f"({cls.exact_clause(_token_names(match.group(1)))})", criteria)
+        if exact_measures:
+            rendered = f"({rendered}\n) AND {cls.exact_clause(exact_measures)}"
+        return rendered
 
     _case_class_columns: ClassVar[tuple[str, ...]] = ("upper_case_ct", "lower_case_ct", "non_alpha_ct")
 

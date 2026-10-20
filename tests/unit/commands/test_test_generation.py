@@ -8,6 +8,7 @@ import pytest
 from testgen.commands.test_generation import (
     ContractGenerationResult,
     TestGeneration,
+    TestTypeParams,
     _term_count,
     parse_regeneration_groups,
     reconcile_contract_conformance,
@@ -757,3 +758,32 @@ def test_run_test_generation_generates_a_contract(generation_mocks):
     )
     generation_mocks["generation"].assert_not_called()
     generation_mocks["mixpanel"].return_value.send_event.assert_called_once()
+
+
+# --- Exact-measure requirements ---
+
+
+def _selection_query(exact_measures: list[str] | None) -> str:
+    test_type = TestTypeParams(
+        test_type="Match_Lead_Space_Ct",
+        selection_criteria="general_type = 'A' AND value_ct > 0",
+        generation_template=None,
+        default_parm_columns="baseline_ct",
+        default_parm_values="lead_space_ct",
+        exact_measures=exact_measures,
+    )
+    query, _params = _make_generation()._get_query("gen_selection_tests.sql", test_type=test_type)
+    return query
+
+
+def test_a_type_declaring_a_sampled_measure_is_not_selected_on_a_sampled_column():
+    assert "(general_type = 'A' AND value_ct > 0\n) AND (sample_ratio IS NULL OR value_ct = 0)" in _selection_query(
+        ["lead_space_ct"]
+    )
+
+
+def test_a_type_declaring_nothing_keeps_its_criteria():
+    query = _selection_query(None)
+
+    assert "general_type = 'A' AND value_ct > 0" in query
+    assert "sample_ratio" not in query

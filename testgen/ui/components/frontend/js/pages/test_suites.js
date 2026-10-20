@@ -500,6 +500,7 @@ const TestSuites = (/** @type Properties */ props) => {
                         overriding_test_types: info.overriding_test_types ?? {},
                         value_hash_test_types: info.value_hash_test_types ?? [],
                         value_hash_warning: info.value_hash_warning,
+                        sampled_unavailable_test_types: info.sampled_unavailable_test_types ?? {},
                         refresh_warning: _dialogProps.refresh_warning,
                         lock_result: _dialogProps.lock_result,
                         result: _dialogProps.result,

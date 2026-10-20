@@ -11,7 +11,7 @@ test_types:
   measure_uom_description: null
   selection_criteria: |-
     general_type = 'A' AND value_ct > 0
-    AND sample_ratio IS NULL
+  exact_measures: [non_printing_ct]
   generation_template: null
   dq_score_prevalence_formula: |-
     1

@@ -15,6 +15,7 @@
  * @property {TableGroup} table_group
  * @property {boolean?} can_view_pii
  * @property {TableGroupPreview?} table_group_preview
+ * @property {import('./table_group_form.js').SampledProfileGaps?} sampling_gaps
  * @property {EditResult?} result
  */
 import van from '../van.min.js';
@@ -61,6 +62,7 @@ const TableGroupEditDialog = (props) => {
         showConnectionSelector: connections.length > 1,
         disableConnectionSelector: false,
         disablePiiFlag: !(getValue(props.can_view_pii) ?? false),
+        samplingGaps: getValue(props.sampling_gaps),
         onChange: (updatedTableGroup, state) => {
             tableGroupState.val = updatedTableGroup;
             formValid.val = state.valid;

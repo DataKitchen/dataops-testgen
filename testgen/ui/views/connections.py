@@ -34,6 +34,7 @@ from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, default_profiling_masks
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.monitor_service import enable_monitoring
+from testgen.common.sampling_requirements import sampled_profile_gaps
 from testgen.ui.assets import get_asset_data_url
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
@@ -486,6 +487,7 @@ class ConnectionsPage(Page):
             "project_code": project_code,
             "connections": [format_connection(setup_connection)] if setup_connection else [],
             "table_group": table_group.to_dict(json_safe=True),
+            "sampling_gaps": sampled_profile_gaps().to_props(),
             "permissions": {
                 "can_view_pii": session.auth.user_has_permission("view_pii"),
             },
