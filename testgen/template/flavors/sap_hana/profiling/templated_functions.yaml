@@ -1,6 +1,8 @@
 DATEDIFF_DAY: DAYS_BETWEEN(CAST({$1} AS DATE), CAST({$2} AS DATE))
 
-DATEDIFF_WEEK: (DAYS_BETWEEN(ADD_DAYS(CAST({$1} AS DATE), -WEEKDAY(CAST({$1} AS DATE))), ADD_DAYS(CAST({$2} AS DATE), -WEEKDAY(CAST({$2} AS DATE))))) / 7
+# HANA dates are Julian before 1582, so 0001-01-01 is a Saturday and 0001-01-03 the first Monday.
+# Weeks count from that Monday; dates before it get week -1.
+DATEDIFF_WEEK: FLOOR(DAYS_BETWEEN(DATE '0001-01-03', CAST({$2} AS DATE)) / 7) - FLOOR(DAYS_BETWEEN(DATE '0001-01-03', CAST({$1} AS DATE)) / 7)
 
 DATEDIFF_MONTH: ((YEAR({$2}) * 12 + MONTH({$2})) - (YEAR({$1}) * 12 + MONTH({$1})))
 
