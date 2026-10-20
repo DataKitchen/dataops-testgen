@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 
 from testgen.common.enums import JobStatus
 from testgen.common.models.job_execution import JobExecution
-from testgen.common.models.suite_version import SuiteVersion, VersionState
+from testgen.common.models.suite_version import SuiteVersion, SuiteVersionListItem, VersionState
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_run import RunVersion, TestRun
 
@@ -126,6 +126,13 @@ def test_list_for_suite_orders_newest_first_and_counts_per_version():
     assert "ORDER BY suite_versions.version DESC" in sql
     assert "test_definitions.version_id = suite_versions.id" in sql
     assert "test_runs.version_id = suite_versions.id" in sql
+
+
+def test_list_for_suite_names_who_froze_each_version():
+    with patch.object(SuiteVersion, "_paginate", return_value=([], 0)) as paginate:
+        SuiteVersion.list_for_suite(uuid4(), page=1, limit=20)
+    assert "suite_versions.frozen_by" in _compile(paginate.call_args.args[0])
+    assert "frozen_by" in SuiteVersionListItem.__dataclass_fields__
 
 
 def test_list_for_suite_narrows_both_run_subqueries_to_the_suite():

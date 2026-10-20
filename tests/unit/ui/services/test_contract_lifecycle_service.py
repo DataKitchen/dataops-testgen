@@ -56,7 +56,7 @@ def test_a_contract_without_a_draft_has_nothing_to_freeze():
         assert service.freeze_dialog(_suite()) is None
 
 
-def _freeze(label, side_effect=None, draft_version=4):
+def _freeze(label, side_effect=None, draft_version=4, username="alice"):
     suite = _suite()
     frozen = SuiteVersion(id=uuid4(), version=draft_version, frozen_at=FROZEN)
     draft, active = _versions(draft_version, 3)
@@ -65,7 +65,7 @@ def _freeze(label, side_effect=None, draft_version=4):
         active,
         patch.object(service.contract_service, "freeze_version", return_value=frozen, side_effect=side_effect) as freeze,
     ):
-        result = service.freeze(suite, label)
+        result = service.freeze(suite, label, username)
     return result, freeze, suite
 
 
@@ -73,20 +73,20 @@ def test_freezing_reports_the_version_frozen():
     result, freeze, suite = _freeze("Q4 agreement")
 
     assert result == {"success": True, "message": "Version 4 of orders_contract frozen.", "problems": []}
-    freeze.assert_called_once_with(suite, label="Q4 agreement")
+    freeze.assert_called_once_with(suite, label="Q4 agreement", username="alice")
 
 
 @pytest.mark.parametrize("label", [None, "", "   "])
 def test_a_blank_label_is_no_label(label):
     _, freeze, suite = _freeze(label)
 
-    freeze.assert_called_once_with(suite, label=None)
+    freeze.assert_called_once_with(suite, label=None, username="alice")
 
 
 def test_a_label_is_trimmed():
     _, freeze, suite = _freeze("  Q4 agreement ")
 
-    freeze.assert_called_once_with(suite, label="Q4 agreement")
+    freeze.assert_called_once_with(suite, label="Q4 agreement", username="alice")
 
 
 def test_a_document_that_does_not_validate_is_refused_with_its_problems():
@@ -111,7 +111,7 @@ def test_any_other_refusal_is_reported():
 def test_a_contract_without_a_draft_is_refused_without_freezing():
     draft, active = _versions(None, 3)
     with draft, active, patch.object(service.contract_service, "freeze_version") as freeze:
-        result = service.freeze(_suite(), None)
+        result = service.freeze(_suite(), None, "alice")
 
     assert result == {"success": False, "message": "This contract has no draft to freeze.", "problems": []}
     freeze.assert_not_called()

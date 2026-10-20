@@ -200,6 +200,7 @@ CREATE TABLE suite_versions (
    metadata_document   JSONB,
    frozen_document     TEXT,
    frozen_at           TIMESTAMPTZ,
+   frozen_by           VARCHAR(100),
    odcs_api_version    VARCHAR(20),
    label               VARCHAR(100),
    created_by          VARCHAR(100),

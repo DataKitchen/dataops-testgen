@@ -24,10 +24,11 @@ def freeze_dialog(suite: TestSuite) -> dict[str, str] | None:
     }
 
 
-def freeze(suite: TestSuite, label: str | None) -> dict[str, Any]:
+def freeze(suite: TestSuite, label: str | None, username: str | None) -> dict[str, Any]:
     """Freeze the contract's draft.
 
     :param label: the name to give the version; blank for none
+    :param username: who freezes it
     :return: ``success``, the ``message`` to show, and the validator's ``problems`` when the
         contract document does not validate
     """
@@ -35,7 +36,7 @@ def freeze(suite: TestSuite, label: str | None) -> dict[str, Any]:
     if draft is None:
         return {"success": False, "message": "This contract has no draft to freeze.", "problems": []}
     try:
-        frozen = contract_service.freeze_version(suite, label=(label or "").strip() or None)
+        frozen = contract_service.freeze_version(suite, label=(label or "").strip() or None, username=username)
     except InvalidContractDocumentError as e:
         return {
             "success": False,

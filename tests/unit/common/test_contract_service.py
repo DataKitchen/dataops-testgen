@@ -98,6 +98,19 @@ def test_freezing_sets_the_freeze_time():
     assert frozen.label == "first"
 
 
+def test_freezing_records_who_froze_the_version():
+    suite = _suite()
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+    ):
+        frozen = contract_service.freeze_version(suite, username="alice")
+
+    assert frozen.frozen_by == "alice"
+
+
 def test_freezing_stores_the_rendered_bytes():
     suite = _suite()
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)

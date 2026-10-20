@@ -77,8 +77,8 @@ class InvalidContractDocumentError(ValueError):
         self.problems = problems
 
 
-def freeze_version(suite: TestSuite, *, label: str | None = None) -> SuiteVersion:
-    """Freeze the suite's draft, making it the agreement in force.
+def freeze_version(suite: TestSuite, *, label: str | None = None, username: str | None = None) -> SuiteVersion:
+    """Freeze the suite's draft, making it the agreement in force, recorded as frozen by ``username``.
 
     Renders the draft's terms into its stored document and validates the merge before
     anything is written. Raises ``InvalidContractDocumentError``, leaving the draft a draft,
@@ -97,6 +97,7 @@ def freeze_version(suite: TestSuite, *, label: str | None = None) -> SuiteVersio
     draft.odcs_api_version = document["apiVersion"]
     draft.frozen_document = serialize.serialize_document(document)
     draft.frozen_at = datetime.now(UTC)
+    draft.frozen_by = username
     if label is not None:
         draft.label = label
     get_current_session().flush()
