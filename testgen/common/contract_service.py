@@ -310,16 +310,21 @@ def discard_draft(suite: TestSuite) -> int:
             "the contract with no version at all. Freeze a version first, or keep this draft."
         )
 
+    removed = term_count(draft.id)
     session = get_current_session()
-    term_count = session.scalar(
+    session.delete(draft)
+    session.flush()
+    return removed
+
+
+def term_count(version_id: UUID) -> int:
+    """The number of terms on the version ``version_id``, leaving out the tests TestGen manages itself."""
+    return get_current_session().scalar(
         select(func.count()).select_from(TestDefinition).where(
-            TestDefinition.version_id == draft.id,
+            TestDefinition.version_id == version_id,
             TestDefinition.test_type.not_in(MANAGED_TEST_TYPES),
         )
     ) or 0
-    session.delete(draft)
-    session.flush()
-    return term_count
 
 
 class CheckableRuleError(InvalidContractDocumentError):
