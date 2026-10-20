@@ -67,6 +67,8 @@ def _column_summary(**overrides) -> ColumnProfileSummary:
         "null_value_ct": 0,
         "distinct_value_ct": 260,
         "filled_value_ct": 0,
+        "value_ct": 500,
+        "sample_ratio": None,
         "dq_score_profiling": 100.0,
         "dq_score_testing": 98.5,
         "hygiene_issue_count": 1,
@@ -546,6 +548,7 @@ def _mock_profiling_run(**overrides):
         "anomalies_definite_ct": 1, "anomalies_likely_ct": 1,
         "anomalies_possible_ct": 2, "anomalies_dismissed_ct": 0,
         "dq_score_profiling": 95.5,
+        "sampled_column_ct": 12, "approximate_percentile_column_ct": 0,
         "progress": [],
     }
     defaults.update(overrides)
@@ -707,6 +710,8 @@ def test_get_profiling_run_returns_detail(mock_run_cls, mock_hygiene_cls, db_ses
     mock_hygiene_cls.count_for_run.assert_called_once_with(summary.profiling_run_id)
     assert "8 total — 2 definite, 2 likely, 4 possible" in result
     assert "Potential PII:** 0 high, 8 moderate" in result
+    assert "- **Columns estimated from a sample:** 12" in result
+    assert "- **Columns with approximate percentiles:** 0" in result
 
 
 @patch("testgen.mcp.tools.profiling.TableGroup")
@@ -1063,6 +1068,8 @@ def _column_detail(**overrides) -> ColumnProfileDetail:
         "future_date_ct": None,
         # Boolean
         "boolean_true_ct": None,
+        "sample_ratio": None,
+        "percentile_method": None,
         # Per-column profiling failure
         "query_error": None,
         # Scores & hygiene
@@ -2347,3 +2354,72 @@ def test_get_profiling_run_explains_a_queued_run(mock_run_cls, db_session_mock):
 
     assert "**Status:** Queued" in result
     assert QUEUED_MESSAGE in result
+
+
+def test_render_numeric_block_labels_approximate_percentiles():
+    from testgen.mcp.tools.markdown import MdDoc
+    from testgen.mcp.tools.profiling import _render_numeric_block
+
+    with patch("testgen.mcp.tools.profiling.mcp_source_data_protected", return_value=False):
+        doc = MdDoc()
+        _render_numeric_block(doc, {**_numeric_payload(), "percentile_method": "approximate"})
+        result = doc.render()
+
+    assert "- **Median Value:** 40 (Approximate)" in result
+    assert "- **Average Value:** 42.5\n" in result
+
+
+def test_render_counts_labels_sampled_measures_only():
+    from testgen.mcp.tools.markdown import MdDoc
+    from testgen.mcp.tools.profiling import _render_counts
+
+    doc = MdDoc()
+    _render_counts(doc, {**_numeric_payload(), "general_type": "A", "sample_ratio": 10 / 3, "filled_value_ct": 12})
+    result = doc.render()
+
+    assert "- **Dummy Values:** 12 (Estimated from a 30% sample)" in result
+    assert "- **Distinct Values:** 60\n" in result
+
+
+def _sampled_alpha_payload(**overrides) -> dict:
+    return {**_numeric_payload(), "general_type": "A", "sample_ratio": 10 / 3, **overrides}
+
+
+def test_render_alpha_block_puts_the_label_ahead_of_a_multi_line_value():
+    from testgen.mcp.tools.markdown import MdDoc
+    from testgen.mcp.tools.profiling import _render_alpha_block
+
+    payload = _sampled_alpha_payload(frequent_values={"top_freq_values": "a | 60\nb | 30"}, mixed_case_ct=5)
+    with (
+        patch("testgen.mcp.tools.profiling.mcp_source_data_protected", return_value=False),
+        patch("testgen.mcp.tools.profiling.format_frequent", side_effect=lambda value: value and value["top_freq_values"]),
+    ):
+        doc = MdDoc()
+        _render_alpha_block(doc, payload)
+        result = doc.render()
+
+    assert "- **Frequent Values:** (Estimated from a 30% sample)\na | 60\nb | 30" in result
+    assert "- **Mixed Case:** 5 (Estimated from a 30% sample)" in result
+
+
+def test_render_alpha_block_leaves_redacted_values_unlabeled():
+    from testgen.mcp.tools.markdown import MdDoc
+    from testgen.mcp.tools.profiling import _render_alpha_block
+
+    with (
+        patch("testgen.mcp.tools.profiling.mcp_source_data_protected", return_value=False),
+        patch("testgen.mcp.tools.profiling.format_frequent", return_value=PII_REDACTED),
+    ):
+        doc = MdDoc()
+        _render_alpha_block(doc, _sampled_alpha_payload())
+        result = doc.render()
+
+    assert f"- **Frequent Values:** {PII_REDACTED}\n" in result
+
+
+def test_column_profile_row_labels_a_sampled_filled_count():
+    from testgen.mcp.tools.profiling import _render_column_profile_row
+
+    row = _render_column_profile_row(_column_summary(filled_value_ct=7, sample_ratio=10 / 3))
+
+    assert "7 (Estimated from a 30% sample)" in row

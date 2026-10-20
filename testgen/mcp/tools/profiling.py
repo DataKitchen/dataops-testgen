@@ -1,5 +1,5 @@
 import dataclasses
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from pydantic import Field
@@ -464,6 +464,10 @@ def _format_pii(value: str | None) -> str | None:
     return f"Yes ({caption})"
 
 
+def _with_provenance_label(value: Any, provenance: str | None) -> Any:
+    return f"{value} ({provenance})" if value is not None and provenance else value
+
+
 def _render_column_profile_row(c: ColumnProfileSummary) -> list:
     return [
         c.column_name,
@@ -476,7 +480,7 @@ def _render_column_profile_row(c: ColumnProfileSummary) -> list:
         c.record_ct,
         c.null_value_ct,
         c.distinct_value_ct,
-        c.filled_value_ct,
+        _with_provenance_label(c.filled_value_ct, ProfileResult.provenance_label("filled_value_ct", vars(c))),
         friendly_score(c.dq_score_profiling),
         friendly_score(c.dq_score_testing),
         c.hygiene_issue_count,
@@ -624,6 +628,7 @@ def get_profiling_run(
     if has_totals:
         doc.field("Tables profiled", summary.table_ct or 0)
         doc.field("Columns profiled", summary.column_ct or 0)
+        _render_provenance_counts(doc, summary)
         if summary.record_ct is not None:
             doc.field("Records", summary.record_ct)
         if summary.profiling_run_id:
@@ -709,6 +714,11 @@ def _render_pending_profiling_je(doc: MdDoc, je: JobExecution, label: str) -> No
     doc.field("Ended", je.completed_at or "In progress")
 
 
+def _render_provenance_counts(doc: MdDoc, run: ProfilingRunSummary) -> None:
+    doc.field("Columns estimated from a sample", run.sampled_column_ct or 0)
+    doc.field("Columns with approximate percentiles", run.approximate_percentile_column_ct or 0)
+
+
 def _render_profiling_run_section(doc: MdDoc, run: ProfilingRunSummary) -> None:
     title = run.table_groups_name or run.profiling_run_id or run.job_execution_id
     doc.heading(2, f"{title} — {_run_status_label(run)}")
@@ -725,6 +735,7 @@ def _render_profiling_run_section(doc: MdDoc, run: ProfilingRunSummary) -> None:
     if run.table_ct or run.column_ct:
         doc.field("Tables profiled", run.table_ct or 0)
         doc.field("Columns profiled", run.column_ct or 0)
+        _render_provenance_counts(doc, run)
     if run.anomaly_ct is not None and (
         run.anomalies_definite_ct or run.anomalies_likely_ct or run.anomalies_possible_ct
     ):
@@ -967,51 +978,77 @@ def _format_general_type(value: str) -> str:
     return GENERAL_TYPE_CODE_TO_LABEL.get(value or "X")
 
 
+def _provenance_field(doc: MdDoc, profile: ProfileResult, measure: str) -> None:
+    """Add a Counts field naming how ``profile``'s value of ``measure`` was taken, when it is not exact."""
+    row = {
+        "general_type": profile.general_type,
+        "sample_ratio": profile.sample_ratio,
+        "percentile_method": profile.percentile_method,
+        "value_ct": profile.value_ct,
+    }
+    if provenance := ProfileResult.provenance_label(measure, row):
+        doc.field("Counts", provenance)
+
+
+_UNSET = object()
+
+
+def _measure_field(doc: MdDoc, p: dict, label: str, measure: str, value: Any = _UNSET) -> None:
+    """Add a field labeled ``label`` showing ``value`` (default ``p[measure]``), with ``measure``'s
+    provenance label when it is not exact."""
+    value = p.get(measure) if value is _UNSET else value
+    if value not in (None, PII_REDACTED) and (provenance := ProfileResult.provenance_label(measure, p)):
+        # Ahead of a multi-line value, so it does not read as describing only the last line
+        value = f"({provenance})\n{value}" if "\n" in str(value) else f"{value} ({provenance})"
+    doc.field(label, value)
+
+
 def _render_counts(doc: MdDoc, p: dict) -> None:
     doc.heading(2, "Counts")
-    doc.field("Row Count", p.get("record_ct"))
-    doc.field("Value Count", p.get("value_ct"))
-    doc.field("Distinct Values", p.get("distinct_value_ct"))
-    doc.field("Null", p.get("null_value_ct"))
-    doc.field("Dummy Values", p.get("filled_value_ct"))
-    doc.field("Zero Values", p.get("zero_value_ct"))
+    _measure_field(doc, p, "Row Count", "record_ct")
+    _measure_field(doc, p, "Value Count", "value_ct")
+    _measure_field(doc, p, "Distinct Values", "distinct_value_ct")
+    _measure_field(doc, p, "Null", "null_value_ct")
+    _measure_field(doc, p, "Dummy Values", "filled_value_ct")
+    _measure_field(doc, p, "Zero Values", "zero_value_ct")
 
 
 def _render_alpha_block(doc: MdDoc, p: dict) -> None:
     hide_source_data = mcp_source_data_protected()
     _render_counts(doc, p)
-    doc.field("Zero Length", p.get("zero_length_ct"))
+    _measure_field(doc, p, "Zero Length", "zero_length_ct")
 
     doc.heading(2, "Length")
-    doc.field("Minimum Length", p.get("min_length"))
-    doc.field("Maximum Length", p.get("max_length"))
-    doc.field("Average Length", p.get("avg_length"))
+    _measure_field(doc, p, "Minimum Length", "min_length")
+    _measure_field(doc, p, "Maximum Length", "max_length")
+    _measure_field(doc, p, "Average Length", "avg_length")
 
     if not hide_source_data:
         doc.heading(2, "Text Range")
-        doc.field("Minimum Text", p.get("min_text"))
-        doc.field("Maximum Text", p.get("max_text"))
+        _measure_field(doc, p, "Minimum Text", "min_text")
+        _measure_field(doc, p, "Maximum Text", "max_text")
 
     doc.heading(2, "Patterns")
-    doc.field("Standard Pattern Match", _format_std_pattern(p.get("std_pattern_match")))
-    doc.field("Distinct Patterns", p.get("distinct_pattern_ct"))
+    _measure_field(doc, p, "Standard Pattern Match", "std_pattern_match", _format_std_pattern(p.get("std_pattern_match")))
+    _measure_field(doc, p, "Distinct Patterns", "distinct_pattern_ct")
     if not hide_source_data:
-        doc.field("Frequent Patterns", format_frequent(p.get("frequent_patterns")) or None)
-        doc.field("Frequent Values", format_frequent(p.get("frequent_values")) or None)
-    doc.field("Distinct Standard Values", p.get("distinct_std_value_ct"))
+        _measure_field(doc, p, "Frequent Patterns", "frequent_patterns", format_frequent(p.get("frequent_patterns")) or None)
+        _measure_field(doc, p, "Frequent Values", "frequent_values", format_frequent(p.get("frequent_values")) or None)
+    _measure_field(doc, p, "Distinct Standard Values", "distinct_std_value_ct")
 
     doc.heading(2, "Case & Composition")
-    doc.field("Upper Case", p.get("upper_case_ct"))
-    doc.field("Lower Case", p.get("lower_case_ct"))
-    doc.field("Mixed Case", p.get("mixed_case_ct"))
-    doc.field("Non-Alpha", p.get("non_alpha_ct"))
-    doc.field("Includes Digits", p.get("includes_digit_ct"))
-    doc.field("Numeric Values", p.get("numeric_ct"))
-    doc.field("Date Values", p.get("date_ct"))
-    doc.field("Quoted Values", p.get("quoted_value_ct"))
-    doc.field("Leading Spaces", p.get("lead_space_ct"))
-    doc.field("Embedded Spaces", p.get("embedded_space_ct"))
-    doc.field("Average Embedded Spaces", p.get("avg_embedded_spaces"))
+    _measure_field(doc, p, "Upper Case", "upper_case_ct")
+    _measure_field(doc, p, "Lower Case", "lower_case_ct")
+    # Mixed case is derived from the upper- and lower-case counts, so it is taken the same way
+    _measure_field(doc, p, "Mixed Case", "upper_case_ct", p.get("mixed_case_ct"))
+    _measure_field(doc, p, "Non-Alpha", "non_alpha_ct")
+    _measure_field(doc, p, "Includes Digits", "includes_digit_ct")
+    _measure_field(doc, p, "Numeric Values", "numeric_ct")
+    _measure_field(doc, p, "Date Values", "date_ct")
+    _measure_field(doc, p, "Quoted Values", "quoted_value_ct")
+    _measure_field(doc, p, "Leading Spaces", "lead_space_ct")
+    _measure_field(doc, p, "Embedded Spaces", "embedded_space_ct")
+    _measure_field(doc, p, "Average Embedded Spaces", "avg_embedded_spaces")
 
 
 def _render_numeric_block(doc: MdDoc, p: dict) -> None:
@@ -1020,17 +1057,17 @@ def _render_numeric_block(doc: MdDoc, p: dict) -> None:
 
     doc.heading(2, "Distribution")
     if not hide_source_data:
-        doc.field("Minimum Value", p.get("min_value"))
-        doc.field("Minimum Value > 0", p.get("min_value_over_0"))
-        doc.field("Maximum Value", p.get("max_value"))
-    doc.field("Average Value", p.get("avg_value"))
-    doc.field("Standard Deviation", p.get("stdev_value"))
+        _measure_field(doc, p, "Minimum Value", "min_value")
+        _measure_field(doc, p, "Minimum Value > 0", "min_value_over_0")
+        _measure_field(doc, p, "Maximum Value", "max_value")
+    _measure_field(doc, p, "Average Value", "avg_value")
+    _measure_field(doc, p, "Standard Deviation", "stdev_value")
 
     if not hide_source_data:
         doc.heading(2, "Percentiles")
-        doc.field("25th Percentile", p.get("percentile_25"))
-        doc.field("Median Value", p.get("percentile_50"))
-        doc.field("75th Percentile", p.get("percentile_75"))
+        _measure_field(doc, p, "25th Percentile", "percentile_25")
+        _measure_field(doc, p, "Median Value", "percentile_50")
+        _measure_field(doc, p, "75th Percentile", "percentile_75")
 
 
 def _render_date_block(doc: MdDoc, p: dict) -> None:
@@ -1039,16 +1076,16 @@ def _render_date_block(doc: MdDoc, p: dict) -> None:
 
     if not hide_source_data:
         doc.heading(2, "Date Range")
-        doc.field("Minimum Date", p.get("min_date"))
-        doc.field("Maximum Date", p.get("max_date"))
+        _measure_field(doc, p, "Minimum Date", "min_date")
+        _measure_field(doc, p, "Maximum Date", "max_date")
 
     doc.heading(2, "Age Buckets")
-    doc.field("Before 1 Year", p.get("before_1yr_date_ct"))
-    doc.field("Before 5 Years", p.get("before_5yr_date_ct"))
-    doc.field("Before 20 Years", p.get("before_20yr_date_ct"))
-    doc.field("Within 1 Year", p.get("within_1yr_date_ct"))
-    doc.field("Within 1 Month", p.get("within_1mo_date_ct"))
-    doc.field("Future Dates", p.get("future_date_ct"))
+    _measure_field(doc, p, "Before 1 Year", "before_1yr_date_ct")
+    _measure_field(doc, p, "Before 5 Years", "before_5yr_date_ct")
+    _measure_field(doc, p, "Before 20 Years", "before_20yr_date_ct")
+    _measure_field(doc, p, "Within 1 Year", "within_1yr_date_ct")
+    _measure_field(doc, p, "Within 1 Month", "within_1mo_date_ct")
+    _measure_field(doc, p, "Future Dates", "future_date_ct")
 
 
 def _render_boolean_block(doc: MdDoc, p: dict) -> None:
@@ -1126,6 +1163,7 @@ def get_column_frequent_values(
             f"{other_pct:.2f}%" if other_pct is not None else None,
         ])
 
+    _provenance_field(doc, profile, "frequent_values")
     doc.heading(2, "Top values")
     doc.table(["Value", "Count", "% of records"], display_rows)
     return doc.render()
@@ -1178,6 +1216,7 @@ def get_column_patterns(
         pct = (count / record_ct * 100) if record_ct else None
         display_rows.append([pattern, count, f"{pct:.2f}%" if pct is not None else None])
 
+    _provenance_field(doc, profile, "frequent_patterns")
     doc.heading(2, "Top patterns")
     doc.table(["Pattern", "Count", "% of records"], display_rows, code=[0])
     return doc.render()

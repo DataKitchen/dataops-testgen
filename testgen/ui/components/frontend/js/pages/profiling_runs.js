@@ -34,6 +34,8 @@
  * @property {number?} anomalies_possible_ct
  * @property {number?} anomalies_dismissed_ct
  * @property {string?} dq_score_profiling
+ * @property {number?} sampled_column_ct
+ * @property {number?} approximate_percentile_column_ct
  *
  * @typedef Permissions
  * @type {object}
@@ -499,6 +501,12 @@ const ProfilingRunItem = (
                                 { text: [
                                     div(`${formatNumber(item.record_ct || 0)} records`),
                                     div(`${formatNumber(item.data_point_ct || 0)} data points`),
+                                    item.sampled_column_ct
+                                        ? div(`${formatNumber(item.sampled_column_ct)} ${item.sampled_column_ct === 1 ? 'column' : 'columns'} estimated from a sample`)
+                                        : null,
+                                    item.approximate_percentile_column_ct
+                                        ? div(`${formatNumber(item.approximate_percentile_column_ct)} ${item.approximate_percentile_column_ct === 1 ? 'column' : 'columns'} with approximate percentiles`)
+                                        : null,
                                 ] },
                             )
                             : null,

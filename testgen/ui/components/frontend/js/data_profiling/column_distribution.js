@@ -16,6 +16,8 @@ import { SummaryBar } from '/app/static/js/components/summary_bar.js';
 import { PercentBar } from '/app/static/js/components/percent_bar.js';
 import { FrequencyBars } from '/app/static/js/components/frequency_bars.js';
 import { BoxPlot } from '/app/static/js/components/box_plot.js';
+import { Icon } from '/app/static/js/components/icon.js';
+import { withTooltip } from '/app/static/js/components/tooltip.js';
 import { loadStylesheet, friendlyPercent, getValue } from '/app/static/js/utils.js';
 import { formatNumber, formatTimestamp, PII_REDACTED } from '/app/static/js/display_utils.js';
 import { frequencyItems } from './data_profiling_utils.js';
@@ -108,7 +110,11 @@ function AlphaColumn(/** @type Column */ item) {
             SummaryBar({
                 height: summaryHeight,
                 width: summaryWidth,
-                label: `Missing Values: ${formatNumber(missing)} (${friendlyPercent(missing * 100 / total)}%)`,
+                label: withProvenanceMark(
+                    `Missing Values: ${formatNumber(missing)} (${friendlyPercent(missing * 100 / total)}%)`,
+                    item,
+                    'filled_value_ct',
+                ),
                 items: [
                     { label: 'Actual Values', value: item.value_ct - item.zero_length_ct - item.filled_value_ct, color: 'green' },
                     { label: 'Null', value: item.null_value_ct, color: 'brownLight', showPercent: true },
@@ -141,7 +147,7 @@ function AlphaColumn(/** @type Column */ item) {
             SummaryBar({
                 height: summaryHeight,
                 width: summaryWidth,
-                label: 'Case Distribution',
+                label: withProvenanceMark('Case Distribution', item, 'upper_case_ct'),
                 items: [
                     { label: 'Mixed Case', value: item.mixed_case_ct, color: 'purple' },
                     { label: 'Lower Case', value: item.lower_case_ct, color: 'blueLight' },
@@ -156,13 +162,13 @@ function AlphaColumn(/** @type Column */ item) {
             item.frequent_values === PII_REDACTED
                 ? Attribute({ label: 'Frequent Values', value: PII_REDACTED, width: attributeWidth })
                 : item.frequent_values ? FrequencyBars({
-                    title: 'Frequent Values',
+                    title: withProvenanceMark('Frequent Values', item, 'frequent_values'),
                     total: item.record_ct,
                     nullCount: item.null_value_ct,
                     items: frequencyItems(item.frequent_values),
                 }) : null,
             item.frequent_patterns ? FrequencyBars({
-                title: 'Frequent Patterns',
+                title: withProvenanceMark('Frequent Patterns', item, 'frequent_patterns'),
                 total: item.record_ct,
                 nullCount: item.null_value_ct,
                 items: frequencyItems(item.frequent_patterns),
@@ -172,17 +178,17 @@ function AlphaColumn(/** @type Column */ item) {
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
             div(
                 { class: 'flex-column fx-gap-3 tg-profile--percent-column' },
-                PercentBar({ label: 'Includes Digits', value: item.includes_digit_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Numeric Values', value: item.numeric_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Includes Digits', adornment: ProvenanceMark(item, 'includes_digit_ct'), value: item.includes_digit_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Numeric Values', adornment: ProvenanceMark(item, 'numeric_ct'), value: item.numeric_ct, total, width: percentWidth }),
                 PercentBar({ label: 'Zero Values', value: item.zero_value_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Date Values', value: item.date_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Date Values', adornment: ProvenanceMark(item, 'date_ct'), value: item.date_ct, total, width: percentWidth }),
             ),
             div(
                 { class: 'flex-column fx-gap-3 tg-profile--percent-column' },
-                PercentBar({ label: 'Quoted Values', value: item.quoted_value_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Leading Spaces', value: item.lead_space_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Embedded Spaces', value: item.embedded_space_ct ?? 0, total, width: percentWidth }),
-                Attribute({ label: 'Average Embedded Spaces', value: formatNumber(item.avg_embedded_spaces), width: attributeWidth }),
+                PercentBar({ label: 'Quoted Values', adornment: ProvenanceMark(item, 'quoted_value_ct'), value: item.quoted_value_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Leading Spaces', adornment: ProvenanceMark(item, 'lead_space_ct'), value: item.lead_space_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Embedded Spaces', adornment: ProvenanceMark(item, 'embedded_space_ct'), value: item.embedded_space_ct ?? 0, total, width: percentWidth }),
+                Attribute({ label: withProvenanceMark('Average Embedded Spaces', item, 'avg_embedded_spaces'), value: formatNumber(item.avg_embedded_spaces), width: attributeWidth }),
             ),
         ),
         div(
@@ -198,8 +204,8 @@ function AlphaColumn(/** @type Column */ item) {
         ),
         div(
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
-            Attribute({ label: 'Standard Pattern Match', value: standardPattern, width: attributeWidth }),
-            Attribute({ label: 'Distinct Patterns', value: formatNumber(item.distinct_pattern_ct), width: attributeWidth }),
+            Attribute({ label: withProvenanceMark('Standard Pattern Match', item, 'std_pattern_match'), value: standardPattern, width: attributeWidth }),
+            Attribute({ label: withProvenanceMark('Distinct Patterns', item, 'distinct_pattern_ct'), value: formatNumber(item.distinct_pattern_ct), width: attributeWidth }),
         ),
     );
 }
@@ -283,9 +289,9 @@ function NumericColumn(/** @type Column */ item) {
             Attribute({ label: 'Minimum Value', value: formatNumber(item.min_value), width: attributeWidth }),
             Attribute({ label: 'Minimum Value > 0', value: formatNumber(item.min_value_over_0), width: attributeWidth }),
             Attribute({ label: 'Maximum Value', value: formatNumber(item.max_value), width: attributeWidth }),
-            Attribute({ label: '25th Percentile', value: formatNumber(item.percentile_25), width: attributeWidth }),
-            Attribute({ label: 'Median Value', value: formatNumber(item.percentile_50), width: attributeWidth }),
-            Attribute({ label: '75th Percentile', value: formatNumber(item.percentile_75), width: attributeWidth }),
+            Attribute({ label: withProvenanceMark('25th Percentile', item, 'percentile_25'), value: formatNumber(item.percentile_25), width: attributeWidth }),
+            Attribute({ label: withProvenanceMark('Median Value', item, 'percentile_50'), value: formatNumber(item.percentile_50), width: attributeWidth }),
+            Attribute({ label: withProvenanceMark('75th Percentile', item, 'percentile_75'), value: formatNumber(item.percentile_75), width: attributeWidth }),
         ),
         item.min_value === PII_REDACTED || item.max_value === PII_REDACTED ? null : div(
                 { class: 'flex-row fx-justify-center tg-profile--plot-block' },
@@ -316,6 +322,36 @@ function UnknownColumn(/** @type Column */ item) {
             : null,
     );
 }
+
+/**
+ * A mark whose tooltip says how a measure was taken, or null when the measure is exact.
+ *
+ * @param {Column} item
+ * @param {string} measure
+ */
+const ProvenanceMark = (item, measure) => {
+    const kind = item.provenance?.kinds?.[measure];
+    if (!kind) {
+        return null;
+    }
+    const mark = Icon(
+        { size: 12, classes: 'ml-1' },
+        kind === 'approximate' ? 'airwave' : 'clock_loader_40',
+    );
+    return withTooltip(mark, { text: item.provenance.descriptions[kind], position: 'top' });
+};
+
+/**
+ * A label followed by its measure's provenance mark, or the bare label when the measure is exact.
+ *
+ * @param {string} label
+ * @param {Column} item
+ * @param {string} measure
+ */
+const withProvenanceMark = (label, item, measure) => {
+    const mark = ProvenanceMark(item, measure);
+    return mark ? span({ class: 'flex-row fx-gap-1' }, label, mark) : label;
+};
 
 const BaseCounts = (/** @type Column */ item) => {
     const useApprox = item.record_ct === null;

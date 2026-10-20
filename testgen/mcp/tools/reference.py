@@ -324,6 +324,17 @@ Populated when `General Type == "Boolean"`.
 - **True Count** — Rows where the value is true (count).
 - **False Count** — Rows where the value is false (count, derived as `Value Count - True Count`).
 
+## Sampled and Approximate Values
+
+A field value is exact unless it carries one of these labels in parentheses, or the frequent values and
+patterns tools show one in a `Counts` field:
+
+- **Estimated from a N% sample** — Read on a sample of the table's rows. Counts are scaled to the
+  whole table. Affects pattern and character analysis, frequent values, and frequent patterns on
+  tables profiled with sampling.
+- **Approximate** — Computed over every row with the database's approximate percentile function.
+  Affects percentiles.
+
 ## PII Redaction
 
 When a column is flagged as PII AND the caller's role lacks permission to view PII on the column's
