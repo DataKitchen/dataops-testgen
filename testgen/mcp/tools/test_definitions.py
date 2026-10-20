@@ -1108,7 +1108,7 @@ def _delete_resolved_tests(scope: str, selected: list[TestDefinitionMinimal]) ->
             deleted_by_id.setdefault(routed[td.id], td)
     deleted = [(td, deleted_id) for deleted_id, td in deleted_by_id.items()]
     ids = [deleted_id for _, deleted_id in deleted]
-    note_counts = TestDefinitionNote.get_notes_count_by_ids([str(td_id) for td_id in ids])
+    note_count = TestDefinitionNote.count_stored_on(ids)
     try:
         TestDefinition.delete_where(TestDefinition.id.in_(ids), TestDefinition.version_clause())
     except ManagedTestDefinitionError as error:
@@ -1116,7 +1116,7 @@ def _delete_resolved_tests(scope: str, selected: list[TestDefinitionMinimal]) ->
 
     suite, version_id = writes[0] if len(writes) == 1 else (None, None)
     version = SuiteVersion.get(version_id) if suite is not None and suite.suite_type == SuiteType.CONTRACT else None
-    return _render_deleted(scope, deleted, sum(note_counts.values()), suite, version)
+    return _render_deleted(scope, deleted, note_count, suite, version)
 
 
 @with_database_session

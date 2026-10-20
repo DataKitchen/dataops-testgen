@@ -1998,7 +1998,7 @@ def _deleted_ids(delete_where_mock) -> list:
 
 @pytest.mark.usefixtures("routes_in_place")
 @patch.object(TestDefinition, "delete_where")
-@patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
+@patch.object(TestDefinitionNote, "count_stored_on", return_value=0)
 @patch.object(TestDefinition, "list_for_ids")
 def test_delete_tests_by_ids_reports_what_went(mock_list, _mock_notes, mock_delete, db_session_mock):
     first, second = uuid4(), uuid4()
@@ -2020,7 +2020,7 @@ def test_delete_tests_by_ids_reports_what_went(mock_list, _mock_notes, mock_dele
 
 @pytest.mark.usefixtures("routes_in_place")
 @patch.object(TestDefinition, "delete_where", side_effect=ManagedTestDefinitionError())
-@patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
+@patch.object(TestDefinitionNote, "count_stored_on", return_value=0)
 @patch.object(TestDefinition, "list_for_ids")
 def test_delete_tests_refuses_a_managed_test_as_a_user_error(
     mock_list, _mock_notes, _mock_delete, db_session_mock
@@ -2036,7 +2036,7 @@ def test_delete_tests_refuses_a_managed_test_as_a_user_error(
 
 @pytest.mark.usefixtures("routes_in_place")
 @patch.object(TestDefinition, "delete_where")
-@patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
+@patch.object(TestDefinitionNote, "count_stored_on", return_value=0)
 @patch.object(TestDefinition, "list_for_ids")
 def test_delete_tests_by_ids_resolves_in_one_query(mock_list, _mock_notes, _mock_delete, db_session_mock):
     """A named set of any size costs one statement, not one per ID."""
@@ -2053,7 +2053,7 @@ def test_delete_tests_by_ids_resolves_in_one_query(mock_list, _mock_notes, _mock
 
 @pytest.mark.usefixtures("routes_in_place")
 @patch.object(TestDefinition, "delete_where")
-@patch.object(TestDefinitionNote, "get_notes_count_by_ids")
+@patch.object(TestDefinitionNote, "count_stored_on")
 @patch.object(TestDefinition, "list_for_ids")
 def test_delete_tests_reports_the_notes_that_went_with_them(
     mock_list, mock_notes, _mock_delete, db_session_mock
@@ -2061,7 +2061,7 @@ def test_delete_tests_reports_the_notes_that_went_with_them(
     """Notes are the one thing that cascades, so the count saves a follow-up read."""
     td_id = uuid4()
     mock_list.return_value = [_make_td_minimal(test_id=td_id)]
-    mock_notes.return_value = {str(td_id): 3}
+    mock_notes.return_value = 3
 
     from testgen.mcp.tools.test_definitions import delete_tests
 
@@ -2072,7 +2072,7 @@ def test_delete_tests_reports_the_notes_that_went_with_them(
 
 @pytest.mark.usefixtures("routes_in_place")
 @patch.object(TestDefinition, "delete_where")
-@patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
+@patch.object(TestDefinitionNote, "count_stored_on", return_value=0)
 @patch.object(TestDefinition, "list_for_ids")
 def test_delete_tests_omits_the_note_count_when_there_were_none(
     mock_list, _mock_notes, _mock_delete, db_session_mock
@@ -2134,7 +2134,7 @@ def test_delete_tests_by_ids_scopes_the_lookup_to_allowed_projects(mock_list, db
 
 @pytest.mark.usefixtures("routes_in_place")
 @patch.object(TestDefinition, "delete_where")
-@patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
+@patch.object(TestDefinitionNote, "count_stored_on", return_value=0)
 @patch.object(TestDefinition, "list_for_ids")
 def test_delete_tests_by_ids_counts_a_repeated_id_once(
     mock_list, _mock_notes, mock_delete, db_session_mock
@@ -2184,7 +2184,7 @@ def test_delete_tests_rejects_both_selections(db_session_mock):
 @pytest.mark.usefixtures("routes_in_place")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
 @patch.object(TestDefinition, "delete_where")
-@patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
+@patch.object(TestDefinitionNote, "count_stored_on", return_value=0)
 @patch.object(TestDefinition, "select_minimal_where")
 def test_delete_tests_by_suite_names_the_whole_suite_as_its_scope(
     mock_select, _mock_notes, mock_delete, mock_resolve_suite, db_session_mock
@@ -2207,7 +2207,7 @@ def test_delete_tests_by_suite_names_the_whole_suite_as_its_scope(
 @patch("testgen.mcp.tools.test_definitions.resolve_test_type", return_value="Alpha_Trunc")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
 @patch.object(TestDefinition, "delete_where")
-@patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
+@patch.object(TestDefinitionNote, "count_stored_on", return_value=0)
 @patch.object(TestDefinition, "select_minimal_where")
 def test_delete_tests_by_suite_names_the_filters_it_applied(
     mock_select, _mock_notes, _mock_delete, mock_resolve_suite, _mock_resolve_tt, db_session_mock
@@ -2261,7 +2261,7 @@ def test_delete_tests_by_suite_names_an_unfiltered_empty_result_as_no_filter(
 @pytest.mark.usefixtures("routes_in_place")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
 @patch.object(TestDefinition, "delete_where")
-@patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
+@patch.object(TestDefinitionNote, "count_stored_on", return_value=0)
 @patch.object(TestDefinition, "select_minimal_where")
 def test_delete_tests_by_suite_accounts_for_a_listing_it_truncates(
     mock_select, _mock_notes, _mock_delete, mock_resolve_suite, db_session_mock
@@ -2339,7 +2339,7 @@ def test_delete_tests_deletes_only_within_the_resolved_version(
     from testgen.mcp.tools.test_definitions import delete_tests
 
     with (
-        patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={}),
+        patch.object(TestDefinitionNote, "count_stored_on", return_value=0),
         patch.object(TestDefinition, "_assert_no_managed_definitions"),
     ):
         delete_tests(test_suite_id=str(uuid4()))
@@ -2670,7 +2670,7 @@ def test_delete_by_an_active_version_id_deletes_the_drafts_copy(db_session_mock)
         patch("testgen.mcp.tools.test_definitions.TestDefinition.resolve_writable",
               return_value=(draft.id, {active_id: copy_id})) as route,
         patch("testgen.mcp.tools.test_definitions.SuiteVersion.get", return_value=draft),
-        patch("testgen.mcp.tools.test_definitions.TestDefinitionNote.get_notes_count_by_ids", return_value={}),
+        patch("testgen.mcp.tools.test_definitions.TestDefinitionNote.count_stored_on", return_value=0),
         patch("testgen.mcp.tools.test_definitions.TestDefinition.delete_where") as delete_where,
     ):
         out = delete_tests(test_definition_ids=[str(active_id)])
@@ -2698,14 +2698,14 @@ def test_delete_naming_an_active_id_and_its_drafts_copy_deletes_and_counts_the_c
               return_value=(draft.id, {active_id: copy_id, copy_id: copy_id})),
         patch("testgen.mcp.tools.test_definitions.SuiteVersion.get", return_value=draft),
         patch(
-            "testgen.mcp.tools.test_definitions.TestDefinitionNote.get_notes_count_by_ids", return_value={}
+            "testgen.mcp.tools.test_definitions.TestDefinitionNote.count_stored_on", return_value=0
         ) as notes,
         patch("testgen.mcp.tools.test_definitions.TestDefinition.delete_where"),
     ):
         out = delete_tests(test_definition_ids=[str(active_id), str(copy_id)])
     assert "# Deleted 1 tests" in out
     assert out.count(f"`{copy_id}`") == 1
-    assert notes.call_args.args[0] == [str(copy_id)]
+    assert notes.call_args.args[0] == [copy_id]
 
 
 def test_delete_of_a_test_the_draft_removed_deletes_nothing(db_session_mock):
@@ -2783,7 +2783,7 @@ def test_delete_by_suite_filter_routes_the_selection_to_the_draft(db_session_moc
         patch("testgen.mcp.tools.test_definitions.TestDefinition.resolve_writable",
               return_value=(draft.id, {active_id: copy_id})) as route,
         patch("testgen.mcp.tools.test_definitions.SuiteVersion.get", return_value=draft),
-        patch("testgen.mcp.tools.test_definitions.TestDefinitionNote.get_notes_count_by_ids", return_value={}),
+        patch("testgen.mcp.tools.test_definitions.TestDefinitionNote.count_stored_on", return_value=0),
         patch("testgen.mcp.tools.test_definitions.TestDefinition.delete_where") as delete_where,
     ):
         out = delete_tests(test_suite_id=str(suite.id))
