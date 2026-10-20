@@ -185,15 +185,13 @@ class RunTarget:
     state: VersionState
 
     @property
-    def counts_as_status(self) -> bool:
-        """Whether the run is a verification of the agreement in force."""
-        return self.state == VersionState.ACTIVE
-
-    @property
     def note(self) -> str | None:
-        """Why the run will not count as the contract's status, when it will not."""
+        """Why the run will not count as the contract's status, judged from the version's state at submission."""
         if self.state == VersionState.DRAFT:
-            return "This run previews a version that is not frozen, so it will not count as the contract's status."
+            return (
+                "This run checks a version that is not frozen. Unless the version is frozen before the run starts, "
+                "the run is a preview and will not count as the contract's status."
+            )
         if self.state == VersionState.SUPERSEDED:
             return "This run checks a superseded version, so it will not count as the contract's status."
         return None

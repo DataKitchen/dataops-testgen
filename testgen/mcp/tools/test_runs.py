@@ -381,11 +381,17 @@ def _render_test_run_section(doc: MdDoc, run: TestRunSummary) -> None:
 
 
 def _render_run_version(doc: MdDoc, run: TestRunSummary) -> None:
-    """Add the contract version a run checked and whether it was a preview; nothing for any other suite."""
+    """Add the contract version a run checked and, when the run does not count as the contract's status, why."""
     if run.version_label is None:
         return
     doc.field("Version", run.version_label)
     if run.is_preview:
         doc.field("Preview", "Yes")
-    elif not run.run_version.counts_as_status:
+        return
+    run_version = run.run_version
+    if not run_version.checked_version_in_force:
         doc.field("Counts as contract status", "No, a later version was already frozen when it ran")
+    elif run_version.status not in JobStatus.terminal():
+        doc.field("Counts as contract status", "Not yet, the run has not completed")
+    elif not run_version.counts_as_status:
+        doc.field("Counts as contract status", "No, the run did not complete")

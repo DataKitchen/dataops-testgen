@@ -204,9 +204,10 @@ class TestRunVersion(BaseModel):
         description="The version's state as of this request: `draft`, `active` (the agreement in force), or `superseded`."
     )
     counts_as_status: bool = Field(
-        description="Whether the run verified the agreement in force when it started: its version was frozen before "
-        "the run started and no later version had been frozen. False for a preview, which stays a preview after its "
-        "version is frozen, and for a check of a version already superseded."
+        description="Whether the run completed a verification of the agreement in force when it started: its version "
+        "was frozen before the run started, no later version had been frozen, and the run completed. False for a run "
+        "that has not completed, for a preview (a preview stays a preview after its version is frozen), and for a "
+        "check of a version already superseded."
     )
 
 
@@ -519,13 +520,10 @@ class TestRunSubmittedResponse(JobSubmittedResponse):
     """Returned on 202 Accepted after a test run is submitted."""
 
     version: ContractVersion | None = Field(default=None, description="Contracts only. The version the run checks.")
-    counts_as_status: bool | None = Field(
-        default=None,
-        description="Contracts only. Whether the run verifies the active version and so counts as the contract's "
-        "status. False for a preview of the draft and for a check of a superseded version.",
-    )
     note: str | None = Field(
-        default=None, description="Contracts only. Why the run will not count as the contract's status."
+        default=None,
+        description="Contracts only. Why the run will not count as the contract's status, judged from the version's "
+        "state at submission. `GET /test-runs/{job_id}` reports whether the run counted.",
     )
 
 

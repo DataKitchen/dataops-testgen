@@ -127,7 +127,6 @@ def submit_test_run(
         id=job.id,
         created_at=job.created_at,
         version=ContractVersion(number=target.version.version, state=target.state),
-        counts_as_status=target.counts_as_status,
         note=target.note,
     )
 

@@ -196,20 +196,6 @@ def test_latest_verification_of_a_draft_is_none_without_a_query(session_mock):
     session_mock.scalars.assert_not_called()
 
 
-def test_run_version_reads_the_runs_version_and_the_suites_active_number(session_mock):
-    run_id = uuid4()
-    session_mock.execute.return_value.first.return_value = None
-    assert TestRun.run_version(run_id) is None
-    sql = _compile(session_mock.execute.call_args.args[0])
-    assert f"test_runs.id = '{run_id}'" in sql
-    assert "JOIN suite_versions ON suite_versions.id = test_runs.version_id" in sql
-    assert "suite_versions.test_suite_id IS NOT NULL" in sql
-    assert "max(suite_versions_1.version)" in sql
-    assert "suite_versions_1.test_suite_id = test_runs.test_suite_id" in sql
-    assert "suite_versions_1.frozen_at IS NOT NULL" in sql
-    assert "suite_versions_2.frozen_at <= timezone('UTC', test_runs.test_starttime)" in sql
-
-
 @pytest.mark.parametrize(
     ("frozen_at", "active_number", "started", "in_force", "state", "preview", "counts"),
     [
@@ -222,8 +208,17 @@ def test_run_version_reads_the_runs_version_and_the_suites_active_number(session
     ids=["verification", "verification-since-superseded", "check-of-a-superseded-version", "preview-frozen-since",
          "draft"],
 )
-def test_a_run_counts_when_it_verified_the_version_in_force_as_it_started(
+def test_a_completed_run_counts_when_it_verified_the_version_in_force_as_it_started(
     frozen_at, active_number, started, in_force, state, preview, counts
 ):
-    run_version = RunVersion(3, frozen_at, active_number, started, in_force)
+    run_version = RunVersion(3, frozen_at, active_number, started, in_force, JobStatus.COMPLETED)
     assert (run_version.state, run_version.is_preview, run_version.counts_as_status) == (state, preview, counts)
+
+
+@pytest.mark.parametrize(
+    "status", [JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.CANCELED, JobStatus.ERROR, None]
+)
+def test_a_run_that_has_not_completed_does_not_count(status):
+    run_version = RunVersion(3, datetime(2026, 9, 12, tzinfo=UTC), 3, datetime(2026, 9, 13), 3, status)
+    assert run_version.checked_version_in_force is True
+    assert run_version.counts_as_status is False

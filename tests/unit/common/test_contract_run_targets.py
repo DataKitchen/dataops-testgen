@@ -72,17 +72,14 @@ def test_a_regular_suite_has_no_run_target():
 def test_a_contract_runs_its_active_version_by_default():
     active = SuiteVersion(id=uuid4(), version=3, frozen_at=FROZEN)
     target, _ = _run_target(_suite(), run_default=active)
-    assert (target.version, target.state, target.counts_as_status, target.note) == (
-        active, VersionState.ACTIVE, True, None
-    )
+    assert (target.version, target.state, target.note) == (active, VersionState.ACTIVE, None)
 
 
 def test_a_run_of_the_draft_is_a_preview():
     draft = SuiteVersion(id=uuid4(), version=1)
     target, _ = _run_target(_suite(), run_default=draft, active=False)
     assert target.state == VersionState.DRAFT
-    assert target.counts_as_status is False
-    assert "previews a version that is not frozen" in target.note
+    assert "Unless the version is frozen before the run starts" in target.note
 
 
 def test_a_run_of_a_superseded_version_is_a_check():
@@ -90,7 +87,6 @@ def test_a_run_of_a_superseded_version_is_a_check():
     target, _ = _run_target(_suite(), 2, found=superseded, active=False)
     assert target.version is superseded
     assert target.state == VersionState.SUPERSEDED
-    assert target.counts_as_status is False
     assert "checks a superseded version" in target.note
 
 
@@ -120,7 +116,7 @@ def test_only_the_versions_active_tests_count():
         (SuiteVersion(id=uuid4(), version=3, frozen_at=FROZEN), True, (4, VersionState.DRAFT)),
         (SuiteVersion(id=uuid4(), version=3, frozen_at=FROZEN), False, (3, VersionState.ACTIVE)),
     ],
-    ids=["preview-into-draft", "apply-into-draft", "preview-opens-a-draft", "apply-that-wrote-nothing"],
+    ids=["preview-into-draft", "apply-into-draft", "preview-opens-a-draft", "apply-into-a-frozen-version"],
 )
 def test_an_import_lands_in_the_draft_or_names_the_one_it_would_open(resolved, preview, expected):
     with (

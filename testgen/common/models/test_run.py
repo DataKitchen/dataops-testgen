@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlalchemy import BigInteger, Column, Float, ForeignKey, Integer, delete, desc, func, select, text
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import aliased, foreign, relationship
+from sqlalchemy.orm import foreign, relationship
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import case
 
@@ -57,15 +57,21 @@ class RunVersion:
     active_number: int | None
     test_starttime: datetime | None
     in_force_at_start: int | None = None
+    status: JobStatus | None = None
 
     @property
     def state(self) -> VersionState:
         return version_state(self.frozen_at, self.number == self.active_number)
 
     @property
-    def counts_as_status(self) -> bool:
-        """Whether the run verified the agreement in force when it started: its version was then the highest frozen."""
+    def checked_version_in_force(self) -> bool:
+        """Whether the run's version was the highest frozen when the run started."""
         return not self.is_preview and self.number == self.in_force_at_start
+
+    @property
+    def counts_as_status(self) -> bool:
+        """Whether the run completed a verification of the agreement in force when it started."""
+        return self.status == JobStatus.COMPLETED and self.checked_version_in_force
 
     @property
     def is_preview(self) -> bool:
@@ -122,6 +128,7 @@ class TestRunSummary(EntityMinimal):
             self.active_version_number,
             self.test_starttime,
             self.version_in_force_at_start,
+            self.status,
         )
 
     @property
@@ -257,32 +264,6 @@ class TestRun(Entity):
         ).first()
 
     @classmethod
-    def run_version(cls, run_id: UUID) -> RunVersion | None:
-        """The contract version a run checked; ``None`` for a missing run or a suite that keeps no versions."""
-        active = aliased(SuiteVersion)
-        active_number = (
-            select(func.max(active.version))
-            .where(active.test_suite_id == cls.test_suite_id, active.frozen_at.is_not(None))
-            .scalar_subquery()
-        )
-        in_force = aliased(SuiteVersion)
-        # test_starttime is stored as UTC without a zone.
-        in_force_at_start = (
-            select(func.max(in_force.version))
-            .where(
-                in_force.test_suite_id == cls.test_suite_id,
-                in_force.frozen_at <= func.timezone("UTC", cls.test_starttime),
-            )
-            .scalar_subquery()
-        )
-        row = get_current_session().execute(
-            select(SuiteVersion.version, SuiteVersion.frozen_at, active_number, cls.test_starttime, in_force_at_start)
-            .join(SuiteVersion, SuiteVersion.id == cls.version_id)
-            .where(cls.id == run_id, SuiteVersion.test_suite_id.is_not(None))
-        ).first()
-        return RunVersion(*row) if row else None
-
-    @classmethod
     def get_latest_run(cls, project_code: str) -> LatestTestRun | None:
         query = (
             select(TestRun.id, JobExecution.started_at.label("run_time"))
@@ -348,6 +329,13 @@ class TestRun(Entity):
         ):
             return [], 0
 
+        # A test run shares its job's id. Postgres does not reliably push the outer filters into the grouped CTE.
+        results_filter = ""
+        if test_run_ids:
+            results_filter = "WHERE test_run_id IN :test_run_ids"
+        elif job_execution_id:
+            results_filter = "WHERE test_run_id = :job_execution_id"
+
         # Pending JEs (no tr row) surface in project-scope queries — the LEFT JOIN to
         # test_suites yields a NULL ts row that the ``ts.id IS NULL`` clause lets through —
         # but not in suite/TG-scoped queries, since the WHERE filter requires ts to match.
@@ -367,6 +355,7 @@ class TestRun(Entity):
                 SUM(CASE WHEN COALESCE(disposition, 'Confirmed') IN ('Dismissed', 'Inactive')
                     THEN 1 ELSE 0 END) AS dismissed_ct
             FROM test_results
+            {results_filter}
             GROUP BY test_run_id
         )
         SELECT

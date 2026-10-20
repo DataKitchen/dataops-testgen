@@ -569,14 +569,13 @@ def test_submit_test_run_stamps_a_contract_run_with_its_version():
     assert run_target.call_args.args[1] is None
     assert submit.call_args.kwargs["kwargs"]["version_id"] == str(version.id)
     assert result.version == ContractVersion(number=3, state=VersionState.ACTIVE)
-    assert result.counts_as_status is True
     assert result.note is None
 
 
 @pytest.mark.parametrize(
     ("state", "note"),
     [
-        (VersionState.DRAFT, "previews a version that is not frozen"),
+        (VersionState.DRAFT, "Unless the version is frozen before the run starts"),
         (VersionState.SUPERSEDED, "checks a superseded version"),
     ],
 )
@@ -585,7 +584,6 @@ def test_submit_test_run_says_when_a_contract_run_will_not_count(state, note):
     result, _, run_target = _run_contract(TestRunRequest(version=2), target=RunTarget(version, state))
 
     assert run_target.call_args.args[1] == 2
-    assert result.counts_as_status is False
     assert note in result.note
 
 
@@ -622,7 +620,7 @@ def test_submit_test_run_names_no_version_for_a_regular_suite():
         mock_je_cls.submit.return_value = _mock_job(job_key="run-tests")
         result = submit_test_run(_mock_test_suite(), None)
 
-    assert (result.version, result.counts_as_status, result.note) == (None, None, None)
+    assert (result.version, result.note) == (None, None)
 
 
 @pytest.mark.parametrize("version", [0, -1, "2", 1.5])

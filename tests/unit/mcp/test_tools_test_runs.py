@@ -587,6 +587,25 @@ def test_a_check_of_a_version_already_superseded_says_it_does_not_count(db_sessi
     assert "Preview" not in out
 
 
+@pytest.mark.parametrize(
+    ("status", "counts"),
+    [
+        (JobStatus.QUEUED, "Not yet, the run has not completed"),
+        (JobStatus.RUNNING, "Not yet, the run has not completed"),
+        (JobStatus.CANCELED, "No, the run did not complete"),
+        (JobStatus.ERROR, "No, the run did not complete"),
+    ],
+)
+def test_a_run_of_the_active_version_that_has_not_completed_says_it_does_not_count(db_session_mock, status, counts):
+    run = _real_run_summary(
+        status=status, version_number=4, version_frozen_at=datetime(2026, 9, 12, tzinfo=UTC),
+        active_version_number=4, test_starttime=datetime(2026, 9, 13, 9, 0), version_in_force_at_start=4,
+    )
+    out = _render(run)
+    assert f"**Counts as contract status:** {counts}" in out
+    assert "Preview" not in out
+
+
 def test_a_verification_since_superseded_still_counted(db_session_mock):
     run = _real_run_summary(
         version_number=4, version_frozen_at=datetime(2026, 9, 12, tzinfo=UTC), active_version_number=5,

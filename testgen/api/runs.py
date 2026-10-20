@@ -147,7 +147,8 @@ def get_test_run(job: JobExecution = resolve_job("view", JobExecution.job_key ==
 
 
 def _run_version(job_id: UUID) -> TestRunVersion | None:
-    run_version = TestRun.run_version(job_id)
+    summaries, _ = TestRun.select_summary(job_execution_id=job_id, suite_types=TEST_SUITE_TYPES)
+    run_version = summaries[0].run_version if summaries else None
     if run_version is None:
         return None
     return TestRunVersion(

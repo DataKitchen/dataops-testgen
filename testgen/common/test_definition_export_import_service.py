@@ -257,8 +257,8 @@ class ImportResponse(BaseModel):
     version: ContractVersion | None = Field(
         default=None,
         description=(
-            "Contracts only. The version the import wrote to. A preview into a frozen version names the draft "
-            "that applying the import would open."
+            "Contracts only. The version the import writes to, or null when it would write nothing. A preview into a "
+            "frozen version names the draft that applying the import would open."
         ),
     )
 
@@ -487,15 +487,18 @@ def import_definitions(
 
     # --- Phase 3: Apply ---
     has_skips = any(a.action == ImportAction.skip for a in actions)
+    has_writes = any(a.action != ImportAction.skip for a in actions)
     if config.mode == ImportMode.apply_strict and has_skips:
         # Built before apply, so created TDs have no target_id — correct, nothing was persisted.
         # The post-apply build below is NOT redundant: _apply_actions fills planned.target for creates.
-        raise ImportStrictViolation(_build_response(actions, _contract_version(test_suite, preview=True)))
+        version = _contract_version(test_suite, preview=True) if has_writes else None
+        raise ImportStrictViolation(_build_response(actions, version))
 
     if config.mode in (ImportMode.apply, ImportMode.apply_strict):
         _apply_actions(actions, test_suite, table_group, config)
 
-    return _build_response(actions, _contract_version(test_suite, preview=config.mode == ImportMode.preview))
+    version = _contract_version(test_suite, preview=config.mode == ImportMode.preview) if has_writes else None
+    return _build_response(actions, version)
 
 
 # --- Helpers ---

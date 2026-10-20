@@ -24,10 +24,12 @@ from testgen.common.models.suite_version import (
     RemovedInDraftError,
     SuiteVersion,
     UnmatchedInDraftError,
+    VersionState,
 )
 from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.test_definition_export_import_service import (
     _EXISTING_TD_COLUMNS,
+    ContractVersion,
     ExportDocument,
     ExportSource,
     ImportAction,
@@ -48,6 +50,7 @@ from testgen.common.test_definition_export_import_service import (
     TestDefinitionExport,
     _create_td,
     _update_td,
+    import_definitions,
 )
 from tests.unit.sql_assertions import scopes_to_a_version
 
@@ -2050,6 +2053,66 @@ def test_import_names_a_row_that_no_longer_exists():
             "detail": f"Test definition {row} no longer exists. Nothing was applied.",
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("mode", "on_new", "expected"),
+    [
+        (ImportMode.apply, OnNew.skip, None),
+        (ImportMode.preview, OnNew.skip, None),
+        (ImportMode.preview, OnNew.create, ContractVersion(number=3, state=VersionState.DRAFT)),
+    ],
+    ids=["apply-writing-nothing", "preview-writing-nothing", "preview-writing-a-row"],
+)
+@patch(f"{SERVICE_MODULE}.DataTable")
+@patch(f"{SERVICE_MODULE}.TableGroup")
+@patch(f"{SERVICE_MODULE}.get_current_session")
+def test_a_contract_import_names_a_version_only_when_it_writes(
+    mock_session_fn, mock_tg_cls, mock_dt_cls, mode, on_new, expected
+):
+    mock_session_fn.return_value.execute.return_value.all.return_value = []
+    mock_tg_cls.get.return_value = _make_table_group()
+    mock_dt_cls.select_table_names.return_value = ["t1"]
+    suite = _make_test_suite(suite_type=SuiteType.CONTRACT)
+    td = _make_import_td(test_type="Alpha", table_name="t1")
+
+    with (
+        patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")),
+        patch(f"{SERVICE_MODULE}.contract_service.import_destination", return_value=(3, VersionState.DRAFT)),
+    ):
+        result = import_definitions(suite, _make_config(mode=mode, on_new=on_new), _make_payload(td))
+
+    assert result.version == expected
+
+
+@pytest.mark.parametrize(
+    ("tables", "expected"),
+    [
+        (["t9"], None),
+        (["t9", "t1"], ContractVersion(number=3, state=VersionState.DRAFT)),
+    ],
+    ids=["refused-writing-nothing", "refused-writing-a-row"],
+)
+@patch(f"{SERVICE_MODULE}.DataTable")
+@patch(f"{SERVICE_MODULE}.TableGroup")
+@patch(f"{SERVICE_MODULE}.get_current_session")
+def test_a_refused_strict_contract_import_names_a_version_only_when_it_would_write(
+    mock_session_fn, mock_tg_cls, mock_dt_cls, tables, expected
+):
+    mock_session_fn.return_value.execute.return_value.all.return_value = []
+    mock_tg_cls.get.return_value = _make_table_group()
+    mock_dt_cls.select_table_names.return_value = ["t1"]
+    suite = _make_test_suite(suite_type=SuiteType.CONTRACT)
+    tds = [_make_import_td(test_type="Alpha", table_name=table) for table in tables]
+
+    with (
+        patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")),
+        patch(f"{SERVICE_MODULE}.contract_service.import_destination", return_value=(3, VersionState.DRAFT)),
+        pytest.raises(ImportStrictViolation) as refused,
+    ):
+        import_definitions(suite, _make_config(mode=ImportMode.apply_strict), _make_payload(*tds))
+
+    assert refused.value.result.version == expected
 
 
 def test_export_of_a_contract_version_reads_that_version():
