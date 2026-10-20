@@ -31,7 +31,7 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.orm import InstrumentedAttribute, aliased
 from sqlalchemy.sql import visitors
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.expression import case, literal
@@ -1009,32 +1009,7 @@ class TestDefinition(Entity):
             session.add(copied)
             id_map[term.id] = copied.id
         session.flush()
-        cls._copy_notes_to_version(id_map)
         return id_map
-
-    @staticmethod
-    def _copy_notes_to_version(id_map: dict[UUID, UUID]) -> None:
-        """Give each copied term its own copy of the notes the term it came from carries.
-
-        A note belongs to one test definition by a cascading foreign key, so a copy that left
-        the notes behind would strand every annotation on the version being superseded.
-        """
-        if not id_map:
-            return
-        session = get_current_session()
-        for note in session.scalars(
-            select(TestDefinitionNote).where(TestDefinitionNote.test_definition_id.in_(id_map))
-        ).all():
-            session.add(
-                TestDefinitionNote(
-                    test_definition_id=id_map[note.test_definition_id],
-                    detail=note.detail,
-                    created_by=note.created_by,
-                    created_at=note.created_at,
-                    updated_at=note.updated_at,
-                )
-            )
-        session.flush()
 
     @classmethod
     def resolve_write_target(cls, test_suite_id: UUID | str) -> tuple[UUID, dict[UUID, UUID]]:
@@ -1957,12 +1932,50 @@ class TestDefinitionNote(Base):
     created_at: datetime = Column(postgresql.TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
     updated_at: datetime = Column(postgresql.TIMESTAMP)
 
+    @staticmethod
+    def _same_term(peer: type[TestDefinition], definition: type[TestDefinition]) -> ColumnElement[bool]:
+        """Whether ``peer`` is a version of the same test as ``definition``.
+
+        Rows of one suite sharing a contract term are versions of one test. A row without a term
+        matches only itself.
+        """
+        return (peer.test_suite_id == definition.test_suite_id) & (
+            (peer.id == definition.id) | (peer.contract_term_id == definition.contract_term_id)
+        )
+
+    @classmethod
+    def _storage_row(cls, test_definition_id: str | UUID) -> UUID:
+        """The row a note added to the given test definition is stored on.
+
+        The earliest frozen row of its term, so that deleting a draft row never takes a note on a
+        test that outlives the draft. The row itself when the term has no frozen row.
+        """
+        definition = aliased(TestDefinition)
+        peer = aliased(TestDefinition)
+        stored_on = get_current_session().scalar(
+            select(peer.id)
+            .join(definition, cls._same_term(peer, definition))
+            .join(SuiteVersion, SuiteVersion.id == peer.version_id)
+            .where(
+                definition.id == test_definition_id,
+                SuiteVersion.test_suite_id.is_not(None),
+                SuiteVersion.frozen_at.is_not(None),
+            )
+            .order_by(SuiteVersion.frozen_at, SuiteVersion.version)
+            .limit(1)
+        )
+        return stored_on or UUID(str(test_definition_id))
+
     @classmethod
     def add_note(cls, test_definition_id: str | UUID, detail: str, username: str) -> "TestDefinitionNote":
-        """Insert a note and return the persisted instance with ``id`` and ``created_at`` populated."""
+        """Insert a note on the given test definition and return the persisted instance.
+
+        A note on a contract's test is stored on the earliest frozen version of that test, whichever
+        version it is added from.
+        """
         db_session = get_current_session()
         note = cls(
-            test_definition_id=test_definition_id,
+            test_definition_id=cls._storage_row(test_definition_id),
             detail=detail,
             created_by=username,
             created_at=datetime.now(UTC).replace(tzinfo=None),
@@ -1985,25 +1998,40 @@ class TestDefinitionNote(Base):
 
     @classmethod
     def get_notes_count_by_ids(cls, test_definition_ids: list[str]) -> dict[str, int]:
-        """Returns {test_definition_id: count} for all given IDs."""
-        db_session = get_current_session()
-        rows = db_session.execute(
-            text("""
-                SELECT test_definition_id::VARCHAR, COUNT(*) as cnt
-                FROM test_definition_notes
-                WHERE test_definition_id = ANY(:ids)
-                GROUP BY test_definition_id
-            """),
-            {"ids": [UUID(td_id) for td_id in test_definition_ids]},
+        """Returns {test_definition_id: count} for the given IDs, counting the notes of every version
+        of each test. IDs with no notes are omitted."""
+        definition = aliased(TestDefinition)
+        peer = aliased(TestDefinition)
+        rows = get_current_session().execute(
+            select(definition.id, func.count(cls.id))
+            .join(peer, cls._same_term(peer, definition))
+            .join(cls, cls.test_definition_id == peer.id)
+            .where(definition.id.in_([UUID(str(td_id)) for td_id in test_definition_ids]))
+            .group_by(definition.id)
         ).all()
-        return {str(row[0]): row[1] for row in rows}
+        return {str(td_id): count for td_id, count in rows}
+
+    @classmethod
+    def count_stored_on(cls, test_definition_ids: Iterable[str | UUID]) -> int:
+        """The number of notes stored on the given rows, which are the notes deleting them deletes."""
+        return get_current_session().scalar(
+            select(func.count(cls.id)).where(
+                cls.test_definition_id.in_([UUID(str(td_id)) for td_id in test_definition_ids])
+            )
+        ) or 0
 
     @classmethod
     def get_notes(cls, test_definition_id: str | UUID) -> list[dict]:
-        db_session = get_current_session()
+        """The notes of every version of the given test definition's test, newest first."""
+        definition = aliased(TestDefinition)
+        peer = aliased(TestDefinition)
         results = (
-            db_session.execute(
-                select(cls).where(cls.test_definition_id == test_definition_id).order_by(cls.created_at.desc())
+            get_current_session().execute(
+                select(cls)
+                .join(peer, peer.id == cls.test_definition_id)
+                .join(definition, cls._same_term(peer, definition))
+                .where(definition.id == test_definition_id)
+                .order_by(cls.created_at.desc())
             )
             .scalars()
             .all()

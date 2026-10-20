@@ -3,6 +3,7 @@ from typing import Literal
 import pandas as pd
 import streamlit as st
 
+from testgen.common.models.test_definition import TestDefinitionNote
 from testgen.ui.services.database_service import fetch_df_from_db, fetch_one_from_db
 
 DEFAULT_ORDER_BY = "ORDER BY LOWER(r.table_name), LOWER(r.column_names), tt.test_name_short"
@@ -117,7 +118,6 @@ def get_test_results(
             (td.id IS NOT NULL) as test_definition_exists,
             td.flagged,
             td.external_url,
-            (SELECT COUNT(*) FROM test_definition_notes tdn WHERE tdn.test_definition_id = td.id) as notes_count,
 
             -- These are used in the PDF report
             tt.threshold_description, tt.usage_notes, r.test_time,
@@ -167,6 +167,7 @@ def get_test_results(
     df = fetch_df_from_db(query, params)
     df["test_date"] = pd.to_datetime(df["test_date"])
     df["flagged_display"] = df["flagged"].apply(lambda value: "Yes" if value else "No")
+    _add_notes_count(df)
     return df
 
 
@@ -206,7 +207,6 @@ def get_test_results_by_ids(test_result_ids: list[str]) -> pd.DataFrame:
             r.test_definition_id::VARCHAR,
             r.auto_gen,
             td.flagged,
-            (SELECT COUNT(*) FROM test_definition_notes tdn WHERE tdn.test_definition_id = td.id) as notes_count,
             tt.threshold_description, tt.usage_notes, r.test_time,
             dcc.description as column_description,
             dcc.column_type as column_type,
@@ -251,7 +251,19 @@ def get_test_results_by_ids(test_result_ids: list[str]) -> pd.DataFrame:
     if not df.empty:
         df["test_date"] = pd.to_datetime(df["test_date"])
         df["flagged_display"] = df["flagged"].apply(lambda value: "Yes" if value else "No")
+    _add_notes_count(df)
     return df
+
+
+def _add_notes_count(df: pd.DataFrame) -> None:
+    """Set each result's ``notes_count`` to the number of notes on its test definition, in place."""
+    if df.empty:
+        df["notes_count"] = pd.Series(dtype=int)
+        return
+    notes_counts = TestDefinitionNote.get_notes_count_by_ids(
+        list(df["test_definition_id"].dropna().unique())
+    )
+    df["notes_count"] = df["test_definition_id"].map(notes_counts).fillna(0).astype(int)
 
 
 def get_test_result_lookup(test_result_id: str) -> dict | None:
