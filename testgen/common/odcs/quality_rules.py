@@ -214,6 +214,7 @@ class CatCondition:
 EMAIL_PATTERN = r"^[A-Za-z0-9._'%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
 US_ZIP_PATTERN = r"^([0-9]{5}|[0-9]{9}|[0-9]{5}-[0-9]{4})$"
 US_ZIP3_PATTERN = r"^[0-9]{3}$"
+US_CA_ZIP_PATTERN = r"^([0-9]{5}|[0-9]{9}|[0-9]{5}-[0-9]{4}|[A-Za-z][0-9][A-Za-z] ?[0-9][A-Za-z][0-9])$"
 # `US_State` reads `NULLIF(column, '')`, so the empty string is valid there.
 US_STATE_VALID_VALUES: tuple[str, ...] = (
     "AL", "AK", "AS", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FM", "FL", "GA", "GU", "HI", "ID",
@@ -330,6 +331,9 @@ _LIBRARY_ROWS: dict[str, RuleMapping] = {
     "Email_Format": _invalid_values_row("Email_Format", RuleArgument(name="pattern", fixed=EMAIL_PATTERN)),
     "Valid_US_Zip": _invalid_values_row("Valid_US_Zip", RuleArgument(name="pattern", fixed=US_ZIP_PATTERN)),
     "Valid_US_Zip3": _invalid_values_row("Valid_US_Zip3", RuleArgument(name="pattern", fixed=US_ZIP3_PATTERN)),
+    "Valid_US_CA_Zip": _invalid_values_row(
+        "Valid_US_CA_Zip", RuleArgument(name="pattern", fixed=US_CA_ZIP_PATTERN),
+    ),
     "US_State": _invalid_values_row("US_State", RuleArgument(name="validValues", fixed=US_STATE_VALID_VALUES)),
     # Library only when its baseline is one literal of the property's own type -- see `constant_value`.
     "Constant": _invalid_values_row("Constant", RuleArgument(name="validValues", term_field="baseline_value")),

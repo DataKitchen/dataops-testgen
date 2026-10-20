@@ -82,6 +82,7 @@ function AlphaColumn(/** @type Column */ item) {
         PHONE_USA: 'Phone (USA)',
         EMAIL: 'Email',
         ZIP_USA: 'Zip Code (USA)',
+        ZIP_US_CA: 'Zip Code (US/Canada)',
         FILE_NAME: 'Filename',
         CREDIT_CARD: 'Credit Card',
         DELIMITED_DATA: 'Delimited Data',
@@ -330,8 +331,8 @@ const BaseCounts = (/** @type Column */ item) => {
     return div(
         div(
             { class: 'flex-row fx-gap-4' },
-            attributes.map(({ label, value }) => Attribute({ 
-                label: value === 0 ? span({ class: 'text-error' }, label) : label, 
+            attributes.map(({ label, value }) => Attribute({
+                label: value === 0 ? span({ class: 'text-error' }, label) : label,
                 value: formatNumber(value),
                 width: attributeWidth,
             })),

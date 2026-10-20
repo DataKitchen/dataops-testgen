@@ -6,15 +6,15 @@ profile_anomaly_types:
   anomaly_description: |-
     Under 3% of values in this column were found to be null, zero-length or dummy values, but values are not universally present. This could indicate unexpected missing values in a required column.
   anomaly_criteria: |-
-    (p.value_ct - p.zero_length_ct - CASE WHEN (p.filled_value_ct > 0 AND (p.numeric_ct <> p.value_ct OR functional_data_type IN ('Phone', 'Zip'))) THEN p.filled_value_ct ELSE 0 END
+    (p.value_ct - p.zero_length_ct - CASE WHEN (p.filled_value_ct > 0 AND (p.numeric_ct <> p.value_ct OR functional_data_type IN ('Phone', 'Zip', 'Zip3', 'Zip US/Canada'))) THEN p.filled_value_ct ELSE 0 END
       )::FLOAT / p.record_ct::FLOAT > 0.97
-       AND (p.value_ct - p.zero_length_ct - CASE WHEN (p.filled_value_ct > 0 AND (p.numeric_ct <> p.value_ct OR functional_data_type IN ('Phone', 'Zip'))) THEN p.filled_value_ct ELSE 0 END
+       AND (p.value_ct - p.zero_length_ct - CASE WHEN (p.filled_value_ct > 0 AND (p.numeric_ct <> p.value_ct OR functional_data_type IN ('Phone', 'Zip', 'Zip3', 'Zip US/Canada'))) THEN p.filled_value_ct ELSE 0 END
              ) < p.record_ct
   detail_expression: |-
-    (p.record_ct - (p.value_ct - p.zero_length_ct - CASE WHEN (p.filled_value_ct > 0 AND (p.numeric_ct <> p.value_ct OR functional_data_type IN ('Phone', 'Zip'))) THEN p.filled_value_ct ELSE 0 END
+    (p.record_ct - (p.value_ct - p.zero_length_ct - CASE WHEN (p.filled_value_ct > 0 AND (p.numeric_ct <> p.value_ct OR functional_data_type IN ('Phone', 'Zip', 'Zip3', 'Zip US/Canada'))) THEN p.filled_value_ct ELSE 0 END
        ))::VARCHAR(20) ||
               ' of ' || p.record_ct::VARCHAR(20) || ' blank values:  ' ||
-              ROUND(100.0 * (p.record_ct - (p.value_ct - p.zero_length_ct - CASE WHEN (p.filled_value_ct > 0 AND (p.numeric_ct <> p.value_ct OR functional_data_type IN ('Phone', 'Zip'))) THEN p.filled_value_ct ELSE 0 END
+              ROUND(100.0 * (p.record_ct - (p.value_ct - p.zero_length_ct - CASE WHEN (p.filled_value_ct > 0 AND (p.numeric_ct <> p.value_ct OR functional_data_type IN ('Phone', 'Zip', 'Zip3', 'Zip US/Canada'))) THEN p.filled_value_ct ELSE 0 END
                 ))::NUMERIC(18, 5)
                        / NULLIF(p.value_ct, 0)::NUMERIC(18, 5), 2)::VARCHAR(40) || '%'
   issue_likelihood: Possible

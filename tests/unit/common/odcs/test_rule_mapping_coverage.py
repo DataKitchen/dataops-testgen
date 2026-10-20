@@ -12,6 +12,7 @@ from testgen.common.odcs.quality_rules import (
     EMAIL_PATTERN,
     NEAR_STANDARD_CUSTOM_TEST_TYPES,
     RULE_MAPPINGS,
+    US_CA_ZIP_PATTERN,
     US_STATE_VALID_VALUES,
     US_ZIP3_PATTERN,
     US_ZIP_PATTERN,
@@ -90,7 +91,8 @@ def test_the_library_table_holds_exactly_the_decided_types():
     assert set(_LIBRARY_ROWS) == {
         "Required", "Missing_Pct", "Row_Ct", "Row_Ct_Pct",
         "Dupe_Rows", "LOV_Match", "Pattern_Match",
-        "Required_No_Placeholder", "Email_Format", "Valid_US_Zip", "Valid_US_Zip3", "US_State", "Constant",
+        "Required_No_Placeholder", "Email_Format", "Valid_US_Zip", "Valid_US_Zip3", "Valid_US_CA_Zip",
+        "US_State", "Constant",
         "Match_Row_Ct", "Match_Null_Ct",
     }
 
@@ -143,6 +145,18 @@ def test_a_fixed_zip_pattern_accepts_exactly_the_shapes_the_measure_accepts(test
     for value in [*valid, *invalid]:
         translated = value.translate(str.maketrans("012345678", "999999999"))
         assert (re.search(pattern, value) is not None) == (translated in shapes), value
+
+
+def test_the_fixed_us_ca_pattern_accepts_exactly_the_shapes_the_measure_accepts():
+    """The measure maps every digit to 9 and every letter to A, and compares the result against fixed shapes."""
+    measure = _postgresql_measure("Valid_US_CA_Zip")
+    source, target = re.search(r"TRANSLATE\(\{COLUMN_NAME\},'([^']*)','([^']*)'\)", measure).groups()
+    shapes = re.findall(r"'([9A][9A -]*)'", re.search(r"NOT IN \(([^)]*)\)", measure).group(1))
+    valid = ["02139", "021391234", "02139-1234", "K1A 0B1", "K1A0B1", "k1a 0b1", "k1A0b1"]
+    invalid = ["", "0213", "0213X", "02139-12", "K1A  0B1", "K1A-0B1", "1KA 0B1", "K1A 0B", "K1A 0B1 2", "É1A 0B1"]
+    for value in [*valid, *invalid]:
+        translated = value.translate(str.maketrans(source, target))
+        assert (re.search(US_CA_ZIP_PATTERN, value) is not None) == (translated in shapes), value
 
 
 @pytest.mark.parametrize("test_type", [

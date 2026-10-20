@@ -17,7 +17,7 @@
  * @property {string} test_suite
  * @property {string} test_run_id
  * @property {number} test_run_date
- * 
+ *
  * @typedef TestSuite
  * @type {object}
  * @property {string} id
@@ -114,7 +114,7 @@
  * @property {string} max_text
  * @property {number} distinct_std_value_ct
  * @property {number} distinct_pattern_ct
- * @property {'STREET_ADDR' | 'STATE_USA' | 'PHONE_USA' | 'EMAIL' | 'ZIP_USA' | 'FILE_NAME' | 'CREDIT_CARD' | 'DELIMITED_DATA' | 'SSN'} std_pattern_match
+ * @property {'STREET_ADDR' | 'STATE_USA' | 'PHONE_USA' | 'EMAIL' | 'ZIP_USA' | 'ZIP_US_CA' | 'FILE_NAME' | 'CREDIT_CARD' | 'DELIMITED_DATA' | 'SSN'} std_pattern_match
  * @property {FrequencyAnalysis} frequent_values
  * @property {FrequencyAnalysis} frequent_patterns
  * * Numeric
@@ -250,7 +250,7 @@ const LatestProfilingTime = (/** @type Properties */ props, /** @type Table | Co
         'as of latest profiling run on ',
         props.noLinks ? b(formatTimestamp(item.profile_run_date)) : null,
     ];
-    let link = Link({ emit, 
+    let link = Link({ emit,
         href: 'profiling-runs:results',
         params: {
             run_id: item.profile_run_id,
@@ -267,7 +267,7 @@ const LatestProfilingTime = (/** @type Properties */ props, /** @type Table | Co
             link = null;
         } else {
             text = `No profiling results yet for ${item.type}.`;
-            link = Link({ emit, 
+            link = Link({ emit,
                 href: 'table-groups',
                 params: { project_code: item.project_code, connection_id: item.connection_id },
                 open_new: true,

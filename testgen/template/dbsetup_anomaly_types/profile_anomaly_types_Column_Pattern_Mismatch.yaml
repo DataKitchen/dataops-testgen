@@ -8,7 +8,7 @@ profile_anomaly_types:
     \ data errors in the remaining values. "
   anomaly_criteria: |-
     p.general_type = 'A'
-       AND functional_data_type NOT ILIKE 'Measurement%' AND functional_data_type NOT IN ('Category', 'Code')
+       AND functional_data_type NOT ILIKE 'Measurement%' AND functional_data_type NOT IN ('Category', 'Code', 'Zip US/Canada')
        AND p.max_length > 3
        AND p.value_ct > (p.numeric_ct + p.filled_value_ct + p.zero_length_ct)
        AND p.distinct_pattern_ct BETWEEN 2 AND 4
