@@ -8,6 +8,7 @@ profile_anomaly_types:
   anomaly_criteria: |-
     p.general_type = 'A'
        AND p.column_name NOT ILIKE '%zip%'
+       AND p.functional_data_type NOT IN ('Zip', 'Zip3', 'Zip US/Canada')
        AND p.functional_data_type NOT ILIKE 'id%'
        AND p.functional_data_type NOT ILIKE 'Period%'
        AND p.value_ct > p.numeric_ct

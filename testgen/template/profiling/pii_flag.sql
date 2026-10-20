@@ -84,7 +84,7 @@ UPDATE profile_results
                       p.table_name, p.column_name,
                       CASE
                          WHEN functional_data_type = 'Email'                                           THEN 'B/CONTACT/Email'
-                         WHEN functional_data_type IN ('Address', 'City', 'State', 'Zip', 'Zip US/CA')
+                         WHEN functional_data_type IN ('Address', 'City', 'State', 'Zip', 'Zip3', 'Zip US/Canada')
                                                                                                        THEN 'B/CONTACT/Address'
                          WHEN functional_data_type = 'Phone'
                                                                                                        THEN 'B/CONTACT/Phone'

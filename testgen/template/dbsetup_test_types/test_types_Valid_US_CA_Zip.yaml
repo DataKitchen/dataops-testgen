@@ -11,7 +11,7 @@ test_types:
   measure_uom_description: |-
     Expected count of values with invalid postal codes
   selection_criteria: |-
-    functional_data_type = 'Zip US/CA'
+    functional_data_type = 'Zip US/Canada'
   generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)

@@ -356,7 +356,7 @@ distribution-level signals that don't expose individual rows.
 
 **People**: `Person Full Name`, `Person Given Name`, `Person Last Name`
 
-**Location & contact**: `Address`, `City`, `State`, `Zip`, `Zip3`, `Zip US/CA`, `Email`, `Phone`
+**Location & contact**: `Address`, `City`, `State`, `Zip`, `Zip3`, `Zip US/Canada`, `Email`, `Phone`
 
 **Measurements**: `Measurement`, `Measurement Discrete`, `Measurement Pct`,
 `Measurement Spike`, `Measurement Text`
