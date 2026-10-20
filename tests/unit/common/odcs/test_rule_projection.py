@@ -1103,6 +1103,7 @@ def test_required_no_placeholder_lists_its_placeholders_as_missing_values(baseli
     ("Email_Format", {"pattern": quality_rules.EMAIL_PATTERN}),
     ("Valid_US_Zip", {"pattern": quality_rules.US_ZIP_PATTERN}),
     ("Valid_US_Zip3", {"pattern": quality_rules.US_ZIP3_PATTERN}),
+    ("Valid_US_CA_Zip", {"pattern": quality_rules.US_CA_ZIP_PATTERN}),
     ("US_State", {"validValues": list(quality_rules.US_STATE_VALID_VALUES)}),
 ])
 def test_a_fixed_predicate_type_renders_its_own_predicate(test_type, argument):

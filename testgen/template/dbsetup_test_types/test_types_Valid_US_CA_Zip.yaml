@@ -1,0 +1,229 @@
+test_types:
+  id: '1701'
+  test_type: Valid_US_CA_Zip
+  test_name_short: Valid US/Canada Zip
+  test_name_long: Valid USA or Canadian Postal Codes
+  test_description: |-
+    Tests that postal codes match the 5-digit or 9-digit standard US formats or the 6-character standard Canadian format.
+  except_message: |-
+    Invalid US zip code or Canadian postal code formats found.
+  measure_uom: Invalid postal codes
+  measure_uom_description: |-
+    Expected count of values with invalid postal codes
+  selection_criteria: |-
+    functional_data_type = 'Zip US/Canada'
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '0.75'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: threshold_value
+  default_parm_values: |-
+    0
+  default_parm_prompts: |-
+    Threshold Invalid Value Count
+  default_parm_help: null
+  default_parm_required: N
+  default_severity: Warning
+  run_type: CAT
+  test_scope: column
+  column_general_types: [A]
+  dq_dimension: Validity
+  impact_dimension: Conformance
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Expected count of invalid postal codes
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test looks for the presence of values that fail to match either a US zip code (five digits, nine digits, or five digits, a hyphen and four digits) or a Canadian postal code (letter, digit, letter, an optional space, then digit, letter, digit). Letters may be uppercase or lowercase. Use this test in place of Valid US Zip when a column holds addresses from both countries. The test checks the format only, not whether the code has been assigned.
+  active: Y
+  ai_redact_values: false
+  algorithm: Pattern / regex
+  generation_sets:
+    - Standard
+  cat_test_conditions:
+  - id: '11426'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN REGEXP_REPLACE(REGEXP_REPLACE({COLUMN_NAME}, r'[0-9]', '9'), r'[A-Za-z]', 'A') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '11427'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: databricks
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '11428'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: mssql
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME} COLLATE Latin1_General_BIN,'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '11429'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '11430'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '11431'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '11432'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '11433'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: oracle
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '11434'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(CASE WHEN REPLACE_REGEXPR('[A-Za-z]' IN REPLACE_REGEXPR('[0-9]' IN {COLUMN_NAME} WITH '9') WITH 'A') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '11435'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUM(CASE WHEN REGEXP_REPLACE(REGEXP_REPLACE({COLUMN_NAME}, '[0-9]', '9', 'g'), '[A-Za-z]', 'A', 'g') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '11436'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: duckdb
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '11437'
+    test_id: '1701'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE REGEXP_REPLACE(REGEXP_REPLACE(CAST(`{COLUMN_NAME}` AS STRING), r'[0-9]', '9'), r'[A-Za-z]', 'A') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9')
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY record_ct DESC
+      LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11438'
+    test_id: '1701'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE TRANSLATE(`{COLUMN_NAME}`,'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') GROUP BY `{COLUMN_NAME}` ORDER BY record_ct DESC LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11439'
+    test_id: '1701'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}" COLLATE Latin1_General_BIN,'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+    error_type: Test Results
+  - id: '11440'
+    test_id: '1701'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11441'
+    test_id: '1701'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11442'
+    test_id: '1701'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11443'
+    test_id: '1701'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11444'
+    test_id: '1701'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '11445'
+    test_id: '1701'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REPLACE_REGEXPR('[A-Za-z]' IN REPLACE_REGEXPR('[0-9]' IN "{COLUMN_NAME}" WITH '9') WITH 'A') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '11446'
+    test_id: '1701'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TABLE_NAME}" WHERE REGEXP_REPLACE(REGEXP_REPLACE("{COLUMN_NAME}", '[0-9]', '9', 'g'), '[A-Za-z]', 'A', 'g') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11447'
+    test_id: '1701'
+    test_type: Valid_US_CA_Zip
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') NOT IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
+    error_type: Test Results
+  test_templates: []

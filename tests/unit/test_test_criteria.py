@@ -43,6 +43,7 @@ EXPECTED_CRITERIA = {
     "Valid_Month": TestCriteria.DEFINED_RULE,
     "Valid_US_Zip": TestCriteria.DEFINED_RULE,
     "Valid_US_Zip3": TestCriteria.DEFINED_RULE,
+    "Valid_US_CA_Zip": TestCriteria.DEFINED_RULE,
     # Defined Value: user asserts the expected value/pattern (enumerated)
     "Constant": TestCriteria.DEFINED_VALUE,
     "Pattern_Match": TestCriteria.DEFINED_VALUE,

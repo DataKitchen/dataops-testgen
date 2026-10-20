@@ -10,7 +10,7 @@ EXPECTED_PAIRS = {("Standard", t) for t in [
     "Incr_Avg_Shift", "LOV_Match", "Min_Date", "Min_Val", "Missing_Pct", "Monthly_Rec_Ct",
     "Outlier_Pct_Above", "Outlier_Pct_Below", "Pattern_Match", "Recency", "Required", "Required_No_Placeholder",
     "Street_Addr_Pattern", "US_State", "Unique", "Unique_Pct", "Valid_Characters", "Valid_Month",
-    "Valid_US_Zip", "Valid_US_Zip3", "Variability_Decrease", "Variability_Increase", "Weekly_Rec_Ct",
+    "Valid_US_Zip", "Valid_US_Zip3", "Valid_US_CA_Zip", "Variability_Decrease", "Variability_Increase", "Weekly_Rec_Ct",
 ]} | {("Monitor", t) for t in ["Schema_Drift", "Freshness_Trend", "Volume_Trend"]} | {("Contract", t) for t in [
     "Dupe_Rows", "LOV_Match", "Min_Date", "Min_Val", "Pattern_Match", "Recency", "Required",
     "Required_No_Placeholder", "Row_Ct", "Unique", "Valid_Characters",

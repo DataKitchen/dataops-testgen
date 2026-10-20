@@ -267,7 +267,8 @@ Populated when `General Type == "Alpha"`.
 
 ### Patterns
 - **Standard Pattern Match** — Recognized standard pattern when applicable (`Email`, `Phone (USA)`,
-  `Street Address`, `State (USA)`, `Zip Code (USA)`, `Filename`, `Credit Card`, `Delimited Data`, `SSN (USA)`).
+  `Street Address`, `State (USA)`, `Zip Code (USA)`, `Zip Code (US/Canada)`, `Filename`, `Credit Card`,
+  `Delimited Data`, `SSN (USA)`).
 - **Distinct Patterns** — Distinct character-class patterns observed (count).
 - **Frequent Patterns** — Top patterns and counts, pipe-separated.
 - **Frequent Values** — Top frequent raw values and counts (raw strings; **PII-redactable**).
@@ -355,7 +356,7 @@ distribution-level signals that don't expose individual rows.
 
 **People**: `Person Full Name`, `Person Given Name`, `Person Last Name`
 
-**Location & contact**: `Address`, `City`, `State`, `Zip`, `Email`, `Phone`
+**Location & contact**: `Address`, `City`, `State`, `Zip`, `Zip3`, `Zip US/Canada`, `Email`, `Phone`
 
 **Measurements**: `Measurement`, `Measurement Discrete`, `Measurement Pct`,
 `Measurement Spike`, `Measurement Text`
