@@ -134,8 +134,6 @@ def test_bad_health_dimension() -> None:
 
 
 def test_default_severity_accepts_log() -> None:
-    """``default_severity`` allows Log in packaged YAMLs even though the Severity
-    enum (scoped to user overrides) does not."""
     result = validate_test_type_yaml(_valid_parent_yaml().replace(
         "default_severity: Fail", "default_severity: Log"
     ))

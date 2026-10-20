@@ -62,6 +62,7 @@ class TestRunType(StrEnum):
 class Severity(StrEnum):
     FAIL = "Fail"
     WARNING = "Warning"
+    LOG = "Log"
 
 
 class TestAlgorithm(StrEnum):
@@ -159,7 +160,7 @@ class InvalidTestDefinitionFields(ValueError):
 
 def _is_blank(value: object) -> bool:
     # NullIfEmptyString columns turn ``""`` into NULL on write — treat both as cleared.
-    return value is None or value == ""
+    return value is None or (isinstance(value, str) and not value.strip())
 
 
 CUSTOM_METADATA_MAX_KEYS = 50
@@ -609,6 +610,10 @@ def _enum_by_value(enum_cls: type[StrEnum]) -> Enum:
 # set. Schema_Conformance follows the tables a contract declares, one definition per table.
 MANAGED_TEST_TYPES: frozenset[str] = frozenset({"Schema_Conformance"})
 
+# Scopes whose tests carry a column_name: the column under test (column), a "Test Focus" label
+# (custom), or the aggregate expression or categorical column list under test (referential).
+COLUMN_NAME_SCOPES: frozenset[str] = frozenset({TestScope.COLUMN, TestScope.CUSTOM, TestScope.REFERENTIAL})
+
 # Test types that are never offered as regular tests: the monitor types, which only monitor suites
 # generate and manage, and the managed types, whose definitions TestGen creates and removes itself.
 NON_PUBLIC_TEST_TYPES: frozenset[str] = frozenset(
@@ -717,10 +722,10 @@ class TestType(ParamFieldsMixin, Entity):
         )
 
 
-def _required_fields_for(test_type: TestType) -> set[str]:
+def required_fields_for(test_type: TestType) -> set[str]:
     """Fields that must be present and non-empty for the given test type.
 
-    - Column-scoped tests implicitly require ``column_name``.
+    - Column, custom and referential tests implicitly require ``column_name``.
     - Tests that read a physical table implicitly require ``table_name`` — every scope except
       ``tablegroup`` (which spans the whole group) and the ``CUSTOM`` test type (whose
       ``custom_query`` supplies its own FROM clause; the table is only an output label).
@@ -728,7 +733,7 @@ def _required_fields_for(test_type: TestType) -> set[str]:
       positions marked ``Y`` are required.
     """
     required: set[str] = set()
-    if test_type.test_scope == "column":
+    if test_type.test_scope in COLUMN_NAME_SCOPES:
         required.add("column_name")
     if test_type.test_scope != "tablegroup" and test_type.test_type != "CUSTOM":
         required.add("table_name")
@@ -816,11 +821,11 @@ def missing_required_fields(test_type: TestType, value_of: Callable[[str], objec
     """Required fields of ``test_type`` that are blank, mapped to the reason.
 
     ``value_of`` returns a field's value by name. Covers the fields from
-    :func:`_required_fields_for` and the group from :func:`one_of_fields_for`.
+    :func:`required_fields_for` and the group from :func:`one_of_fields_for`.
     """
     errors = {
         field: f"required for test type `{test_type.test_name_short}`"
-        for field in _required_fields_for(test_type)
+        for field in required_fields_for(test_type)
         if _is_blank(value_of(field))
     }
     one_of = one_of_fields_for(test_type)
@@ -828,6 +833,41 @@ def missing_required_fields(test_type: TestType, value_of: Callable[[str], objec
         listed = ", ".join(f"`{field}`" for field in one_of)
         for field in one_of:
             errors[field] = f"at least one of {listed} is required for test type `{test_type.test_name_short}`"
+    return errors
+
+
+def test_definition_errors(test_type: TestType, value_of: Callable[[str], object]) -> dict[str, str]:
+    """Fields of a test definition of ``test_type`` that are invalid, mapped to the reason.
+
+    ``value_of`` returns a field's value by name. Empty when the definition is valid.
+    """
+    errors: dict[str, str] = {}
+
+    severity = value_of("severity")
+    if severity:
+        try:
+            Severity(severity)
+        except ValueError:
+            valid = ", ".join(f"`{member.value}`" for member in Severity)
+            errors["severity"] = f"must be one of {valid} (got `{severity}`)"
+
+    if test_type.test_scope not in COLUMN_NAME_SCOPES and not _is_blank(value_of("column_name")):
+        errors["column_name"] = (
+            f"test type `{test_type.test_name_short}` has scope `{test_type.test_scope}`; "
+            f"column_name does not apply to this scope"
+        )
+
+    if not _is_blank(value_of("custom_query")) and "custom_query" not in test_type.param_columns:
+        errors["custom_query"] = (
+            f"test type `{test_type.test_name_short}` does not accept a custom query"
+        )
+
+    metadata_error = validate_custom_metadata(value_of("custom_metadata"))
+    if metadata_error:
+        errors["custom_metadata"] = metadata_error
+
+    errors.update(missing_required_fields(test_type, value_of))
+    errors.update(_storage_errors(value_of))
     return errors
 
 
@@ -1478,10 +1518,7 @@ class TestDefinition(Entity):
     def editable_fields(self, test_type: TestType) -> set[str]:
         """Fields a caller may set or change on this test definition under the given test type."""
         fields = self.EDITABLE_BASE_FIELDS | test_type.param_columns
-        # column_name is meaningful for column-scoped tests (the column under test),
-        # custom-scoped tests (a "Test Focus" label), and referential tests (the aggregate
-        # expression or categorical column list under test). Table-scoped tests don't use it.
-        if test_type.test_scope in ("column", "custom", "referential"):
+        if test_type.test_scope in COLUMN_NAME_SCOPES:
             fields = fields | {"column_name"}
         # impact_dimension is overridable only for user-defined-semantic scopes
         # (custom-scope = user-authored SQL; referential-scope = comparison-based tests).
@@ -1496,39 +1533,7 @@ class TestDefinition(Entity):
         Raises :class:`InvalidTestDefinitionFields` with every offending field
         and reason — callers see all problems at once.
         """
-        errors: dict[str, str] = {}
-
-        if self.severity:
-            try:
-                Severity(self.severity)
-            except ValueError:
-                errors["severity"] = (
-                    f"must be `{Severity.FAIL.value}` or `{Severity.WARNING.value}` "
-                    f"(got `{self.severity}`)"
-                )
-
-        # column_name applies to column-scoped tests (the column under test),
-        # custom-scoped tests (a "Test Focus" label), and referential tests (the aggregate
-        # expression or categorical column list under test). Table-scoped tests don't use it.
-        if test_type.test_scope not in ("column", "custom", "referential") and not _is_blank(self.column_name):
-            errors["column_name"] = (
-                f"test type `{test_type.test_name_short}` has scope `{test_type.test_scope}`; "
-                f"column_name does not apply to this scope"
-            )
-
-        if not _is_blank(self.custom_query) and "custom_query" not in test_type.param_columns:
-            errors["custom_query"] = (
-                f"test type `{test_type.test_name_short}` does not accept a custom query"
-            )
-
-        metadata_error = validate_custom_metadata(self.custom_metadata)
-        if metadata_error:
-            errors["custom_metadata"] = metadata_error
-
-        errors.update(missing_required_fields(test_type, lambda field: getattr(self, field, None)))
-        errors.update(_storage_errors(lambda field: getattr(self, field, None)))
-
-        if errors:
+        if errors := test_definition_errors(test_type, lambda field: getattr(self, field, None)):
             raise InvalidTestDefinitionFields(errors)
 
     @classmethod

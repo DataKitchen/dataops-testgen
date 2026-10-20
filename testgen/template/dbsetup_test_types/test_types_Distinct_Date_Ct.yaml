@@ -4,7 +4,7 @@ test_types:
   test_name_short: Date Count
   test_name_long: Count of distinct dates at or above reference
   test_description: |-
-    Tests that count of distinct dates referenced in column has not dropped compared to baseline data.
+    Tests that count of distinct dates referenced in column has not dropped below the minimum expected count.
   except_message: |-
     Drop in count of unique dates recorded in column.
   measure_uom: Unique dates
@@ -36,7 +36,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    Date Count tests that the count of distinct dates present in the column has not dropped since baseline. The test is relevant for cumulative datasets, where old records are retained. A failure here would indicate missing records, which could be caused by a processing error or changed upstream data sources. For an exact count of distinct dates, use Match Date Count.
+    Date Count tests that the count of distinct dates present in the column has not dropped below the minimum expected count. The test is relevant for cumulative datasets, where old records are retained. A failure here would indicate missing records, which could be caused by a processing error or changed upstream data sources. For an exact count of distinct dates, use Match Date Count.
   active: Y
   ai_redact_values: false
   algorithm: Counting

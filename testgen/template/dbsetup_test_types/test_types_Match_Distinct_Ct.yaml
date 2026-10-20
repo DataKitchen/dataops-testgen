@@ -36,7 +36,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    Match Distinct Count tests that the column holds exactly the baseline number of distinct values. For a count that is only expected not to drop, use Value Count.
+    Match Distinct Count tests that the column holds exactly the baseline number of distinct values.
   active: Y
   ai_redact_values: false
   null_measure_fails: true

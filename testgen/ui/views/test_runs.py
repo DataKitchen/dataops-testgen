@@ -238,6 +238,7 @@ def on_test_runs_filtered(filters: TestRunFilters) -> None:
 
 def refresh_data(*_) -> None:
     get_test_run_summaries.clear()
+    get_project_summary.clear()
 
 
 class TestRunNotificationSettingsDialog(NotificationSettingsDialogBase):
@@ -315,6 +316,7 @@ def on_cancel_run(payload: dict) -> None:
     job_exec = JobExecution.get(job_execution_id)
     if job_exec and job_exec.request_cancel():
         get_test_run_summaries.clear()
+        get_project_summary.clear()
         fm.reset_post_updates(str_message=":green[Cancellation requested.]", as_toast=True)
     else:
         fm.reset_post_updates(str_message=":red[This run cannot be canceled.]", as_toast=True)
@@ -335,6 +337,7 @@ def on_delete_runs(job_execution_ids: list[str]) -> None:
             else:
                 get_current_session().delete(job_exec)
         get_test_run_summaries.clear()
+        get_project_summary.clear()
         Router().set_query_params({"page": 1})
     except Exception:
         LOG.exception("Failed to delete test run")

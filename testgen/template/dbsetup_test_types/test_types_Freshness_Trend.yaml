@@ -21,7 +21,7 @@ test_types:
   default_parm_prompts: |-
     Record Subset Condition,Lower Bound,Upper Bound,History Lookback
   default_parm_help: |-
-    Condition defining a subset of records in main table
+    Condition selecting the records to monitor, written like a SQL WHERE clause. Example: status = 'SHIPPED'.
   default_parm_required: N,N,N,N
   default_severity: Fail
   run_type: QUERY

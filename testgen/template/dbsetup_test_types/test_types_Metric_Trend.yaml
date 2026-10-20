@@ -18,7 +18,8 @@ test_types:
   default_parm_columns: column_name,custom_query,history_calculation,history_calculation_upper,history_lookback
   default_parm_values: null
   default_parm_prompts: Metric Name,Metric Expression,Lower Bound,Upper Bound,History Lookback
-  default_parm_help: null
+  default_parm_help: |-
+    Label that identifies this metric on the Monitors page.|SQL aggregate expression evaluated against the table, such as SUM(amount) or SUM(CASE WHEN status IS NULL THEN 1 ELSE 0 END). Enter the expression only, not a full query.|||
   default_parm_required: Y,Y,N,N,N
   default_severity: Fail
   run_type: CAT

@@ -35,7 +35,7 @@ SET functional_data_type =
 WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL;
 
--- 1A.  Assign ID's based on masks
+-- 1A.  Assign ID's based on masks, plus columns named "id" in any case
 UPDATE profile_results
 SET functional_data_type = 'ID-SK'
 WHERE profile_run_id = :PROFILE_RUN_ID
@@ -46,7 +46,7 @@ UPDATE profile_results
 SET functional_data_type = 'ID'
 WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
-  AND column_name ILIKE :PROFILE_ID_COLUMN_MASK;
+  AND (column_name ILIKE :PROFILE_ID_COLUMN_MASK OR LOWER(column_name) = 'id');
 
 -- 2. Assign DATE
 /*

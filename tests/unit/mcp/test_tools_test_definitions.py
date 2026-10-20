@@ -65,7 +65,8 @@ def test_list_tests_basic(mock_td, mock_notes, db_session_mock):
     assert "`customer_name`" in result
     assert "Warning" in result
     assert "Locked" in result  # header
-    assert "Manual" in result  # header
+    assert "Last Generated" in result  # header
+    assert "2026-04-01" in result
     mock_td.list_for_suite.assert_called_once()
     call_kwargs = mock_td.list_for_suite.call_args
     assert call_kwargs.kwargs["test_suite_id"] is not None
@@ -459,6 +460,7 @@ def test_get_test_flagged_with_notes(mock_td, mock_tr, mock_notes, db_session_mo
     td.measure_uom = None
     td.flagged = True
     td.last_auto_gen_date = datetime(2026, 3, 15)
+    td.profiling_as_of_date = datetime(2026, 3, 14)
     td.last_manual_update = None
     td.default_parm_columns = None
     td.param_columns = set()
@@ -483,8 +485,9 @@ def test_get_test_flagged_with_notes(mock_td, mock_tr, mock_notes, db_session_mo
     result = get_test(str(td_id))
 
     assert "Flagged, 2 Notes" in result
-    assert "auto-generated" in result
-    assert "2026-03-15" in result
+    assert "**Last Generated:** 2026-03-15" in result
+    assert "**Based on Profiling:** 2026-03-14" in result
+    assert "**Last Manual Update:** Never" in result
 
 
 _RULES_MODULE = "testgen.common.database.table_group_service"
@@ -552,6 +555,7 @@ def test_get_test_reports_no_schema_on_a_files_connection(mock_td, mock_tr, mock
 def test_get_test_names_the_data_space_on_a_data_360_connection(mock_td, mock_tr, mock_notes, db_session_mock):
     td = _minimal_test_definition()
     td.schema_name = "sales"
+    td.test_scope = "referential"
     mock_td.get_for_project.return_value = td
     mock_tr.select_history.return_value = []
     mock_notes.get_notes.return_value = []
@@ -568,6 +572,27 @@ def test_get_test_names_the_data_space_on_a_data_360_connection(mock_td, mock_tr
     assert "Match Data Space" not in result
     assert "match_schema_name" not in result
     assert "**Match Table:** `customers`" in result
+
+
+@patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
+@patch("testgen.mcp.tools.test_definitions.TestResult")
+@patch("testgen.mcp.tools.test_definitions.TestDefinition")
+def test_get_test_shows_no_reference_match_for_a_custom_test(mock_td, mock_tr, mock_notes, db_session_mock):
+    td = _minimal_test_definition()
+    td.test_type = "CUSTOM"
+    td.test_scope = "custom"
+    td.param_columns = {"custom_query", "match_column_names"}
+    td.match_column_names = None
+    mock_td.get_for_project.return_value = td
+    mock_tr.select_history.return_value = []
+    mock_notes.get_notes.return_value = []
+
+    from testgen.mcp.tools.test_definitions import get_test
+
+    with _patch_table_group_flavor("postgresql"):
+        result = get_test(str(td.id))
+
+    assert "Reference Match" not in result
 
 
 def test_get_test_invalid_uuid(db_session_mock):
@@ -1186,7 +1211,7 @@ def test_create_test_severity_invalid(
         "threshold_value", "column_name",
     }
     saved.validate.side_effect = InvalidTestDefinitionFields(
-        {"severity": "must be `Fail` or `Warning` (got `critical`)"}
+        {"severity": "must be one of `Fail`, `Warning`, `Log` (got `critical`)"}
     )
     mock_td.return_value = saved
 

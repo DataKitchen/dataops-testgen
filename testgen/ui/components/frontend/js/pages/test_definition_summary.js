@@ -100,7 +100,7 @@ const TestDefinitionSummary = (props) => {
                     div(
                         { class: 'flex-column fx-flex fx-gap-4 test-definition-attributes'},
                         Attribute({
-                            label: 'Test Result Urgency',
+                            label: 'Test Result Severity',
                             value: testDefinition.severity,
                             class: 'fx-flex'
                         }),

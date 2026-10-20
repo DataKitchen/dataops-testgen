@@ -77,7 +77,7 @@ def test_saving_an_edit_turns_a_refused_version_write_into_a_toast():
     with (
         patch.object(view, "st") as st_mock,
         patch.object(view, "get_table_group_minimal", return_value=None),
-        patch.object(view.TestDefinition, "save", side_effect=FrozenVersionError("v")),
+        patch.object(view, "save_from_dialog", side_effect=FrozenVersionError("v")),
     ):
         handlers["on_EditTestSaved_change"]({})
 

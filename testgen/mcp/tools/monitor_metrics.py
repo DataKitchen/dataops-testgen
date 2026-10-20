@@ -4,8 +4,7 @@ from typing import Annotated
 from pydantic import Field
 from sqlalchemy import exists, select
 
-from testgen.common.custom_test_validation import validate_custom_query
-from testgen.common.database.database_service import get_flavor_service
+from testgen.common.custom_test_validation import InvalidMetricQuery, validate_aggregate_expression
 from testgen.common.enums import MonitorCalculation, MonitorType
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
@@ -198,8 +197,8 @@ def validate_metric_expression(
 ) -> str:
     """Dry-run a metric expression against the table group's connection without saving.
 
-    Wraps the expression the same way monitor evaluation does — ``SELECT ({expr}) AS
-    metric_value FROM {table}`` — so parse-and-run parity with runtime is automatic.
+    Evaluates the expression against the table the way a monitor run does, so an expression
+    that would fail in a run fails here.
     Use this to iterate on SQL before calling ``create_metric_monitor``
     or ``update_metric_monitor``. On success, surfaces the column names and the
     first returned row. On failure, surfaces the driver's error message verbatim so
@@ -224,10 +223,6 @@ def validate_metric_expression(
     if connection is None:
         raise MCPUserError("The table group's connection is no longer configured.")
 
-    flavor_service = get_flavor_service(connection.sql_flavor)
-    table_ref = flavor_service.get_table_ref(tg.table_group_schema, table_name, connection.sql_flavor_code)
-    wrapped_sql = f"SELECT ({clean_expr}) AS metric_value FROM {table_ref}"
-
     can_view_pii = get_project_permissions().has_permission("view_pii", tg.project_code)
     pii_columns: set[str] = (
         set()
@@ -239,13 +234,19 @@ def validate_metric_expression(
     doc.heading(1, "Metric expression dry-run")
 
     try:
-        result = validate_custom_query(
+        result = validate_aggregate_expression(
             connection=connection,
             schema=tg.table_group_schema,
-            custom_sql=wrapped_sql,
+            table_name=table_name,
+            expression=clean_expr,
             preview_limit=1,
             table_group=tg,
         )
+    except InvalidMetricQuery as err:
+        doc.text(f"**SQL ran** against `{connection.connection_name}`, but the expression is not a valid metric.")
+        doc.text("**Error:**")
+        doc.code_block(str(err))
+        return doc.render()
     except Exception as err:
         doc.text(f"**SQL did not execute** against `{connection.connection_name}`.")
         message = str(err.args[0]) if err.args else str(err)

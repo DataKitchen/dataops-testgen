@@ -27,6 +27,8 @@ const Portal = (/** @type Options */ options, ...args) => {
     const { target, align = 'left', position = 'bottom' } = getValue(options);
     const id = `${target}-portal`;
     let outsideClickHandler = null;
+    let pressHandler = null;
+    let pressTarget = null;
 
     const close = () => { options.opened.val = false; };
 
@@ -40,7 +42,10 @@ const Portal = (/** @type Options */ options, ...args) => {
         if (!isOpen) {
             if (outsideClickHandler) {
                 document.removeEventListener('click', outsideClickHandler, true);
+                document.removeEventListener('mousedown', pressHandler, true);
                 outsideClickHandler = null;
+                pressHandler = null;
+                pressTarget = null;
             }
             return;
         }
@@ -62,14 +67,21 @@ const Portal = (/** @type Options */ options, ...args) => {
         }
 
         if (!outsideClickHandler) {
+            // A drag that starts inside (e.g. selecting text in a search input) and ends outside fires
+            // its click outside. A press that started inside is never an outside click.
+            pressHandler = (event) => { pressTarget = event.target; };
             outsideClickHandler = (event) => {
                 const anchor = document.getElementById(target);
                 const portalEl = document.getElementById(id);
-                if (portalEl?.contains(event.target)) return;
-                if (anchor?.contains(event.target)) return;
-                if (isClickInsideChildPortal(event.target, id, portalEl)) return;
+                const isInside = (el) => portalEl?.contains(el)
+                    || anchor?.contains(el)
+                    || isClickInsideChildPortal(el, id, portalEl);
+                const startedInside = pressTarget && isInside(pressTarget);
+                pressTarget = null;
+                if (startedInside || isInside(event.target)) return;
                 close();
             };
+            document.addEventListener('mousedown', pressHandler, true);
             document.addEventListener('click', outsideClickHandler, true);
         }
     });

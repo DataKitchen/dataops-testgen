@@ -13,6 +13,7 @@ from testgen.common.custom_test_validation import (
     CustomQueryResult,
     InvalidMetricQuery,
     render_metric_validation_query,
+    validate_aggregate_expression,
     validate_custom_query,
     validate_metric_query,
 )
@@ -179,6 +180,80 @@ def test_validate_custom_query_propagates_db_errors(mock_get_flavor, mock_fetch)
 
     with pytest.raises(Exception, match="syntax error"):
         validate_custom_query(_connection(), "demo", "DROP TABLE orders")
+
+
+# -- validate_aggregate_expression --------------------------------------------
+
+
+@patch("testgen.common.custom_test_validation.fetch_from_target_db")
+@patch("testgen.common.custom_test_validation.get_flavor_service")
+def test_validate_aggregate_expression_selects_expression_from_table(mock_get_flavor, mock_fetch):
+    flavor_service = _flavor_service("limit")
+    flavor_service.get_table_ref = MagicMock(return_value='"demo"."orders"')
+    mock_get_flavor.return_value = flavor_service
+    mock_fetch.return_value = [{"row_count": 1}]
+
+    result = validate_aggregate_expression(_connection(), "demo", "orders", "  SUM(amount) ")
+
+    assert result.row_count == 1
+    count_sql = mock_fetch.call_args_list[0].args[1]
+    assert 'FROM (SELECT CAST(SUM(amount) AS VARCHAR(1000)) AS metric_value FROM "demo"."orders") ERR_TABLE' in count_sql
+
+
+@pytest.fixture
+def duckdb_target():
+    conn = duckdb.connect()
+    conn.execute("CREATE TABLE orders AS SELECT 1.5 AS amount, 'Acme' AS customer_name, NULL::INTEGER AS discount")
+    flavor_service = _flavor_service("limit")
+    flavor_service.get_table_ref = MagicMock(return_value="orders")
+
+    def run(_connection, sql, **_kwargs):
+        cursor = conn.execute(sql)
+        columns = [col[0] for col in cursor.description]
+        return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
+
+    with (
+        patch("testgen.common.custom_test_validation.get_flavor_service", return_value=flavor_service),
+        patch("testgen.common.custom_test_validation.fetch_from_target_db", side_effect=run),
+    ):
+        yield conn
+
+
+@pytest.mark.parametrize("expression", ["SELECT 1", "SUM(amount), COUNT(*)"])
+def test_validate_aggregate_expression_rejects_what_a_test_run_rejects(duckdb_target, expression):
+    """A full SELECT or a list of expressions is valid inside parentheses, but a test run casts the
+    measure without them, so validation rejects both too."""
+    with pytest.raises(duckdb.ParserException):
+        validate_aggregate_expression(_connection(), "main", "orders", expression)
+
+
+@pytest.mark.parametrize("expression", ["SUM(amount)", "COUNT(*)", "MAX(discount)"])
+def test_validate_aggregate_expression_accepts_numeric_or_null(duckdb_target, expression):
+    result = validate_aggregate_expression(_connection(), "main", "orders", expression)
+
+    assert result.row_count == 1
+    assert result.preview_rows == []
+
+
+@pytest.mark.parametrize("expression", ["MAX(customer_name)", "MAX(amount) > 1", "CURRENT_DATE"])
+def test_validate_aggregate_expression_rejects_non_numeric(duckdb_target, expression):
+    with pytest.raises(InvalidMetricQuery, match="not a number") as exc:
+        validate_aggregate_expression(_connection(), "main", "orders", expression)
+
+    assert "Acme" not in str(exc.value)
+
+
+def test_validate_aggregate_expression_rejects_non_aggregate(duckdb_target):
+    duckdb_target.execute("INSERT INTO orders VALUES (2.5, 'Beta', NULL)")
+
+    with pytest.raises(InvalidMetricQuery, match="must be an aggregate"):
+        validate_aggregate_expression(_connection(), "main", "orders", "amount")
+
+
+def test_validate_aggregate_expression_returns_preview_when_asked(duckdb_target):
+    result = validate_aggregate_expression(_connection(), "main", "orders", "SUM(amount)", preview_limit=1)
+
+    assert result.preview_rows == [{"metric_value": "1.5"}]
 
 
 # -- validate_metric_query ----------------------------------------------------

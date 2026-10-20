@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from testgen.common.custom_test_validation import CustomQueryResult
+from testgen.common.custom_test_validation import CustomQueryResult, InvalidMetricQuery
 from testgen.common.enums import MonitorType, SuiteType
 from testgen.mcp.exceptions import (
     MCPPermissionDenied,
@@ -427,19 +427,17 @@ def test_delete_metric_monitor_not_found(mock_resolve, db_session_mock):
 
 
 @patch(f"{MODULE}.get_pii_columns", return_value=set())
-@patch(f"{MODULE}.get_flavor_service")
 @patch(f"{MODULE}._table_in_catalog", return_value=True)
-@patch(f"{MODULE}.validate_custom_query")
+@patch(f"{MODULE}.validate_aggregate_expression")
 @patch(f"{MODULE}.Connection")
 @patch(f"{MODULE}.resolve_monitored_table_group")
 def test_validate_metric_expression_happy_path(
-    mock_resolve, mock_conn_cls, mock_validate, mock_in_catalog, mock_flavor, mock_pii,
+    mock_resolve, mock_conn_cls, mock_validate, mock_in_catalog, mock_pii,
     db_session_mock,
 ):
     tg = _mock_table_group()
     mock_resolve.return_value = (tg, _mock_monitor_suite())
     mock_conn_cls.get.return_value = _mock_connection(connection_name="warehouse")
-    mock_flavor.return_value.get_table_ref.return_value = '"public"."orders"'
 
     preview_row = {"metric_value": 12345}
     mock_validate.return_value = CustomQueryResult(row_count=1, preview_rows=[preview_row])
@@ -464,8 +462,8 @@ def test_validate_metric_expression_happy_path(
     mock_validate.assert_called_once()
     kwargs = mock_validate.call_args.kwargs
     assert kwargs["schema"] == "public"
-    # Expression wrapped as monitor evaluation does — SELECT ({expr}) AS metric_value FROM {table_ref}
-    assert kwargs["custom_sql"] == 'SELECT (SUM(amount)) AS metric_value FROM "public"."orders"'
+    assert kwargs["table_name"] == "orders"
+    assert kwargs["expression"] == "SUM(amount)"
     assert kwargs["preview_limit"] == 1
     # view_pii → get_pii_columns is NOT queried
     mock_pii.assert_not_called()
@@ -499,13 +497,12 @@ def test_validate_metric_expression_refuses_when_source_data_protected(_mock_fla
 
 
 @patch(f"{MODULE}.get_pii_columns")
-@patch(f"{MODULE}.get_flavor_service")
 @patch(f"{MODULE}._table_in_catalog", return_value=True)
-@patch(f"{MODULE}.validate_custom_query")
+@patch(f"{MODULE}.validate_aggregate_expression")
 @patch(f"{MODULE}.Connection")
 @patch(f"{MODULE}.resolve_monitored_table_group")
 def test_validate_metric_expression_redacts_pii_columns_only(
-    mock_resolve, mock_conn_cls, mock_validate, mock_in_catalog, mock_flavor, mock_pii,
+    mock_resolve, mock_conn_cls, mock_validate, mock_in_catalog, mock_pii,
     db_session_mock,
 ):
     """Caller lacking view_pii: only columns flagged as PII in data_column_chars are
@@ -513,7 +510,6 @@ def test_validate_metric_expression_redacts_pii_columns_only(
     tg = _mock_table_group()
     mock_resolve.return_value = (tg, _mock_monitor_suite())
     mock_conn_cls.get.return_value = _mock_connection()
-    mock_flavor.return_value.get_table_ref.return_value = '"public"."orders"'
     # customer_id is PII in the catalog; amount is not
     mock_pii.return_value = {"customer_id"}
 
@@ -537,13 +533,12 @@ def test_validate_metric_expression_redacts_pii_columns_only(
 
 
 @patch(f"{MODULE}.get_pii_columns")
-@patch(f"{MODULE}.get_flavor_service")
 @patch(f"{MODULE}._table_in_catalog", return_value=True)
-@patch(f"{MODULE}.validate_custom_query")
+@patch(f"{MODULE}.validate_aggregate_expression")
 @patch(f"{MODULE}.Connection")
 @patch(f"{MODULE}.resolve_monitored_table_group")
 def test_validate_metric_expression_no_pii_columns_no_footer(
-    mock_resolve, mock_conn_cls, mock_validate, mock_in_catalog, mock_flavor, mock_pii,
+    mock_resolve, mock_conn_cls, mock_validate, mock_in_catalog, mock_pii,
     db_session_mock,
 ):
     """When the table has no PII columns, values stay visible and no redaction footer appears
@@ -551,7 +546,6 @@ def test_validate_metric_expression_no_pii_columns_no_footer(
     tg = _mock_table_group()
     mock_resolve.return_value = (tg, _mock_monitor_suite())
     mock_conn_cls.get.return_value = _mock_connection()
-    mock_flavor.return_value.get_table_ref.return_value = '"public"."orders"'
     mock_pii.return_value = set()
 
     mock_validate.return_value = CustomQueryResult(
@@ -571,18 +565,16 @@ def test_validate_metric_expression_no_pii_columns_no_footer(
     assert "PII" not in out
 
 
-@patch(f"{MODULE}.get_flavor_service")
 @patch(f"{MODULE}._table_in_catalog", return_value=True)
-@patch(f"{MODULE}.validate_custom_query")
+@patch(f"{MODULE}.validate_aggregate_expression")
 @patch(f"{MODULE}.Connection")
 @patch(f"{MODULE}.resolve_monitored_table_group")
 def test_validate_metric_expression_invalid_sql(
-    mock_resolve, mock_conn_cls, mock_validate, mock_in_catalog, mock_flavor, db_session_mock,
+    mock_resolve, mock_conn_cls, mock_validate, mock_in_catalog, db_session_mock,
 ):
     tg = _mock_table_group()
     mock_resolve.return_value = (tg, _mock_monitor_suite())
     mock_conn_cls.get.return_value = _mock_connection(connection_name="warehouse")
-    mock_flavor.return_value.get_table_ref.return_value = '"public"."orders"'
     mock_validate.side_effect = RuntimeError("syntax error at or near 'FROMM'")
 
     from testgen.mcp.tools.monitor_metrics import validate_metric_expression
@@ -600,18 +592,42 @@ def test_validate_metric_expression_invalid_sql(
     assert "syntax error at or near 'FROMM'" in out
 
 
-@patch(f"{MODULE}.get_flavor_service")
 @patch(f"{MODULE}._table_in_catalog", return_value=True)
-@patch(f"{MODULE}.validate_custom_query")
+@patch(f"{MODULE}.validate_aggregate_expression")
+@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_validate_metric_expression_not_numeric(
+    mock_resolve, mock_conn_cls, mock_validate, mock_in_catalog, db_session_mock,
+):
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_conn_cls.get.return_value = _mock_connection(connection_name="warehouse")
+    mock_validate.side_effect = InvalidMetricQuery("The expression result is not a number.")
+
+    from testgen.mcp.tools.monitor_metrics import validate_metric_expression
+
+    with _patch_perms():
+        out = validate_metric_expression(
+            table_group_id=str(tg.id),
+            table_name="orders",
+            metric_expression="MAX(customer_name)",
+        )
+
+    assert "SQL ran" in out
+    assert "not a valid metric" in out
+    assert "did not execute" not in out
+
+
+@patch(f"{MODULE}._table_in_catalog", return_value=True)
+@patch(f"{MODULE}.validate_aggregate_expression")
 @patch(f"{MODULE}.Connection")
 @patch(f"{MODULE}.resolve_monitored_table_group")
 def test_validate_metric_expression_no_rows(
-    mock_resolve, mock_conn_cls, mock_validate, mock_in_catalog, mock_flavor, db_session_mock,
+    mock_resolve, mock_conn_cls, mock_validate, mock_in_catalog, db_session_mock,
 ):
     tg = _mock_table_group()
     mock_resolve.return_value = (tg, _mock_monitor_suite())
     mock_conn_cls.get.return_value = _mock_connection()
-    mock_flavor.return_value.get_table_ref.return_value = '"public"."orders"'
     mock_validate.return_value = CustomQueryResult(row_count=0, preview_rows=[])
 
     from testgen.mcp.tools.monitor_metrics import validate_metric_expression

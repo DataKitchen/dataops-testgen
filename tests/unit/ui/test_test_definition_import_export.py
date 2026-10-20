@@ -172,7 +172,7 @@ def test_preview_runs_in_preview_mode_and_never_applies():
 
 def test_preview_resolves_file_rows_to_readable_labels():
     item = MagicMock(action=ImportAction.create, reason=ImportReason.no_match)
-    item.tds = [MagicMock(idx=0, target_id=None)]
+    item.tds = [ImportItemTD(idx=0)]
     response = MagicMock(summary=_summary(created=1), items=[item])
 
     with (
@@ -193,7 +193,7 @@ def test_preview_resolves_file_rows_to_readable_labels():
 
 def test_preview_names_a_table_missing_from_the_catalog():
     item = MagicMock(action=ImportAction.skip, reason=ImportReason.invalid_table)
-    item.tds = [MagicMock(idx=0, target_id=None)]
+    item.tds = [ImportItemTD(idx=0)]
     response = MagicMock(summary=_summary(skipped=1), items=[item])
 
     with (
@@ -206,6 +206,23 @@ def test_preview_names_a_table_missing_from_the_catalog():
     assert result["preview_rows"][0]["reason"] == "Table not in the data catalog"
 
 
+def test_preview_names_the_invalid_fields():
+    item = MagicMock(action=ImportAction.skip, reason=ImportReason.invalid_field)
+    item.tds = [ImportItemTD(idx=0, errors={"severity": "must be one of `Fail`, `Warning`, `Log` (got `Bogus`)"})]
+    response = MagicMock(summary=_summary(skipped=1), items=[item])
+
+    with (
+        patch("testgen.ui.views.test_definitions.import_definitions", return_value=response),
+        patch("testgen.ui.views.test_definitions.run_test_type_lookup_query") as lookup,
+    ):
+        lookup.return_value.to_dict.return_value = []
+        result = _build_import_preview(_encode(_payload()), _policy(), MagicMock())
+
+    assert result["preview_rows"][0]["reason"] == (
+        "Invalid field value. severity: must be one of Fail, Warning, Log (got Bogus)"
+    )
+
+
 def test_preview_leads_with_the_rows_that_need_attention():
     """A skip is the row that silently will not import. Sorted among many routine updates
     it lands off the bottom of a scrolling table, so ordering is by actionability."""
@@ -215,11 +232,11 @@ def test_preview_leads_with_the_rows_that_need_attention():
         {"test_type": "Alpha_Trunc", "table_name": "mmm", "column_name": "c"},
     ]
     update = MagicMock(action=ImportAction.update, reason=ImportReason.matched)
-    update.tds = [MagicMock(idx=0, target_id=None)]
+    update.tds = [ImportItemTD(idx=0)]
     skip = MagicMock(action=ImportAction.skip, reason=ImportReason.invalid_test_type)
-    skip.tds = [MagicMock(idx=1, target_id=None)]
+    skip.tds = [ImportItemTD(idx=1)]
     delete = MagicMock(action=ImportAction.delete, reason=ImportReason.absent)
-    delete.tds = [MagicMock(idx=2, target_id=None)]
+    delete.tds = [ImportItemTD(idx=2)]
 
     response = MagicMock(summary=_summary(updated=1, skipped=1, deleted=1), items=[update, skip, delete])
 
@@ -307,7 +324,7 @@ def test_preview_truncates_long_row_lists_but_reports_the_true_total():
         {"test_type": "Alpha_Trunc", "table_name": f"t{i}", "column_name": "c"} for i in range(600)
     ]
     item = MagicMock(action=ImportAction.create, reason=ImportReason.no_match)
-    item.tds = [MagicMock(idx=i, target_id=None) for i in range(600)]
+    item.tds = [ImportItemTD(idx=i) for i in range(600)]
     response = MagicMock(summary=_summary(created=600), items=[item])
 
     with (

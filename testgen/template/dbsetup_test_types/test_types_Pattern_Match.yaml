@@ -4,9 +4,9 @@ test_types:
   test_name_short: Pattern Match
   test_name_long: Column values match alpha-numeric pattern
   test_description: |-
-    Tests that all values in column match the same alphanumeric pattern identified in baseline data.
+    Tests that all values in column match the baseline alphanumeric pattern.
   except_message: |-
-    Alpha values do not match consistent pattern in baseline.
+    Alpha values do not match the baseline pattern.
   measure_uom: Pattern mismatches
   measure_uom_description: null
   selection_criteria: |-

@@ -7,16 +7,19 @@
  * @property {TestDefinition[]} definitions
  * @property {object} metric_test_type
  * @property {{ success: boolean, timestamp: string }?} result
+ * @property {{ success: boolean, message: string, metric_id: string, timestamp: string }?} validate_result
  * @property {{ open: boolean, title: string }?} dialog
  */
 
 import van from '/app/static/js/van.min.js';
-import { getValue, loadStylesheet } from '/app/static/js/utils.js';
+import { getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { Alert } from '/app/static/js/components/alert.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Card } from '/app/static/js/components/card.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { Icon } from '/app/static/js/components/icon.js';
 import { TestDefinitionForm } from '/app/static/js/components/test_definition_form.js';
+import { withTooltip } from '/app/static/js/components/tooltip.js';
 
 const { div, span } = van.tags;
 
@@ -30,11 +33,6 @@ const EditTableMonitors = (/** @type Properties */ props) => {
     loadStylesheet('edit-table-monitors', stylesheet);
 
     const dialogOpen = van.state(false);
-    van.derive(() => {
-        const d = getValue(props.dialog);
-        if (d?.open) dialogOpen.val = true;
-        else dialogOpen.val = false;
-    });
 
     const updatedDefinitions = van.state({}); // { [id]: changes } - only changes for existing definitions
     const newMetrics = van.state({}); // { [tempId]: metric }
@@ -64,6 +62,21 @@ const EditTableMonitors = (/** @type Properties */ props) => {
     });
     const isValid = van.derive(() => Object.values(formStates.val).every(s => s.valid));
 
+    // The form compares against the values it opened with, which include edits already queued, so
+    // its dirty flag cannot tell whether anything differs from the saved definition. Queue only the
+    // fields that do.
+    const queueChanges = (savedDefinition, changes, state) => {
+        const id = savedDefinition.id;
+        const queued = { ...updatedDefinitions.rawVal[id], ...changes };
+        const edits = Object.fromEntries(
+            Object.entries(queued).filter(([key, value]) => key !== 'id' && !isEqual(value, savedDefinition[key])),
+        );
+        const hasEdits = Object.keys(edits).length > 0;
+        const { [id]: _previous, ...others } = updatedDefinitions.rawVal;
+        updatedDefinitions.val = hasEdits ? { ...others, [id]: { ...edits, id } } : others;
+        formStates.val = { ...formStates.rawVal, [id]: { ...state, dirty: hasEdits } };
+    };
+
     const existingMetrics = van.derive(() => Object.fromEntries(
         getValue(props.definitions).filter(td => td.test_type === 'Metric_Trend').map(metric => [metric.id, metric])
     ));
@@ -72,6 +85,32 @@ const EditTableMonitors = (/** @type Properties */ props) => {
         return [...existing, ...Object.values(newMetrics.val)];
     });
     const selectedItem = van.state({ type: 'Freshness_Trend', id: null });
+
+    // Result of the last Validate click, hidden once that metric's expression changes
+    const validation = van.state(null);
+    let validatedExpression = null;
+    let lastValidateTimestamp = null;
+    van.derive(() => {
+        const result = getValue(props.validate_result);
+        if (result && result.timestamp !== lastValidateTimestamp) {
+            lastValidateTimestamp = result.timestamp;
+            validation.val = result;
+        }
+    });
+
+    // The component outlives the dialog, so each opening starts from the saved state
+    van.derive(() => {
+        const isOpen = !!getValue(props.dialog)?.open;
+        if (isOpen && !dialogOpen.rawVal) {
+            updatedDefinitions.val = {};
+            newMetrics.val = {};
+            deletedMetricIds.val = [];
+            formStates.val = {};
+            validation.val = null;
+            selectedItem.val = { type: 'Freshness_Trend', id: null };
+        }
+        dialogOpen.val = isOpen;
+    });
 
     const content = div(
         div(
@@ -104,6 +143,7 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                             const tempId = `temp_${Date.now()}`;
                             const newMetric = {
                                 _tempId: tempId,
+                                test_type: 'Metric_Trend',
                                 column_name: '',
                                 custom_query: '',
                                 history_calculation: 'PREDICT',
@@ -124,15 +164,20 @@ const EditTableMonitors = (/** @type Properties */ props) => {
 
                             return div(
                                 {
-                                    class: () => `edit-monitors--item clickable p-2 pr-0 border-radius-1 flex-row fx-justify-space-between ${selectedItem.val.id === id ? 'selected' : ''}`,
+                                    class: () => `edit-monitors--item clickable p-2 pr-0 border-radius-1 flex-row fx-justify-space-between fx-gap-1 ${selectedItem.val.id === id ? 'selected' : ''}`,
                                     onclick: () => selectedItem.val = { type: 'Metric_Trend', id },
                                 },
                                 span(
-                                    { style: `text-overflow: ellipsis; ${!metric.column_name ? 'font-style: italic;' : ''}` },
-                                    metric.column_name || '(Unnamed Metric)',
+                                    { class: 'edit-monitors--item-name flex-row' },
+                                    metric.column_name
+                                        ? withTooltip(
+                                            span({ class: 'edit-monitors--item-text' }, metric.column_name),
+                                            { text: metric.column_name, position: 'top-right' },
+                                        )
+                                        : span({ class: 'edit-monitors--item-text', style: 'font-style: italic;' }, '(Unnamed Metric)'),
                                     () => {
                                         const state = formStates.val[id];
-                                        return state && !state.valid ? span({ class: 'text-error' }, ' *') : '';
+                                        return state && !state.valid ? span({ class: 'text-error' }, '\u00a0*') : '';
                                     },
                                 ),
                                 Button({
@@ -174,22 +219,46 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                         ? newMetrics.rawVal[id]
                         : { ...existingMetrics.val[id], ...updatedDefinitions.rawVal[id] };
 
+                    let latestExpression = metricDefinition.custom_query ?? '';
+
+                    const validateFooter = div(
+                        Button({
+                            type: 'stroked',
+                            color: 'basic',
+                            label: 'Validate',
+                            width: 'auto',
+                            onclick: () => {
+                                validatedExpression = latestExpression;
+                                emit('ValidateMetric', { payload: { metric_id: id, custom_query: validatedExpression } });
+                            },
+                        }),
+                        () => {
+                            const result = validation.val;
+                            return result?.metric_id === id
+                                ? Alert({ type: result.success ? 'success' : 'error', class: 'mt-2' }, result.message)
+                                : '';
+                        },
+                    );
+
                     return TestDefinitionForm({
                         definition: metricDefinition,
                         class: 'edit-monitors--form',
+                        fieldFooters: { custom_query: validateFooter },
                         onChange: (changes, state) => {
+                            latestExpression = 'custom_query' in changes
+                                ? changes.custom_query ?? ''
+                                : metricDefinition.custom_query ?? '';
+                            if (validation.rawVal?.metric_id === id && latestExpression !== validatedExpression) {
+                                validation.val = null;
+                            }
                             if (isNew) {
                                 newMetrics.val = {
                                     ...newMetrics.val,
                                     [id]: { ...newMetrics.val[id], ...changes },
                                 };
                                 formStates.val = { ...formStates.val, [id]: state };
-                            } else if (state.dirty) {
-                                updatedDefinitions.val = {
-                                    ...updatedDefinitions.val,
-                                    [id]: { ...updatedDefinitions.rawVal[id], ...changes, id },
-                                };
-                                formStates.val = { ...formStates.val, [id]: state };
+                            } else if (Object.keys(changes).length > 0) {
+                                queueChanges(existingMetrics.rawVal[id], changes, state);
                             }
                         },
                     });
@@ -210,12 +279,8 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                     definition: { ...selectedDef, ...updatedDefinitions.rawVal[selectedDef.id] },
                     class: 'edit-monitors--form',
                     onChange: (changes, state) => {
-                        if (state.dirty) {
-                            updatedDefinitions.val = {
-                                ...updatedDefinitions.val,
-                                [selectedDef.id]: { ...updatedDefinitions.rawVal[selectedDef.id], ...changes, id: selectedDef.id },
-                            };
-                            formStates.val = { ...formStates.val, [selectedDef.id]: state };
+                        if (Object.keys(changes).length > 0) {
+                            queueChanges(selectedDef, changes, state);
                         }
                     },
                 });
@@ -284,10 +349,21 @@ stylesheet.replace(`
 
 .edit-monitors--list {
     flex: 200px 0 0;
+    min-width: 0;
 }
 
 .edit-monitors--item {
     height: 40px;
+}
+
+.edit-monitors--item-name {
+    min-width: 0;
+}
+
+.edit-monitors--item-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .edit-monitors--item:hover {

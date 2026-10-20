@@ -4,9 +4,9 @@ test_types:
   test_name_short: Row Count
   test_name_long: Number of rows is at or above threshold
   test_description: |-
-    Tests that the count of records has not decreased from the baseline count.
+    Tests that the count of records has not dropped below the minimum record count.
   except_message: |-
-    Row count less than baseline count.
+    Row count less than the minimum record count.
   measure_uom: Row count
   measure_uom_description: null
   selection_criteria: |-

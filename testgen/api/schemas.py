@@ -21,7 +21,6 @@ from testgen.api.enums import (
     AuthenticationMethod,
     ConnectionType,
     DefaultSeverity,
-    DefaultSeverityInput,
     Disposition,
     GeneralType,
     HygieneDisposition,
@@ -1525,7 +1524,7 @@ class TestSuiteCreate(BaseModel):
         "for them before the response returns. Omit to create the contract with no tables declared.",
     )
     description: str | None = None
-    default_severity: DefaultSeverityInput | None = Field(
+    default_severity: DefaultSeverity | None = Field(
         default=None,
         description="Severity for the suite's tests that set none of their own. Omit to have each test take "
         "its test type's severity.",

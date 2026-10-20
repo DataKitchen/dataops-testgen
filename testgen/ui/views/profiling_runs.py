@@ -131,6 +131,7 @@ class DataProfilingPage(Page):
             st.session_state[RUN_PROFILING_RESULT_KEY] = {"success": success, "message": message, "show_link": show_link}
             if success:
                 get_profiling_run_summaries.clear()
+                get_project_summary.clear()
                 Router().set_query_params({"page": 1})
                 st.session_state.pop(RUN_PROFILING_DIALOG_KEY, None)
                 st.session_state.pop(RUN_PROFILING_RESULT_KEY, None)
@@ -223,6 +224,7 @@ def on_profiling_runs_filtered(filters: ProfilingRunFilters) -> None:
 
 def refresh_data(*_) -> None:
     get_profiling_run_summaries.clear()
+    get_project_summary.clear()
 
 
 class ProfilingScheduleDialog(ScheduleDialog):
@@ -318,6 +320,7 @@ def _request_transition(
     job_exec = JobExecution.get(job_execution_id) if job_execution_id else None
     if job_exec and transition(job_exec):
         get_profiling_run_summaries.clear()
+        get_project_summary.clear()
         fm.reset_post_updates(str_message=f":green[{confirmation}]", as_toast=True)
     else:
         fm.reset_post_updates(str_message=f":red[{refusal}]", as_toast=True)
@@ -338,6 +341,7 @@ def on_delete_runs(job_execution_ids: list[str]) -> None:
             else:
                 get_current_session().delete(job_exec)
         get_profiling_run_summaries.clear()
+        get_project_summary.clear()
         Router().set_query_params({"page": 1})
     except Exception:
         LOG.exception("Failed to delete profiling runs")

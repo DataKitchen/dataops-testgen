@@ -4,9 +4,9 @@ test_types:
   test_name_short: Alpha Truncation
   test_name_long: Maximum character count consistent
   test_description: |-
-    Tests that maximum count of characters in column values has not dropped compared to baseline data.
+    Tests that maximum count of characters in column values has not dropped below the minimum expected length.
   except_message: |-
-    Maximum length of values has dropped compared to baseline.
+    Maximum length of values has dropped below the minimum expected length.
   measure_uom: Values over max
   measure_uom_description: null
   selection_criteria: |-
@@ -36,7 +36,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    Alpha Truncation tests that the longest text value in a column hasn't become shorter than the defined threshold, initially 95% of the longest value at baseline. This could indicate a problem in a cumulative dataset, where prior values should still exist unchanged. A failure here would suggest that some process changed data that you would still expect to be present and matching its value when the column was profiled. This test would not be appropriate for an incremental or windowed dataset. For an exact maximum length, use Match Maximum Length.
+    Alpha Truncation tests that the longest text value in a column has not become shorter than the minimum expected length. Generated tests set this length to 95% of the longest value found by profiling. This could indicate a problem in a cumulative dataset, where prior values should still exist unchanged. A failure here would suggest that some process changed data that you would still expect to be present and matching its earlier value. This test would not be appropriate for an incremental or windowed dataset. For an exact maximum length, use Match Maximum Length.
   active: Y
   ai_redact_values: false
   algorithm: Boundary check

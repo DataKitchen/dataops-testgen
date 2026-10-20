@@ -4,9 +4,9 @@ test_types:
   test_name_short: Past Dates
   test_name_long: Latest date is prior to test run date
   test_description: |-
-    Tests that maximum date referenced in column is no greater than the test date, consistent with baseline data.
+    Tests that maximum date referenced in column is no greater than the test date.
   except_message: |-
-    Future date found when absent in baseline data.
+    Future date found.
   measure_uom: Future dates
   measure_uom_description: null
   selection_criteria: |-

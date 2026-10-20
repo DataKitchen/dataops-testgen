@@ -218,8 +218,8 @@ def split_document(
             terms.append(IncomingTerm(
                 test_type=resolved.test_type,
                 table_name=table_name,
-                # A type that does not name one column (Dupe_Rows, SQL_Metric) carries its column in its parameters.
-                column_name=column_name if names_one_column(test_type) else None,
+                # A type that does not name one column carries its column_name, if any, in its parameters.
+                column_name=column_name if names_one_column(test_type) else resolved.parameters.get("column_name"),
                 parameters=resolved.parameters,
                 contract_term_id=resolved.contract_term_id,
                 metadata=rule_metadata,
@@ -584,7 +584,8 @@ def _invalid_terms(changes: list[TermChange], test_types: dict[str, TestType], s
         test_type = test_types[change.test_type]
         values = _term_values(change.incoming, change.custom_metadata, test_types)
         subject = f"{change.table_name}.{change.column_name}" if change.column_name else change.table_name
-        label = f"{subject} ({test_type.test_name_short})"
+        rule = f" rule {change.contract_term_id}" if change.contract_term_id else ""
+        label = f"{subject}{rule} ({test_type.test_name_short})"
         try:
             TestDefinition(schema_name=schema_name, **values).validate(test_type)
         except InvalidTestDefinitionFields as e:

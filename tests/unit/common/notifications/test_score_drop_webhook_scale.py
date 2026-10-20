@@ -53,3 +53,11 @@ def test_missing_values_stay_none():
     assert category["previous"] is None
     assert category["current"] is None
     assert category["threshold"] is None
+
+
+def test_data_leaves_the_project_to_the_envelope():
+    # Jira automation merges `data` into the top level of `webhookData`, so a `data.project`
+    # string would replace the envelope's `project` object.
+    data = ScoreDropEmailTemplate().webhook_data(_context())
+
+    assert set(data) == {"scorecard", "categories"}
