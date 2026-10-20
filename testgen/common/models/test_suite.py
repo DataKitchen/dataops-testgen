@@ -141,6 +141,7 @@ class TestSuiteListItem:
     table_groups_id: UUID
     table_groups_name: str | None
     test_suite_description: str | None
+    suite_type: SuiteType
     test_count: int
     latest_run_id: UUID | None
     latest_run_started_at: datetime | None
@@ -283,15 +284,20 @@ class TestSuite(Entity):
 
     @classmethod
     def list_for_project(
-        cls, project_code: str, *clauses, page: int = 1, limit: int = 20
+        cls,
+        project_code: str,
+        *clauses,
+        page: int = 1,
+        limit: int = 20,
+        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
     ) -> tuple[list[TestSuiteListItem], int]:
-        """Paginated regular test suites of a project, each with its test count and last completed run.
+        """Paginated test suites of a project, each with its test count and last completed run.
 
-        Returns the page of items and the total across pages.
+        Only suites of ``suite_types`` are read. Returns the page of items and the total across pages.
         """
         query = (
             select(cls.id)
-            .where(cls.project_code == project_code, cls.suite_type == SuiteType.REGULAR, *clauses)
+            .where(cls.project_code == project_code, cls.suite_type.in_(suite_types), *clauses)
             .order_by(func.lower(cls.test_suite), cls.id)
         )
         rows, total = cls._paginate(query, page=page, limit=limit)
@@ -316,6 +322,7 @@ class TestSuite(Entity):
             suites.table_groups_id,
             groups.table_groups_name,
             suites.test_suite_description,
+            suites.suite_type,
             COALESCE(test_defs.test_count, 0) AS test_count,
             last_run.id AS latest_run_id,
             last_run.started_at AS latest_run_started_at,

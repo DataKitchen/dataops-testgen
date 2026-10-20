@@ -14,9 +14,9 @@ from sqlalchemy.dialects import postgresql
 
 from testgen.common.enums import JobStatus
 from testgen.common.models.job_execution import JobExecution
-from testgen.common.models.suite_version import SuiteVersion
+from testgen.common.models.suite_version import SuiteVersion, VersionState
 from testgen.common.models.test_definition import TestDefinition
-from testgen.common.models.test_run import TestRun
+from testgen.common.models.test_run import RunVersion, TestRun
 
 pytestmark = pytest.mark.unit
 
@@ -194,3 +194,31 @@ def test_latest_verification_narrows_by_the_clauses_given(session_mock):
 def test_latest_verification_of_a_draft_is_none_without_a_query(session_mock):
     assert TestRun.latest_verification(SuiteVersion(id=uuid4(), version=4)) is None
     session_mock.scalars.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("frozen_at", "active_number", "started", "in_force", "state", "preview", "counts"),
+    [
+        (datetime(2026, 9, 12, tzinfo=UTC), 3, datetime(2026, 9, 13), 3, VersionState.ACTIVE, False, True),
+        (datetime(2026, 9, 12, tzinfo=UTC), 4, datetime(2026, 9, 13), 3, VersionState.SUPERSEDED, False, True),
+        (datetime(2026, 9, 12, tzinfo=UTC), 4, datetime(2026, 9, 20), 4, VersionState.SUPERSEDED, False, False),
+        (datetime(2026, 9, 12, tzinfo=UTC), 3, datetime(2026, 9, 11), 2, VersionState.ACTIVE, True, False),
+        (None, 2, datetime(2026, 9, 13), 2, VersionState.DRAFT, True, False),
+    ],
+    ids=["verification", "verification-since-superseded", "check-of-a-superseded-version", "preview-frozen-since",
+         "draft"],
+)
+def test_a_completed_run_counts_when_it_verified_the_version_in_force_as_it_started(
+    frozen_at, active_number, started, in_force, state, preview, counts
+):
+    run_version = RunVersion(3, frozen_at, active_number, started, in_force, JobStatus.COMPLETED)
+    assert (run_version.state, run_version.is_preview, run_version.counts_as_status) == (state, preview, counts)
+
+
+@pytest.mark.parametrize(
+    "status", [JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.CANCELED, JobStatus.ERROR, None]
+)
+def test_a_run_that_has_not_completed_does_not_count(status):
+    run_version = RunVersion(3, datetime(2026, 9, 12, tzinfo=UTC), 3, datetime(2026, 9, 13), 3, status)
+    assert run_version.checked_version_in_force is True
+    assert run_version.counts_as_status is False

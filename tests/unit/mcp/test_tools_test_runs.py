@@ -576,6 +576,44 @@ def test_version_label_names_the_versions_current_state(db_session_mock):
     assert _real_run_summary().version_label is None
 
 
+def test_a_check_of_a_version_already_superseded_says_it_does_not_count(db_session_mock):
+    run = _real_run_summary(
+        version_number=4, version_frozen_at=datetime(2026, 9, 12, tzinfo=UTC), active_version_number=5,
+        test_starttime=datetime(2026, 9, 20, 9, 0), version_in_force_at_start=5,
+    )
+    out = _render(run)
+    assert "**Version:** v4 superseded" in out
+    assert "**Counts as contract status:** No" in out
+    assert "Preview" not in out
+
+
+@pytest.mark.parametrize(
+    ("status", "counts"),
+    [
+        (JobStatus.QUEUED, "Not yet, the run has not completed"),
+        (JobStatus.RUNNING, "Not yet, the run has not completed"),
+        (JobStatus.CANCELED, "No, the run did not complete"),
+        (JobStatus.ERROR, "No, the run did not complete"),
+    ],
+)
+def test_a_run_of_the_active_version_that_has_not_completed_says_it_does_not_count(db_session_mock, status, counts):
+    run = _real_run_summary(
+        status=status, version_number=4, version_frozen_at=datetime(2026, 9, 12, tzinfo=UTC),
+        active_version_number=4, test_starttime=datetime(2026, 9, 13, 9, 0), version_in_force_at_start=4,
+    )
+    out = _render(run)
+    assert f"**Counts as contract status:** {counts}" in out
+    assert "Preview" not in out
+
+
+def test_a_verification_since_superseded_still_counted(db_session_mock):
+    run = _real_run_summary(
+        version_number=4, version_frozen_at=datetime(2026, 9, 12, tzinfo=UTC), active_version_number=5,
+        test_starttime=datetime(2026, 9, 13, 9, 0), version_in_force_at_start=4,
+    )
+    assert "Counts as contract status" not in _render(run)
+
+
 def test_a_versioned_run_without_a_start_time_is_not_a_preview(db_session_mock):
     run = _real_run_summary(
         version_number=4, version_frozen_at=datetime(2026, 9, 12, tzinfo=UTC), active_version_number=4,
@@ -586,3 +624,41 @@ def test_a_versioned_run_without_a_start_time_is_not_a_preview(db_session_mock):
 def test_a_regular_run_row_names_no_version(db_session_mock):
     out = _render(_real_run_summary())
     assert "Version" not in out and "Preview" not in out
+
+
+@pytest.mark.parametrize(
+    ("overrides", "version", "preview"),
+    [
+        (
+            {"version_number": 4, "version_frozen_at": datetime(2026, 9, 12, tzinfo=UTC),
+             "active_version_number": 4, "test_starttime": datetime(2026, 9, 13, 9, 0)},
+            "v4 active", False,
+        ),
+        (
+            {"version_number": 4, "version_frozen_at": datetime(2026, 9, 12, tzinfo=UTC),
+             "active_version_number": 4, "test_starttime": datetime(2026, 9, 10, 9, 0)},
+            "v4 active", True,
+        ),
+        ({"version_number": 5, "active_version_number": 4, "test_starttime": datetime(2026, 9, 13, 9, 0)}, "v5 draft", True),
+    ],
+    ids=["verification", "preview-of-a-version-frozen-since", "draft"],
+)
+@patch("testgen.mcp.tools.test_runs.TestRun")
+def test_get_test_run_names_a_contract_runs_version(mock_run, db_session_mock, overrides, version, preview):
+    summary = _real_run_summary(**overrides)
+    mock_run.select_summary.return_value = ([summary], 1)
+
+    with (
+        patch("testgen.mcp.permissions._compute_project_permissions") as mock_compute,
+        patch("testgen.mcp.permissions.PluginHook") as mock_hook,
+    ):
+        mock_compute.return_value = ProjectPermissions(
+            memberships={"demo": "role_a"}, permission="view", username="test_user",
+        )
+        mock_hook.instance().rbac.get_roles_with_permission.return_value = ["role_a"]
+        from testgen.mcp.tools.test_runs import get_test_run
+
+        out = get_test_run(str(summary.job_execution_id))
+
+    assert f"**Version:** {version}" in out
+    assert ("**Preview:** Yes" in out) is preview

@@ -7,20 +7,21 @@ from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Row
 
 from testgen import settings
+from testgen.common import contract_service
 from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
     table_group_qualifies_table_refs,
 )
-from testgen.common.enums import TestScope
+from testgen.common.enums import SuiteType, TestScope
 from testgen.common.models import get_current_session
 from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.data_table import DataTable
-from testgen.common.models.suite_version import SuiteVersion
+from testgen.common.models.suite_version import SuiteVersion, VersionState
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import (
     MANAGED_TEST_TYPES,
@@ -197,6 +198,9 @@ class ExportSource(BaseModel):
     table_group_schema: str
     exported_at: datetime
     testgen_version: str | None = None
+    contract_version: int | None = Field(
+        default=None, description="Contracts only. The number of the contract version the definitions belong to."
+    )
 
 
 class ExportDocument(BaseModel):
@@ -240,9 +244,23 @@ class ImportSummary(BaseModel):
     deleted: int = 0
 
 
+class ContractVersion(BaseModel):
+    """A contract version, by its number and its state."""
+
+    number: int
+    state: VersionState = Field(description="`draft`, `active` (the agreement in force), or `superseded`.")
+
+
 class ImportResponse(BaseModel):
     summary: ImportSummary
     items: list[ImportItem]
+    version: ContractVersion | None = Field(
+        default=None,
+        description=(
+            "Contracts only. The version the import writes to, or null when it would write nothing. A preview into a "
+            "frozen version names the draft that applying the import would open."
+        ),
+    )
 
 
 class ImportErrorCode(StrEnum):
@@ -256,6 +274,14 @@ class InvalidImportPayload(ValueError):
     def __init__(self, code: ImportErrorCode, detail: str):
         super().__init__(detail)
         self.code = code
+
+
+class ImportTargetMissing(ValueError):
+    """An existing test definition the import matched was deleted before the import wrote to it."""
+
+    def __init__(self, row_id: UUID):
+        super().__init__(f"Test definition {row_id} no longer exists.")
+        self.row_id = row_id
 
 
 class ImportStrictViolation(Exception):
@@ -336,6 +362,7 @@ def export_definitions(
     tds = session.scalars(select(TestDefinition).where(*clauses)).all()
 
     definitions = [TestDefinitionExport.model_validate(td, from_attributes=True) for td in tds]
+    contract_version = SuiteVersion.get(exported_version) if test_suite.suite_type == SuiteType.CONTRACT else None
 
     return ExportDocument(
         version=EXPORT_FORMAT_VERSION,
@@ -346,6 +373,7 @@ def export_definitions(
             table_group_schema=table_group.table_group_schema,
             exported_at=datetime.now(UTC),
             testgen_version=settings.VERSION,
+            contract_version=contract_version.version if contract_version else None,
         ),
         definitions=definitions,
     )
@@ -459,15 +487,18 @@ def import_definitions(
 
     # --- Phase 3: Apply ---
     has_skips = any(a.action == ImportAction.skip for a in actions)
+    has_writes = any(a.action != ImportAction.skip for a in actions)
     if config.mode == ImportMode.apply_strict and has_skips:
         # Built before apply, so created TDs have no target_id — correct, nothing was persisted.
         # The post-apply build below is NOT redundant: _apply_actions fills planned.target for creates.
-        raise ImportStrictViolation(_build_response(actions))
+        version = _contract_version(test_suite, preview=True) if has_writes else None
+        raise ImportStrictViolation(_build_response(actions, version))
 
     if config.mode in (ImportMode.apply, ImportMode.apply_strict):
         _apply_actions(actions, test_suite, table_group, config)
 
-    return _build_response(actions)
+    version = _contract_version(test_suite, preview=config.mode == ImportMode.preview) if has_writes else None
+    return _build_response(actions, version)
 
 
 # --- Helpers ---
@@ -559,7 +590,7 @@ def _apply_actions(
         if planned.target is None:
             continue
         if planned.target.id not in counterparts:
-            raise ValueError(f"Test definition {planned.target.id} no longer exists.")
+            raise ImportTargetMissing(planned.target.id)
         if counterparts[planned.target.id] != planned.target.id:
             planned.target = SimpleNamespace(**{**planned.target._asdict(), "id": counterparts[planned.target.id]})
 
@@ -681,7 +712,14 @@ def _update_td(
     )
 
 
-def _build_response(actions: list[_PlannedAction]) -> ImportResponse:
+def _contract_version(test_suite: TestSuite, *, preview: bool) -> ContractVersion | None:
+    if test_suite.suite_type != SuiteType.CONTRACT:
+        return None
+    number, state = contract_service.import_destination(test_suite, preview=preview)
+    return ContractVersion(number=number, state=state)
+
+
+def _build_response(actions: list[_PlannedAction], version: ContractVersion | None) -> ImportResponse:
     summary = ImportSummary()
     items_by_key: dict[tuple[ImportAction, ImportReason], list[ImportItemTD]] = {}
 
@@ -707,4 +745,4 @@ def _build_response(actions: list[_PlannedAction]) -> ImportResponse:
         for (action, reason), tds in items_by_key.items()
     ]
 
-    return ImportResponse(summary=summary, items=items)
+    return ImportResponse(summary=summary, items=items, version=version)

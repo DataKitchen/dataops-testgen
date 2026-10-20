@@ -3,7 +3,9 @@
 from fastapi import APIRouter, Depends, Query, status
 
 from testgen.api.deps import (
+    CONTRACT_VERSION_ERRORS,
     api_error,
+    contract_version_error,
     db_session,
     resolve_job,
     resolve_project_code,
@@ -18,6 +20,7 @@ from testgen.api.schemas import (
     TestGenerationRequest,
     TestGenerationSubmittedResponse,
     TestRunRequest,
+    TestRunSubmittedResponse,
 )
 from testgen.commands.test_generation import (
     TestsNeedProfilingError,
@@ -25,11 +28,23 @@ from testgen.commands.test_generation import (
     resolve_generation_profile_run,
     unprofiled_regeneration_note,
 )
-from testgen.common.enums import JobKey, JobSource, JobStatus, PublicJobKey, RegenerationGroup, SuiteType
+from testgen.common import contract_service
+from testgen.common.enums import (
+    TEST_SUITE_TYPES,
+    JobKey,
+    JobSource,
+    JobStatus,
+    PublicJobKey,
+    RegenerationGroup,
+    SuiteType,
+)
 from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.suite_version import SuiteVersion, VersionState, format_version
 from testgen.common.models.table_group import TableGroup
+from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.test_definition_export_import_service import ContractVersion
 
 _error_responses = {
     404: {"model": ErrorResponse, "description": "Not found"},
@@ -58,21 +73,45 @@ def submit_profiling(table_group: TableGroup = resolve_table_group("edit")):  # 
 @router.post(
     "/test-suites/{test_suite_id}/test-runs",
     summary="Submit a test run",
-    response_model=JobSubmittedResponse,
+    response_model=TestRunSubmittedResponse,
     status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        400: {
+            "model": ErrorResponse,
+            "description": "A version given for a suite that is not a contract or one the contract does not hold, "
+            "or a contract version with no active tests",
+        },
+    },
 )
 def submit_test_run(
-    test_suite: TestSuite = resolve_test_suite("edit"),  # noqa: B008
+    test_suite: TestSuite = resolve_test_suite("edit", TEST_SUITE_TYPES),  # noqa: B008
     body: TestRunRequest | None = None,
 ):
-    """Submit a test execution job for a test suite.
+    """Submit a test execution job for a test suite or a contract.
 
     Runs against the table group's schema. A referential test's comparison schema can be
     overridden for this run.
+
+    A contract runs its active version, or its draft when no version has been frozen, unless
+    ``version`` names another. Only a run of the active version counts as the contract's
+    status; a run of the draft or of a superseded version does not.
     """
+    try:
+        target = contract_service.run_target(test_suite, body.version if body else None)
+    except CONTRACT_VERSION_ERRORS as error:
+        raise contract_version_error(error) from error
+    except contract_service.NoActiveTestsError as error:
+        raise api_error(
+            400,
+            "no_active_tests",
+            f"{format_version(error.version.version, error.state)} of this contract has no active tests to run.",
+        ) from error
+
     kwargs: dict[str, str] = {"test_suite_id": str(test_suite.id)}
     if body and body.match_schema_name:
         kwargs["match_schema_name"] = body.match_schema_name
+    if target is not None:
+        kwargs["version_id"] = str(target.version.id)
 
     job = JobExecution.submit(
         job_key=JobKey.run_tests,
@@ -82,7 +121,14 @@ def submit_test_run(
         external_url=body.external_url if body else None,
         caller_metadata=body.metadata if body else None,
     )
-    return JobSubmittedResponse.model_validate(job, from_attributes=True)
+    if target is None:
+        return TestRunSubmittedResponse(id=job.id, created_at=job.created_at)
+    return TestRunSubmittedResponse(
+        id=job.id,
+        created_at=job.created_at,
+        version=ContractVersion(number=target.version.version, state=target.state),
+        note=target.note,
+    )
 
 
 @router.post(
@@ -93,7 +139,7 @@ def submit_test_run(
     responses={400: {"model": ErrorResponse, "description": "Invalid generation set or regeneration groups"}},
 )
 def submit_test_generation(
-    test_suite: TestSuite = resolve_test_suite("edit", (SuiteType.REGULAR, SuiteType.CONTRACT)),  # noqa: B008
+    test_suite: TestSuite = resolve_test_suite("edit", TEST_SUITE_TYPES),  # noqa: B008
     body: TestGenerationRequest | None = None,
 ):
     """Submit a test generation job for a test suite or a contract.
@@ -123,6 +169,7 @@ def submit_test_generation(
 
     groups: list[RegenerationGroup] | None = None
     note = None
+    version = None
     if is_contract:
         table_group = TableGroup.get(test_suite.table_groups_id)
         profiled = resolve_generation_profile_run(table_group) is not None
@@ -134,6 +181,8 @@ def submit_test_generation(
             raise api_error(400, "table_group_not_profiled", str(error)) from error
         if not profiled:
             note = unprofiled_regeneration_note(table_group.table_groups_name, groups)
+        draft_id, _ = TestDefinition.resolve_writable(test_suite.id)
+        version = ContractVersion(number=SuiteVersion.get(draft_id).version, state=VersionState.DRAFT)
 
     job = JobExecution.submit(
         job_key=JobKey.run_test_generation,
@@ -145,7 +194,9 @@ def submit_test_generation(
         source=JobSource.api,
         project_code=test_suite.project_code,
     )
-    return TestGenerationSubmittedResponse(id=job.id, created_at=job.created_at, regenerate=groups, note=note)
+    return TestGenerationSubmittedResponse(
+        id=job.id, created_at=job.created_at, version=version, regenerate=groups, note=note
+    )
 
 
 @router.get(

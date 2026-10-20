@@ -7,6 +7,8 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql.expression import Delete, Update
 
 from testgen.common import test_definition_export_import_service as service
+from testgen.common.enums import SuiteType
+from testgen.common.models.suite_version import VersionState
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.test_definition_export_import_service import (
     ImportAction,
@@ -65,7 +67,7 @@ def test_the_response_reports_the_drafts_ids():
     actions = [_planned(ImportAction.update, updated), _planned(ImportAction.delete, deleted)]
     _apply(actions, writable=(draft, {updated: updated_copy, deleted: deleted_copy}))
 
-    reported = {td.target_id for item in _build_response(actions).items for td in item.tds}
+    reported = {td.target_id for item in _build_response(actions, None).items for td in item.tds}
     assert reported == {updated_copy, deleted_copy}
 
 
@@ -127,5 +129,48 @@ def test_the_import_delete_still_scopes_to_a_version():
 
 def test_a_target_that_no_longer_exists_is_refused_by_name():
     vanished = uuid4()
-    with pytest.raises(ValueError, match=f"{vanished} no longer exists"):
+    with pytest.raises(service.ImportTargetMissing, match=f"{vanished} no longer exists") as refused:
         _apply([_planned(ImportAction.update, vanished)], writable=(uuid4(), {}))
+    assert refused.value.row_id == vanished
+
+
+def _export_document(suite_type: SuiteType):
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = []
+    suite = MagicMock(id=uuid4(), project_code="demo", test_suite="orders", suite_type=suite_type)
+    with (
+        patch.object(service, "get_current_session", return_value=session),
+        patch.object(service.TableGroup, "get", return_value=MagicMock(table_groups_name="tg", table_group_schema="s")),
+        patch.object(service.SuiteVersion, "is_frozen_agreement", return_value=True),
+        patch.object(service.SuiteVersion, "get", return_value=MagicMock(version=3)) as get_version,
+    ):
+        document = service.export_definitions(suite, service.Origin.both, None, None, version_id=uuid4())
+    return document, get_version
+
+
+def test_a_contract_export_names_the_version_it_holds():
+    document, _ = _export_document(SuiteType.CONTRACT)
+    assert document.source.contract_version == 3
+
+
+def test_a_regular_export_names_no_version():
+    document, get_version = _export_document(SuiteType.REGULAR)
+    assert document.source.contract_version is None
+    get_version.assert_not_called()
+
+
+@pytest.mark.parametrize("preview", [True, False])
+def test_a_contract_import_reports_where_it_lands(preview):
+    suite = MagicMock(suite_type=SuiteType.CONTRACT)
+    with patch.object(
+        service.contract_service, "import_destination", return_value=(4, VersionState.DRAFT)
+    ) as destination:
+        version = service._contract_version(suite, preview=preview)
+    destination.assert_called_once_with(suite, preview=preview)
+    assert version == service.ContractVersion(number=4, state=VersionState.DRAFT)
+
+
+def test_a_regular_import_reports_no_version():
+    with patch.object(service.contract_service, "import_destination") as destination:
+        assert service._contract_version(MagicMock(suite_type=SuiteType.REGULAR), preview=True) is None
+    destination.assert_not_called()

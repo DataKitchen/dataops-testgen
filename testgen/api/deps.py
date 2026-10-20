@@ -10,6 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from testgen.common import contract_service
 from testgen.common.auth import AuthError, authorize_token, decode_jwt_token
 from testgen.common.enums import PublicJobKey, SuiteType
 from testgen.common.models import Session, bound_session, get_current_session, session_limiter
@@ -95,6 +96,22 @@ def api_error_entries(status_code: int, entries: list[tuple[str, str]]) -> HTTPE
     return HTTPException(
         status_code=status_code,
         detail={"errors": [{"code": code, "detail": detail} for code, detail in entries]},
+    )
+
+
+CONTRACT_VERSION_ERRORS = (contract_service.NotAContractError, contract_service.UnknownVersionError)
+
+
+def contract_version_error(
+    error: contract_service.NotAContractError | contract_service.UnknownVersionError,
+) -> HTTPException:
+    """The 400 for a contract version a request names that the suite does not hold."""
+    if isinstance(error, contract_service.NotAContractError):
+        return api_error(400, "not_a_contract", "This test suite is not a contract, so it keeps no versions.")
+    return api_error(
+        400,
+        "unknown_version",
+        f"This contract has no version {error.version}. Its versions are v1\u2013v{error.highest}.",
     )
 
 

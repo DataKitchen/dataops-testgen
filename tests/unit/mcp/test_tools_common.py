@@ -1801,7 +1801,7 @@ def test_an_unknown_version_number_names_the_versions_that_exist():
     session.scalar.return_value = 4
     with (
         patch.object(SuiteVersion, "for_number", return_value=None),
-        patch("testgen.mcp.tools.common.get_current_session", return_value=session),
+        patch("testgen.common.contract_service.get_current_session", return_value=session),
         pytest.raises(MCPUserError, match=r"Contract `Orders` has no version 7\. Its versions are v1\u2013v4\."),
     ):
         resolve_contract_version(_suite(SuiteType.CONTRACT), 7)

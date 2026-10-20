@@ -694,24 +694,30 @@ def _contract_suite():
 def _get(suite, state, verification=None, run_summary=None, latest_verification=None, summaries=None):
     from testgen.mcp.tools.discovery import get_test_suite
 
+    # A run's summary carries the run's own id: a test run shares it with the job that started it.
     if summaries is not None:
         def select_summary(*, test_run_ids, **_):
             found = [summaries[run_id] for run_id in test_run_ids if run_id in summaries]
+            for run_id, summary in zip(test_run_ids, found, strict=True):
+                summary.job_execution_id = run_id
             return found, len(found)
     else:
-        def select_summary(**_):
-            return ([run_summary], 1) if run_summary else ([], 0)
+        def select_summary(*, test_run_ids, **_):
+            if run_summary is None:
+                return [], 0
+            run_summary.job_execution_id = test_run_ids[0]
+            return [run_summary], 1
 
     with (
         patch("testgen.mcp.tools.discovery.resolve_test_suite", return_value=suite),
         patch("testgen.mcp.tools.discovery.TestSuite.test_definition_stats",
               return_value=MagicMock(total=3, locked=0, counts_by_type={})),
-        patch("testgen.mcp.tools.discovery.SuiteVersion.states_for", return_value={suite.id: state}),
+        patch("testgen.common.contract_service.SuiteVersion.states_for", return_value={suite.id: state}),
         patch(
-            "testgen.mcp.tools.discovery.TestRun.latest_verification",
+            "testgen.common.contract_service.TestRun.latest_verification",
             new=latest_verification or MagicMock(return_value=verification),
         ),
-        patch("testgen.mcp.tools.discovery.TestRun.select_summary", side_effect=select_summary),
+        patch("testgen.common.contract_service.TestRun.select_summary", side_effect=select_summary),
         patch("testgen.mcp.tools.discovery.list_generation_sets", return_value=[]),
     ):
         return get_test_suite(str(suite.id))
