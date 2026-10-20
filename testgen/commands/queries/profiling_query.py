@@ -1,4 +1,5 @@
 import dataclasses
+import re
 from typing import Any
 
 from testgen.common import read_template_sql_file
@@ -66,6 +67,11 @@ class HygieneIssueType:
     exact_measures: list[str] | None
 
 
+def _literal_underscore(mask: str | None) -> str | None:
+    # The masks match in the app database's ILIKE, where `_` would otherwise be a wildcard
+    return re.sub(r"(?<!\\)_", r"\\_", mask) if mask else mask
+
+
 class ProfilingSQL:
 
     max_pattern_length = 25
@@ -88,8 +94,8 @@ class ProfilingSQL:
             "RUN_DATE": to_sql_timestamp(self.run_date),
             "SQL_FLAVOR": self.flavor,
             "DATA_SCHEMA": self.table_group.table_group_schema,
-            "PROFILE_ID_COLUMN_MASK": self.table_group.profile_id_column_mask,
-            "PROFILE_SK_COLUMN_MASK": self.table_group.profile_sk_column_mask,
+            "PROFILE_ID_COLUMN_MASK": _literal_underscore(self.table_group.profile_id_column_mask),
+            "PROFILE_SK_COLUMN_MASK": _literal_underscore(self.table_group.profile_sk_column_mask),
             "MAX_PATTERN_LENGTH": self.max_pattern_length,
         }
         if column_chars:

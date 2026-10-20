@@ -33,7 +33,6 @@ _dialect_registry.register("redshift_pg", __name__, "_RedshiftDialect")
 
 class RedshiftFlavorService(FlavorService):
 
-    escaped_underscore = "\\\\_"
     literal_escapes_backslash = True
     url_scheme = "redshift_pg"
 

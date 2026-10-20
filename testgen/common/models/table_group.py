@@ -68,6 +68,8 @@ class TableGroupMinimal(EntityMinimal):
     profiling_include_mask: str
     profiling_exclude_mask: str
     profile_use_sampling: bool
+    profile_sample_percent: int
+    profile_sample_min_count: int
     profiling_delay_days: int
     monitor_test_suite_id: UUID | None
     profile_flag_cdes: bool

@@ -1371,6 +1371,49 @@ class FileDeclarationCreate(FileDeclarationSpec):
     header: StrictBool | None = Field(default=None, description=HEADER_DESCRIPTION)
 
 
+# Descriptions shared by the table group response and requests; the requests each add what omitting or clearing a
+# field does.
+_TG_DESCRIPTIONS = {
+    "table_group_name": "Unique within the project; 3 to 40 characters.",
+    "schema_name": "The schema that holds the tables, or the data space on Salesforce Data 360.",
+    "file_declarations": "The table group's tables, one per file or pattern.",
+    "table_set": "Database connections only. Table names to restrict the group to.",
+    "include_masks": (
+        "Database connections only. Table names or patterns a table must match to be included. `%` matches any"
+        " characters; every other character, `_` included, matches itself."
+    ),
+    "exclude_masks": (
+        "Database connections only. Table names or patterns that exclude a matching table, including one named in"
+        " `table_set`. `%` matches any characters; every other character, `_` included, matches itself."
+    ),
+    "profile_id_column_mask": (
+        "Column name pattern marking ID columns, not case-sensitive. `%` matches any characters; every other"
+        " character, `_` included, matches itself."
+    ),
+    "profile_sk_column_mask": (
+        "Column name pattern marking surrogate key columns, not case-sensitive. `%` matches any characters; every"
+        " other character, `_` included, matches itself."
+    ),
+    "profile_use_sampling": (
+        "Compute pattern and character analysis, and the list of frequent values, from a sample of each table's"
+        " rows. Record counts, distinct values, minimums, maximums, and average lengths and values always cover"
+        " the full table."
+    ),
+    "profile_sample_percent": "Percent of rows to sample, from 1 to 100, unless that falls below the sample minimum.",
+    "profile_sample_min_count": "Minimum number of rows in any sample, when the table has that many.",
+    "profiling_delay_days": "Days to wait before new profiling results are used to generate tests.",
+    "profile_flag_cdes": "Flag likely critical data elements during profiling.",
+    "profile_flag_pii": "Flag columns that likely hold personally identifiable information during profiling.",
+    "profile_exclude_xde": "Skip columns marked as excluded data elements when profiling.",
+    "profile_table_comparison": (
+        "Collect value hashes during profiling, which Table Comparison test generation needs for tests that"
+        " detect changed, moved, or swapped values. Adds profiling time. Has no effect on SAP HANA and"
+        " Salesforce Data 360 connections."
+    ),
+    "include_in_dashboard": "Show the table group on the project dashboard.",
+}
+
+
 class TableGroupResponse(BaseModel):
     """A table group's full configuration."""
 
@@ -1391,23 +1434,15 @@ class TableGroupResponse(BaseModel):
         description="Database connections only. Table names the group is restricted to. Empty when the group is "
         "defined by masks alone, and on a file connection.",
     )
-    include_masks: list[str] = Field(
-        default_factory=list,
-        description="Database connections only. SQL LIKE patterns a table must match to be included.",
-    )
-    exclude_masks: list[str] = Field(
-        default_factory=list,
-        description="Database connections only. SQL LIKE patterns that exclude a matching table.",
-    )
+    include_masks: list[str] = Field(default_factory=list, description=_TG_DESCRIPTIONS["include_masks"])
+    exclude_masks: list[str] = Field(default_factory=list, description=_TG_DESCRIPTIONS["exclude_masks"])
     file_declarations: list[FileDeclaration] | None = Field(
         default=None,
         description="File connections only. The table group's tables, one per file or pattern. Null on a database "
         "connection.",
     )
-    profile_id_column_mask: str | None = Field(default=None, description="SQL LIKE pattern marking ID columns.")
-    profile_sk_column_mask: str | None = Field(
-        default=None, description="SQL LIKE pattern marking surrogate key columns."
-    )
+    profile_id_column_mask: str | None = Field(default=None, description=_TG_DESCRIPTIONS["profile_id_column_mask"])
+    profile_sk_column_mask: str | None = Field(default=None, description=_TG_DESCRIPTIONS["profile_sk_column_mask"])
 
     profile_use_sampling: bool
     profile_sample_percent: int | None = None
@@ -1451,37 +1486,6 @@ class TableGroupCreateResponse(TableGroupResponse):
 
 _TABLE_GROUP_DEFAULTS = table_group_defaults()
 
-# Descriptions shared by the create and update requests, which each add what omitting or clearing a field does.
-_TG_DESCRIPTIONS = {
-    "table_group_name": "Unique within the project; 3 to 40 characters.",
-    "schema_name": "The schema that holds the tables, or the data space on Salesforce Data 360.",
-    "file_declarations": "The table group's tables, one per file or pattern.",
-    "table_set": "Database connections only. Table names to restrict the group to.",
-    "include_masks": "Database connections only. SQL LIKE patterns a table must match to be included.",
-    "exclude_masks": (
-        "Database connections only. SQL LIKE patterns that exclude a matching table, including one named in"
-        " ``table_set``."
-    ),
-    "profile_id_column_mask": "SQL LIKE pattern marking ID columns.",
-    "profile_sk_column_mask": "SQL LIKE pattern marking surrogate key columns.",
-    "profile_use_sampling": (
-        "Base pattern and character analysis, and the list of frequent values, on a sample of each table's rows."
-        " Record counts, distinct values, minimums, maximums, and average lengths and values always cover the"
-        " full table."
-    ),
-    "profile_sample_percent": "Percent of rows to sample, from 1 to 100, unless that falls below the sample minimum.",
-    "profile_sample_min_count": "Minimum number of rows in any sample, when the table has that many.",
-    "profiling_delay_days": "Days to wait before new profiling results are used to generate tests.",
-    "profile_flag_cdes": "Flag likely critical data elements during profiling.",
-    "profile_flag_pii": "Flag columns that likely hold personally identifiable information during profiling.",
-    "profile_exclude_xde": "Skip columns marked as excluded data elements when profiling.",
-    "profile_table_comparison": (
-        "Collect value hashes during profiling, which Table Comparison test generation needs for tests that"
-        " detect changed, moved, or swapped values. Adds profiling time. Has no effect on SAP HANA and"
-        " Salesforce Data 360 connections."
-    ),
-    "include_in_dashboard": "Show the table group on the project dashboard.",
-}
 _REPLACES_LIST = "Replaces the whole list. Send every entry to keep, not only the ones that changed."
 
 
@@ -1515,13 +1519,13 @@ class TableGroupCreate(BaseModel):
     )
     include_masks: list[str] | None = Field(
         default=None,
-        description=f"{_TG_DESCRIPTIONS['include_masks']} Omit for the default include mask.",
+        description=f"{_TG_DESCRIPTIONS['include_masks']} Omit to use the installation's default include mask.",
     )
     exclude_masks: list[str] | None = Field(
         default=None,
         description=(
-            f"{_TG_DESCRIPTIONS['exclude_masks']} Omit for the default exclude mask; send an empty list to exclude"
-            " nothing."
+            f"{_TG_DESCRIPTIONS['exclude_masks']} Omit to use the installation's default exclude mask; send an empty"
+            " list to exclude nothing."
         ),
     )
     profile_id_column_mask: str | None = _create_setting("profile_id_column_mask")
