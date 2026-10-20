@@ -32,11 +32,21 @@ const { button, div, i, span } = van.tags;
 const Dialog = ({ title, open, onClose, width = '30rem', headerActions }, ...children) => {
     loadStylesheet('dialog', stylesheet);
 
+    // A drag that starts inside the dialog and ends on the overlay (e.g. selecting text in an input)
+    // fires its click on the overlay. Only a press that also started on the overlay closes the dialog.
+    let pressedOnOverlay = false;
+
     const overlay = div(
         {
             class: 'tg-dialog-overlay',
             style: () => open.val ? '' : 'display: none',
-            onclick: () => onClose(),
+            onmousedown: (e) => { pressedOnOverlay = e.target === e.currentTarget; },
+            onclick: (e) => {
+                if (pressedOnOverlay && e.target === e.currentTarget) {
+                    onClose();
+                }
+                pressedOnOverlay = false;
+            },
         },
         div(
             {

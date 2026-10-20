@@ -7,6 +7,7 @@ from typing import Any, ClassVar, Literal, cast
 import streamlit as st
 
 from testgen.common.cron_service import get_cron_sample
+from testgen.common.custom_test_validation import validate_aggregate_expression
 from testgen.common.enums import JobKey, JobSource, MonitorCalculation, MonitorType, SuiteType
 from testgen.common.models import with_database_session
 from testgen.common.models.data_structure_log import DataStructureLog
@@ -36,6 +37,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.profiling_queries import get_tables_by_table_group
 from testgen.ui.services.query_cache import (
+    get_connection,
     get_monitor_schedule,
     get_project_summary,
     get_table_group,
@@ -835,6 +837,28 @@ def build_edit_table_monitors_data(
     get_new_metrics, set_new_metrics = temp_value(f"edit_table_monitors:new_metrics:{table_name}", default=[])
     get_deleted_metric_ids, set_deleted_metric_ids = temp_value(f"edit_table_monitors:deleted_metric_ids:{table_name}", default=[])
     get_result, set_result = temp_value(f"edit_table_monitors:result:{table_name}", default=None)
+    get_validate_result, set_validate_result = temp_value(
+        f"edit_table_monitors:validate_result:{table_name}", default=None,
+    )
+
+    @with_database_session
+    def on_validate_metric(payload: dict) -> None:
+        expression = (payload.get("custom_query") or "").strip()
+        try:
+            if not expression:
+                result = {"success": False, "message": "Enter a metric expression."}
+            else:
+                validate_aggregate_expression(
+                    get_connection(table_group.connection_id),
+                    table_group.table_group_schema,
+                    table_name,
+                    expression,
+                    table_group=table_group,
+                )
+                result = {"success": True, "message": "Validation is successful."}
+        except Exception as e:
+            result = {"success": False, "message": f"Metric validation failed with error: {e}"}
+        set_validate_result({**result, "metric_id": payload.get("metric_id"), "timestamp": datetime.now(UTC).isoformat()})
 
     if should_save():
         valid_columns = {col.name for col in TestDefinition.__table__.columns}
@@ -898,10 +922,12 @@ def build_edit_table_monitors_data(
         "definitions": [td.to_dict(json_safe=True) for td in definitions],
         "metric_test_type": metric_test_type.to_dict(json_safe=True) if metric_test_type else {},
         "result": get_result(),
+        "validate_result": get_validate_result(),
         "dialog": dialog,
     }
     handlers = {
         "on_SaveTestDefinition_change": on_save_test_definition,
+        "on_ValidateMetric_change": on_validate_metric,
         "on_CloseEditMonitorsDialog_change": lambda *_: st.session_state.pop(EDIT_TABLE_MONITORS_DIALOG_KEY, None),
     }
     return data, handlers

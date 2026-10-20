@@ -371,13 +371,6 @@ class DefaultSeverity(StrEnum):
     log = "log"
 
 
-class DefaultSeverityInput(StrEnum):
-    """Default severity accepted when creating a test suite."""
-
-    fail = "fail"
-    warning = "warning"
-
-
 DEFAULT_SEVERITY_TO_DB: dict[DefaultSeverity, SuiteSeverity] = {
     DefaultSeverity.fail: SuiteSeverity.FAIL,
     DefaultSeverity.warning: SuiteSeverity.WARNING,

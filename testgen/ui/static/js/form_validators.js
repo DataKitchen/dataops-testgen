@@ -9,7 +9,7 @@ import { humanReadableSize } from './display_utils.js';
  */
 
 function required(value) {
-    if (!value) {
+    if (!value || (typeof value === 'string' && !value.trim())) {
         return 'This field is required'
     }
     return null;

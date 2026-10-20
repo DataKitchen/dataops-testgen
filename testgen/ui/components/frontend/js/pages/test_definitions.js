@@ -35,9 +35,10 @@ const TABLE_COLUMNS = [
     { name: 'test_name_short', label: 'Test Type', width: 160, sortable: true, overflow: 'hidden' },
     { name: 'test_active_display', label: 'Active', width: 80, align: 'center' },
     { name: 'lock_refresh_display', label: 'Locked', width: 80, align: 'center' },
-    { name: 'urgency', label: 'Urgency', width: 100 },
+    { name: 'urgency', label: 'Severity', width: 100 },
     { name: 'flagged_display', label: 'Flagged', width: 80, align: 'center' },
     { name: 'notes_count', label: 'Notes', width: 70, align: 'center' },
+    { name: 'last_auto_gen_date', label: 'Last Generated', width: 160 },
     { name: 'profiling_as_of_date', label: 'Based on Profiling', width: 160 },
     { name: 'last_manual_update', label: 'Last Manual Update', width: 160 },
     { name: 'export_to_observability_display', label: 'Observability', width: 120 },
@@ -949,8 +950,11 @@ const DetailPanel = (row, schemaLabel, qualifiesTableRefsWithSchema) => {
                 Attribute({ label: 'Test Active', value: row.test_active_display }),
                 Attribute({ label: 'Validation Status', value: row.test_definition_status }),
                 Attribute({ label: 'Lock Refresh', value: row.lock_refresh_display }),
-                Attribute({ label: 'Urgency', value: row.urgency }),
+                Attribute({ label: 'Severity', value: row.urgency }),
                 Attribute({ label: 'Export to Observability', value: row.export_to_observability_display }),
+                Attribute({ label: 'Last Generated', value: row.last_auto_gen_date }),
+                Attribute({ label: 'Based on Profiling', value: row.profiling_as_of_date }),
+                Attribute({ label: 'Last Manual Update', value: row.last_manual_update }),
                 ...paramCols
                     .map((col, index) => ({
                         column: col,
@@ -1543,9 +1547,9 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
     );
     const metadataValid = van.state(true);
     const paramsValid = van.state(true);
-    // column_name is implicitly required for column-scoped tests (mirrors the server validator);
-    // it lives outside TestDefinitionForm's own field set, so it's tracked separately here.
-    const isColumnRequired = testScope === 'column';
+    // column_name is implicitly required for column, custom and referential tests (mirrors the server
+    // validator); it lives outside TestDefinitionForm's own field set, so it's tracked separately here.
+    const isColumnRequired = ['column', 'custom', 'referential'].includes(testScope);
     const columnValid = van.state(!isColumnRequired || !!fv.rawVal.column_name);
     // table_name is required for every scope that reads a physical table. CUSTOM runs its own
     // custom_query (the table is only an output label) and tablegroup scope (Schema_Drift) spans
@@ -1749,7 +1753,11 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                                 label: columnLabel,
                                 help: columnHelp,
                                 value: () => fv.val.column_name ?? '',
-                                onChange: (value) => updateField('column_name', value || null),
+                                validators: isColumnRequired ? [required] : undefined,
+                                onChange: (value, state) => {
+                                    updateField('column_name', value || null);
+                                    columnValid.val = state.valid;
+                                },
                             }),
                         renderMatchField(matchColumnConfig, matchColumnValid),
                     )
@@ -1845,7 +1853,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                     div(
                         { style: 'flex: calc(50% - 8px) 0 0;' },
                         () => Select({
-                            label: 'Urgency Override',
+                            label: 'Severity Override',
                             value: fv.val.severity ?? null,
                             options: severityOptions,
                             allowNull: false,

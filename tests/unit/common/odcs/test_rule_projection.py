@@ -892,7 +892,7 @@ def test_a_custom_rule_carries_parameters_the_test_type_declares_and_nothing_els
         column_name="amount",
     )
     test_type = _test_type(
-        "Avg_Shift", dq_dimension="Consistency",
+        "Avg_Shift", dq_dimension="Consistency", test_scope="column",
         default_parm_columns="baseline_value_ct,baseline_avg,baseline_sd,threshold_value",
     )
     rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
@@ -911,11 +911,19 @@ def test_a_custom_rule_implementation_omits_the_subject():
         schema_name="sales", table_name="orders", column_name="amount",
     )
     test_type = _test_type(
-        "Avg_Shift", dq_dimension="Consistency",
+        "Avg_Shift", dq_dimension="Consistency", test_scope="column",
         default_parm_columns="schema_name,table_name,column_name,threshold_value",
     )
     rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
     assert set(rule["implementation"]) & {"schema_name", "table_name", "column_name"} == set()
+
+
+def test_a_custom_rule_carries_a_column_name_that_is_not_its_subject():
+    """A custom-scope term's column_name is a label rather than the node the rule nests on."""
+    term = _term(test_type="Condition_Flag", column_name="Shipped within order", custom_query="qty_shipped > qty")
+    test_type = _test_type("Condition_Flag", test_scope="custom", default_parm_columns="custom_query")
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
+    assert rule["implementation"]["column_name"] == "Shipped within order"
 
 
 def test_a_custom_rule_carries_no_comparison_operator():
@@ -990,7 +998,7 @@ def test_a_non_numeric_threshold_renders_as_stored():
 
 def test_a_type_declaring_no_parameters_still_renders_an_empty_implementation():
     """The schema requires `implementation` on a custom rule; an empty object is valid."""
-    term = _term(test_type="Table_Freshness")
+    term = _term(test_type="Table_Freshness", column_name=None)
     test_type = _test_type("Table_Freshness", dq_dimension="Timeliness", default_parm_columns=None)
     rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
     assert rule["implementation"] == {}

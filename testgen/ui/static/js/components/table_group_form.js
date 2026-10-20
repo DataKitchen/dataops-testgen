@@ -442,7 +442,8 @@ const MainForm = (
             label: getValue(options.schemaLabel),
             value: tableGroupSchema,
             class: 'tg-column-flex',
-            help: `${getValue(options.schemaLabel)} containing the tables for the Table Group`,
+            placeholder: 'Case-sensitive',
+            help: `${getValue(options.schemaLabel)} containing the tables for the table group. Case-sensitive: enter the name exactly as it appears in the data source.`,
             helpPlacement: 'bottom-left',
             onChange: (value, state) => {
                 tableGroupSchema.val = value;

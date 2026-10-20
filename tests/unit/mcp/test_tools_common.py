@@ -120,6 +120,7 @@ def test_parse_result_status_invalid_lists_valid_values():
 def test_parse_severity_valid():
     assert parse_severity("Fail") == Severity.FAIL
     assert parse_severity("Warning") == Severity.WARNING
+    assert parse_severity("Log") == Severity.LOG
 
 
 def test_parse_severity_invalid_names_value():

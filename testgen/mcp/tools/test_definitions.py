@@ -14,7 +14,7 @@ from testgen.common.database.table_group_service import (
     schema_label_for_table_group,
     table_group_qualifies_table_refs,
 )
-from testgen.common.enums import ImpactDimension, QualityDimension, SuiteType
+from testgen.common.enums import ImpactDimension, QualityDimension, SuiteType, TestScope
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.suite_version import (
@@ -41,7 +41,6 @@ from testgen.common.models.test_result import TestResult
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.test_definition_export_import_service import (
     IMPORT_ACTION_LABELS,
-    IMPORT_REASON_LABELS,
     ImportAction,
     ImportConfig,
     ImportMode,
@@ -56,6 +55,7 @@ from testgen.common.test_definition_export_import_service import (
     Origin,
     export_definitions,
     import_definitions,
+    import_reason_label,
 )
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_authorized_mcp_user, get_project_permissions, mcp_permission
@@ -226,7 +226,10 @@ def list_tests(
 
     notes_counts = TestDefinitionNote.get_notes_count_by_ids([str(td.id) for td in items])
 
-    headers = ["Test Type", "Table", "Column", "Active", "Severity", "Locked", "Manual", "Flagged", "Notes", "ID"]
+    headers = [
+        "Test Type", "Table", "Column", "Active", "Severity", "Locked", "Flagged", "Notes",
+        "Last Generated", "Last Manual Update", "ID",
+    ]
     rows = []
     for td in items:
         note_ct = notes_counts.get(str(td.id), 0)
@@ -238,9 +241,10 @@ def list_tests(
                 "Yes" if td.test_active else "No",
                 td.severity or td.default_severity or None,
                 "Yes" if td.lock_refresh else "No",
-                "No" if td.last_auto_gen_date else "Yes",
                 "Yes" if td.flagged else "No",
                 str(note_ct) if note_ct else None,
+                str(td.last_auto_gen_date) if td.last_auto_gen_date else "Manual",
+                str(td.last_manual_update) if td.last_manual_update else None,
                 str(td.id),
             ]
         )
@@ -352,13 +356,10 @@ def _append_td_summary(doc: MdDoc, td: TestDefinitionSummary) -> None:
     note_str = f"{len(notes)} Notes" if notes else "No Notes"
     doc.field("Review", f"{flag_str}, {note_str}")
 
-    # Origin and last update
-    if td.last_manual_update and td.last_auto_gen_date:
-        doc.field("Last Updated", f"{max(td.last_manual_update, td.last_auto_gen_date)} (auto-generated, edited)")
-    elif td.last_manual_update:
-        doc.field("Last Updated", f"{td.last_manual_update} (manual edit)")
-    elif td.last_auto_gen_date:
-        doc.field("Last Updated", f"{td.last_auto_gen_date} (auto-generated)")
+    doc.field("Last Generated", str(td.last_auto_gen_date) if td.last_auto_gen_date else "Never (created manually)")
+    if td.profiling_as_of_date:
+        doc.field("Based on Profiling", str(td.profiling_as_of_date))
+    doc.field("Last Manual Update", str(td.last_manual_update) if td.last_manual_update else "Never")
 
     # URL and metadata
     if td.external_url:
@@ -561,11 +562,13 @@ def _append_parameters_section(doc: MdDoc, td: TestDefinitionSummary, qualifies:
 def _append_match_section(
     doc: MdDoc, td: TestDefinitionSummary, schema_label: str | None, qualifies: bool
 ) -> None:
-    """Append reference match section — shows all match fields declared in param_columns.
+    """Append reference match section for a referential test — shows all match fields declared in param_columns.
 
     The reference table's schema is named as the connection names its own, and is left out on a
     flavor that reaches every table through one schema, where it is settled rather than chosen.
     """
+    if td.test_scope != TestScope.REFERENTIAL:
+        return
     match_fields = [
         (f"Match {schema_label}" if qualifies and schema_label else None, "match_schema_name", td.match_schema_name),
         ("Match Table", "match_table_name", td.match_table_name),
@@ -696,9 +699,9 @@ def create_test(
         dict | None,
         Field(
             description="Mapping of field name to value for the test's parameters and metadata (e.g. "
-            "``threshold_value``, ``custom_query``, ``severity``, ``column_name``, ``test_description``). Use "
-            "``list_test_types`` or ``get_test`` on a similar test to discover what's settable for the chosen test "
-            "type.",
+            "``threshold_value``, ``baseline_value``, ``baseline_ct``, ``custom_query``, ``severity``, ``column_name``, "
+            "``test_description``). Use ``list_test_types`` or ``get_test`` on a similar test to discover what's "
+            "settable for the chosen test type.",
         ),
     ] = None,
 ) -> str:
@@ -1230,7 +1233,7 @@ def _append_import_result(doc: MdDoc, result: ImportResponse, preview: bool) -> 
     for item in result.items:
         for td in item.tds:
             rows_by_action.setdefault(item.action, []).append(
-                [IMPORT_REASON_LABELS.get(item.reason, item.reason.value), td.idx, td.target_id]
+                [import_reason_label(item.reason, td.errors), td.idx, td.target_id]
             )
 
     for action in ImportAction:

@@ -65,6 +65,61 @@ def validate_custom_query(
     return CustomQueryResult(row_count=row_count, preview_rows=preview_rows)
 
 
+def validate_aggregate_expression(
+    connection: Connection,
+    schema: str,
+    table_name: str,
+    expression: str,
+    preview_limit: int = 0,
+    table_group: TableGroup | None = None,
+) -> CustomQueryResult:
+    """Run a metric monitor's aggregate expression against its table on the target DB.
+
+    The expression is cast to the flavor's varchar type without parentheses, as a test run casts a
+    measure, so anything that is not a single expression fails here as it would in a run.
+
+    Args:
+        connection: Target ``Connection`` to run the query on.
+        schema: Schema of the table, also used for ``{DATA_SCHEMA}`` substitution.
+        table_name: Table the expression is evaluated against.
+        expression: User-supplied SQL expression, typically an aggregate such as ``SUM(amount)``.
+        preview_limit: When > 0, also fetch up to N rows for preview.
+        table_group: Table group whose tables the query reads, when the flavor needs it to open
+            the connection.
+
+    Returns the row count and (optionally) the preview rows of ``SELECT CAST(<expression> AS
+    <varchar>) AS metric_value FROM <table>``. Raises :class:`InvalidMetricQuery` when the
+    query returns other than one row, or when the expression's value is neither NULL nor a number.
+    DB errors propagate as-is.
+    """
+    flavor_service = get_flavor_service(connection.sql_flavor)
+    table_ref = flavor_service.get_table_ref(schema, table_name, connection.sql_flavor_code)
+    metric_sql = (
+        f"SELECT CAST({expression.strip()} AS {flavor_service.varchar_type}) AS metric_value FROM {table_ref}"
+    )
+    result = validate_custom_query(
+        connection, schema, metric_sql, preview_limit=max(preview_limit, 1), table_group=table_group,
+    )
+    if result.row_count != 1:
+        raise InvalidMetricQuery("The expression must be an aggregate that returns one value, such as SUM(amount).")
+    # Read by position: some flavors return the alias upper-cased
+    value = next(iter(result.preview_rows[0].values())) if result.preview_rows else None
+    if value is not None and not _is_number(value):
+        # The value itself stays out of the message, since it may come from a PII column
+        raise InvalidMetricQuery("The expression result is not a number.")
+    if preview_limit == 0:
+        result.preview_rows = []
+    return result
+
+
+def _is_number(value: object) -> bool:
+    try:
+        float(value)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
 class InvalidMetricQuery(ValueError):
     """A metric query ran but did not return a numeric value."""
 

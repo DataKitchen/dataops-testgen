@@ -526,6 +526,14 @@ def test_create_test_suite_applies_every_supplied_field():
     assert body["generation_sets"] == ["Standard", "Quick"]
 
 
+def test_create_test_suite_accepts_log_severity():
+    resp, mock_save, _, _ = _post({"test_suite_name": "Orders", "default_severity": "log"})
+
+    assert resp.status_code == 201
+    assert _saved(mock_save).severity == "Log"
+    assert resp.json()["default_severity"] == "log"
+
+
 def test_create_test_suite_set_as_default_points_the_table_group_at_it():
     resp, _, _, table_group = _post({"test_suite_name": "Orders", "set_as_default": True})
 
@@ -580,14 +588,13 @@ def test_create_test_suite_reports_every_validation_failure():
         {"test_suite_name": "Orders", "test_suite_id": str(uuid4())},
         {"test_suite_name": "Orders", "suite_type": "monitor"},
         {"test_suite_name": "Orders", "project_code": "other"},
-        {"test_suite_name": "Orders", "default_severity": "log"},
         {"test_suite_name": "Orders", "default_severity": "Fail"},
         {"test_suite_name": "Orders", "set_as_default": "yes"},
         {"test_suite_name": "Orders", "export_to_observability": 1},
         {"test_suite_name": "Orders", "generation_sets": "Standard"},
     ],
     ids=[
-        "no-name", "caller-id", "suite-type", "caller-project", "log-severity", "db-cased-severity",
+        "no-name", "caller-id", "suite-type", "caller-project", "db-cased-severity",
         "string-as-bool", "int-as-bool", "sets-not-a-list",
     ],
 )

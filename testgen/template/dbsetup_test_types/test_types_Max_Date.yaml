@@ -4,9 +4,9 @@ test_types:
   test_name_short: Maximum Date
   test_name_long: All dates on or before set maximum
   test_description: |-
-    Tests that latest date referenced in column is no later than baseline data.
+    Tests that latest date referenced in column is no later than the baseline maximum date.
   except_message: |-
-    Latest date value found is after latest value at baseline.
+    Latest date value found is after the baseline maximum date.
   measure_uom: Dates after limit
   measure_uom_description: null
   selection_criteria: null
@@ -35,7 +35,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    This test is appropriate where the latest date is a real ceiling, such as a closed historical range or a table that is no longer loaded. In a table that is still being added to, the latest date moves forward with every load, so a maximum taken from the baseline data fails on the next load. Use Recency to check that dates keep advancing, or Past Dates to check that no date is later than the test date. For an exact latest date, use Match Maximum Date.
+    This test is appropriate where the latest date is a real ceiling, such as a closed historical range or a table that is no longer loaded. In a table that is still being added to, the latest date moves forward with every load, so a fixed maximum fails on the next load. Use Recency to check that dates keep advancing, or Past Dates to check that no date is later than the test date. For an exact latest date, use Match Maximum Date.
   active: Y
   ai_redact_values: false
   algorithm: Boundary check

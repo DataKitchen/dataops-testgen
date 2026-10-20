@@ -871,15 +871,18 @@ def _custom_implementation(term: "TestDefinition", test_type: "TestType") -> dic
     """``term``'s values for the parameters its test type declares.
 
     Keyed by the catalogue's own ``default_parm_columns`` rather than a fixed list, so a test
-    type added later exports its parameters with no change here. Carries no schema, table or
-    column: the subject is the node the rule nests on. Values the term leaves unset are
-    omitted rather than rendered null.
+    type added later exports its parameters with no change here. Carries no schema or table, and
+    ``column_name`` only for a type whose ``column_name`` is not a column: otherwise the subject is
+    the node the rule nests on. Values the term leaves unset are omitted rather than rendered null.
     """
-    return {
+    implementation = {
         name: getattr(term, name)
         for name in test_type_parameters(test_type)
         if name not in ("schema_name", "table_name", "column_name") and getattr(term, name, None) not in (None, "")
     }
+    if not names_one_column(test_type) and term.column_name not in (None, ""):
+        implementation["column_name"] = term.column_name
+    return implementation
 
 
 def drop_generated_metadata(
@@ -1541,7 +1544,7 @@ def _is_testgen_implementation(
         return False
     if declared_parameters is None:
         return True
-    return set(implementation) <= declared_parameters.get(test_type, frozenset())
+    return set(implementation) - {"column_name"} <= declared_parameters.get(test_type, frozenset())
 
 
 def _resolve_duplicate_values(

@@ -2,11 +2,11 @@ test_types:
   id: '1013'
   test_type: Distinct_Value_Ct
   test_name_short: Value Count
-  test_name_long: Count of distinct values has not dropped
+  test_name_long: Count of distinct values matches expected count
   test_description: |-
-    Tests that count of unique values in column has not changed from baseline.
+    Tests that count of unique values in column matches the expected count.
   except_message: |-
-    Count of unique values in column has changed from baseline.
+    Count of unique values in column differs from the expected count.
   measure_uom: Unique values
   measure_uom_description: null
   selection_criteria: |-
@@ -21,7 +21,7 @@ test_types:
   default_parm_values: |-
     distinct_value_ct,distinct_value_ct
   default_parm_prompts: |-
-    Distinct Value Count at Baseline,Min Expected Value Count
+    Distinct Value Count at Baseline,Expected Value Count
   default_parm_help: null
   default_parm_required: N,Y
   default_severity: Fail
@@ -35,7 +35,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    Value Count tests that the count of unique values present in the column has not dropped since baseline. The test is relevant for cumulative datasets, where old records are retained, or for any dataset where you would expect a set number of distinct values should be present. A failure here would indicate missing records or a change in categories or value assignment. For an exact count of distinct values, use Match Distinct Count.
+    Value Count tests that the count of unique values present in the column matches the expected count. The test is relevant for any dataset where you expect a set number of distinct values to be present. A failure here would indicate missing records or a change in categories or value assignment.
   active: Y
   ai_redact_values: false
   algorithm: Counting

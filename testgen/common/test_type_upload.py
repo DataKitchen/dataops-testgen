@@ -94,12 +94,7 @@ _PARENT_ENUM_FIELDS: dict[str, type[StrEnum]] = {
     "statistical_technique": StatisticalTechnique,
 }
 
-# ``default_severity`` on ``test_types`` has a broader value space than the
-# ``Severity`` enum, which is scoped to the values a user override may set.
-# Packaged YAMLs also allow the passive "Log" default, so accept it here.
-_DEFAULT_SEVERITY_VALUES: frozenset[str] = frozenset(
-    {member.value for member in Severity} | {"Log"}
-)
+_DEFAULT_SEVERITY_VALUES: frozenset[str] = frozenset(member.value for member in Severity)
 
 # VARCHAR(n) limits, kept in sync with 030_initialize_new_schema_structure.sql.
 _PARENT_MAX_LENGTHS: dict[str, int] = {
