@@ -3,7 +3,7 @@
 
 DataOps TestGen is an open-source data quality tool that profiles tables, generates tests from the profiling results, and runs them on a schedule with freshness, volume, and schema monitoring.
 
-The open-source edition includes the full web UI, not just a library. You also get a CLI and an MCP server, so you can drive TestGen from a terminal or an AI assistant. It is Apache 2.0 licensed and runs the same core engine and UI as TestGen Enterprise.
+The open-source edition includes the full web UI, not just a library. You also get a REST API and an MCP server, so you can drive TestGen from your pipelines or an AI assistant. It is Apache 2.0 licensed and runs the same core engine and UI as TestGen Enterprise.
 
 [Interactive Product Tour](https://datakitchen.storylane.io/share/byag8vimd5tn) | [Product page](https://datakitchen.io/products/dataops-testgen/) | [Documentation](https://docs.datakitchen.io/testgen/what-is-testgen/)
 
