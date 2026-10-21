@@ -59,7 +59,7 @@ _FIELD_NAMES = {
 }
 _PII_FLAG_DENIED_MESSAGE = (
     "Changing PII detection requires permission to view PII. "
-    "Leave this setting unchanged or contact your administrator."
+    "Leave this setting unchanged, or ask an administrator for the permission."
 )
 _TABLE_COMPARISON_DESCRIPTION = (
     "Whether profiling collects value hashes, which Table Comparison test generation needs for tests that "

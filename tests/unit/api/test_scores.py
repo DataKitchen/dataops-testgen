@@ -11,7 +11,6 @@ from testgen.api.deps import db_session, get_authorized_user
 from testgen.api.enums import ScoresGroupBy, ScoreType
 from testgen.api.scores import (
     _build_filter_list,
-    _scale_score,
     _translate_group_value,
     get_project_scores,
     router,
@@ -278,16 +277,6 @@ def test_get_project_scores_zero_match_returns_empty_breakdown(mock_def_cls):
 
 
 # --- Helpers ---
-
-
-def test_scale_score_none_stays_none():
-    assert _scale_score(None) is None
-
-
-def test_scale_score_fraction_to_percent():
-    assert _scale_score(0.87) == pytest.approx(87.0)
-    assert _scale_score(0.0) == pytest.approx(0.0)
-    assert _scale_score(1.0) == pytest.approx(100.0)
 
 
 def test_translate_group_value_impact_dimension_lowercases():

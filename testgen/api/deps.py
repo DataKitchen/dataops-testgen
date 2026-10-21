@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 
 import anyio
-from fastapi import Depends, HTTPException, Security, status
+from fastapi import Depends, HTTPException, Query, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -132,6 +132,15 @@ def fields_to_change(body: BaseModel, ignore: Collection[str] = ()) -> dict[str,
             f"{', '.join(nulled)} cannot be null. Omit a field to leave it unchanged.",
         )
     return sent
+
+
+PageQuery = Query(default=1, ge=1, description="Page number, starting at 1.")
+LimitQuery = Query(default=20, ge=1, le=100, description="Items per page, from 1 to 100.")
+
+
+def score_percent(raw: float | None) -> float | None:
+    """Scale a stored 0-1 score to the 0-100 scale the API and UI report."""
+    return None if raw is None else raw * 100
 
 
 def has_project_permission(user: User, project_code: str, permission: str) -> bool:

@@ -4,6 +4,8 @@ from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.exc import IntegrityError
 
 from testgen.api.deps import (
+    LimitQuery,
+    PageQuery,
     api_error,
     api_error_entries,
     api_errors,
@@ -14,6 +16,7 @@ from testgen.api.deps import (
     resolve_connection,
     resolve_project_code,
     resolve_table_group,
+    score_percent,
 )
 from testgen.api.schemas import (
     CatalogTags,
@@ -68,12 +71,12 @@ def list_table_groups(
     connection_id: int | None = Query(default=None, description="Only table groups on this connection."),
     schema_name: str | None = Query(default=None, description="Only table groups on this schema."),
     table_group_name: str | None = Query(default=None, description="Only the table group with this name."),
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=20, ge=1, le=100),
+    page: int = PageQuery,
+    limit: int = LimitQuery,
 ):
     """Table groups in a project, each with its table count and latest profiling and test activity.
 
-    The filters match exactly and combine, so ``schema_name`` and ``table_group_name``
+    The filters match exactly and combine, so `schema_name` and `table_group_name`
     together answer "is this dataset already set up?" in one call, without paging
     through the project.
     """
@@ -99,9 +102,9 @@ def list_table_groups(
                 row_count=row.row_count,
                 last_profiled_at=row.last_profiled_date,
                 last_tested_at=row.last_tested_date,
-                profiling_score=row.profiling_score,
-                testing_score=row.testing_score,
-                quality_score=row.quality_score,
+                profiling_score=score_percent(row.profiling_score),
+                testing_score=score_percent(row.testing_score),
+                quality_score=score_percent(row.quality_score),
             )
             for row in rows
         ],
@@ -142,15 +145,15 @@ def create_table_group(
 ) -> TableGroupCreateResponse:
     """Create a table group on a connection. It belongs to the connection's project.
 
-    The response carries the new ``table_group_id``, which profiling, test generation
+    The response carries the new `table_group_id`, which profiling, test generation
     and test runs take as input.
 
     The request names the table group's tables the way its connection holds them: by
-    ``schema_name`` on a database connection, optionally narrowed by ``table_set`` and the
-    masks, or by ``file_declarations`` on a file connection.
+    `schema_name` on a database connection, optionally narrowed by `table_set` and the
+    masks, or by `file_declarations` on a file connection.
 
     The table group's data catalog is read from the target before the response returns, so tests
-    can be imported into it right away. ``catalog_error`` says why when the target could not be read.
+    can be imported into it right away. `catalog_error` says why when the target could not be read.
     """
     if errors := validate_table_naming(
         connection,
@@ -237,7 +240,7 @@ def _to_response(table_group: TableGroup, connection: Connection | None = None) 
 
 _PII_FLAG_DENIED = (
     "Changing PII detection requires permission to view PII. "
-    "Leave this setting unchanged or contact your administrator."
+    "Leave this setting unchanged, or ask an administrator for the permission."
 )
 
 _REFUSAL_STATUS = {
@@ -273,8 +276,7 @@ def update_table_group(
     body: TableGroupUpdateRequest = Body(...),  # noqa: B008
     user: User = Depends(get_authorized_user),  # noqa: B008
 ) -> TableGroupUpdateResponse:
-    """Change a table group's configuration. Omitted fields are left as they are, and nothing is saved
-    when any field is refused.
+    """Omitted fields are left as they are, and nothing is saved when any field is refused.
 
     `table_set`, the masks and `file_declarations` replace the stored list. Catalog tags are merged:
     a tag the request does not name is left as it is.
