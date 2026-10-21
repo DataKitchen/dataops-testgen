@@ -295,6 +295,18 @@ def test_a_versions_term_count_leaves_out_the_tests_testgen_manages():
     )
 
 
+def test_a_versions_term_count_narrows_by_the_clauses_given():
+    version_id = uuid4()
+    session = MagicMock()
+    session.scalar.return_value = 2
+    with patch("testgen.common.contract_service.get_current_session", return_value=session):
+        assert contract_service.term_count(version_id, TestDefinition.table_name == "orders") == 2
+
+    conjuncts = _conjuncts(session.scalar.call_args.args[0].whereclause)
+    assert any(equality_conjunct(term, "version_id", "test_definitions", version_id) for term in conjuncts)
+    assert any(equality_conjunct(term, "table_name", "test_definitions", "orders") for term in conjuncts)
+
+
 def test_discarding_the_contracts_only_version_is_refused():
     """With no frozen version behind it, discarding the draft would leave the contract with
     zero suite_versions rows, and both resolvers fall through to the shared placeholder."""

@@ -15,7 +15,7 @@ from typing import Any, NamedTuple
 from uuid import UUID, uuid4
 
 import yaml
-from sqlalchemy import delete, func, select
+from sqlalchemy import ColumnElement, delete, func, select
 from sqlalchemy.orm.attributes import flag_modified
 
 from testgen.commands.test_generation import (
@@ -318,12 +318,14 @@ def discard_draft(suite: TestSuite) -> int:
     return removed
 
 
-def term_count(version_id: UUID) -> int:
-    """The number of terms on the version ``version_id``, leaving out the tests TestGen manages itself."""
+def term_count(version_id: UUID, *clauses: ColumnElement[bool]) -> int:
+    """The number of terms on the version ``version_id`` that match ``clauses``, leaving out the tests
+    TestGen manages itself."""
     return get_current_session().scalar(
         select(func.count()).select_from(TestDefinition).where(
             TestDefinition.version_id == version_id,
             TestDefinition.test_type.not_in(MANAGED_TEST_TYPES),
+            *clauses,
         )
     ) or 0
 
