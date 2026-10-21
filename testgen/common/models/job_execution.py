@@ -63,6 +63,8 @@ QUEUED_MESSAGE = (
     " TestGen runs a limited number of these at once."
 )
 
+RESTARTED_MESSAGE = "TestGen restarted before this run could finish."
+
 # What ``Popen.returncode`` reports for a process the kernel killed, which is how an out-of-memory
 # kill arrives. Windows has no SIGKILL and reports positive codes, so there the check never matches.
 _KILLED_EXIT_CODE = -getattr(signal, "SIGKILL", 9)
@@ -457,21 +459,24 @@ class JobExecution(Base):
         return True
 
     @classmethod
-    def recover_stale(cls) -> int:
-        """Settle rows left behind by a dead process. Returns how many were settled.
+    def recover_stale(cls) -> set[UUID]:
+        """Settle rows left behind by a dead process. Returns the ids it ended as an error.
 
-        A row that was asked to stop and carries a checkpoint continues instead of being
-        canceled. The job commits that checkpoint as the last write it makes before unwinding,
-        so its presence means the work is accounted for and only the process's exit went
-        unrecorded. A stopping status on its own is not enough: inferring a continue from it
-        would claim a run whose process is merely unreachable -- ``exec-job`` is started in its
-        own session and outlives its scheduler -- and hand a second worker the same run.
+        A row that was asked to stop and carries a checkpoint continues instead of ending. The
+        job commits that checkpoint as the last write it makes before unwinding, so its presence
+        means the work is accounted for and only the process's exit went unrecorded. A stopping
+        status on its own is not enough: inferring a continue from it would claim a run whose
+        process is merely unreachable -- ``exec-job`` is started in its own session and outlives
+        its scheduler -- and hand a second worker the same run.
 
         Where it continues from follows what stopped it. A run someone asked to pause is held at
         PAUSED, because releasing it is a decision rather than a consequence, and one that was
         interrupted is queued at INTERRUPTED for the next poll. Parking runs first, so a pause
-        carrying a checkpoint is settled before the cancel pass can reach it. Everything else
-        the passes reach is canceled, a checkpoint it never got to signal included.
+        carrying a checkpoint is settled before the error pass can reach it. Everything else
+        the passes reach ends as an error, a checkpoint it never got to signal included. A run
+        somebody asked to cancel is left at CANCEL_REQUESTED, for the poll to cancel.
+
+        The returned rows have reached a final status, so their final callbacks are still due.
         """
         # Each pass ends a working period, so each bills what the dead process worked. Rows only
         # reach here when the scheduler died too -- one that merely lost its subprocess was
@@ -488,15 +493,19 @@ class JobExecution(Base):
             cls.status.in_(JobStatus.stale_recoverable()),
             cls.resume_state.isnot(None),
         )
-        canceled = cls._transition_bulk_where(
-            JobStatus.CANCEL_REQUESTED,
+        failed = cls._transition_bulk_where(
+            JobStatus.ERROR,
             cls.status.in_(JobStatus.stale_recoverable()),
+            completed_at=datetime.now(UTC),
+            error_message=RESTARTED_MESSAGE,
         )
         if paused:
             LOG.info("Parked %d job execution(s) that a previous session was pausing", len(paused))
         if resumable:
             LOG.info("Queued %d job execution(s) to continue from their checkpoint", len(resumable))
-        return len(paused) + len(resumable) + len(canceled)
+        if failed:
+            LOG.info("Ended %d job execution(s) that a previous session left unfinished", len(failed))
+        return failed
 
     @classmethod
     def get(cls, execution_id: UUID) -> Self | None:
@@ -562,8 +571,11 @@ class JobExecution(Base):
         return list(items), total or 0
 
     @classmethod
-    def _transition_bulk_where(cls, target: JobStatus, *clauses: ColumnElement[bool]) -> set[UUID]:
-        """Move every row matching ``*clauses`` to ``target`` in one statement.
+    def _transition_bulk_where(
+        cls, target: JobStatus, *clauses: ColumnElement[bool], **values: Any,
+    ) -> set[UUID]:
+        """Move every row matching ``*clauses`` to ``target`` in one statement, writing ``values``
+        to the rows that move.
 
         Returns the ids that actually moved. Callers narrow with ``*clauses`` but can never
         widen the lifecycle guard.
@@ -576,7 +588,7 @@ class JobExecution(Base):
         return set(session.scalars(
             update(cls)
             .where(cls.status.in_(JobStatus.sources_for(target)), *clauses)
-            .values(status=target.value, **cls._bill_worked_from(billable))
+            .values(status=target.value, **cls._bill_worked_from(billable), **values)
             .returning(cls.id)
         ).all())
 

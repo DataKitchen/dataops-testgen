@@ -302,8 +302,8 @@ class CliScheduler(Scheduler):
         Only pausable job keys are asked, since no other handler can see the request. This
         does not wait: the jobs that honor it exit like any other, so the shutdown wait that
         follows covers them and asking adds no delay of its own. A job that stops writes its own
-        INTERRUPTED and the next start claims it; one killed before it got there is canceled by
-        ``recover_stale``, since nothing recorded where it had reached.
+        INTERRUPTED and the next start claims it; one killed before it got there is ended as an
+        error by ``recover_stale``, since nothing recorded where it had reached.
         """
         with self._running_jobs_cond:
             running_ids = set(self._running_jobs)
@@ -338,14 +338,26 @@ def check_db_is_ready() -> bool:
     return True
 
 
+def _run_final_callbacks_for(job_ids: Iterable[UUID]) -> None:
+    """Fire the final callbacks of each job execution in ``job_ids``."""
+    for job_id in job_ids:
+        with database_session():
+            job_exec = JobExecution.get(job_id)
+        run_final_callbacks(job_exec)
+
+
 def run_scheduler():
     while not check_db_is_ready():
         time.sleep(10)
 
     with database_session():
-        settled = JobExecution.recover_stale()
-    if settled:
-        LOG.info("Settled %d job execution(s) left by a previous session", settled)
+        failed = JobExecution.recover_stale()
+    if failed:
+        # On a thread, because a notification can wait on its delivery timeout, and the cron
+        # triggers that fall due before the scheduler starts are never fired.
+        threading.Thread(
+            target=_run_final_callbacks_for, args=(failed,), name="restart-callbacks", daemon=True,
+        ).start()
 
     scheduler = CliScheduler()
     scheduler.run()

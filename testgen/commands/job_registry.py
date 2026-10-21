@@ -8,7 +8,8 @@ Two registries keyed by `job_key`:
 
 `run_final_callbacks` is invoked wherever a JE reaches a terminal status:
 `exec_job` after mark_completed/mark_failed, `_proc_wrapper`'s nonzero-exit
-safety net, and `_handle_cancellation`'s no-subprocess branch.
+safety net, `_handle_cancellation`'s no-subprocess branch, and `run_scheduler`
+for the runs a restart ended.
 """
 
 import logging
