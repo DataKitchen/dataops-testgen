@@ -549,7 +549,9 @@ class ProfilingColumnItem(BaseModel):
         default=None, description="The column's Profiling Score, from 0 to 100. `null` when not calculated."
     )
     testing_score: float | None = Field(
-        default=None, description="The column's Testing Score, from 0 to 100, from the latest test runs."
+        default=None,
+        description="The column's Testing Score, from 0 to 100, from the latest test runs. `null` until a test run "
+        "in its table group has been scored.",
     )
     issue_counts: IssueCounts
 
@@ -677,7 +679,9 @@ _MONITOR_ID = (
     "this type."
 )
 _MONITOR_ANOMALIES = "Anomalies the monitor flagged in the lookback window."
-_MONITOR_IS_TRAINING = "Whether the monitor's latest run was still training, gathering results before it flags anomalies."
+_MONITOR_IS_TRAINING = (
+    "Whether the monitor's latest run was still training, gathering results before it flags anomalies."
+)
 _MONITOR_IS_PENDING = "Whether the monitor has no results in the lookback window yet."
 _LOOKBACK = "Monitor runs in the lookback window: the table group's `lookback_runs` setting."
 
@@ -833,7 +837,9 @@ _RECIPIENTS = "Email addresses to send to, at least one."
 _WEBHOOK_TYPE = "`slack`, `microsoft_teams`, or `generic`."
 _WEBHOOK_URL = "HTTPS URL each notification is posted to. Stored encrypted, and returned only masked."
 _AUTH_HEADER_NAME = "Generic webhooks only. Name of a header sent with each notification, e.g. `Authorization`."
-_AUTH_HEADER_VALUE = "Generic webhooks only. Value of the `auth_header_name` header. Stored encrypted and never returned."
+_AUTH_HEADER_VALUE = (
+    "Generic webhooks only. Value of the `auth_header_name` header. Stored encrypted and never returned."
+)
 _DESTINATION_TYPE = "`email` or `webhook`, matching the destination's type."
 _RULE_COUNT = "Notification rules that send to this destination."
 _ADDRESSING = (
@@ -1181,7 +1187,9 @@ class MonitorRunRuleResponse(_RuleResponseBase):
     event: Literal["monitor_run"] = Field(default="monitor_run", description=_RULE_EVENT)
     test_suite_id: UUID = Field(description=_RULE_MONITOR_SUITE)
     table_group_id: UUID = Field(description="The monitor suite's table group.")
-    trigger: MonitorRunTrigger = Field(default="on_anomalies", description="`on_anomalies`: the rule sends when a monitor run flags an anomaly.")
+    trigger: MonitorRunTrigger = Field(
+        default="on_anomalies", description="`on_anomalies`: the rule sends when a monitor run flags an anomaly."
+    )
     table_name: str | None = Field(default=None, description=_RULE_TABLE_NAME)
 
 

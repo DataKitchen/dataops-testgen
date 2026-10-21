@@ -427,7 +427,8 @@ class ImportConfig(BaseModel):
     )
     on_absence: OnAbsence = Field(
         description="What to do with existing tests that no definition in the file matches: `do_nothing`, "
-        "`delete_all` (even locked ones), or `delete_unlocked`. Tests of a type TestGen creates and removes itself, such as schema conformance tests, are never deleted."
+        "`delete_all` (even locked ones), or `delete_unlocked`. Tests of a type TestGen creates and removes itself, "
+        "such as schema conformance tests, are never deleted."
     )
 
 

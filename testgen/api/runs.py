@@ -232,9 +232,12 @@ def list_test_run_results(
     status: ResultStatus | None = Query(  # noqa: B008
         default=None, description=f"Only results with this status: {RESULT_STATUS_VALUES}."
     ),
-    table_name: str | None = Query(default=None, description="Only results on this table, matched exactly, including case."),
+    table_name: str | None = Query(
+        default=None, description="Only results on this table, matched exactly, including case."
+    ),
     column_name: str | None = Query(
-        default=None, description="Only results on this column, matched exactly against `column_names`, including case."
+        default=None,
+        description="Only results on this column, matched exactly against `column_names`, including case.",
     ),
     test_type: str | None = Query(
         default=None,

@@ -105,8 +105,8 @@ def create_app(version: str | None = None) -> FastAPI:
         {"name": "Test Suites", "description": "Create and read test suites, data contracts included."},
         {
             "name": "Test Definitions",
-            "description": "Export and import test definitions as JSON documents, to promote tests between environments "
-            "or edit them in bulk.",
+            "description": "Export and import test definitions as JSON documents, to promote tests between "
+            "environments or edit them in bulk.",
         },
         {
             "name": "Jobs",
@@ -122,7 +122,10 @@ def create_app(version: str | None = None) -> FastAPI:
             "name": "Monitors",
             "description": "Enable and configure monitoring on a table group, and read its monitors and their results.",
         },
-        {"name": "Scores", "description": "Read a project's scores, filtered by catalog tags and broken down by category."},
+        {
+            "name": "Scores",
+            "description": "Read a project's scores, filtered by catalog tags and broken down by category.",
+        },
         {
             "name": "Notifications",
             "description": "Manage the destinations and rules that send notifications about test runs, profiling runs, "
