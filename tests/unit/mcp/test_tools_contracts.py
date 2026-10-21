@@ -538,7 +538,8 @@ def test_metadata_without_protection_returns_every_field(db_session_mock):
 def _item(version, frozen_at=None, **kw):
     return SuiteVersionListItem(
         id=uuid4(), version=version, label=kw.get("label"), created_by=kw.get("created_by", "alice"),
-        frozen_at=frozen_at, term_count=kw.get("term_count", 40), run_count=kw.get("run_count", 0),
+        frozen_at=frozen_at, frozen_by=kw.get("frozen_by"), term_count=kw.get("term_count", 40),
+        run_count=kw.get("run_count", 0),
         latest_run_id=kw.get("latest_run_id"), latest_run_status=kw.get("latest_run_status"),
         latest_run_started_at=kw.get("latest_run_started_at"),
     )
@@ -610,6 +611,13 @@ def test_freezing_reports_what_now_runs_and_that_it_is_final(db_session_mock):
     assert "**Previous version:** v3 superseded" in out
     assert "now run v4 by default" in out
     assert "cannot be changed or unfrozen" in out
+
+
+def test_freezing_records_the_mcp_user_as_who_froze_it(db_session_mock):
+    frozen = SuiteVersion(id=uuid4(), version=4, frozen_at=datetime(2026, 10, 8, tzinfo=UTC))
+    with patch(f"{MODULE}.get_mcp_username", return_value="alice"):
+        _, freeze = _freeze(_contract(), frozen=frozen)
+    assert freeze.call_args.kwargs["username"] == "alice"
 
 
 def test_freezing_with_no_draft_says_so_rather_than_succeeding(db_session_mock):

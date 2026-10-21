@@ -21,8 +21,9 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
-from testgen.ui.services.contract_run_service import run_version_caption
+from testgen.ui.services.contract_run_service import run_test_suite_options, run_version_caption
 from testgen.ui.services.query_cache import (
+    get_contract_states,
     get_project_summary,
     get_test_run_summaries,
     select_table_groups_minimal_where,
@@ -98,9 +99,10 @@ class TestRunsPage(Page):
             run_tests_data = {
                 "title": "Run Tests",
                 "project_code": project_code,
-                "test_suites": [
-                    {"value": str(ts.id), "label": ts.test_suite, "suite_type": ts.suite_type} for ts in test_suites
-                ],
+                "test_suites": run_test_suite_options(
+                    test_suites,
+                    get_contract_states(tuple(ts.id for ts in test_suites if ts.suite_type == SuiteType.CONTRACT)),
+                ),
                 "default_test_suite_id": str(test_suite_id) if test_suite_id else None,
                 "result": st.session_state.get(TR_RUN_TESTS_RESULT_KEY),
             }
@@ -126,7 +128,10 @@ class TestRunsPage(Page):
                 with database_session():
                     JobExecution.submit(
                         job_key="run-tests",
-                        kwargs={"test_suite_id": str(selected_id)},
+                        kwargs={
+                            "test_suite_id": str(selected_id),
+                            **({"version_id": str(data["version_id"])} if data.get("version_id") else {}),
+                        },
                         source=JobSource.ui,
                         project_code=project_code,
                     )

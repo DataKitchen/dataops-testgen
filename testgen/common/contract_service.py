@@ -15,7 +15,7 @@ from typing import Any, NamedTuple
 from uuid import UUID, uuid4
 
 import yaml
-from sqlalchemy import delete, func, select
+from sqlalchemy import ColumnElement, delete, func, select
 from sqlalchemy.orm.attributes import flag_modified
 
 from testgen.commands.test_generation import (
@@ -77,8 +77,8 @@ class InvalidContractDocumentError(ValueError):
         self.problems = problems
 
 
-def freeze_version(suite: TestSuite, *, label: str | None = None) -> SuiteVersion:
-    """Freeze the suite's draft, making it the agreement in force.
+def freeze_version(suite: TestSuite, *, label: str | None = None, username: str | None = None) -> SuiteVersion:
+    """Freeze the suite's draft, making it the agreement in force, recorded as frozen by ``username``.
 
     Renders the draft's terms into its stored document and validates the merge before
     anything is written. Raises ``InvalidContractDocumentError``, leaving the draft a draft,
@@ -97,6 +97,7 @@ def freeze_version(suite: TestSuite, *, label: str | None = None) -> SuiteVersio
     draft.odcs_api_version = document["apiVersion"]
     draft.frozen_document = serialize.serialize_document(document)
     draft.frozen_at = datetime.now(UTC)
+    draft.frozen_by = username
     if label is not None:
         draft.label = label
     get_current_session().flush()
@@ -310,16 +311,23 @@ def discard_draft(suite: TestSuite) -> int:
             "the contract with no version at all. Freeze a version first, or keep this draft."
         )
 
+    removed = term_count(draft.id)
     session = get_current_session()
-    term_count = session.scalar(
-        select(func.count()).select_from(TestDefinition).where(
-            TestDefinition.version_id == draft.id,
-            TestDefinition.test_type.not_in(MANAGED_TEST_TYPES),
-        )
-    ) or 0
     session.delete(draft)
     session.flush()
-    return term_count
+    return removed
+
+
+def term_count(version_id: UUID, *clauses: ColumnElement[bool]) -> int:
+    """The number of terms on the version ``version_id`` that match ``clauses``, leaving out the tests
+    TestGen manages itself."""
+    return get_current_session().scalar(
+        select(func.count()).select_from(TestDefinition).where(
+            TestDefinition.version_id == version_id,
+            TestDefinition.test_type.not_in(MANAGED_TEST_TYPES),
+            *clauses,
+        )
+    ) or 0
 
 
 class CheckableRuleError(InvalidContractDocumentError):

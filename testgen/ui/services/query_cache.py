@@ -281,17 +281,17 @@ def get_test_definition(identifier: str | UUID) -> TestDefinitionSummary | None:
 
 
 @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
-def select_test_definitions_where(*clauses, order_by=None) -> list[TestDefinitionSummary]:
+def select_test_definitions_where(*clauses, order_by=None, version_id=None) -> list[TestDefinitionSummary]:
     if order_by is None:
-        return _detached(list(TestDefinition.select_where(*clauses)))
-    return _detached(list(TestDefinition.select_where(*clauses, order_by=order_by)))
+        return _detached(list(TestDefinition.select_where(*clauses, version_id=version_id)))
+    return _detached(list(TestDefinition.select_where(*clauses, order_by=order_by, version_id=version_id)))
 
 
 @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
-def select_test_definitions_minimal_where(*clauses, order_by=None) -> list[TestDefinitionMinimal]:
+def select_test_definitions_minimal_where(*clauses, order_by=None, version_id=None) -> list[TestDefinitionMinimal]:
     if order_by is None:
-        return _detached(list(TestDefinition.select_minimal_where(*clauses)))
-    return _detached(list(TestDefinition.select_minimal_where(*clauses, order_by=order_by)))
+        return _detached(list(TestDefinition.select_minimal_where(*clauses, version_id=version_id)))
+    return _detached(list(TestDefinition.select_minimal_where(*clauses, order_by=order_by, version_id=version_id)))
 
 
 @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
@@ -300,8 +300,11 @@ def select_test_definitions_page(
     order_by=None,
     page: int = 1,
     limit: int = 500,
+    version_id=None,
 ) -> tuple[list[TestDefinitionSummary], int]:
-    return _detached(TestDefinition.select_page(*clauses, order_by=order_by, page=page, limit=limit))
+    return _detached(
+        TestDefinition.select_page(*clauses, order_by=order_by, page=page, limit=limit, version_id=version_id)
+    )
 
 
 # -- Project ------------------------------------------------------------------
