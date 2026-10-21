@@ -1438,21 +1438,23 @@ class TableGroupResponse(BaseModel):
     exclude_masks: list[str] = Field(default_factory=list, description=_TG_DESCRIPTIONS["exclude_masks"])
     file_declarations: list[FileDeclaration] | None = Field(
         default=None,
-        description="File connections only. The table group's tables, one per file or pattern. Null on a database "
+        description="File connections only. The table group's tables, one per file or pattern. `null` on a database "
         "connection.",
     )
     profile_id_column_mask: str | None = Field(default=None, description=_TG_DESCRIPTIONS["profile_id_column_mask"])
     profile_sk_column_mask: str | None = Field(default=None, description=_TG_DESCRIPTIONS["profile_sk_column_mask"])
 
-    profile_use_sampling: bool
-    profile_sample_percent: int | None = None
-    profile_sample_min_count: int | None = None
-    profiling_delay_days: int | None = None
-    profile_flag_cdes: bool
-    profile_flag_pii: bool
-    profile_exclude_xde: bool
-    profile_table_comparison: bool
-    include_in_dashboard: bool
+    profile_use_sampling: bool = Field(description=_TG_DESCRIPTIONS["profile_use_sampling"])
+    profile_sample_percent: int | None = Field(default=None, description=_TG_DESCRIPTIONS["profile_sample_percent"])
+    profile_sample_min_count: int | None = Field(
+        default=None, description=_TG_DESCRIPTIONS["profile_sample_min_count"]
+    )
+    profiling_delay_days: int | None = Field(default=None, description=_TG_DESCRIPTIONS["profiling_delay_days"])
+    profile_flag_cdes: bool = Field(description=_TG_DESCRIPTIONS["profile_flag_cdes"])
+    profile_flag_pii: bool = Field(description=_TG_DESCRIPTIONS["profile_flag_pii"])
+    profile_exclude_xde: bool = Field(description=_TG_DESCRIPTIONS["profile_exclude_xde"])
+    profile_table_comparison: bool = Field(description=_TG_DESCRIPTIONS["profile_table_comparison"])
+    include_in_dashboard: bool = Field(description=_TG_DESCRIPTIONS["include_in_dashboard"])
 
     catalog_tags: CatalogTags
 
