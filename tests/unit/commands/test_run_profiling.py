@@ -34,8 +34,10 @@ MODULE = "testgen.commands.run_profiling"
 POOL = "testgen.common.pausable_job.run_keyed_worker_pool"
 
 
-def _col(table: str, column: str, record_ct: int = 10) -> ColumnChars:
-    return ColumnChars(schema_name="s", table_name=table, column_name=column, record_ct=record_ct)
+def _col(table: str, column: str, record_ct: int = 10, general_type: str = "A") -> ColumnChars:
+    return ColumnChars(
+        schema_name="s", table_name=table, column_name=column, record_ct=record_ct, general_type=general_type
+    )
 
 
 def _no_job_row_session() -> MagicMock:
@@ -53,6 +55,7 @@ def _run_columns(
     sampling_params: dict[str, TableSampling] | None = None,
     capabilities: ProfilingCapabilities | None = None,
     sql_generator: MagicMock | None = None,
+    general_type: str = "A",
 ):
     """Drive the column profiling step through the engine with a stubbed worker pool.
 
@@ -60,7 +63,7 @@ def _run_columns(
     supplies no row values unless ``sql_generator`` is given. Returns
     (profiling_run, ProfileResult mock, _write_column_error mock).
     """
-    data_chars = [_col("t", name) for name in outcomes]
+    data_chars = [_col("t", name, general_type=general_type) for name in outcomes]
 
     job = ProfilingJob.__new__(ProfilingJob)
     PausableJob.__init__(job, job_id=uuid4())
@@ -96,6 +99,7 @@ def _run_columns(
         patch(f"{MODULE}.ProfileResult") as profile_result,
         patch(f"{MODULE}._write_column_error") as write_error,
     ):
+        profile_result.provenance_counts.return_value = (0, 0)
         job.execute()
 
     return job.profiling_run, profile_result, write_error
@@ -162,10 +166,19 @@ def test_a_row_is_calibrated_before_it_is_written():
     assert names.index("calibrate_sampled_counts") < names.index("upsert")
 
 
-def test_a_sampled_tables_row_records_the_ratio():
+def test_a_sampled_tables_alpha_row_records_the_ratio():
     _, profile_result, _ = _run_columns({"c1": ("ok", [{"record_ct": 3}])}, sampling_params={"t": SAMPLING})
 
     profile_result.upsert.assert_called_once_with({"record_ct": 3, "sample_ratio": SAMPLING.sample_ratio})
+
+
+@pytest.mark.parametrize("general_type", ["N", "D", "B", "X"])
+def test_a_sampled_tables_row_of_another_type_records_no_ratio(general_type):
+    _, profile_result, _ = _run_columns(
+        {"c1": ("ok", [{"record_ct": 3}])}, sampling_params={"t": SAMPLING}, general_type=general_type
+    )
+
+    profile_result.upsert.assert_called_once_with({"record_ct": 3})
 
 
 def test_a_table_that_is_not_sampled_records_no_ratio():
@@ -266,6 +279,7 @@ def _run_frequency(sampling_params: dict[str, TableSampling]) -> dict:
         patch("testgen.common.pausable_job.get_current_session", return_value=_no_job_row_session()),
         patch.object(ProfilingJob, "on_start", lambda _self: None),
         patch.object(ProfileResult, "upsert") as upsert,
+        patch.object(ProfileResult, "provenance_counts", return_value=(0, 0)),
     ):
         job.execute()
 
@@ -336,6 +350,7 @@ def _run_keyed_steps(job: ProfilingJob, error: str | None = None) -> tuple[Magic
         patch.object(ProfilingJob, "on_start", lambda _self: None),
     ):
         profile_result.list_keyed_hash_columns.return_value = {"t": ("id", ["amount"])}
+        profile_result.provenance_counts.return_value = (0, 0)
         job.execute()
     return pool, execute_queries, profile_result, job.profiling_run
 

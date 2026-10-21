@@ -99,6 +99,8 @@ def _detail_row(**overrides) -> dict:
         "future_date_ct": None,
         # Boolean
         "boolean_true_ct": None,
+        "sample_ratio": None,
+        "percentile_method": None,
         # Per-column profiling failure
         "query_error": None,
         # Scores & hygiene

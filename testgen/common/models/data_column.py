@@ -144,6 +144,8 @@ class ColumnProfileSummary(EntityMinimal):
     null_value_ct: int | None
     distinct_value_ct: int | None
     filled_value_ct: int | None
+    value_ct: int | None
+    sample_ratio: float | None
     dq_score_profiling: float | None
     dq_score_testing: float | None
     hygiene_issue_count: int
@@ -216,6 +218,9 @@ class ColumnProfileDetail(EntityMinimal):
     future_date_ct: int | None
     # Boolean
     boolean_true_ct: int | None
+    # Provenance
+    sample_ratio: float | None
+    percentile_method: str | None
     # Per-column profiling failure
     query_error: str | None
     # Scores & hygiene
@@ -406,6 +411,8 @@ class DataColumnChars(Entity):
                 ProfileResult.null_value_ct,
                 ProfileResult.distinct_value_ct,
                 ProfileResult.filled_value_ct,
+                ProfileResult.value_ct,
+                ProfileResult.sample_ratio,
                 cls.dq_score_profiling,
                 cls.dq_score_testing,
                 func.coalesce(hygiene_subq.c.hygiene_issue_count, 0).label("hygiene_issue_count"),
@@ -567,6 +574,8 @@ class DataColumnChars(Entity):
                 ProfileResult.within_1mo_date_ct,
                 ProfileResult.future_date_ct,
                 ProfileResult.boolean_true_ct,
+                ProfileResult.sample_ratio,
+                ProfileResult.percentile_method,
                 ProfileResult.query_error,
                 cls.dq_score_profiling,
                 cls.dq_score_testing,

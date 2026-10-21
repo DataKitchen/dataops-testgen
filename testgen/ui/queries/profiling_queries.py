@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from testgen.common.data_catalog_service import TAG_FIELDS
+from testgen.common.models.profile_result import MeasureAcquisition, ProfileResult
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db, fetch_one_from_db
 from testgen.utils import is_uuid4
@@ -58,8 +59,39 @@ within_1yr_date_ct,
 within_1mo_date_ct,
 future_date_ct,
 -- Boolean
-boolean_true_ct
+boolean_true_ct,
+-- Provenance
+profile_results.sample_ratio,
+profile_results.percentile_method
 """
+
+
+def with_provenance(row: dict) -> dict:
+    row["provenance"] = ProfileResult.provenance_details(row)
+    return row
+
+
+def add_provenance_columns(data: pd.DataFrame) -> None:
+    """Add export columns ``sampling`` (the sampled measures' label) and ``percentiles`` ("Exact" or
+    "Approximate", blank for a row with no percentiles)."""
+    sampled = [
+        measure for measure, acquisition in ProfileResult.measure_acquisition.items()
+        if acquisition in (MeasureAcquisition.SAMPLEABLE, MeasureAcquisition.SAMPLEABLE_COUNT)
+    ]
+    percentiles = [
+        measure for measure, acquisition in ProfileResult.measure_acquisition.items()
+        if acquisition == MeasureAcquisition.PERCENTILE
+    ]
+    sampling_labels = []
+    percentile_labels = []
+    for row in data.to_dict("records"):
+        sampling_labels.append(next(filter(None, (ProfileResult.provenance_label(m, row) for m in sampled)), None))
+        has_percentiles = any(m in row and not pd.isna(row[m]) for m in percentiles)
+        percentile_labels.append(
+            (ProfileResult.provenance_label(percentiles[0], row) or "Exact") if has_percentiles else None
+        )
+    data["sampling"] = sampling_labels
+    data["percentiles"] = percentile_labels
 
 
 @st.cache_data(show_spinner=False)
@@ -121,7 +153,9 @@ def get_profiling_results(profiling_run_id: str, table_name: str | None = None, 
         "column_name": column_name or "%%",
     }
 
-    return fetch_df_from_db(query, params)
+    results = fetch_df_from_db(query, params)
+    results["provenance"] = [ProfileResult.provenance_details(row) for row in results.to_dict("records")]
+    return results
 
 
 @st.cache_data(show_spinner=False)
@@ -435,7 +469,7 @@ def get_columns_by_condition(
     {filter_condition}
     ORDER BY LOWER(column_chars.table_name), ordinal_position;
     """
-    columns = [ dict(row) for row in fetch_all_from_db(query, filter_params) ]
+    columns = [ with_provenance(dict(row)) for row in fetch_all_from_db(query, filter_params) ]
 
     if include_active_tests:
         # Counted apart and merged here: joined into the query above, the planner underestimates

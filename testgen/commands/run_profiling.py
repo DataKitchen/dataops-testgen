@@ -308,7 +308,8 @@ class ProfilingJob(PausableJob[ColumnChars]):
                 row = with_frequent_patterns(outcome.result[0])
                 ProfileResult.calibrate_sampled_counts(row)
                 row.update(self.sql_generator.profiled_row_values(outcome.key, self.capabilities.approx_percentile))
-                if table_sampling := self.sampling_params.get(outcome.key.table_name):
+                # Only Alpha columns are read on the sample; every other type is measured over every row.
+                if outcome.key.general_type == "A" and (table_sampling := self.sampling_params.get(outcome.key.table_name)):
                     row["sample_ratio"] = table_sampling.sample_ratio
                 ProfileResult.upsert(row)
 
@@ -325,6 +326,9 @@ class ProfilingJob(PausableJob[ColumnChars]):
             LOG.warning(f"Errors running column profiling queries: {result.errors}")
         if result.all_failed:
             raise RuntimeError(f"{result.errors} errors during column profiling. See details in results.")
+
+        sampled, approximate = ProfileResult.provenance_counts(self.profiling_run.id)
+        LOG.info(f"Columns estimated from a sample: {sampled}. Columns with approximate percentiles: {approximate}")
 
     def _build_column_query(self, column: ColumnChars) -> tuple[str, dict]:
         # Built here, not in the worker, so the ORM session is only touched on this thread.
