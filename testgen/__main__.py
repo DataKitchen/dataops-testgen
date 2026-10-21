@@ -1043,6 +1043,8 @@ def run_ui():
             "--client.showErrorDetails=none",
             "--client.toolbarMode=minimal",
             "--server.enableStaticServing=true",
+            # Also withholds Streamlit's in-app "install agent skills" prompt from TestGen users
+            "--logger.hideWelcomeMessage=true",
             f"--server.port={settings.UI_PORT}",
             f"--server.sslCertFile={settings.SSL_CERT_FILE}" if use_ssl else "",
             f"--server.sslKeyFile={settings.SSL_KEY_FILE}" if use_ssl else "",
