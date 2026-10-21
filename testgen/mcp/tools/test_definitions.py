@@ -1,9 +1,12 @@
+import hashlib
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, NoReturn
 from uuid import UUID
 
+from mcp.server.fastmcp import Context
 from pydantic import Field, ValidationError
 from sqlalchemy import select, update
 
@@ -28,6 +31,7 @@ from testgen.common.models.suite_version import (
 )
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import (
+    MANAGED_TEST_TYPES,
     NON_PUBLIC_TEST_TYPES,
     InvalidTestDefinitionFields,
     ManagedTestDefinitionError,
@@ -57,6 +61,7 @@ from testgen.common.test_definition_export_import_service import (
     import_definitions,
     import_reason_label,
 )
+from testgen.mcp.confirmation import confirm_destructive_action
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_authorized_mcp_user, get_project_permissions, mcp_permission
 from testgen.mcp.services.source_data_protection import (
@@ -83,6 +88,7 @@ from testgen.mcp.tools.common import (
     validate_page,
 )
 from testgen.mcp.tools.markdown import MdDoc
+from testgen.mcp.workers import run_on_worker_thread
 
 _DOC_GROUP = DocGroup.INVESTIGATE
 
@@ -1083,13 +1089,13 @@ def _render_deleted(
     return doc.render()
 
 
-def _delete_resolved_tests(scope: str, selected: list[TestDefinitionMinimal]) -> str:
-    """Delete the already-resolved tests from the version each suite writes to, and render what went.
+def _route_for_delete(
+    selected: list[TestDefinitionMinimal],
+) -> tuple[list[tuple[TestDefinitionMinimal, UUID]], list[tuple[TestSuite, UUID]]]:
+    """Map the selected tests onto the version each suite writes to.
 
-    Every suite's rows are mapped onto its writable version before anything is deleted, so a
-    refusal for any of them deletes nothing. Deleting by ID rather than by the selecting filter
-    keeps the response exact: a row inserted after the selection is not swept up in the delete
-    unreported.
+    Returns each test with the ID of the row a delete removes, and each suite with its
+    writable version. Raises the user-facing refusal for any test that cannot be written.
     """
     ids_by_suite: dict[UUID, list[UUID]] = {}
     for td in selected:
@@ -1106,7 +1112,18 @@ def _delete_resolved_tests(scope: str, selected: list[TestDefinitionMinimal]) ->
     for td in selected:
         if td.id in routed:
             deleted_by_id.setdefault(routed[td.id], td)
-    deleted = [(td, deleted_id) for deleted_id, td in deleted_by_id.items()]
+    return [(td, deleted_id) for deleted_id, td in deleted_by_id.items()], writes
+
+
+def _delete_resolved_tests(scope: str, selected: list[TestDefinitionMinimal]) -> str:
+    """Delete the already-resolved tests from the version each suite writes to, and render what went.
+
+    Every suite's rows are mapped onto its writable version before anything is deleted, so a
+    refusal for any of them deletes nothing. Deleting by ID rather than by the selecting filter
+    keeps the response exact: a row inserted after the selection is not swept up in the delete
+    unreported.
+    """
+    deleted, writes = _route_for_delete(selected)
     ids = [deleted_id for _, deleted_id in deleted]
     note_count = TestDefinitionNote.count_stored_on(ids)
     try:
@@ -1119,9 +1136,138 @@ def _delete_resolved_tests(scope: str, selected: list[TestDefinitionMinimal]) ->
     return _render_deleted(scope, deleted, note_count, suite, version)
 
 
+@dataclass(frozen=True, slots=True)
+class _DeleteSelection:
+    scope: str
+    tests: list[TestDefinitionMinimal]
+    no_match: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _DeletePlan:
+    scope: str
+    selected_ids: frozenset[UUID]
+    test_count: int
+    note_count: int
+
+    @property
+    def operation_id(self) -> str:
+        digest = hashlib.sha256(",".join(sorted(str(td_id) for td_id in self.selected_ids)).encode()).hexdigest()
+        return f"delete_tests:{digest}"
+
+
+def _describe_named_scope(tests: list[TestDefinitionMinimal]) -> str:
+    """Name the suites the named tests belong to, so a confirmation shown outside the conversation says what goes."""
+    suite_names = [TestSuite.get(suite_id).test_suite for suite_id in dict.fromkeys(td.test_suite_id for td in tests)]
+    if len(suite_names) == 1:
+        return f"the named tests in suite `{suite_names[0]}`"
+    return f"the named tests across {len(suite_names)} suites: " + ", ".join(f"`{name}`" for name in suite_names)
+
+
+def _select_tests_to_delete(
+    test_definition_ids: list[str] | None,
+    test_suite_id: str | None,
+    table_name: str | None,
+    test_type: str | None,
+) -> _DeleteSelection:
+    """Validate a ``delete_tests`` request and resolve the tests it selects.
+
+    A suite filter that matches nothing yields an empty selection carrying the response for it.
+    """
+    if test_definition_ids is not None and test_suite_id is not None:
+        raise MCPUserError(
+            "Supply `test_definition_ids` or `test_suite_id`, not both. Naming tests and "
+            "filtering a suite are two ways to select the same thing."
+        )
+    if test_definition_ids is None and test_suite_id is None:
+        raise MCPUserError(
+            "Supply either `test_definition_ids` (the tests to delete) or `test_suite_id` "
+            "(the suite to delete them from)."
+        )
+
+    if test_definition_ids is not None:
+        if table_name or test_type:
+            raise MCPUserError(
+                "`table_name` and `test_type` narrow `test_suite_id` and cannot be combined "
+                "with `test_definition_ids`."
+            )
+        named = _resolve_named_tests(test_definition_ids)
+        return _DeleteSelection(_describe_named_scope(named), named)
+
+    suite = resolve_test_suite(test_suite_id)
+    tt_code = resolve_test_type(test_type) if test_type else None
+    clauses = [TestDefinition.test_suite_id == suite.id]
+    if table_name:
+        clauses.append(TestDefinition.table_name == table_name)
+    if tt_code:
+        clauses.append(TestDefinition.test_type == tt_code)
+
+    selected = list(TestDefinition.select_minimal_where(*clauses))
+    scope = _describe_filter_scope(suite.test_suite, table_name, test_type)
+    if not selected:
+        doc = MdDoc()
+        doc.heading(1, "No tests matched")
+        doc.text(
+            f"No tests in suite `{suite.test_suite}` matched the filter "
+            f"({_describe_filters(table_name, test_type)}). Nothing was deleted."
+        )
+        return _DeleteSelection(scope, [], doc.render())
+    return _DeleteSelection(scope, selected)
+
+
 @with_database_session
 @mcp_permission("edit")
-def delete_tests(
+def _plan_test_deletion(
+    test_definition_ids: list[str] | None,
+    test_suite_id: str | None,
+    table_name: str | None,
+    test_type: str | None,
+) -> _DeletePlan | str:
+    """Validate a ``delete_tests`` request and count what it removes, writing nothing.
+
+    Returns the response itself when the request selects nothing.
+    """
+    selection = _select_tests_to_delete(test_definition_ids, test_suite_id, table_name, test_type)
+    if selection.no_match is not None:
+        return selection.no_match
+    if any(td.test_type in MANAGED_TEST_TYPES for td in selection.tests):
+        # The delete itself refuses these; refusing here keeps the user from confirming a delete that cannot happen.
+        raise MCPUserError(str(ManagedTestDefinitionError()))
+    try:
+        deleted, _ = _route_for_delete(selection.tests)
+        note_count = TestDefinitionNote.count_stored_on([deleted_id for _, deleted_id in deleted])
+    finally:
+        # Routing a contract's tests can open a draft, and nothing may persist before the user confirms.
+        get_current_session().rollback()
+    return _DeletePlan(
+        scope=selection.scope,
+        selected_ids=frozenset(td.id for td in selection.tests),
+        test_count=len(deleted),
+        note_count=note_count,
+    )
+
+
+@with_database_session
+@mcp_permission("edit")
+def _delete_planned_tests(
+    plan: _DeletePlan,
+    test_definition_ids: list[str] | None,
+    test_suite_id: str | None,
+    table_name: str | None,
+    test_type: str | None,
+) -> str:
+    """Delete the tests the request selects, provided they are still the ones ``plan`` counted."""
+    selection = _select_tests_to_delete(test_definition_ids, test_suite_id, table_name, test_type)
+    if frozenset(td.id for td in selection.tests) != plan.selected_ids:
+        raise MCPUserError(
+            "The tests this request selects changed while it waited for confirmation. Nothing was deleted. "
+            "Call `delete_tests` again to confirm the tests it selects now."
+        )
+    return _delete_resolved_tests(selection.scope, selection.tests)
+
+
+async def delete_tests(
+    ctx: Context,
     test_definition_ids: Annotated[
         list[str] | None,
         Field(
@@ -1144,56 +1290,36 @@ def delete_tests(
         str | None,
         Field(description="Optional test type filter on ``test_suite_id`` (e.g. ``Alpha Truncation``)."),
     ] = None,
+    confirmation_token: Annotated[
+        str | None,
+        Field(
+            description="Token from an earlier ``delete_tests`` call that asked for confirmation. Show the user "
+            "what that call said it would delete, and pass the token, with the same other arguments, only "
+            "after the user has explicitly agreed. Never pass it on your own judgment.",
+        ),
+    ] = None,
 ) -> str:
-    """Delete tests, either by ID or by suite filter.
+    """Delete tests, either by ID or by suite filter, once the user confirms.
 
-    Nothing is deleted unless every named test can be. Notes on a deleted test go with
-    it; past test results stay, though their source-data drill-down stops resolving. A
-    refresh lock does not block a delete. To stop a test running but keep it, disable it
-    with ``bulk_update_tests`` instead.
+    The user is shown what the request deletes and must confirm before anything is
+    removed. Nothing is deleted unless every named test can be. Notes on a deleted test
+    go with it; past test results stay, though their source-data drill-down stops
+    resolving. A refresh lock does not block a delete. To stop a test running but keep
+    it, disable it with ``bulk_update_tests`` instead.
     """
-    if test_definition_ids is not None and test_suite_id is not None:
-        raise MCPUserError(
-            "Supply `test_definition_ids` or `test_suite_id`, not both. Naming tests and "
-            "filtering a suite are two ways to select the same thing."
-        )
-    if test_definition_ids is None and test_suite_id is None:
-        raise MCPUserError(
-            "Supply either `test_definition_ids` (the tests to delete) or `test_suite_id` "
-            "(the suite to delete them from)."
-        )
+    selection_args = (test_definition_ids, test_suite_id, table_name, test_type)
+    plan = await run_on_worker_thread(_plan_test_deletion, *selection_args)
+    if isinstance(plan, str):
+        return plan
 
-    if test_definition_ids is not None:
-        if table_name or test_type:
-            raise MCPUserError(
-                "`table_name` and `test_type` narrow `test_suite_id` and cannot be combined "
-                "with `test_definition_ids`."
-            )
-        return _delete_resolved_tests(
-            "the tests named in the request", _resolve_named_tests(test_definition_ids)
-        )
-
-    suite = resolve_test_suite(test_suite_id)
-    tt_code = resolve_test_type(test_type) if test_type else None
-    clauses = [TestDefinition.test_suite_id == suite.id]
-    if table_name:
-        clauses.append(TestDefinition.table_name == table_name)
-    if tt_code:
-        clauses.append(TestDefinition.test_type == tt_code)
-
-    selected = list(TestDefinition.select_minimal_where(*clauses))
-    if not selected:
-        doc = MdDoc()
-        doc.heading(1, "No tests matched")
-        doc.text(
-            f"No tests in suite `{suite.test_suite}` matched the filter "
-            f"({_describe_filters(table_name, test_type)}). Nothing was deleted."
-        )
-        return doc.render()
-
-    return _delete_resolved_tests(
-        _describe_filter_scope(suite.test_suite, table_name, test_type), selected
+    await confirm_destructive_action(
+        ctx,
+        operation_id=plan.operation_id,
+        prompt=f"Delete {plan.scope}?",
+        counts={"Tests": plan.test_count, "Notes": plan.note_count},
+        confirmation_token=confirmation_token,
     )
+    return await run_on_worker_thread(_delete_planned_tests, plan, *selection_args)
 
 
 # ---------------------------------------------------------------------------

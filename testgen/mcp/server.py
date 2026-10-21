@@ -1,4 +1,5 @@
 import functools
+import inspect
 import logging
 import time
 from enum import StrEnum
@@ -15,13 +16,7 @@ from starlette.applications import Starlette
 from testgen import settings
 from testgen.common.auth import AuthError, authorize_token, decode_jwt_token
 from testgen.common.mixpanel_service import MixpanelService
-from testgen.common.models import (
-    POOL_MAX_OVERFLOW,
-    POOL_SIZE,
-    get_current_session,
-    session_limiter,
-    with_database_session,
-)
+from testgen.common.models import get_current_session, session_limiter, with_database_session
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPUserError
 from testgen.mcp.permissions import get_mcp_username, set_mcp_username
 from testgen.mcp.services.source_data_protection import (
@@ -29,6 +24,7 @@ from testgen.mcp.services.source_data_protection import (
     mcp_source_data_env_mode,
     mcp_source_data_protected,
 )
+from testgen.mcp.workers import run_on_worker_thread
 
 LOG = logging.getLogger("testgen")
 
@@ -38,6 +34,7 @@ class MCPCallStatus(StrEnum):
     ERROR = "error"
     PERMISSION_DENIED = "permission_denied"
     USER_ERROR = "user_error"
+    CANCELLED = "cancelled"
 
 
 class HandlerKind(StrEnum):
@@ -205,8 +202,42 @@ def _instrument(fn, kind: HandlerKind):
 
     Sits inside ``mcp_error_handler`` so it observes the raised exception type
     before it is converted to a text response. ``kind`` distinguishes tools,
-    resources, and prompts in the emitted event.
+    resources, and prompts in the emitted event. A coroutine function is wrapped
+    in a coroutine function, which sends the event from a worker thread.
     """
+
+    def send_event(latency_ms: int, status: MCPCallStatus) -> None:
+        MixpanelService().send_event(
+            "mcp-call",
+            kind=kind,
+            handler_name=fn.__name__,
+            username=get_mcp_username(),
+            latency_ms=latency_ms,
+            status=status,
+        )
+
+    if inspect.iscoroutinefunction(fn):
+
+        @functools.wraps(fn)
+        async def async_wrapper(*args, **kwargs):
+            start = time.monotonic()
+            status = MCPCallStatus.SUCCESS
+            try:
+                return await fn(*args, **kwargs)
+            except anyio.get_cancelled_exc_class():
+                status = MCPCallStatus.CANCELLED
+                raise
+            except Exception as error:
+                status = _call_status(error)
+                raise
+            finally:
+                latency_ms = int((time.monotonic() - start) * 1000)
+                # The first event in a process reads the instance ID from the database, which must not
+                # block the event loop. The read is one-off, so it does not wait for a session slot.
+                with anyio.CancelScope(shield=True):
+                    await anyio.to_thread.run_sync(functools.partial(send_event, latency_ms, status))
+
+        return async_wrapper
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
@@ -214,32 +245,21 @@ def _instrument(fn, kind: HandlerKind):
         status = MCPCallStatus.SUCCESS
         try:
             return fn(*args, **kwargs)
-        except MCPPermissionDenied:
-            status = MCPCallStatus.PERMISSION_DENIED
-            raise
-        except MCPUserError:
-            status = MCPCallStatus.USER_ERROR
-            raise
-        except Exception:
-            status = MCPCallStatus.ERROR
+        except Exception as error:
+            status = _call_status(error)
             raise
         finally:
-            MixpanelService().send_event(
-                "mcp-call",
-                kind=kind,
-                handler_name=fn.__name__,
-                username=get_mcp_username(),
-                latency_ms=int((time.monotonic() - start) * 1000),
-                status=status,
-            )
+            send_event(int((time.monotonic() - start) * 1000), status)
 
     return wrapper
 
 
-@functools.cache
-def _mcp_limiter() -> anyio.CapacityLimiter:
-    """Limit on concurrent MCP handlers: two fewer than the shared session limit, which REST requests also use."""
-    return anyio.CapacityLimiter(POOL_SIZE + POOL_MAX_OVERFLOW - 2)
+def _call_status(error: Exception) -> MCPCallStatus:
+    if isinstance(error, MCPPermissionDenied):
+        return MCPCallStatus.PERMISSION_DENIED
+    if isinstance(error, MCPUserError):
+        return MCPCallStatus.USER_ERROR
+    return MCPCallStatus.ERROR
 
 
 def _run_on_worker_thread(fn):
@@ -250,8 +270,7 @@ def _run_on_worker_thread(fn):
 
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
-        async with _mcp_limiter(), session_limiter():
-            return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
+        return await run_on_worker_thread(fn, *args, **kwargs)
 
     return wrapper
 
@@ -454,7 +473,11 @@ def build_mcp_server(
     _configure_mcp_logging()
 
     def tool_wrapper(fn):
-        mcp.tool()(_run_on_worker_thread(mcp_error_handler(_instrument(fn, HandlerKind.TOOL))))
+        handler = mcp_error_handler(_instrument(fn, HandlerKind.TOOL))
+        # A coroutine tool stays on the event loop and hands its database work to worker threads itself.
+        if not inspect.iscoroutinefunction(fn):
+            handler = _run_on_worker_thread(handler)
+        mcp.tool()(handler)
 
     def safe_resource(uri, fn):
         mcp.resource(uri)(_run_on_worker_thread(mcp_error_handler(_instrument(fn, HandlerKind.RESOURCE))))
