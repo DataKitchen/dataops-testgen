@@ -464,6 +464,8 @@ def build_mcp_server(
         auth=AuthSettings(
             issuer_url=api_base_url,
             resource_server_url=server_url,
+            # TestGen JWTs are shared with the REST API and carry no RFC 8707 resource indicator
+            validate_token_resource=False,
         ),
         token_verifier=JWTTokenVerifier(),
         transport_security=_build_transport_security(),

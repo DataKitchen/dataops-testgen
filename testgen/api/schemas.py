@@ -550,8 +550,8 @@ class ProfilingColumnItem(BaseModel):
     )
     testing_score: float | None = Field(
         default=None,
-        description="The column's Testing Score, from 0 to 100, from the latest test runs. `null` until a test run "
-        "in its table group has been scored.",
+        description="The column's Testing Score, from 0 to 100, from the latest completed test runs of its table "
+        "group's test suites. `null` when no test in those runs checks the column.",
     )
     issue_counts: IssueCounts
 
