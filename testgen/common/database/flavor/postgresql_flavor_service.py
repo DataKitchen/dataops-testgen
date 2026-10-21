@@ -12,7 +12,6 @@ from testgen.common.value_hash import DECIMAL_BOUND
 
 class PostgresqlFlavorService(RedshiftFlavorService):
 
-    escaped_underscore = "\\_"
     literal_escapes_backslash = False
     url_scheme = "postgresql"
 

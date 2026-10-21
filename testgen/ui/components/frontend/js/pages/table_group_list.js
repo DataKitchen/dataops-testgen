@@ -40,6 +40,7 @@ import { NotificationSettings } from '/app/static/js/components/notification_set
 import { TableGroupWizard } from '/app/static/js/components/table_group_wizard.js';
 import { TableGroupEditDialog } from '/app/static/js/components/table_group_edit_dialog.js';
 import { declaresFiles } from '/app/static/js/components/table_group_form.js';
+import { formatNumber } from '/app/static/js/display_utils.js';
 
 const { div, h4, span, b } = van.tags;
 
@@ -50,6 +51,37 @@ const tableGroupDeclaresFiles = (tableGroup) => declaresFiles(tableGroup.connect
 const schemaCaption = (tableGroup) => {
     const flavor = tableGroup.connection?.flavor;
     return flavor && 'schema_label' in flavor ? flavor.schema_label : 'Schema';
+};
+
+const CardField = (label, content, className = '') => div(
+    { class: `flex-column fx-flex ${className}` },
+    Caption({content: label, style: 'margin-bottom: 4px;'}),
+    content,
+);
+
+const splitList = (value) => (value ?? '').split(',').map(item => item.trim()).filter(item => item);
+
+const TableCriteria = (tableGroup) => {
+    const tableSet = splitList(tableGroup.profiling_table_set);
+    const includeMasks = splitList(tableGroup.profiling_include_mask);
+    const excludeMasks = splitList(tableGroup.profiling_exclude_mask);
+    const rows = [
+        ['Explicit list', tableSet],
+        ['Include', includeMasks.includes('%') ? [] : includeMasks],
+        ['Exclude', excludeMasks],
+    ].filter(([, items]) => items.length);
+
+    if (!rows.length) {
+        return span('All tables');
+    }
+    return div(
+        { class: 'flex-column fx-gap-1' },
+        ...rows.map(([label, items]) => div(
+            { class: 'flex-row fx-gap-1' },
+            span({ class: 'text-secondary tg-tablegroup--criteria-label' }, `${label}:`),
+            TruncatedText({max: 3, tooltipPosition: 'top-right'}, ...items),
+        )),
+    );
 };
 
 /**
@@ -235,79 +267,30 @@ const TableGroupList = (props) => {
                             div(
                                 { class: 'flex-row fx-gap-3' },
                                 div(
-                                    { class: 'flex-column fx-flex fx-gap-3' },
-                                    Link({ emit,
-                                        label: 'View test suites',
-                                        href: 'test-suites',
-                                        params: { 'project_code': projectSummary.project_code, 'table_group_id': tableGroup.id },
-                                        right_icon: 'chevron_right',
-                                        right_icon_size: 20,
-                                    }),
+                                    { class: 'flex-column fx-flex' },
                                     div(
-                                        { class: 'flex-row fx-flex fx-gap-3' },
+                                        { class: 'flex-row fx-flex fx-gap-3 fx-align-flex-start' },
                                         tableGroupDeclaresFiles(tableGroup)
-                                            ? div(
-                                                { class: 'flex-column fx-flex fx-gap-4' },
-                                                div(
-                                                    { class: 'flex-column fx-flex' },
-                                                    Caption({content: 'Tables', style: 'margin-bottom: 4px;'}),
-                                                    (tableGroup.file_declarations ?? []).length
-                                                        ? TruncatedText(
-                                                            {max: 3, tooltipPosition: 'top-right'},
-                                                            ...tableGroup.file_declarations.map(declaration => declaration.name)
-                                                        )
-                                                        : '--',
-                                                ),
+                                            ? CardField(
+                                                'Tables',
+                                                (tableGroup.file_declarations ?? []).length
+                                                    ? TruncatedText(
+                                                        {max: 3, tooltipPosition: 'top-right'},
+                                                        ...tableGroup.file_declarations.map(declaration => declaration.name)
+                                                    )
+                                                    : '--',
+                                                'tg-tablegroup--tables',
                                             )
-                                            : div(
-                                                { class: 'flex-column fx-flex fx-gap-4' },
-                                                div(
-                                                    { class: 'flex-column fx-flex' },
-                                                    Caption({content: schemaCaption(tableGroup), style: 'margin-bottom: 4px;'}),
-                                                    span(tableGroup.table_group_schema || '--'),
-                                                ),
-                                                div(
-                                                    { class: 'flex-column fx-flex' },
-                                                    Caption({content: 'Explicit Table List', style: 'margin-bottom: 4px;'}),
-                                                    tableGroup.profiling_table_set
-                                                        ? TruncatedText(
-                                                            {max: 3, tooltipPosition: 'top-right'},
-                                                            ...tableGroup.profiling_table_set.split(',').map(t => t.trim())
-                                                        )
-                                                        : '--',
-                                                ),
-                                            ),
-                                        div(
-                                            { class: 'flex-column fx-flex fx-gap-4' },
-                                            tableGroupDeclaresFiles(tableGroup)
-                                                ? ''
-                                                : div(
-                                                    { class: 'flex-column fx-flex' },
-                                                    Caption({content: 'Tables to Include Mask', style: 'margin-bottom: 4px;'}),
-                                                    span(tableGroup.profiling_include_mask || '--'),
-                                                ),
-                                            div(
-                                                { class: 'flex-column fx-flex' },
-                                                Caption({content: 'Uses Record Sampling', style: 'margin-bottom: 4px;'}),
-                                                span(tableGroup.profile_use_sampling ? 'Yes' : 'No'),
-                                            ),
-                                        ),
-                                        div(
-                                            { class: 'flex-column fx-flex fx-gap-4' },
-                                            tableGroupDeclaresFiles(tableGroup)
-                                                ? ''
-                                                : div(
-                                                    { class: 'flex-column fx-flex' },
-                                                    Caption({content: 'Tables to Exclude Mask', style: 'margin-bottom: 4px;'}),
-                                                    span(tableGroup.profiling_exclude_mask || '--'),
-                                                ),
-                                            div(
-                                                { class: 'flex-column fx-flex' },
-                                                Caption({content: 'Min Profiling Age (Days)', style: 'margin-bottom: 4px;'}),
-                                                span(tableGroup.profiling_delay_days ?? '--'),
-                                            ),
-                                        ),
-                                        span({ class: 'fx-flex' }),
+                                            : [
+                                                CardField(schemaCaption(tableGroup), span(tableGroup.table_group_schema || '--')),
+                                                CardField('Tables', TableCriteria(tableGroup), 'tg-tablegroup--tables'),
+                                            ],
+                                        tableGroup.profile_use_sampling
+                                            ? CardField(
+                                                'Sampling',
+                                                span(`${tableGroup.profile_sample_percent}% (min ${formatNumber(tableGroup.profile_sample_min_count)} rows)`),
+                                            )
+                                            : span({ class: 'fx-flex' }),
                                     ),
                                 ),
                                 permissions.can_edit
@@ -323,29 +306,38 @@ const TableGroupList = (props) => {
                                     : '',
                             )
                         ),
-                        actionContent: permissions.can_edit
-                            ? div(
-                                { class: 'flex-row fx-align-center' },
-                                Button({
-                                    type: 'icon',
-                                    icon: 'edit',
-                                    iconSize: 18,
-                                    tooltip: 'Edit table group',
-                                    tooltipPosition: 'left',
-                                    color: 'basic',
-                                    onclick: () => emit('EditTableGroupClicked', { payload: tableGroup.id }),
-                                }),
-                                Button({
-                                    type: 'icon',
-                                    icon: 'delete',
-                                    iconSize: 18,
-                                    tooltip: 'Delete table group',
-                                    tooltipPosition: 'left',
-                                    color: 'basic',
-                                    onclick: () => emit('DeleteTableGroupClicked', { payload: tableGroup.id }),
-                                }),
-                            )
-                            : undefined,
+                        actionContent: div(
+                            { class: 'flex-row fx-align-center fx-gap-2' },
+                            Link({ emit,
+                                label: 'View test suites',
+                                href: 'test-suites',
+                                params: { 'project_code': projectSummary.project_code, 'table_group_id': tableGroup.id },
+                                right_icon: 'chevron_right',
+                                right_icon_size: 20,
+                            }),
+                            permissions.can_edit
+                                ? [
+                                    Button({
+                                        type: 'icon',
+                                        icon: 'edit',
+                                        iconSize: 18,
+                                        tooltip: 'Edit table group',
+                                        tooltipPosition: 'left',
+                                        color: 'basic',
+                                        onclick: () => emit('EditTableGroupClicked', { payload: tableGroup.id }),
+                                    }),
+                                    Button({
+                                        type: 'icon',
+                                        icon: 'delete',
+                                        iconSize: 18,
+                                        tooltip: 'Delete table group',
+                                        tooltipPosition: 'left',
+                                        color: 'basic',
+                                        onclick: () => emit('DeleteTableGroupClicked', { payload: tableGroup.id }),
+                                    }),
+                                ]
+                                : '',
+                        ),
                     })),
                 )
                 : div(
@@ -549,6 +541,14 @@ stylesheet.replace(`
     color: var(--primary-text-color);
     font-size: 1.5rem;
     text-transform: initial;
+}
+
+.tg-tablegroup--tables {
+    flex: 2;
+}
+
+.tg-tablegroup--criteria-label {
+    white-space: nowrap;
 }
 
 .tg-empty-state.mt-4 {

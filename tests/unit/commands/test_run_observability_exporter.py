@@ -54,6 +54,7 @@ def test_calculate_chunk_size(test_outcome, test_outcomes_length):
         (None, []),
         ("'table_a'", ["table_a"]),
         ("'table_a','table_b','table_c'", ["table_a", "table_b", "table_c"]),
+        ("table_a, table_b,", ["table_a", "table_b"]),
     ),
 )
 def test_get_processed_profiling_table_set(profiling_table_set, expected_outcome):
