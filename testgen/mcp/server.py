@@ -9,6 +9,7 @@ import anyio
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.tools import Tool
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
@@ -372,12 +373,12 @@ def build_mcp_server(
     )
     from testgen.mcp.tools.profiling import (
         generate_create_table_script,
+        get_column,
         get_column_frequent_values,
         get_column_patterns,
-        get_column_profile_detail,
         get_profiling_run,
         get_table,
-        list_column_profiles,
+        list_columns,
         list_profiling_runs,
         list_profiling_summaries,
         search_columns,
@@ -514,11 +515,11 @@ def build_mcp_server(
     tool_wrapper(generate_create_table_script)
     if not env_hides_source_only_tools:
         tool_wrapper(get_table_sample)
-    tool_wrapper(list_column_profiles)
+    tool_wrapper(list_columns)
     tool_wrapper(list_profiling_summaries)
     tool_wrapper(list_profiling_runs)
     tool_wrapper(get_profiling_run)
-    tool_wrapper(get_column_profile_detail)
+    tool_wrapper(get_column)
     if not env_hides_source_only_tools:
         tool_wrapper(get_column_frequent_values)
         tool_wrapper(get_column_patterns)
@@ -636,7 +637,21 @@ def build_mcp_server(
         except Exception:
             LOG.warning("Plugin %s failed to load; skipping its MCP tools", plugin.package)
 
+    for tool in mcp._tool_manager.list_tools():
+        _reject_undeclared_arguments(tool)
+
     return mcp
+
+
+def _reject_undeclared_arguments(tool: Tool) -> None:
+    """Make a tool refuse arguments it does not declare, and state that in its input schema.
+
+    The SDK's argument model ignores undeclared fields, so a misplaced or misspelled argument
+    would be dropped silently and the call would run without it.
+    """
+    tool.fn_metadata.arg_model.model_config["extra"] = "forbid"
+    tool.fn_metadata.arg_model.model_rebuild(force=True)
+    tool.parameters["additionalProperties"] = False
 
 
 def build_mcp_app(

@@ -3,8 +3,10 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from testgen.common.enums import JOB_STATUS_LABEL, JobStatus, SuiteType
+from testgen.common.models.data_table import DataTable, TableCatalogSummary
 from testgen.common.models.suite_version import ContractState
 from testgen.common.models.test_suite import TestSuite as RealTestSuite
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
@@ -234,23 +236,163 @@ def test_list_tables_rejects_inaccessible_group(mock_tg_cls, db_session_mock):
         list_tables(str(uuid4()))
 
 
-@patch("testgen.mcp.tools.discovery.DataTable")
-@patch("testgen.mcp.tools.common.TableGroup")
-def test_list_tables_scopes_data_lookup_to_resolved_tg_project(mock_tg_cls, mock_dt, db_session_mock):
-    """After resolution, data lookup is scoped to just the TG's project, not all allowed projects."""
-    tg = MagicMock()
-    tg.id = uuid4()
-    tg.project_code = "proj_a"
-    mock_tg_cls.get.return_value = tg
-    mock_dt.select_table_names.return_value = ["customers"]
-    mock_dt.count_tables.return_value = 1
+def _table_summary(**overrides) -> TableCatalogSummary:
+    base = {
+        "table_name": "orders",
+        "functional_table_type": "cumulative-transaction",
+        "record_ct": 1200,
+        "critical_data_element": False,
+        "catalog_tags": None,
+    }
+    base.update(overrides)
+    return TableCatalogSummary(**base)
+
+
+@pytest.fixture
+def table_group_mock():
+    with patch("testgen.mcp.tools.common.TableGroup") as mock_tg_cls:
+        tg = MagicMock()
+        tg.id = uuid4()
+        tg.project_code = "proj_a"
+        mock_tg_cls.get.return_value = tg
+        yield tg
+
+
+@pytest.fixture
+def list_tables_mock():
+    with patch.object(DataTable, "list_for_table_group", return_value=([_table_summary()], 1)) as mock_method:
+        yield mock_method
+
+
+def _list_tables_sql(mock_method) -> list[str]:
+    return [
+        str(clause.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+        for clause in mock_method.call_args.args
+    ]
+
+
+def test_list_tables_renders_a_table_per_table(table_group_mock, list_tables_mock, db_session_mock):
+    list_tables_mock.return_value = (
+        [
+            _table_summary(
+                critical_data_element=True,
+                catalog_tags={"business_domain": ["Finance", "table group"], "transform_level": ["Gold", None]},
+            ),
+            _table_summary(table_name="customers", functional_table_type=None, record_ct=None),
+        ],
+        2,
+    )
 
     from testgen.mcp.tools.discovery import list_tables
 
-    list_tables(str(uuid4()))
+    result = list_tables(str(table_group_mock.id))
 
-    call_kwargs = mock_dt.select_table_names.call_args
-    assert call_kwargs.kwargs["project_codes"] == ["proj_a"]
+    assert "| Table | Semantic Table Type | Records | CDE | Catalog Tags |" in result
+    assert "| `orders` | Cumulative Transaction | 1200 | Y | Business domain: Finance (table group); Transform level: Gold |" in result
+    assert "| `customers` | \u2014 | \u2014 |  |  |" in result
+    assert "_A tag value marked (table group) is inherited from the table group._" in result
+    assert list_tables_mock.call_args.args == ()
+    assert list_tables_mock.call_args.kwargs == {"table_groups_id": table_group_mock.id, "page": 1, "limit": 200}
+
+
+def test_list_tables_omits_the_legend_without_inherited_tags(table_group_mock, list_tables_mock, db_session_mock):
+    list_tables_mock.return_value = ([_table_summary(catalog_tags={"transform_level": ["Gold", None]})], 1)
+
+    from testgen.mcp.tools.discovery import list_tables
+
+    result = list_tables(str(table_group_mock.id))
+
+    assert "inherited" not in result
+
+
+def test_list_tables_semantic_table_type_matches_the_displayed_value(
+    table_group_mock, list_tables_mock, db_session_mock,
+):
+    from testgen.mcp.tools.discovery import list_tables
+
+    list_tables(str(table_group_mock.id), semantic_table_type="Window Transaction")
+
+    (clause,) = list_tables_mock.call_args.args
+    compiled = clause.compile(dialect=postgresql.dialect())
+    assert str(compiled).startswith("replace(data_table_chars.functional_table_type, ")
+    assert " ILIKE " in str(compiled)
+    assert sorted(compiled.params.values()) == [" ", "%Window Transaction%", "-"]
+
+
+@pytest.mark.parametrize(
+    ("value", "pattern"),
+    [
+        ("Summary", "%Summary%"),
+        ("cum%sum", "%cum%sum%"),
+        ("window-transaction", "%window transaction%"),
+        ("window_txn", "%window\\_txn%"),
+    ],
+)
+def test_list_tables_semantic_table_type_contains_the_text_with_percent_as_a_wildcard(
+    value, pattern, table_group_mock, list_tables_mock, db_session_mock,
+):
+    from testgen.mcp.tools.discovery import list_tables
+
+    list_tables(str(table_group_mock.id), semantic_table_type=value)
+
+    (clause,) = list_tables_mock.call_args.args
+    assert pattern in clause.compile(dialect=postgresql.dialect()).params.values()
+
+
+@pytest.mark.parametrize(("cde", "expected"), [(True, "true"), (False, "false")])
+def test_list_tables_cde_reads_no_value_as_false(cde, expected, table_group_mock, list_tables_mock, db_session_mock):
+    from testgen.mcp.tools.discovery import list_tables
+
+    list_tables(str(table_group_mock.id), cde=cde)
+
+    assert _list_tables_sql(list_tables_mock) == [
+        f"coalesce(data_table_chars.critical_data_element, false) IS {expected}"
+    ]
+
+
+def test_list_tables_tag_filters_match_the_effective_value_ignoring_case(
+    table_group_mock, list_tables_mock, db_session_mock,
+):
+    from testgen.mcp.tools.discovery import list_tables
+
+    list_tables(str(table_group_mock.id), business_domain=" Finance ", aggregation_level="Daily")
+
+    assert _list_tables_sql(list_tables_mock) == [
+        "lower(coalesce(data_table_chars.business_domain, table_groups.business_domain)) = 'finance'",
+        "lower(coalesce(data_table_chars.aggregation_level)) = 'daily'",
+    ]
+
+
+@pytest.mark.parametrize("argument", ["semantic_table_type", "business_domain", "data_classification"])
+def test_list_tables_rejects_blank_filters(argument, table_group_mock, list_tables_mock, db_session_mock):
+    from testgen.mcp.tools.discovery import list_tables
+
+    with pytest.raises(MCPUserError, match=f"`{argument}` cannot be empty."):
+        list_tables(str(table_group_mock.id), **{argument: "  "})
+
+
+def test_list_tables_empty_states(table_group_mock, list_tables_mock, db_session_mock):
+    from testgen.mcp.tools.discovery import list_tables
+
+    list_tables_mock.return_value = ([], 0)
+    assert list_tables(str(table_group_mock.id)) == (
+        f"No tables found for table group `{table_group_mock.id}`."
+    )
+    assert list_tables(str(table_group_mock.id), cde=True) == "No tables match the supplied filters."
+
+    list_tables_mock.return_value = ([], 3)
+    assert list_tables(str(table_group_mock.id), page=2) == "No tables on page 2 (total: 3)."
+
+
+def test_list_tables_paginates_with_the_shared_page_text(table_group_mock, list_tables_mock, db_session_mock):
+    list_tables_mock.return_value = ([_table_summary()], 5)
+
+    from testgen.mcp.tools.discovery import list_tables
+
+    result = list_tables(str(table_group_mock.id), limit=1, page=2)
+
+    assert "Showing 2" in result
+    assert "_Page 2 of 5. Use `page=3` for more._" in result
 
 
 # ---------------------------------------------------------------------------

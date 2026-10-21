@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from testgen.common.data_catalog_service import TAG_FIELDS
+from testgen.common.models.data_table import TABLE_GROUP_TAGS
 from testgen.common.models.profile_result import MeasureAcquisition, ProfileResult
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db, fetch_one_from_db
@@ -240,7 +241,7 @@ def get_tables_by_condition(
         table_chars.critical_data_element,
         {", ".join([ f"table_chars.{tag}" for tag in TAG_FIELDS ])},
         -- Table Groups Tags
-        {", ".join([ f"table_groups.{tag} AS table_group_{tag}" for tag in TAG_FIELDS if tag != "aggregation_level" ])},
+        {", ".join([ f"table_groups.{tag} AS table_group_{tag}" for tag in TABLE_GROUP_TAGS ])},
     """ if include_tags else ""
 
     has_test_runs_select = """
@@ -405,7 +406,7 @@ def get_columns_by_condition(
         table_chars.critical_data_element AS table_critical_data_element,
         {", ".join([ f"table_chars.{tag} AS table_{tag}" for tag in TAG_FIELDS ])},
         -- Table Groups Tags
-        {", ".join([ f"table_groups.{tag} AS table_group_{tag}" for tag in TAG_FIELDS if tag != "aggregation_level" ])},
+        {", ".join([ f"table_groups.{tag} AS table_group_{tag}" for tag in TABLE_GROUP_TAGS ])},
     """ if include_tags else ""
 
     has_test_runs_select = """

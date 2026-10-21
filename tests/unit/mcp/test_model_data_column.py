@@ -47,8 +47,13 @@ def _detail_row(**overrides) -> dict:
         "functional_data_type": "Person Given Name",
         "datatype_suggestion": "VARCHAR(20)",
         "functional_table_type": None,
+        # Catalog metadata
+        "description": None,
         "pii_flag": "B/NAME/Individual",
         "critical_data_element": False,
+        "critical_data_element_inherited": True,
+        "excluded_data_element": False,
+        "catalog_tags": None,
         # Counts
         "record_ct": 500,
         "value_ct": 500,
@@ -268,6 +273,54 @@ def test_get_column_detail_no_pin_uses_last_complete_profile_run_id(session_mock
     query = call_args[0][0]
     sql_str = str(query.compile(compile_kwargs={"literal_binds": True}))
     assert "last_complete_profile_run_id" in sql_str
+
+
+def _compiled(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+
+
+@patch("testgen.common.models.data_column.get_current_session")
+def test_get_column_detail_reads_catalog_metadata_with_inheritance(session_mock):
+    session_mock.return_value.execute.return_value.mappings.return_value.first.return_value = None
+
+    DataColumnChars.get_column_detail(table_groups_id=uuid4(), table_name="customers", column_name="customer_name")
+
+    sql = _compiled(session_mock.return_value.execute.call_args[0][0])
+    assert (
+        "coalesce(data_column_chars.critical_data_element, data_table_chars.critical_data_element, false) "
+        "AS critical_data_element"
+    ) in sql
+    assert "data_column_chars.critical_data_element IS NULL AS critical_data_element_inherited" in sql
+    assert "coalesce(data_column_chars.excluded_data_element, false) AS excluded_data_element" in sql
+    assert "AS catalog_tags" in sql
+    assert "LEFT OUTER JOIN table_groups ON table_groups.id = data_column_chars.table_groups_id" in sql
+
+
+@patch.object(DataColumnChars, "_paginate", return_value=([], 0))
+def test_list_for_table_group_lists_unprofiled_columns_without_a_pinned_run(paginate_mock):
+    DataColumnChars.list_for_table_group(table_groups_id=uuid4(), page=1, limit=10)
+
+    sql = _compiled(paginate_mock.call_args.args[0])
+    assert (
+        "LEFT OUTER JOIN profile_results "
+        "ON profile_results.profile_run_id = data_column_chars.last_complete_profile_run_id"
+    ) in sql
+    assert (
+        "coalesce(data_column_chars.critical_data_element, data_table_chars.critical_data_element, false) "
+        "AS critical_data_element"
+    ) in sql
+    assert "AS catalog_tags" in sql
+
+
+@patch.object(DataColumnChars, "_paginate", return_value=([], 0))
+def test_list_for_table_group_lists_only_the_columns_a_pinned_run_profiled(paginate_mock):
+    pinned_id = uuid4()
+
+    DataColumnChars.list_for_table_group(table_groups_id=uuid4(), profiling_run_id=pinned_id, page=1, limit=10)
+
+    sql = _compiled(paginate_mock.call_args.args[0])
+    assert f"JOIN profile_results ON profile_results.profile_run_id = '{pinned_id}'" in sql
+    assert "OUTER JOIN profile_results" not in sql
 
 
 # ----------------------------------------------------------------------

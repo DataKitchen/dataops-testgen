@@ -9,7 +9,13 @@ The server is built once for the whole module, so whichever plugins are installe
 running environment have their tools checked alongside the core ones.
 """
 
+import asyncio
+from unittest.mock import patch
+from uuid import uuid4
+
 import pytest
+from mcp.server.fastmcp.exceptions import ToolError
+from pydantic import ValidationError
 
 from testgen.mcp.server import build_mcp_server
 
@@ -45,6 +51,40 @@ def prompts(mcp_server):
 def test_tools_are_registered(tools):
     """Guard the fixture itself: an empty registry would make every other test vacuous."""
     assert len(tools) > 50
+
+
+def test_every_tool_schema_refuses_undeclared_arguments(tools):
+    permissive = [tool.name for tool in tools if tool.parameters.get("additionalProperties") is not False]
+    assert not permissive, f"Input schemas that do not declare additionalProperties: false: {permissive}"
+
+
+def test_every_tool_rejects_an_undeclared_argument(tools):
+    accepting = []
+    for tool in tools:
+        try:
+            tool.fn_metadata.arg_model.model_validate({"not_an_argument": "x"})
+        except ValidationError as error:
+            if any(e["type"] == "extra_forbidden" and e["loc"] == ("not_an_argument",) for e in error.errors()):
+                continue
+        accepting.append(tool.name)
+    assert not accepting, f"Tools that drop an undeclared argument without an error: {accepting}"
+
+
+def test_a_misplaced_argument_fails_the_call_and_names_it(mcp_server):
+    # A field that belongs inside ``fields``, passed at the top level, would otherwise be dropped and create a test
+    # with no column.
+    with patch("testgen.mcp.tools.test_definitions.TestDefinition") as test_definition_mock:
+        with pytest.raises(ToolError, match="column_name"):
+            asyncio.run(mcp_server.call_tool(
+                "create_test",
+                {
+                    "test_suite_id": str(uuid4()),
+                    "test_type": "Alpha Truncation",
+                    "table_name": "customers",
+                    "column_name": "email",
+                },
+            ))
+    test_definition_mock.assert_not_called()
 
 
 def test_every_parameter_has_a_schema_description(tools):

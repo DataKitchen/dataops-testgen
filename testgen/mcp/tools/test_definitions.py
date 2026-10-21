@@ -941,15 +941,45 @@ def validate_custom_test(
 @with_database_session
 @mcp_permission("edit")
 def bulk_update_tests(
-    test_suite_id: Annotated[str, Field(description="UUID of the test suite.")],
     action: Annotated[str, Field(description="``enable`` or ``disable``.")],
-    table_name: Annotated[str | None, Field(description="Optional table-name filter. Case-sensitive.")] = None,
-    test_type: Annotated[str | None, Field(description="Optional test type name (e.g. ``Alpha Truncation``).")] = None,
+    test_definition_ids: Annotated[
+        list[str] | None,
+        Field(
+            description="UUIDs of the tests to enable or disable, e.g. from ``list_tests``. Supply this or "
+            "``test_suite_id``, not both.",
+        ),
+    ] = None,
+    test_suite_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of the suite whose tests to enable or disable, e.g. from ``list_test_suites``. "
+            "Narrow with ``table_name`` and ``test_type``, or omit both to act on every test in it.",
+        ),
+    ] = None,
+    table_name: Annotated[
+        str | None,
+        Field(description="Optional table-name filter on ``test_suite_id``. Case-sensitive."),
+    ] = None,
+    test_type: Annotated[
+        str | None,
+        Field(description="Optional test type filter on ``test_suite_id`` (e.g. ``Alpha Truncation``)."),
+    ] = None,
 ) -> str:
-    """Enable or disable tests in a suite in bulk."""
+    """Enable or disable tests in bulk, either by ID or by suite filter.
+
+    Nothing is changed unless every named test can be.
+    """
     bulk_action = parse_enum(action, BulkAction, "action")
-    suite = resolve_test_suite(test_suite_id)
-    tt_code = resolve_test_type(test_type) if test_type else None
+    if test_definition_ids is not None and test_suite_id is not None:
+        raise MCPUserError(
+            "Supply `test_definition_ids` or `test_suite_id`, not both. Naming tests and "
+            "filtering a suite are two ways to select the same thing."
+        )
+    if test_definition_ids is None and test_suite_id is None:
+        raise MCPUserError(
+            "Supply either `test_definition_ids` (the tests to enable or disable) or `test_suite_id` "
+            "(the suite to act on)."
+        )
 
     target = bulk_action is BulkAction.ENABLE
     values: dict = {"test_active": target}
@@ -957,23 +987,50 @@ def bulk_update_tests(
         # Mirrors set_status_attribute: clearing the status when re-enabling so failed
         # tests don't carry forward a stale "disabled because of X" marker.
         values["test_definition_status"] = None
+    verb = "Enabled" if target else "Disabled"
 
+    if test_definition_ids is not None:
+        if table_name or test_type:
+            raise MCPUserError(
+                "`table_name` and `test_type` narrow `test_suite_id` and cannot be combined "
+                "with `test_definition_ids`."
+            )
+        selected = _resolve_named_tests(test_definition_ids, nothing_done="Nothing was changed.")
+        ids_by_suite: dict[UUID, list[UUID]] = {}
+        for td in selected:
+            ids_by_suite.setdefault(td.test_suite_id, []).append(td.id)
+        # Every suite's rows are mapped onto its writable version before anything is written,
+        # so a refusal for any of them changes nothing.
+        writes: list[tuple[TestSuite, UUID]] = []
+        # A row of the version in force and its draft copy route to the same draft row.
+        updated_ids: dict[UUID, None] = {}
+        for suite_id, row_ids in ids_by_suite.items():
+            suite = TestSuite.get(suite_id)
+            version_id, mapping = _resolve_writable(suite, row_ids)
+            writes.append((suite, version_id))
+            updated_ids.update(dict.fromkeys(mapping.values()))
+        _set_test_values(list(updated_ids), values)
+
+        doc = MdDoc()
+        doc.heading(1, f"{verb} {len(updated_ids)} tests")
+        doc.field("Scope", "the tests named in the request")
+        if len(writes) == 1:
+            suite, version_id = writes[0]
+            doc.field("Test suite", suite.test_suite)
+            if suite.suite_type == SuiteType.CONTRACT:
+                _version_field(doc, suite, SuiteVersion.get(version_id))
+        return doc.render()
+
+    suite = resolve_test_suite(test_suite_id)
+    tt_code = resolve_test_type(test_type) if test_type else None
     where_clauses = [TestDefinition.test_suite_id == suite.id, TestDefinition.version_clause()]
     if table_name:
         where_clauses.append(TestDefinition.table_name == table_name)
     if tt_code:
         where_clauses.append(TestDefinition.test_type == tt_code)
+    filter_str = _describe_filters(table_name, test_type)
 
-    verb = "Enabled" if target else "Disabled"
-    filters = []
-    if table_name:
-        filters.append(f"table_name=`{table_name}`")
-    if test_type:
-        filters.append(f"test_type=`{test_type}`")
-    filter_str = ", ".join(filters) if filters else "no filter"
-
-    session = get_current_session()
-    matched = session.scalars(select(TestDefinition.id).where(*where_clauses)).all()
+    matched = get_current_session().scalars(select(TestDefinition.id).where(*where_clauses)).all()
     doc = MdDoc()
     if not matched:
         doc.heading(1, "No tests matched")
@@ -983,17 +1040,21 @@ def bulk_update_tests(
         return doc.render()
 
     version_id, mapping = _resolve_writable(suite, matched)
-    session.execute(
-        update(TestDefinition)
-        .where(TestDefinition.id.in_(list(mapping.values())), TestDefinition.version_clause())
-        .values(**values)
-    )
+    _set_test_values(list(mapping.values()), values)
 
     doc.heading(1, f"{verb} {len(mapping)} tests in suite `{suite.test_suite}`")
     if suite.suite_type == SuiteType.CONTRACT:
         _version_field(doc, suite, SuiteVersion.get(version_id))
     doc.field("Filter", filter_str)
     return doc.render()
+
+
+def _set_test_values(test_definition_ids: list[UUID], values: dict) -> None:
+    get_current_session().execute(
+        update(TestDefinition)
+        .where(TestDefinition.id.in_(test_definition_ids), TestDefinition.version_clause())
+        .values(**values)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1005,11 +1066,14 @@ def bulk_update_tests(
 _DELETED_LISTING_LIMIT = 50
 
 
-def _resolve_named_tests(test_definition_ids: list[str]) -> list[TestDefinitionMinimal]:
+def _resolve_named_tests(
+    test_definition_ids: list[str], nothing_done: str = "Nothing was deleted."
+) -> list[TestDefinitionMinimal]:
     """Resolve every supplied ID, reporting all unusable entries in one error.
 
     Raises ``MCPUserError`` naming every entry that is not a valid UUID and every one that
-    is missing or inaccessible, so a caller fixes the whole list in one round-trip.
+    is missing or inaccessible, so a caller fixes the whole list in one round-trip. The
+    error opens with ``nothing_done``.
     """
     if not test_definition_ids:
         raise MCPUserError("`test_definition_ids` must name at least one test definition.")
@@ -1040,7 +1104,7 @@ def _resolve_named_tests(test_definition_ids: list[str]) -> list[TestDefinitionM
             problems.append(
                 "not found or not accessible: " + ", ".join(f"`{value}`" for value in unresolved)
             )
-        raise MCPUserError(f"Nothing was deleted. Test definitions {'; '.join(problems)}.")
+        raise MCPUserError(f"{nothing_done} Test definitions {'; '.join(problems)}.")
 
     return resolved
 

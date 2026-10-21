@@ -81,11 +81,11 @@ def test_the_pii_filter_matches_no_table_on_its_own():
         ("aggregation_level", "COALESCE(c.aggregation_level, t.aggregation_level)", "COALESCE(t.aggregation_level)"),
     ],
 )
-def test_tag_filters_match_the_inherited_value(tag, column_value, table_value):
-    ctes, params = _visibility_ctes(TABLE_GROUP_ID, CatalogFilters(tags=((tag, "erp"),), show_excluded=True))
+def test_tag_filters_match_the_inherited_value_ignoring_case(tag, column_value, table_value):
+    ctes, params = _visibility_ctes(TABLE_GROUP_ID, CatalogFilters(tags=((tag, "ERP"),), show_excluded=True))
 
-    assert f"({column_value} = :tag_0) AS visible" in ctes
-    assert f"({table_value} = :tag_0) OR cv.any_visible" in ctes
+    assert f"(LOWER({column_value}) = :tag_0) AS visible" in ctes
+    assert f"(LOWER({table_value}) = :tag_0) OR cv.any_visible" in ctes
     assert params["tag_0"] == "erp"
 
 

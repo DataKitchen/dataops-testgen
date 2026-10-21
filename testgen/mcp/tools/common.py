@@ -51,6 +51,7 @@ from testgen.common.models.data_column import (
     ProfileMetric,
     SuggestedDataType,
 )
+from testgen.common.models.data_table import TABLE_GROUP_TAGS, CatalogLevel, CatalogTag, effective_tag
 from testgen.common.models.hygiene_issue import HygieneIssue, HygieneIssueType
 from testgen.common.models.notification_settings import (
     MonitorNotificationTrigger,
@@ -603,6 +604,17 @@ def build_ilike_pattern(raw: str) -> str:
     """
     escaped = raw.replace("_", r"\_")
     return escaped if "%" in escaped else f"%{escaped}%"
+
+
+def build_contains_pattern(raw: str) -> str:
+    """Prepare a free-text input for an ``ILIKE`` clause that matches values containing it.
+
+    Escapes literal underscores like :func:`build_ilike_pattern`, and always wraps the input with
+    ``%...%``, so an explicit ``%`` in the input is a wildcard within the contained text.
+    Pair with ``column.ilike(pattern, escape="\\\\")`` at the call site.
+    """
+    escaped = raw.replace("_", r"\_")
+    return f"%{escaped}%"
 
 
 def parse_pii_category(value: str) -> str:
@@ -1474,3 +1486,69 @@ def target_db_error_text(message: str | None) -> str | None:
     if message and mcp_source_data_protected():
         return _TARGET_DB_ERROR_WITHHELD
     return message
+
+
+_TAG_MEANINGS: dict[str, str] = {
+    "data_source": "Catalog tag for the original source of the dataset.",
+    "source_system": "Catalog tag for the enterprise system the dataset comes from.",
+    "source_process": "Catalog tag for the process, program, or data flow that produced the dataset.",
+    "business_domain": "Catalog tag for the business division responsible for the dataset.",
+    "stakeholder_group": "Catalog tag for the data owners or stakeholders responsible for the dataset.",
+    "transform_level": "Catalog tag for the data warehouse processing stage of the dataset.",
+    "aggregation_level": "Catalog tag for the data granularity of the dataset.",
+    "data_product": "Catalog tag for the data domain that comprises the dataset.",
+    "data_classification": "Catalog tag for the information sensitivity level of the dataset.",
+}
+
+
+def tag_filter_description(tag: str, level: CatalogLevel) -> str:
+    """Argument description for a filter on a table's or column's catalog tag."""
+    entity = f"{level}s"
+    rule = f"Matches {entity} whose value equals this text, ignoring case."
+    if level == CatalogLevel.TABLE and tag in TABLE_GROUP_TAGS:
+        rule += " A table without its own value matches on the table group's."
+    elif level == CatalogLevel.COLUMN:
+        rule += " A column without its own value matches on the table's"
+        rule += ", and then on the table group's." if tag in TABLE_GROUP_TAGS else "."
+    return f"{_TAG_MEANINGS[tag]} {rule}"
+
+
+def require_filter_text(name: str, value: str) -> str:
+    """Reject an empty or blank filter string, naming the argument."""
+    if not value.strip():
+        raise MCPUserError(f"`{name}` cannot be empty.")
+    return value
+
+
+def tag_filter_clauses(tags: Mapping[str, str | None], level: CatalogLevel) -> list:
+    """WHERE clauses matching each supplied tag filter against the effective value, ignoring case."""
+    return [
+        func.lower(effective_tag(tag, level)) == require_filter_text(tag, value).strip().lower()
+        for tag, value in tags.items()
+        if value is not None
+    ]
+
+
+def format_semantic_table_type(value: str | None) -> str | None:
+    """Display a stored semantic table type (``cumulative-summary``) as ``Cumulative Summary``."""
+    if not value:
+        return None
+    return " ".join(word[:1].upper() + word[1:] for word in value.split("-"))
+
+
+def render_catalog_tags(doc: MdDoc, tags: list[CatalogTag]) -> None:
+    """Add a ``Catalog tags`` subsection, or nothing when no tag has a value."""
+    if not tags:
+        return
+    doc.heading(3, "Catalog tags")
+    for tag in tags:
+        marker = f" (inherited from {tag.inherited_from})" if tag.inherited_from else ""
+        doc.field(tag.label, f"{MdDoc.escape(tag.value)}{marker}")
+
+
+def format_catalog_tags_cell(tags: list[CatalogTag]) -> str:
+    """Tags as ``Label: value (source); ...`` for a table cell, inherited values marked with their source."""
+    return "; ".join(
+        f"{tag.label}: {tag.value}{f' ({tag.inherited_from})' if tag.inherited_from else ''}"
+        for tag in tags
+    )

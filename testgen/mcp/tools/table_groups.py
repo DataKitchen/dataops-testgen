@@ -30,6 +30,7 @@ from testgen.common.file_declaration_schema import FileDeclarationSpec
 from testgen.common.flavors import declares_files, table_group_schema_label
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.data_table import CATALOG_TAG_LABELS
 from testgen.common.models.table_group import TableGroup, table_group_defaults
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
@@ -806,15 +807,8 @@ _DIFF_LABELS: dict[str, str] = {
     "profile_table_comparison": "Profile for table comparison",
     "include_in_dashboard": "Include in dashboard",
     "description": "Description",
-    "data_source": "Data source",
-    "source_system": "Source system",
-    "source_process": "Source process",
     "data_location": "Data location",
-    "business_domain": "Business domain",
-    "stakeholder_group": "Stakeholder group",
-    "transform_level": "Transform level",
-    "data_product": "Data product",
-    "data_classification": "Data classification",
+    **CATALOG_TAG_LABELS,
 }
 
 
