@@ -137,6 +137,8 @@
  * @property {number} future_date_ct
  * * Boolean
  * @property {number} boolean_true_ct
+ * * Provenance
+ * @property {{kinds: Object<string, 'sampled' | 'approximate'>, descriptions: Object<string, string>}?} provenance how each measure that is not exact was taken
  * * Issues
  * @property {HygieneIssue[]?} hygiene_issues
  * @property {TestIssue[]?} test_issues

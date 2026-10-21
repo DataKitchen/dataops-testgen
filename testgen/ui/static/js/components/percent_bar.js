@@ -2,6 +2,7 @@
  * @typedef Properties
  * @type {object}
  * @property {string} label
+ * @property {HTMLElement?} adornment shown after the label
  * @property {number} value
  * @property {number} total
  * @property {string?} color
@@ -24,8 +25,9 @@ const PercentBar = (/** @type Properties */ props) => {
     return div(
         { style: () => `max-width: ${props.width ? getValue(props.width) + 'px' : '100%'};` },
         div(
-            { class: () => `tg-percent-bar--label ${value.val ? '' : 'text-secondary'}` },
-            () => `${getValue(props.label)}: ${formatNumber(value.val)}`,
+            { class: () => `tg-percent-bar--label flex-row fx-gap-1 ${value.val ? '' : 'text-secondary'}` },
+            () => span(`${getValue(props.label)}: ${formatNumber(value.val)}`),
+            props.adornment ?? null,
         ),
         div(
             {

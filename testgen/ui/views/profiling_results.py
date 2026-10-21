@@ -327,6 +327,7 @@ def get_excel_report_data(
         )
 
     data["hygiene_issues"] = data["hygiene_issues"].apply(lambda val: "Yes" if val else None)
+    profiling_queries.add_provenance_columns(data)
 
     type_map = {"A": "Alpha", "B": "Boolean", "D": "Datetime", "N": "Numeric"}
     data["general_type"] = data["general_type"].apply(lambda val: type_map.get(val))
@@ -386,6 +387,8 @@ def get_excel_report_data(
         "within_1mo_date_ct": {"header": "Within 1 month"},
         "future_date_ct": {"header": "Future dates"},
         "boolean_true_ct": {"header": "Boolean true values"},
+        "sampling": {},
+        "percentiles": {},
         "result_details": {"header": "Details"},
     }
     return get_excel_file_data(

@@ -84,6 +84,8 @@ class ProfilingRunSummary(EntityMinimal):
     anomalies_possible_ct: int | None
     anomalies_dismissed_ct: int | None
     dq_score_profiling: float | None
+    sampled_column_ct: int | None
+    approximate_percentile_column_ct: int | None
     total_count: int
 
     STATUS_LABEL: ClassVar[dict[str, str]] = JOB_STATUS_LABEL
@@ -274,7 +276,8 @@ class ProfilingRun(Entity):
                 LEFT JOIN profile_anomaly_types
                     ON profile_anomaly_types.id = profile_anomaly_results.anomaly_id
             GROUP BY profile_anomaly_results.profile_run_id
-        )
+        ),
+        page AS (
         SELECT
             je.id AS job_execution_id,
             pr.id AS profiling_run_id,
@@ -313,7 +316,19 @@ class ProfilingRun(Entity):
             {" AND je.job_schedule_id = :schedule_id" if schedule_id else ""}
             {" AND je.status IN :statuses" if statuses else ""}
         ORDER BY je.created_at DESC, je.id DESC
-        LIMIT :limit OFFSET :offset;
+        LIMIT :limit OFFSET :offset
+        )
+        -- Counted after the page is cut, so only the page's runs read their profile results
+        SELECT page.*, provenance.sampled_column_ct, provenance.approximate_percentile_column_ct
+        FROM page
+            LEFT JOIN LATERAL (
+                SELECT
+                    COUNT(*) FILTER (WHERE {ProfileResult.sampled_column_sql}) AS sampled_column_ct,
+                    COUNT(*) FILTER (WHERE {ProfileResult.approximate_percentile_sql}) AS approximate_percentile_column_ct
+                FROM profile_results
+                WHERE profile_results.profile_run_id = page.profiling_run_id
+            ) provenance ON TRUE
+        ORDER BY page.created_at DESC, page.job_execution_id DESC;
         """
         params = {
             "project_code": project_code,

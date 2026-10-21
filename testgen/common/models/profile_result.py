@@ -26,6 +26,7 @@ from sqlalchemy import (
     func,
     or_,
     select,
+    text,
 )
 from sqlalchemy.dialects import postgresql
 
@@ -41,6 +42,7 @@ class ColumnSort(StrEnum):
 
 
 _EXACT_TOKEN = re.compile(r"\{EXACT:([^}]*)\}")
+_EXACT_SQL = "(sample_ratio IS NULL OR value_ct = 0)"
 
 
 def _token_names(names: str) -> list[str]:
@@ -65,6 +67,29 @@ class MeasureAcquisition(StrEnum):
     by the ratio of the whole-table value count to the value count the sample observed."""
     SAMPLEABLE = "sampleable"
     """Read on the sample when the row has a ``sample_ratio``, and stored as measured."""
+
+
+class MeasureProvenance(StrEnum):
+    """Whether a profile row's value of a measure is exact, approximate, or estimated from a sample."""
+
+    EXACT = "exact"
+    APPROXIMATE = "approximate"
+    SAMPLED = "sampled"
+
+
+def _is_positive(value: Any) -> bool:
+    # A NaN, which pandas holds for a NULL, compares false
+    return value is not None and float(value) > 0
+
+
+def sample_percent_label(sample_ratio: float) -> str:
+    """The share of rows a sample with ``sample_ratio`` read, as a percent label such as ``30%``."""
+    percent = 100 / sample_ratio
+    if percent < 1:
+        return f"{percent:.2g}%"
+    if percent > 99:
+        return f"{min(percent, 99.9):.1f}%"
+    return f"{round(percent)}%"
 
 
 def _as_decimal(value: Any) -> Decimal | None:
@@ -378,8 +403,8 @@ class ProfileResult(Entity):
 
     @classmethod
     def run_sampled(cls, profile_run_id: UUID) -> bool:
-        """Whether any column of a profiling run was profiled from a sample."""
-        query = select(cls.id).where(cls.profile_run_id == profile_run_id, cls.sample_ratio.is_not(None)).limit(1)
+        """Whether any column of a profiling run was estimated from a sample."""
+        query = select(cls.id).where(cls.profile_run_id == profile_run_id, text(cls.sampled_column_sql)).limit(1)
         return get_current_session().scalar(query) is not None
 
     @classmethod
@@ -405,7 +430,7 @@ class ProfileResult(Entity):
                 raise ValueError(f"'{measure}' is not a profiling measure")
             if not cls.taken_from_sample([measure]):
                 raise ValueError(f"'{measure}' is measured over every row even when profiling samples")
-        return "(sample_ratio IS NULL OR value_ct = 0)"
+        return _EXACT_SQL
 
     @staticmethod
     def token_measures(criteria: str) -> set[str]:
@@ -424,6 +449,76 @@ class ProfileResult(Entity):
         if exact_measures:
             rendered = f"({rendered}\n) AND {cls.exact_clause(exact_measures)}"
         return rendered
+
+    sampled_column_sql: ClassVar[str] = f"NOT {_EXACT_SQL}"
+    """SQL condition over unqualified ``profile_results`` columns for a column estimated from a sample."""
+
+    approximate_percentile_sql: ClassVar[str] = f"percentile_method = '{PercentileMethod.APPROXIMATE}' AND value_ct > 0"
+    """SQL condition over unqualified ``profile_results`` columns for a column with approximate percentiles."""
+
+    @classmethod
+    def provenance_counts(cls, profile_run_id: UUID) -> tuple[int, int]:
+        """The number of a profiling run's columns estimated from a sample, and the number with
+        approximate percentiles."""
+        query = select(
+            func.count().filter(text(cls.sampled_column_sql)),
+            func.count().filter(text(cls.approximate_percentile_sql)),
+        ).where(cls.profile_run_id == profile_run_id)
+        sampled, approximate = get_current_session().execute(query).one()
+        return sampled, approximate
+
+    @classmethod
+    def provenance(cls, measure: str, row: Mapping[str, Any]) -> MeasureProvenance:
+        """Whether ``row``'s value of ``measure`` is exact, approximate, or estimated from a sample.
+
+        ``row`` carries the profile row's ``sample_ratio``, ``percentile_method``, and ``value_ct``. A row
+        with no ``percentile_method`` reads its percentiles as exact. A measure taken from the sample is
+        exact on a row profiled without sampling. Every measure is exact on a row whose column holds no
+        values.
+        """
+        acquisition = cls.measure_acquisition[measure]
+        if not _is_positive(row.get("value_ct")):
+            return MeasureProvenance.EXACT
+        if acquisition == MeasureAcquisition.PERCENTILE:
+            if row.get("percentile_method") == PercentileMethod.APPROXIMATE:
+                return MeasureProvenance.APPROXIMATE
+            return MeasureProvenance.EXACT
+        if acquisition in (MeasureAcquisition.SAMPLEABLE, MeasureAcquisition.SAMPLEABLE_COUNT):
+            if _is_positive(row.get("sample_ratio")):
+                return MeasureProvenance.SAMPLED
+        return MeasureProvenance.EXACT
+
+    @classmethod
+    def provenance_label(cls, measure: str, row: Mapping[str, Any]) -> str | None:
+        """The display label of ``row``'s value of ``measure``, or None when it is exact.
+
+        A sampled value reads "Estimated from a 30% sample" with the row's sample percent, and an
+        approximate one "Approximate".
+        """
+        match cls.provenance(measure, row):
+            case MeasureProvenance.SAMPLED:
+                return f"Estimated from a {sample_percent_label(row['sample_ratio'])} sample"
+            case MeasureProvenance.APPROXIMATE:
+                return "Approximate"
+        return None
+
+    @classmethod
+    def provenance_details(cls, row: Mapping[str, Any]) -> dict[str, dict[str, str]]:
+        """How ``row`` holds the measures it does not hold exactly, as ``{"kinds": {measure: provenance},
+        "descriptions": {provenance: text}}``. A description is the ``provenance_label`` for a sampled
+        value and a fuller sentence for an approximate one."""
+        kinds = {}
+        descriptions = {}
+        for measure in cls.measure_acquisition:
+            if label := cls.provenance_label(measure, row):
+                kind = cls.provenance(measure, row)
+                kinds[measure] = kind
+                descriptions[kind] = (
+                    f"{label}: computed over every row with an approximate percentile function"
+                    if kind == MeasureProvenance.APPROXIMATE
+                    else label
+                )
+        return {"kinds": kinds, "descriptions": descriptions}
 
     _case_class_columns: ClassVar[tuple[str, ...]] = ("upper_case_ct", "lower_case_ct", "non_alpha_ct")
 
