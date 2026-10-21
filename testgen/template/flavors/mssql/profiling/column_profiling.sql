@@ -268,7 +268,7 @@ SELECT
                                                                ELSE 0
       END) AS distant_future_date_ct,
   COUNT_BIG(DISTINCT DATEDIFF(day, "{COL_NAME}", '{RUN_DATE}' ) ) AS date_days_present,
-  COUNT_BIG(DISTINCT DATEDIFF(week, DATEADD(day, -1, "{COL_NAME}"), DATEADD(day, -1, CAST('{RUN_DATE}' AS DATE)) ) ) AS date_weeks_present,
+  COUNT_BIG(DISTINCT DATEDIFF(day, CAST('0001-01-01' AS DATE), "{COL_NAME}") / 7) AS date_weeks_present,
   COUNT_BIG(DISTINCT DATEDIFF(month, "{COL_NAME}", '{RUN_DATE}' ) ) AS date_months_present,
 -- TG-ENDIF
 -- TG-IF is_type_B
