@@ -375,6 +375,10 @@ class SuiteType(StrEnum):
 
 TEST_SUITE_TYPES: tuple[SuiteType, ...] = (SuiteType.REGULAR, SuiteType.CONTRACT)
 
+# Test types whose definitions TestGen creates and removes itself, never a user or a generation
+# set. Schema_Conformance follows the tables a contract declares, one definition per table.
+MANAGED_TEST_TYPES: frozenset[str] = frozenset({"Schema_Conformance"})
+
 
 class RegenerationGroup(StrEnum):
     """What a contract regeneration refreshes besides declaring the catalog's columns and refreshing

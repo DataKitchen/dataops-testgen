@@ -543,18 +543,21 @@ def prepare_ts_delete_dialog(test_suite_id: str) -> None:
         "open": True,
         "test_suite_id": str(selected.id),
         "test_suite_name": selected.test_suite,
+        "suite_type": selected.suite_type,
         "is_in_use": is_in_use,
     }
 
 
 @with_database_session
 def execute_ts_delete(test_suite_id: str) -> None:
-    test_suite_name = st.session_state.get("ts_delete_dialog", {}).get("test_suite_name", "")
+    dialog = st.session_state.get("ts_delete_dialog", {})
+    test_suite_name = dialog.get("test_suite_name", "")
+    noun = "Contract" if dialog.get("suite_type") == SuiteType.CONTRACT else "Test Suite"
     if TestRun.has_active_job_for(TestSuite, test_suite_id):
-        st.toast("This Test Suite is in use by a running process and cannot be deleted.", icon=":material/error:")
+        st.toast(f"This {noun} is in use by a running process and cannot be deleted.", icon=":material/error:")
     else:
         TestSuite.cascade_delete([test_suite_id])
-        st.toast(f"Test Suite {test_suite_name} has been deleted.", icon=":material/check:")
+        st.toast(f"{noun} {test_suite_name} has been deleted.", icon=":material/check:")
     st.session_state.pop("ts_delete_dialog", None)
     get_test_suite_summaries.clear()
     get_project_summary.clear()
@@ -738,12 +741,16 @@ def _add_contract_from_tables(suite: TestSuite, table_group: TableGroup, table_n
     name = created.suite.test_suite
     not_in_catalog = generation.tables_not_in_catalog if generation else []
     not_profiled = [table for table in generation.tables_not_profiled if table not in not_in_catalog] if generation else []
-    rows = [_row(WizardRowIcon.SUCCESS, f"Contract {name} created{_with_tests(created.suite.id)}.")]
+    no_quality_tests = (
+        not created.generation_failed and generation is not None and generation.term_count == 0 and bool(not_profiled)
+    )
+    kind = " schema" if no_quality_tests else ""
+    rows = [_row(WizardRowIcon.SUCCESS, f"Contract {name} created{_with_tests(created.suite.id, kind)}.")]
     if created.generation_failed:
         rows.append(
             _row(WizardRowIcon.WARNING, "Generating the contract failed. Generate its tests on the Test Suites page.")
         )
-    elif generation is not None and generation.term_count == 0 and not_profiled:
+    elif no_quality_tests:
         in_catalog = [table for table in generation.tables_declared if table not in not_in_catalog]
         cause = (
             "has not been profiled"
@@ -783,11 +790,11 @@ def _add_contract_from_file(suite: TestSuite, table_group: TableGroup, content: 
     return rows
 
 
-def _with_tests(suite_id: UUID) -> str:
+def _with_tests(suite_id: UUID, kind: str = "") -> str:
     test_count = TestSuite.test_definition_stats(suite_id).total
     if not test_count:
         return ""
-    return f" with {test_count} {'test' if test_count == 1 else 'tests'}"
+    return f" with {test_count}{kind} {'test' if test_count == 1 else 'tests'}"
 
 
 def _contract_info_rows(

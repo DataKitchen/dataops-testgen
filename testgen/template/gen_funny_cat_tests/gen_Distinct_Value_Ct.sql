@@ -18,6 +18,7 @@ latest_results AS (
   )
   WHERE p.table_groups_id = :TABLE_GROUPS_ID ::UUID
     AND dcc.excluded_data_element IS NOT TRUE
+    AND dcc.drop_date IS NULL
 ),
 all_runs AS (
   -- Five-run history window, taken from the runs themselves rather than from their results.
@@ -66,6 +67,7 @@ selected_columns AS (
   )
   WHERE p.table_groups_id = :TABLE_GROUPS_ID ::UUID
     AND dcc.excluded_data_element IS NOT TRUE
+    AND dcc.drop_date IS NULL
   -- Not grouped by schema: a table group that now reads another schema would split its
   -- own history in two, and the window would hold only the runs since the move.
   GROUP BY p.table_name, p.column_name

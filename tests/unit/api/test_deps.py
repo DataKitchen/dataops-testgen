@@ -46,9 +46,10 @@ def _set_scalars_results(mock_session, *results):
     ]
 
 
+@patch("testgen.api.deps.set_acting_username")
 @patch("testgen.common.auth.settings")
 @patch("testgen.api.deps.get_current_session")
-def test_get_authorized_user_returns_user_for_valid_token(mock_get_session, mock_settings):
+def test_get_authorized_user_returns_user_for_valid_token(mock_get_session, mock_settings, mock_set_acting):
     mock_settings.JWT_HASHING_KEY_B64 = JWT_KEY
     mock_session = MagicMock()
     mock_get_session.return_value = mock_session
@@ -62,6 +63,7 @@ def test_get_authorized_user_returns_user_for_valid_token(mock_get_session, mock
     result = get_authorized_user(_make_credentials(token))
 
     assert result is mock_user
+    mock_set_acting.assert_called_once_with("testuser")
 
 
 @patch("testgen.common.auth.settings")

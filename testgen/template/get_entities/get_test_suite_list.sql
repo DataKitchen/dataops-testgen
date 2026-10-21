@@ -8,6 +8,6 @@
  LEFT JOIN test_runs tr
         ON tr.test_suite_id = ts.id
      WHERE ts.project_code = :PROJECT_CODE
-       AND ts.suite_type = 'regular'
+       AND ts.suite_type IN ('regular', 'contract')
   GROUP BY ts.id, ts.project_code, ts.test_suite, ts.connection_id, ts.test_suite_description
   ORDER BY ts.test_suite;

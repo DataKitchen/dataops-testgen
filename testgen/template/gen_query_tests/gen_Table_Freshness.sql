@@ -11,7 +11,14 @@ latest_results AS (
     max_value, min_value, avg_value, stdev_value
   FROM profile_results p
   INNER JOIN latest_run lr ON p.profile_run_id = lr.profile_run_id
-  WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
+  WHERE p.table_groups_id = :TABLE_GROUPS_ID ::UUID
+    AND NOT EXISTS (
+      SELECT 1 FROM data_column_chars dcc
+      WHERE dcc.table_groups_id = p.table_groups_id
+        AND dcc.table_name = p.table_name
+        AND dcc.column_name = p.column_name
+        AND dcc.drop_date IS NOT NULL
+    )
 ),
 -- IDs - TOP 2
 id_cols AS (

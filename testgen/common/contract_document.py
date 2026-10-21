@@ -34,7 +34,7 @@ from testgen.common.models.table_group import TableGroup
 _NATIVE_PROPERTY_TAGS = {"data_classification": "classification"}
 _NATIVE_CONTRACT_TAGS = {"business_domain": "domain", "data_product": "dataProduct"}
 # Profiled functional data type -> the string ``format`` it declares.
-_FUNCTIONAL_TYPE_FORMATS = {"Email": "email", "Zip": "us-zip", "State": "us-state", "Phone": "phone"}
+_FUNCTIONAL_TYPE_FORMATS = {"Email": "email", "Zip": "us-zip", "Zip3": "us-zip3", "State": "us-state", "Phone": "phone"}
 # Profiled functional data types that identify each row, in order of preference.
 _PRIMARY_KEY_TYPES = ("ID-Unique-SK", "ID-Unique")
 # The two halves of a profiled functional table type, such as ``cumulative-transaction``.

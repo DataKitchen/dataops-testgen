@@ -6,7 +6,24 @@ from datetime import date, datetime, timedelta
 from typing import Self
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Column, Enum, ForeignKey, Integer, String, desc, func, or_, select, text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    ColumnElement,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    cast,
+    column,
+    desc,
+    exists,
+    func,
+    or_,
+    select,
+    table,
+    text,
+)
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.expression import case
@@ -14,7 +31,8 @@ from sqlalchemy.sql.expression import case
 from testgen.common.enums import MonitorType, SuiteType
 from testgen.common.models import get_current_session
 from testgen.common.models.entity import Entity
-from testgen.common.models.test_definition import TestType
+from testgen.common.models.suite_version import SuiteVersion
+from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.models.test_suite import TestSuite
 from testgen.utils import dict_from_kv
 
@@ -327,6 +345,25 @@ class TestResult(Entity):
         return cls._paginate(query, page=page, limit=limit, data_class=TestRunResultRow)
 
     @classmethod
+    def from_counted_run(cls) -> ColumnElement[bool]:
+        """Whether a result's run is not a preview: a regular suite's run, or a contract's run of a
+        version frozen before the run started."""
+        runs = table("test_runs", column("id"), column("version_id"), column("test_starttime"))
+        return exists().where(
+            runs.c.id == cls.test_run_id,
+            or_(
+                runs.c.version_id.is_(None),
+                exists().where(
+                    SuiteVersion.id == runs.c.version_id,
+                    or_(
+                        SuiteVersion.test_suite_id.is_(None),
+                        func.timezone("UTC", runs.c.test_starttime) >= SuiteVersion.frozen_at,
+                    ),
+                ),
+            ),
+        )
+
+    @classmethod
     def select_failures(
         cls,
         *,
@@ -354,6 +391,8 @@ class TestResult(Entity):
         ]
         if test_run_id is not None:
             where.append(cls.test_run_id == test_run_id)
+        else:
+            where.append(cls.from_counted_run())
         if test_suite_id is not None:
             where.append(cls.test_suite_id == test_suite_id)
         if since is not None:
@@ -406,16 +445,32 @@ class TestResult(Entity):
         offset: int = 0,
         *,
         suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        across_versions: bool = False,
     ) -> list[Self]:
         """Historical results for a test definition, newest first.
 
-        Only suites of ``suite_types`` are read.
+        Only suites of ``suite_types`` are read. With ``across_versions``, the results of every
+        definition in the same suite sharing its contract term id and test type are included.
         Project-level access is enforced when ``project_codes`` is set.
         """
+        matches_definition = cls.test_definition_id == test_definition_id
+        if across_versions:
+            target = aliased(TestDefinition)
+            same_term = (
+                select(TestDefinition.id)
+                .join(
+                    target,
+                    (target.test_suite_id == TestDefinition.test_suite_id)
+                    & (target.contract_term_id == TestDefinition.contract_term_id)
+                    & (target.test_type == TestDefinition.test_type),
+                )
+                .where(target.id == test_definition_id)
+            )
+            matches_definition = or_(matches_definition, cls.test_definition_id.in_(same_term))
         query = (
             select(cls)
             .join(TestSuite, cls.test_suite_id == TestSuite.id)
-            .where(cls.test_definition_id == test_definition_id, TestSuite.suite_type.in_(suite_types))
+            .where(matches_definition, TestSuite.suite_type.in_(suite_types))
         )
         if project_codes is not None:
             query = query.where(TestSuite.project_code.in_(project_codes))
@@ -528,6 +583,7 @@ class TestResult(Entity):
                 cls.test_time >= start_date,
                 cls.test_time < upper_bound,
                 func.coalesce(cls.disposition, "Confirmed") == "Confirmed",
+                cls.from_counted_run(),
                 *clauses,
             )
             .group_by(day_expr, cls.status)
@@ -572,11 +628,18 @@ class TestResult(Entity):
 
     @classmethod
     def diff_with_details(cls, baseline_run_id: UUID, target_run_id: UUID) -> RunDiff:
-        """Compare two runs by ``test_definition_id`` and return categorized diff rows."""
+        """Compare two runs test by test and return categorized diff rows.
 
-        def _fetch(run_id: UUID) -> dict[UUID, dict]:
+        A test is matched by its contract term id and test type, which a contract's test keeps across
+        versions, else by ``test_definition_id``.
+        """
+
+        def _fetch(run_id: UUID) -> dict[tuple[str, str], dict]:
             query = (
                 select(
+                    func.coalesce(TestDefinition.contract_term_id, cast(cls.test_definition_id, String)).label(
+                        "match_key"
+                    ),
                     cls.test_definition_id.label("test_definition_id"),
                     cls.test_type.label("test_type"),
                     TestType.test_name_short.label("test_name_short"),
@@ -587,13 +650,15 @@ class TestResult(Entity):
                     cls.threshold_value.label("threshold_value"),
                 )
                 .outerjoin(TestType, cls.test_type == TestType.test_type)
+                .outerjoin(TestDefinition, cls.test_definition_id == TestDefinition.id)
                 .where(
                     cls.test_run_id == run_id,
                     func.coalesce(cls.disposition, "Confirmed") == "Confirmed",
                 )
             )
             return {
-                row.test_definition_id: {
+                (row.match_key, row.test_type): {
+                    "test_definition_id": row.test_definition_id,
                     "test_type": row.test_type,
                     "test_name_short": row.test_name_short,
                     "table_name": row.table_name,
@@ -605,10 +670,10 @@ class TestResult(Entity):
                 for row in get_current_session().execute(query)
             }
 
-        def _row(tid: UUID, baseline_info: dict | None, target_info: dict | None) -> DiffRow:
+        def _row(baseline_info: dict | None, target_info: dict | None) -> DiffRow:
             base = target_info or baseline_info  # prefer target for display fields (test_type, table, column names)
             return DiffRow(
-                test_definition_id=tid,
+                test_definition_id=base["test_definition_id"],
                 test_type=base["test_type"],
                 test_name_short=base["test_name_short"],
                 table_name=base["table_name"],
@@ -632,7 +697,7 @@ class TestResult(Entity):
             if baseline_status == TestResultStatus.Passed and target_status == TestResultStatus.Passed:
                 diff.stable_passes += 1
                 continue
-            row = _row(tid, baseline_info, target_info)
+            row = _row(baseline_info, target_info)
             if baseline_status == TestResultStatus.Passed and target_status in failing:
                 diff.regressions.append(row)
             elif baseline_status in failing and target_status == TestResultStatus.Passed:
@@ -641,10 +706,10 @@ class TestResult(Entity):
                 diff.persistent_failures.append(row)
 
         for tid in target_results.keys() - baseline_results.keys():
-            diff.new_tests.append(_row(tid, None, target_results[tid]))
+            diff.new_tests.append(_row(None, target_results[tid]))
 
         for tid in baseline_results.keys() - target_results.keys():
-            diff.removed_tests.append(_row(tid, baseline_results[tid], None))
+            diff.removed_tests.append(_row(baseline_results[tid], None))
 
         return diff
 

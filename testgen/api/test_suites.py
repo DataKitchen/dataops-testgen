@@ -69,9 +69,9 @@ def list_test_suites(
     page: int = PageQuery,
     limit: int = LimitQuery,
 ):
-    """Test suites and contracts in a project, each with its test count and last completed run.
+    """Test suites in a project, contracts included, each with its test count and last completed run.
 
-    Test suite names are not unique, so ``test_suite_name`` can match more than one
+    Test suite names are not unique, so `test_suite_name` can match more than one
     suite. Filter by it before creating a suite to avoid making a second one. A contract
     also carries the numbers of its active version and its draft.
     """
@@ -116,13 +116,14 @@ def create_test_suite(
     table_group: TableGroup = resolve_table_group("edit"),  # noqa: B008
     body: TestSuiteCreate = Body(...),  # noqa: B008
 ) -> TestSuiteCreatedResponse:
-    """Create a test suite or a contract in a table group. It belongs to the table group's project and connection.
+    """Create a test suite, regular or contract, in a table group. It belongs to the table group's
+    project and connection.
 
     Test suite names are not unique: repeating a create makes a second suite with the
-    same name. ``set_as_default`` makes the table group's first profiling run generate
+    same name. `set_as_default` makes the table group's first profiling run generate
     tests into the new suite.
 
-    A contract is created with its first draft. Given ``table_names``, it declares those tables
+    A contract is created with its first draft. Given `table_names`, it declares those tables
     and is generated for them before the response returns: its metadata from the data catalog,
     a schema conformance test per table, and, for the tables profiling has results for, their
     tests. When generation fails, the contract is still created; submit test generation for it

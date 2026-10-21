@@ -12,7 +12,7 @@ from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES, TestType
-from testgen.common.odcs.quality_rules import ResolvedTerm, RuleScope, resolve_rule, test_type_parameters
+from testgen.common.odcs.quality_rules import Operator, ResolvedTerm, RuleScope, resolve_rule, test_type_parameters
 
 
 def all_test_types() -> dict[str, TestType]:
@@ -126,3 +126,21 @@ def rule_label(rule: Any, index: int, node_label: str) -> str:
             if isinstance(rule.get(key), str) and rule[key]:
                 return f"{node_label}: {rule[key]}"
     return f"{node_label}: rule {index + 1}"
+
+
+def describe_rule(rule: Any) -> str:
+    """The rule's type, metric, unit, and acceptance operators.
+
+    E.g. ``library nullValues in percent, mustBeLessThan``.
+    """
+    if not isinstance(rule, dict):
+        return "not a rule object"
+    rule_type = rule.get("type") or "library"
+    shape = str(rule_type)
+    if rule_type == "library":
+        unit = rule.get("unit", "rows")
+        shape += f" {rule.get('metric') or 'without a metric'} in {unit if unit else repr(unit)}"
+    elif rule_type == "custom" and rule.get("engine"):
+        shape += f" for engine {rule['engine']}"
+    operators = [operator.value for operator in Operator if operator.value in rule]
+    return f"{shape}, {', '.join(operators)}" if operators else shape

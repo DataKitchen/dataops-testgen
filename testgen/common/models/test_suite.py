@@ -200,13 +200,6 @@ class TestSuite(Entity):
     _minimal_columns = TestSuiteMinimal.__annotations__.keys()
 
     @classmethod
-    def get_regular(cls, identifier: str | UUID) -> "TestSuite | None":
-        """Like get(), but returns None for monitor suites."""
-        query = select(cls).where(cls.id == identifier, cls.suite_type == SuiteType.REGULAR)
-        return get_current_session().scalars(query).first()
-
-
-    @classmethod
     def get_minimal(cls, identifier: int) -> TestSuiteMinimal | None:
         result = cls._get_columns(identifier, cls._minimal_columns)
         return TestSuiteMinimal(**result) if result else None

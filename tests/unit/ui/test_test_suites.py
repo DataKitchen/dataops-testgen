@@ -536,6 +536,23 @@ def test_a_contract_on_an_unprofiled_table_group_says_why_it_has_no_quality_test
 
 
 @pytest.mark.usefixtures("db_session_mock")
+def test_a_contract_with_no_quality_tests_counts_its_schema_tests(session_state, test_count):
+    test_count.return_value = SimpleNamespace(total=2)
+    generated = _generated(term_count=0, not_profiled=["orders", "lines"])
+    with (
+        patch.object(view.TableGroup, "get", return_value=_table_group()),
+        patch.object(view.Connection, "get"),
+        patch.object(view, "create_contract", side_effect=_creation(generated)),
+    ):
+        view.add_test_suite_confirmed(_contract())
+
+    assert _rows(session_state) == [
+        ("success", "Contract Orders created with 2 schema tests."),
+        ("skipped", "No quality tests were generated because sales has not been profiled."),
+    ]
+
+
+@pytest.mark.usefixtures("db_session_mock")
 def test_a_contract_whose_profiled_tables_yield_no_quality_tests_names_the_unprofiled_ones(session_state):
     generated = _generated(term_count=0, not_profiled=["lines"])
     with (
@@ -977,3 +994,21 @@ def test_a_malformed_data_url_is_not_reported_as_empty(session_state):
     view.contract_file_uploaded({"table_group_id": "x", "file": {"content": "no-comma"}})
 
     assert session_state[view.WIZARD_PREVIEW_KEY]["error"] == "The file could not be read."
+
+
+@pytest.mark.usefixtures("db_session_mock")
+@pytest.mark.parametrize(
+    ("suite_type", "message"),
+    [(SuiteType.CONTRACT, "Contract Orders has been deleted."), (SuiteType.REGULAR, "Test Suite Orders has been deleted.")],
+)
+def test_the_delete_message_names_the_suite_by_its_type(session_state, suite_type, message):
+    session_state["ts_delete_dialog"] = {"test_suite_name": "Orders", "suite_type": suite_type}
+    with (
+        patch.object(view.TestRun, "has_active_job_for", return_value=False),
+        patch.object(view.TestSuite, "cascade_delete"),
+        patch.object(view, "get_project_summary"),
+        patch.object(view.st, "toast") as toast,
+    ):
+        view.execute_ts_delete(str(uuid4()))
+
+    assert toast.call_args.args[0] == message

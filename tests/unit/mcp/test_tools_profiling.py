@@ -709,10 +709,15 @@ def test_get_profiling_run_returns_detail(mock_run_cls, mock_hygiene_cls, db_ses
     assert "Potential PII:** 0 high, 8 moderate" in result
 
 
+@patch("testgen.mcp.tools.profiling.TableGroup")
+@patch("testgen.mcp.tools.profiling.JobExecution")
 @patch("testgen.mcp.tools.profiling.ProfilingRun")
-def test_get_profiling_run_pending_no_breakdown(mock_run_cls, db_session_mock):
+def test_get_profiling_run_pending_no_breakdown(mock_run_cls, mock_je, mock_tg, db_session_mock):
+    table_group_id = str(uuid4())
+    mock_je.get.return_value = MagicMock(kwargs={"table_group_id": table_group_id})
+    mock_tg.get.return_value = MagicMock(table_groups_name="orders_tg")
     summary = _mock_profiling_run(
-        status=JobStatus.PENDING, status_label="Pending",
+        status=JobStatus.PENDING, status_label="Pending", table_groups_name=None,
         profiling_run_id=None, started_at=None, completed_at=None,
         table_ct=None, column_ct=None, record_ct=None, anomaly_ct=None,
         anomalies_definite_ct=None, anomalies_likely_ct=None,
@@ -734,6 +739,9 @@ def test_get_profiling_run_pending_no_breakdown(mock_run_cls, db_session_mock):
     assert "Pending" in result
     assert "In progress" in result
     assert "Per-table breakdown" not in result
+    mock_tg.get.assert_called_once_with(table_group_id)
+    assert "# Profiling run: orders_tg" in result
+    assert "**Table group:** orders_tg" in result
 
 
 @patch("testgen.mcp.tools.profiling.JobExecution")

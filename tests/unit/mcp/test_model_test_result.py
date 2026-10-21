@@ -174,6 +174,31 @@ def test_select_history_excludes_monitor_suites(session_mock):
     assert "JOIN test_suites" in sql
 
 
+def test_select_failures_across_runs_leaves_out_preview_runs(session_mock):
+    TestResult.select_failures(test_suite_id=uuid4())
+    sql = _compiled_sql(session_mock.execute.call_args[0][0])
+
+    assert "timezone('UTC', test_runs.test_starttime) >= suite_versions.frozen_at" in sql
+
+
+def test_select_failures_of_one_run_keeps_a_preview_run(session_mock):
+    TestResult.select_failures(test_run_id=uuid4())
+    sql = _compiled_sql(session_mock.execute.call_args[0][0])
+
+    assert "suite_versions" not in sql
+
+
+def test_select_history_across_versions_includes_the_definitions_sharing_its_term(session_mock):
+    session_mock.scalars.return_value.all.return_value = []
+
+    TestResult.select_history(test_definition_id=uuid4(), across_versions=True)
+    sql = _compiled_sql(session_mock.scalars.call_args[0][0])
+
+    assert "contract_term_id = test_definitions.contract_term_id" in sql
+    assert "test_definitions_1.test_type = test_definitions.test_type" in sql
+    assert "test_definitions_1.test_suite_id = test_definitions.test_suite_id" in sql
+
+
 # ---------------------------------------------------------------------------
 # list_monitor_events_for_table — ORDER BY needs a stable tiebreaker because
 # the result is then paginated in Python; without it a row sharing ``test_time``
