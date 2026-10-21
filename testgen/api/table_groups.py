@@ -34,6 +34,7 @@ from testgen.api.schemas import (
 from testgen.common.database.table_group_service import (
     SchemaMoveRefused,
     apply_table_group_flavor_rules,
+    cascade_delete_table_group,
     catalog_membership,
     is_duplicate_name_error,
     move_table_group_schema,
@@ -376,3 +377,27 @@ def update_table_group(
         else None,
         catalog_error=catalog_error,
     )
+
+
+@router.delete(
+    "/table-groups/{table_group_id}",
+    status_code=204,
+    summary="Delete a table group",
+    responses={409: {"model": ErrorResponse, "description": "A job for this table group is still running"}},
+)
+def delete_table_group(table_group: TableGroup = resolve_table_group("edit")) -> None:  # noqa: B008
+    """Delete a table group together with everything recorded against it: its test suites with their
+    test definitions, test runs, results, and schedules; its monitors; its profiling runs and results,
+    hygiene issues, and data catalog; and the notification rules scoped to it or to its test suites.
+    Scorecards are kept.
+
+    The delete is refused while a job for the table group or its test suites is queued or running:
+    profiling, test generation, a test run, or monitor generation or a monitor run. Queued data
+    catalog refreshes are canceled, and a refresh that has already started refuses the delete too.
+    """
+    if cascade_delete_table_group(table_group):
+        raise api_error(
+            409,
+            "job_in_flight",
+            "A job for this table group is still running. Wait for it to finish, then try again.",
+        )
