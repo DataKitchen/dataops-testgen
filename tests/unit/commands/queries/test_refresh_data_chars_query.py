@@ -105,6 +105,23 @@ def test_include_empty_include_mask(mask):
             )""" in query
 
 
+@pytest.mark.parametrize("flavor,expected_predicate", [
+    ("bigquery", r"(c.table_name LIKE 'raw\\_slot%' )"),
+    ("sap_hana", r"(c.table_name LIKE 'raw\_slot%' ESCAPE '\')"),
+])
+def test_an_underscore_in_a_mask_matches_only_itself(flavor, expected_predicate):
+    connection = Connection(sql_flavor=flavor)
+    table_group = TableGroup(
+        table_group_schema="test_schema",
+        profiling_table_set="",
+        profiling_include_mask="raw_slot%",
+        profiling_exclude_mask="",
+    )
+    query, _ = RefreshDataCharsSQL(connection, table_group).get_schema_ddf()
+
+    assert expected_predicate in query
+
+
 def test_table_set_only():
     connection = Connection(sql_flavor="postgresql")
     table_group = TableGroup(

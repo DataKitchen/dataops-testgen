@@ -6,6 +6,8 @@ from testgen.common.database.flavor.flavor_service import FlavorService, Resolve
 class SapHanaFlavorService(FlavorService):
 
     varchar_type = "NVARCHAR(1000)"
+    # LIKE has no escape character unless the predicate names one
+    escape_clause = "ESCAPE '\\'"
     default_uppercase = True
     test_query = "SELECT 1 FROM DUMMY"
     url_scheme = "hana+hdbcli"
