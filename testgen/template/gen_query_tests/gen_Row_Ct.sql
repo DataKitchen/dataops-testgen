@@ -8,7 +8,14 @@ selected_tables AS (
     MAX(record_ct) AS record_ct
   FROM profile_results p
   INNER JOIN latest_run lr ON p.profile_run_id = lr.profile_run_id
-  WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
+  WHERE p.table_groups_id = :TABLE_GROUPS_ID ::UUID
+    AND NOT EXISTS (
+      SELECT 1 FROM data_column_chars dcc
+      WHERE dcc.table_groups_id = p.table_groups_id
+        AND dcc.table_name = p.table_name
+        AND dcc.column_name = p.column_name
+        AND dcc.drop_date IS NOT NULL
+    )
   GROUP BY p.profile_run_id, schema_name, table_name
   -- Only a table profiling found to keep every row can promise its count never drops.
   HAVING MAX(functional_table_type) LIKE '%cumulative%'

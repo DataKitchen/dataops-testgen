@@ -18,6 +18,17 @@ SET test_description = COALESCE(r.test_description, d.test_description, tt.test_
     observability_status = (
       CASE
         WHEN r.observability_status = 'Sent' THEN 'Sent'
+        -- A contract's preview run: it checked a version not frozen when it started
+        WHEN EXISTS (
+          SELECT 1 FROM test_runs tr
+          WHERE tr.id = r.test_run_id
+            AND tr.version_id IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM suite_versions sv
+              WHERE sv.id = tr.version_id
+                AND (sv.test_suite_id IS NULL OR tr.test_starttime >= sv.frozen_at)
+            )
+        ) THEN 'Ignore'
         WHEN COALESCE(d.export_to_observability, s.export_to_observability) = 'Y' THEN 'Queued'
         WHEN COALESCE(d.export_to_observability, s.export_to_observability) = 'N' THEN 'Ignore'
       END

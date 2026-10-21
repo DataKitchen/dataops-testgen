@@ -217,8 +217,8 @@ def test_forecast_points_handles_one_sided_bounds():
 def test_non_public_test_types_are_the_monitor_types_and_the_managed_types():
     """Monitor suites own the monitor types, and TestGen creates and removes a managed type's
     definitions itself, so the regular-test catalogs withhold every one of them."""
-    from testgen.common.enums import MonitorType
-    from testgen.common.models.test_definition import MANAGED_TEST_TYPES, NON_PUBLIC_TEST_TYPES
+    from testgen.common.enums import MANAGED_TEST_TYPES, MonitorType
+    from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES
 
     assert NON_PUBLIC_TEST_TYPES == frozenset({*(monitor.value for monitor in MonitorType), *MANAGED_TEST_TYPES})
     assert frozenset({"Schema_Conformance"}) == MANAGED_TEST_TYPES

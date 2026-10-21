@@ -27,7 +27,7 @@ EXEMPT = {
         "reads one definition by its own id"
     ),
     ("common/models/test_definition.py", "tt.id AS test_type_id"): (
-        "get_source_data_context reads by id, behind a scoped get()"
+        "get_source_data_context reads by id, behind get_for_project()"
     ),
     ("common/models/test_suite.py", "SELECT DISTINCT test_suite_id FROM test_definitions"): (
         "an existence check before deleting a suite; a row in any version counts"

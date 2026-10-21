@@ -824,7 +824,7 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
             test_results.test_type = test_types.test_type
         )
     WHERE test_suites.table_groups_id = :table_group_id
-        AND test_suites.suite_type = 'regular'
+        AND test_suites.suite_type IN ('regular', 'contract')
         AND table_name = :table_name
         {"AND column_names = :column_name" if column_name else ""}
         AND result_status NOT IN ('Passed', 'Log')
@@ -859,7 +859,7 @@ def get_related_test_suites(table_group_id: str, table_name: str, column_name: s
             test_definitions.test_suite_id = test_suites.id
         )
     WHERE test_suites.table_groups_id = :table_group_id
-        AND test_suites.suite_type = 'regular'
+        AND test_suites.suite_type IN ('regular', 'contract')
         AND test_definitions.version_id = {SuiteVersion.resolved_for_sql("test_definitions.test_suite_id")}
         AND table_name = :table_name
         {"AND column_name = :column_name" if column_name else ""}

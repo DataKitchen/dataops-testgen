@@ -57,6 +57,7 @@ def test_list_test_results_basic(mock_result, mock_td_cls, mock_tt_cls, mock_tes
     assert "on `customer_name` in `orders`" in result
     assert "15.3" in result
     assert "Truncation detected" in result
+    assert "Results on this page: 1 (page 1)." in result
 
 
 @patch("testgen.mcp.tools.test_results.TestSuite")
@@ -574,6 +575,7 @@ def test_list_test_result_history_basic(mock_result, mock_tt_cls, db_session_moc
     assert "88.0" in result
     assert "Passed" in result
     assert "Failed" in result
+    assert "Results on this page: 2, newest first (page 1)." in result
 
 
 @patch("testgen.mcp.tools.test_results.mcp_source_data_protected", return_value=True)
@@ -765,6 +767,7 @@ def test_list_test_result_history_passes_project_codes(
 
     call_kwargs = mock_result.select_history.call_args.kwargs
     assert call_kwargs["project_codes"] == ["proj_a"]
+    assert call_kwargs["across_versions"] is True
 
 
 # ----------------------------------------------------------------------
@@ -1242,10 +1245,11 @@ def test_compare_test_runs_happy_path(
     mock_result.diff_with_details.assert_called_once_with(baseline_run.id, target_run.id)
 
 
-def _fetch_row(test_definition_id, status):
+def _fetch_row(test_definition_id, status, contract_term_id=None, test_type="Pattern_Match"):
     row = MagicMock()
+    row.match_key = contract_term_id or str(test_definition_id)
     row.test_definition_id = test_definition_id
-    row.test_type = "Pattern_Match"
+    row.test_type = test_type
     row.test_name_short = "Pattern Match"
     row.table_name = "orders"
     row.column_names = "customer_id"
@@ -1253,6 +1257,42 @@ def _fetch_row(test_definition_id, status):
     row.result_measure = "0"
     row.threshold_value = "0"
     return row
+
+
+def test_diff_with_details_matches_a_contract_test_across_versions_by_its_term_id():
+    from testgen.common.models.test_result import TestResult
+
+    v1_row, v2_row = uuid4(), uuid4()
+    session = MagicMock()
+    session.execute.side_effect = [
+        [_fetch_row(v1_row, TestResultStatus.Passed, contract_term_id="orders-rows")],
+        [_fetch_row(v2_row, TestResultStatus.Failed, contract_term_id="orders-rows")],
+    ]
+
+    with patch("testgen.common.models.test_result.get_current_session", return_value=session):
+        diff = TestResult.diff_with_details(uuid4(), uuid4())
+
+    assert [row.test_definition_id for row in diff.regressions] == [v2_row]
+    assert diff.new_tests == []
+    assert diff.removed_tests == []
+
+
+def test_diff_with_details_does_not_match_a_term_whose_test_type_changed_between_versions():
+    from testgen.common.models.test_result import TestResult
+
+    v1_row, v2_row = uuid4(), uuid4()
+    session = MagicMock()
+    session.execute.side_effect = [
+        [_fetch_row(v1_row, TestResultStatus.Passed, contract_term_id="nulls", test_type="Required")],
+        [_fetch_row(v2_row, TestResultStatus.Failed, contract_term_id="nulls", test_type="Match_Null_Ct")],
+    ]
+
+    with patch("testgen.common.models.test_result.get_current_session", return_value=session):
+        diff = TestResult.diff_with_details(uuid4(), uuid4())
+
+    assert diff.regressions == []
+    assert [row.test_definition_id for row in diff.new_tests] == [v2_row]
+    assert [row.test_definition_id for row in diff.removed_tests] == [v1_row]
 
 
 def test_diff_with_details_counts_stable_passes():

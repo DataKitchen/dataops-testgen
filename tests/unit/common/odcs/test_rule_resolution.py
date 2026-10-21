@@ -22,7 +22,7 @@ from testgen.common.odcs.validation import validate_document
 pytestmark = pytest.mark.unit
 
 # The test types tier 2 (the exact-equivalence table) resolves an unmarked rule onto.
-_TIER_TWO_TARGETS = frozenset({"Required", "Row_Ct", "LOV_Match", "Pattern_Match"})
+_TIER_TWO_TARGETS = frozenset({"Required", "Row_Ct", "LOV_Match", "Pattern_Match", "Match_Null_Ct", "Match_Row_Ct"})
 
 _KNOWN = frozenset({"Required", "Row_Ct", "LOV_Match", "Pattern_Match", "Avg_Shift", "Unique", "Missing_Pct", "CUSTOM"})
 
@@ -290,6 +290,22 @@ def test_an_unrecognised_unit_resolves_to_unverifiable_and_is_not_defaulted_to_r
     assert resolve_rule({"metric": "nullValues", "unit": "percentage", "mustBe": 0}, RuleScope.COLUMN, _KNOWN, flavor=SqlFlavorCode.POSTGRESQL) is None
 
 
+@pytest.mark.parametrize("rule, scope, known, expected", [
+    ({"metric": "nullValues", "mustBe": 0}, RuleScope.COLUMN, _KNOWN, "Required"),
+    ({"metric": "rowCount", "mustBeGreaterThan": 100}, RuleScope.TABLE, _KNOWN, "Row_Ct"),
+    ({"metric": "invalidValues", "arguments": {"validValues": ["A", "B"]}, "mustBe": 0}, RuleScope.COLUMN, _KNOWN, "LOV_Match"),
+    (
+        {"metric": "duplicateValues", "arguments": {"properties": ["order_id"]}, "mustBe": 0},
+        RuleScope.TABLE, frozenset({"Dupe_Rows"}), "Dupe_Rows",
+    ),
+])
+def test_a_rule_without_a_unit_counts_rows(rule, scope, known, expected):
+    resolved = resolve_rule(rule, scope, known, "email", flavor=SqlFlavorCode.POSTGRESQL, table_name="customers")
+
+    assert resolved is not None
+    assert resolved.test_type == expected
+
+
 def test_a_row_based_duplicate_values_rule_resolves_by_scope():
     # Neither destination is implemented -- Unique is deliberately held back (its measure
     # counts NULLs as duplicates) and Dupe_Rows has no decided threshold shape -- so a
@@ -335,14 +351,46 @@ def test_a_metric_on_the_wrong_scope_resolves_to_unverifiable():
 
 
 def test_the_operator_is_part_of_the_key():
-    # mustBe: 0, mustBeLessThan: 5, mustNotBe: 0 are three different claims from
-    # mustBeLessOrEqualTo: 0 -- none of them is Required's exact shape, even though some
-    # would coincide with it at this particular value.
+    # mustNotBe: 0 and mustBeGreaterThan: 0 are not upper bounds on the null count, so neither resolves
+    # onto Required.
     base = {"metric": "nullValues", "unit": "rows"}
-    assert resolve_rule({**base, "mustBe": 0}, RuleScope.COLUMN, _KNOWN, flavor=SqlFlavorCode.POSTGRESQL) is None
-    assert resolve_rule({**base, "mustBeLessThan": 5}, RuleScope.COLUMN, _KNOWN, flavor=SqlFlavorCode.POSTGRESQL) is None
     assert resolve_rule({**base, "mustNotBe": 0}, RuleScope.COLUMN, _KNOWN, flavor=SqlFlavorCode.POSTGRESQL) is None
+    assert resolve_rule(
+        {**base, "mustBeGreaterThan": 0}, RuleScope.COLUMN, _KNOWN, flavor=SqlFlavorCode.POSTGRESQL
+    ) is None
     assert resolve_rule({**base, "mustBeLessOrEqualTo": 0}, RuleScope.COLUMN, _KNOWN, flavor=SqlFlavorCode.POSTGRESQL) is not None
+
+
+@pytest.mark.parametrize(
+    ("rule", "test_type", "thresholds"),
+    [
+        ({"metric": "nullValues", "mustBe": 0}, "Required", {"mustBeLessOrEqualTo": 0}),
+        ({"metric": "nullValues", "mustBeLessThan": 5}, "Required", {"mustBeLessOrEqualTo": 4}),
+        ({"metric": "nullValues", "mustBe": 3}, "Match_Null_Ct", {"mustBe": 3}),
+        (
+            {"metric": "invalidValues", "arguments": {"validValues": ["a", "b"]}, "mustBe": 0},
+            "LOV_Match", {"mustBeLessOrEqualTo": 0},
+        ),
+        (
+            {"metric": "invalidValues", "arguments": {"pattern": "^[0-9]+$"}, "mustBeLessThan": 1},
+            "Pattern_Match", {"mustBeLessOrEqualTo": 0},
+        ),
+    ],
+)
+def test_a_bound_on_a_column_count_resolves_onto_the_test_that_states_the_same_check(rule, test_type, thresholds):
+    known = _KNOWN | {"Match_Null_Ct"}
+    resolved = resolve_rule(
+        {**rule, "unit": "rows"}, RuleScope.COLUMN, known, "email", flavor=SqlFlavorCode.POSTGRESQL
+    )
+
+    assert (resolved.test_type, resolved.thresholds) == (test_type, thresholds)
+
+
+def test_an_exact_row_count_resolves_onto_match_row_count():
+    rule = {"metric": "rowCount", "unit": "rows", "mustBe": 500}
+    resolved = resolve_rule(rule, RuleScope.TABLE, _KNOWN | {"Match_Row_Ct"}, flavor=SqlFlavorCode.POSTGRESQL)
+
+    assert (resolved.test_type, resolved.thresholds) == ("Match_Row_Ct", {"mustBe": 500})
 
 
 def test_a_strict_row_count_bound_is_reexpressed_as_the_next_integer():
@@ -498,6 +546,16 @@ def test_a_single_value_sql_rule_resolves_to_sql_metric_with_its_placeholders_su
     }
     assert resolved.contract_term_id == "orders-total"
     assert resolved.metadata == {"name": "Order total"}
+
+
+def test_a_sql_rule_reads_dollar_placeholders_as_its_placeholders():
+    rule = {"type": "sql", "query": "SELECT SUM(${property}) FROM ${object}", "mustBeBetween": [0, 1000]}
+
+    resolved = resolve_rule(
+        rule, RuleScope.COLUMN, frozenset(), "amount", flavor=SqlFlavorCode.POSTGRESQL, table_name="orders"
+    )
+
+    assert resolved.parameters["custom_query"] == 'SELECT SUM("amount") FROM {DATA_SCHEMA}."orders"'
 
 
 def test_a_sql_rule_quotes_identifiers_the_way_its_flavor_does():
@@ -767,7 +825,7 @@ def test_a_dupe_rows_grouping_round_trips_in_its_flavors_quoting(flavor, groupby
 @pytest.mark.parametrize(
     ("test_type", "fields"),
     [
-        ("Required", {"threshold_value": None}),
+        ("Required", {"threshold_value": "many"}),
         ("Row_Ct_Pct", {"baseline_ct": "0", "threshold_value": "10"}),
         ("Match_Null_Ct", {"baseline_ct": None}),
         ("SQL_Metric", {"column_name": None, "custom_query": "SELECT COUNT(*) FROM {DATA_SCHEMA}.orders"}),

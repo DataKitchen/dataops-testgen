@@ -21,6 +21,7 @@ from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.services.source_data_protection import mcp_source_data_only
 from testgen.mcp.tools.common import (
+    MCP_SUITE_TYPES,
     DocGroup,
     parse_uuid,
     resolve_hygiene_issue,
@@ -47,7 +48,9 @@ def _resolve_test_definition_context(test_definition_id: str, reference_date: st
     td_uuid = parse_uuid(test_definition_id, "test_definition_id")
     perms = get_project_permissions()
 
-    context = TestDefinition.get_source_data_context(td_uuid, project_codes=perms.allowed_codes)
+    context = TestDefinition.get_source_data_context(
+        td_uuid, project_codes=perms.allowed_codes, suite_types=MCP_SUITE_TYPES
+    )
     if context is None:
         raise MCPResourceNotAccessible("Test definition", test_definition_id)
 

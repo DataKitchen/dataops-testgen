@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from testgen.common import contract_service
+from testgen.common.acting_user import set_acting_username
 from testgen.common.auth import AuthError, authorize_token, decode_jwt_token
 from testgen.common.enums import PublicJobKey, SuiteType
 from testgen.common.models import Session, bound_session, get_current_session, session_limiter
@@ -76,9 +77,11 @@ def get_authorized_user(credentials: HTTPAuthorizationCredentials = _bearer_secu
 
     session = get_current_session()
     try:
-        return authorize_token(credentials.credentials, username, session)
+        user = authorize_token(credentials.credentials, username, session)
     except AuthError:
         raise _invalid from None
+    set_acting_username(user.username)
+    return user
 
 
 def api_error(status_code: int, code: str, detail: str) -> HTTPException:

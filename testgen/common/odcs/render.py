@@ -15,13 +15,14 @@ from uuid import UUID
 
 from sqlalchemy import select, text
 
+from testgen.common.enums import MANAGED_TEST_TYPES
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, SqlFlavorCode
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import MANAGED_TEST_TYPES, TestDefinition, TestType
+from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.odcs.quality_rules import (
     RULE_MAPPINGS,
@@ -316,9 +317,12 @@ def _drop_declarations(document: dict[str, Any]) -> None:
                     del prop["customProperties"]
 
 
-def render_document(version: SuiteVersion, metadata_document: dict[str, Any] | None = None) -> dict[str, Any]:
+def render_document(
+    version: SuiteVersion, metadata_document: dict[str, Any] | None = None, *, contract_name: str | None = None
+) -> dict[str, Any]:
     """Merge ``version``'s stored metadata document with its terms, each rendered as a property
-    declaration or a quality rule. ``metadata_document`` renders in place of the stored one.
+    declaration or a quality rule. ``metadata_document`` renders in place of the stored one, and
+    ``contract_name``, when given, is the document's ``name``.
 
     A term renders as a declaration when ``property_declaration`` finds one on its declared
     column that no earlier term contradicts (``_declare``), otherwise as a quality rule.
@@ -333,6 +337,8 @@ def render_document(version: SuiteVersion, metadata_document: dict[str, Any] | N
     """
     source = version.metadata_document if metadata_document is None else metadata_document
     document = copy.deepcopy(source) if source else {}
+    if contract_name is not None:
+        document["name"] = contract_name
     _fill_root_fundamentals(document, version)
     _drop_declarations(document)
 

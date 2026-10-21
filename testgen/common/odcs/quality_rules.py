@@ -602,11 +602,22 @@ def rule_shape(test_type: str) -> RuleShape | None:
 
 
 _LOV_LITERAL_VALUE = re.compile(r"'((?:[^']|'')*)'")
+_BARE_NUMBER = re.compile(r"-?\d+(\.\d+)?")
 
 
 def lov_values(raw: str) -> list[str]:
-    """The individual values inside a stored LOV literal, e.g. ``"('Y','N')"`` -> ``["Y", "N"]``."""
-    return [match.replace("''", "'") for match in _LOV_LITERAL_VALUE.findall(raw)]
+    """The individual values inside a stored LOV literal, e.g. ``"('Y','N')"`` -> ``["Y", "N"]``.
+
+    A parenthesized literal with no quoted values is read as bare numbers, e.g. ``"(1,2,3)"`` ->
+    ``["1", "2", "3"]``; it reads as no values unless every one of them is a number.
+    """
+    if quoted := _LOV_LITERAL_VALUE.findall(raw):
+        return [match.replace("''", "'") for match in quoted]
+    literal = raw.strip()
+    if not (literal.startswith("(") and literal.endswith(")")):
+        return []
+    bare = [value.strip() for value in literal[1:-1].split(",")]
+    return bare if all(_BARE_NUMBER.fullmatch(value) for value in bare) else []
 
 
 # Identifier quote characters across flavors: ANSI double quotes, and BigQuery/Databricks backticks.
@@ -684,6 +695,14 @@ def _required_number(term: "TestDefinition", field: str) -> int | float:
     return value
 
 
+def _threshold(term: "TestDefinition") -> int | float:
+    """The term's ``threshold_value`` as a number, 0 when unset or empty as test execution reads it.
+    Raises ``_InexactTerm`` when it is set to something other than a number."""
+    if term.threshold_value in (None, ""):
+        return 0
+    return _required_number(term, "threshold_value")
+
+
 def _cohens_h_band(baseline_ratio: float, h: float) -> tuple[float, float]:
     """The closed ratio interval a Cohen's h bound ``h`` maps onto around ``baseline_ratio``.
 
@@ -718,6 +737,7 @@ def _missing_pct_band(term: "TestDefinition") -> tuple[float, float, float, floa
         raise _InexactTerm(
             f"{term.test_type!r} term {term.contract_term_id!r} has a baseline populated ratio of {baseline_ratio}."
         )
+    # Not ``_threshold``: a blank bound runs as h >= 0 and fails every run, which no band can express.
     h = float(_required_number(term, "threshold_value"))
     lower_ratio, upper_ratio = _cohens_h_band(baseline_ratio, h)
     lower, upper = _complement_percent_band(lower_ratio, upper_ratio)
@@ -732,7 +752,7 @@ def _row_ct_pct_band(term: "TestDefinition") -> tuple[float, float, float, float
     baseline_count = float(_required_number(term, "baseline_ct"))
     if baseline_count == 0:
         raise _InexactTerm(f"{term.test_type!r} term {term.contract_term_id!r} has a baseline row count of 0.")
-    percent = float(_required_number(term, "threshold_value"))
+    percent = float(_threshold(term))
     lower = baseline_count * (1 - percent / 100)
     upper = baseline_count * (1 + percent / 100)
     return lower, upper, baseline_count, percent
@@ -1170,7 +1190,7 @@ def _exact_check(
         elif term.test_type == "Match_Null_Ct":
             rule[mapping.operator.value] = _required_number(term, "baseline_ct")
         else:
-            rule[mapping.operator.value] = _required_number(term, "threshold_value")
+            rule[mapping.operator.value] = _threshold(term)
 
     elif term.test_type == "SQL_Metric":
         rule["query"] = _sql_metric_query(term, flavor)
@@ -1283,9 +1303,12 @@ def project_rule(
 #      against that row's own scope and operator -- the same well-formedness tier 2 already
 #      enforces, so tier 1 cannot be looser than tier 2 about what a rule is allowed to claim.
 #   2. Exact equivalence -- only where a TestGen type computes the same quantity and its
-#      operator can express the same bound. Every row here is `unit: rows`: `nullValues` onto
-#      `Required`, `rowCount` onto `Row_Ct`, and `invalidValues` (carrying exactly one of
-#      `arguments.validValues` / `arguments.pattern`) onto `LOV_Match` / `Pattern_Match`.
+#      operator can express the same bound. Every row here is `unit: rows`, the ODCS default:
+#      `nullValues` onto `Required` (or `Match_Null_Ct` for an exact count above zero); `rowCount`
+#      onto `Row_Ct` (or `Match_Row_Ct` for an exact count); and `invalidValues` (carrying exactly
+#      one of `arguments.validValues` / `arguments.pattern`) onto `LOV_Match` / `Pattern_Match`. A bound
+#      on a count is restated onto the target's operator when, the count being a non-negative
+#      integer, both state the same check (`_count_ceiling`, `_resolve_row_count`).
 #      `duplicateValues` still has no tier-2 row: `Unique`'s measure counts NULLs as
 #      duplicates (no threshold conversion makes it match), so there is nothing to resolve
 #      onto regardless of which node the rule sits on. `Dupe_Rows` is a library row, but it is
@@ -1381,11 +1404,32 @@ def _is_integral(value: Any) -> bool:
     return isinstance(value, float) and value.is_integer()
 
 
+def _count_ceiling(operator: Operator, value: Any) -> tuple[Operator, Any] | None:
+    """An upper bound on a row count restated as ``mustBeLessOrEqualTo``, or None for any other bound.
+
+    A row count is a non-negative integer, so ``mustBe: 0`` states the same check as
+    ``mustBeLessOrEqualTo: 0``, and ``mustBeLessThan: N`` the same as ``mustBeLessOrEqualTo: N - 1``.
+    """
+    if operator is Operator.MUST_BE_LESS_OR_EQUAL_TO:
+        return operator, value
+    if operator is Operator.MUST_BE and _is_integral(value) and value == 0:
+        return Operator.MUST_BE_LESS_OR_EQUAL_TO, 0
+    if operator is Operator.MUST_BE_LESS_THAN and _is_integral(value) and value >= 1:
+        return Operator.MUST_BE_LESS_OR_EQUAL_TO, int(value) - 1
+    return None
+
+
 def _resolve_null_values(operator: Operator, value: Any, scope: RuleScope) -> tuple[str, dict, dict] | None:
+    """``Required`` for an upper bound on the null count (see ``_count_ceiling``), ``Match_Null_Ct`` for an
+    exact count above zero, else None."""
+    if operator is Operator.MUST_BE and _is_integral(value) and value > 0:
+        mapping = _LIBRARY_ROWS["Match_Null_Ct"]
+        return ("Match_Null_Ct", {operator.value: value}, {}) if scope is mapping.scope else None
     mapping = _LIBRARY_ROWS["Required"]
-    if scope is not mapping.scope or operator is not mapping.operator:
+    ceiling = _count_ceiling(operator, value)
+    if scope is not mapping.scope or ceiling is None or ceiling[0] is not mapping.operator:
         return None
-    return "Required", {operator.value: value}, {}
+    return "Required", {ceiling[0].value: ceiling[1]}, {}
 
 
 def _resolve_row_count(operator: Operator, value: Any, scope: RuleScope) -> tuple[str, dict, dict] | None:
@@ -1403,6 +1447,8 @@ def _resolve_row_count(operator: Operator, value: Any, scope: RuleScope) -> tupl
     if operator is Operator.MUST_BE_GREATER_THAN and _is_integral(value):
         reexpressed = int(value) + 1
         return "Row_Ct", {Operator.MUST_BE_GREATER_OR_EQUAL_TO.value: reexpressed}, {}
+    if operator is Operator.MUST_BE and _is_integral(value):
+        return "Match_Row_Ct", {operator.value: value}, {}
     return None
 
 
@@ -1438,9 +1484,10 @@ def _resolve_invalid_values(
         return None
     target = "LOV_Match" if "validValues" in arguments else "Pattern_Match"
     mapping = _LIBRARY_ROWS[target]
-    if scope is not mapping.scope or operator is not mapping.operator:
+    ceiling = _count_ceiling(operator, value)
+    if scope is not mapping.scope or ceiling is None or ceiling[0] is not mapping.operator:
         return None
-    return target, {operator.value: value}, dict(arguments)
+    return target, {ceiling[0].value: ceiling[1]}, dict(arguments)
 
 
 def _operator_matches(marker_operator: Operator, expected: Operator) -> bool:
@@ -1604,7 +1651,7 @@ def _resolve_sql_metric(
 
     ``{object}`` becomes the table, qualified by ``{DATA_SCHEMA}`` when ``qualify_tables`` is set,
     and ``{property}`` the column, each quoted as the flavor quotes identifiers; a placeholder with
-    nothing to substitute declines.
+    nothing to substitute declines. ``${object}`` and ``${property}`` are read as the same placeholders.
     """
     query = rule.get("query")
     operator, value = _sole_operator(rule)
@@ -1615,6 +1662,7 @@ def _resolve_sql_metric(
             return None
     elif not _is_number(value):
         return None
+    query = query.replace("${object}", "{object}").replace("${property}", "{property}")
     if "{object}" in query:
         if not table_name:
             return None
@@ -1665,9 +1713,10 @@ def resolve_rule(
     ``_test_type_marker``) resolves to that test type once the marker itself checks out (see
     ``_resolve_marker``) -- this is the lossless round-trip of a rule TestGen itself projected.
     Every other rule is checked against a small, fixed table of exact equivalences: nothing is
-    guessed and nothing is defaulted, so most incoming shapes -- any ``percent`` unit, an
-    unrecognised unit, ``missingValues``, an operator TestGen cannot state, a ``text``/``sql``/
-    ``custom`` rule -- decline rather than resolve.
+    guessed, so most incoming shapes -- any ``percent`` unit, an unrecognised unit,
+    ``missingValues``, an operator TestGen cannot state, a ``text``/``sql``/``custom`` rule --
+    decline rather than resolve. A rule without ``unit`` counts in rows and a rule without ``type``
+    is ``library``, both ODCS defaults.
 
     Two shapes resolve without a marker beyond that table. A row-based ``duplicateValues`` rule
     resolves to ``Dupe_Rows`` grouped on the column it nests under, or on the table rule's
@@ -1703,7 +1752,7 @@ def resolve_rule(
     if rule.get("type") == RuleShape.SQL.value:
         return _resolve_sql_metric(rule, subject, table_name, flavor, conversion, qualify_tables)
 
-    if rule.get("unit") != "rows" or rule.get("type", RuleShape.LIBRARY.value) != RuleShape.LIBRARY.value:
+    if rule.get("unit", "rows") != "rows" or rule.get("type", RuleShape.LIBRARY.value) != RuleShape.LIBRARY.value:
         return None
 
     operator, value = _sole_operator(rule)

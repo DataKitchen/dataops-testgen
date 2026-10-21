@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Annotated
+from uuid import UUID
 
 from pydantic import Field
 
@@ -7,6 +8,7 @@ from testgen.common.enums import JobKey, JobStatus
 from testgen.common.models import with_database_session
 from testgen.common.models.job_execution import QUEUED_MESSAGE, JobExecution
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY
+from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun, TestRunSummary
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
@@ -22,12 +24,14 @@ from testgen.mcp.tools.common import (
     parse_uuid,
     resolve_contract_version,
     resolve_table_group,
+    resolve_test_suite,
     run_status_filter_options,
     target_db_error_text,
     validate_limit,
     validate_page,
 )
 from testgen.mcp.tools.markdown import MdDoc
+from testgen.utils import friendly_score
 
 _DOC_GROUP = DocGroup.INVESTIGATE
 
@@ -45,6 +49,11 @@ def list_test_runs(
     test_suite: Annotated[
         str | None,
         Field(description="Optional test suite name to filter by (case-sensitive)."),
+    ] = None,
+    test_suite_id: Annotated[
+        str | None,
+        Field(description="Optional UUID of a test suite to filter by, e.g. from `list_test_suites`. Supply this "
+              "or `test_suite`, not both."),
     ] = None,
     table_group_id: Annotated[
         str | None,
@@ -67,7 +76,8 @@ def list_test_runs(
     version: Annotated[
         int | None,
         Field(
-            description="Contract version number, e.g. from `list_contract_versions`. Requires `test_suite`. "
+            description="Contract version number, e.g. from `list_contract_versions`. Requires `test_suite` or "
+            "`test_suite_id`. "
             "Returns only that version's runs.",
         ),
     ] = None,
@@ -84,13 +94,25 @@ def list_test_runs(
     if schedule_id:
         parse_uuid(schedule_id, "schedule_id")
 
+    if test_suite and test_suite_id:
+        raise MCPUserError("Supply `test_suite` or `test_suite_id`, not both.")
+    suite_table_group_id = None
+    if test_suite_id:
+        suite = resolve_test_suite(test_suite_id)
+        test_suite_id = str(suite.id)
+        test_suite = suite.test_suite
+        suite_table_group_id = suite.table_groups_id
+        if project_code and project_code != suite.project_code:
+            raise MCPUserError(f"`project_code` `{project_code}` does not match the test suite's project.")
+        project_code = suite.project_code
     if not project_code and not table_group_id:
         raise MCPUserError("Provide either `project_code` or `table_group_id`.")
     if version is not None and not test_suite:
-        raise MCPUserError("`version` needs `test_suite`: a version number belongs to one contract.")
+        raise MCPUserError(
+            "`version` needs `test_suite` or `test_suite_id`: a version number belongs to one contract."
+        )
 
     perms = get_project_permissions()
-    test_suite_id = None
     table_group = None
 
     if table_group_id:
@@ -106,7 +128,7 @@ def list_test_runs(
             not_found=MCPResourceNotAccessible("Project", project_code),
         )
 
-    if test_suite:
+    if test_suite and not test_suite_id:
         suites = TestSuite.select_minimal_where(
             TestSuite.project_code == project_code,
             TestSuite.test_suite == test_suite,
@@ -114,7 +136,16 @@ def list_test_runs(
         )
         if not suites:
             raise MCPResourceNotAccessible("Test suite", test_suite)
+        if len(suites) > 1:
+            ids = ", ".join(f"`{suite.id}`" for suite in suites)
+            raise MCPUserError(
+                f"{len(suites)} test suites in project `{project_code}` are named `{test_suite}`: {ids}. "
+                "Filter by `test_suite_id` instead."
+            )
         test_suite_id = str(suites[0].id)
+        suite_table_group_id = suites[0].table_groups_id
+    if table_group and suite_table_group_id and suite_table_group_id != table_group.id:
+        raise MCPUserError(f"Test suite `{test_suite}` is not in table group `{table_group.table_groups_name}`.")
 
     target = None
     if version is not None:
@@ -202,13 +233,17 @@ def get_test_run(
     if summary is None or summary.project_code not in perms.allowed_codes:
         raise MCPResourceNotAccessible("Test run", job_execution_id)
 
+    suite_name, table_group_name = summary.test_suite, summary.table_groups_name
+    if summary.test_run_id is None:
+        suite_name, table_group_name = _pending_run_scope(summary.job_execution_id)
+
     doc = MdDoc()
-    suite_label = summary.test_suite or "—"
+    suite_label = suite_name or "—"
     doc.heading(1, f"Test run: {suite_label}")
     doc.field("Test Run", summary.job_execution_id, code=True)
     doc.field("Test suite", suite_label)
-    if summary.table_groups_name:
-        doc.field("Table group", summary.table_groups_name)
+    if table_group_name:
+        doc.field("Table group", table_group_name)
     doc.field("Project", summary.project_code)
     doc.field("Status", summary.status_label)
     if summary.status == JobStatus.QUEUED:
@@ -234,13 +269,28 @@ def get_test_run(
         if summary.dismissed_ct:
             doc.field("Dismissed", summary.dismissed_ct)
         if summary.dq_score_testing is not None:
-            doc.field("Testing Score", f"{summary.dq_score_testing:.1f}")
+            doc.field("Testing Score", friendly_score(summary.dq_score_testing))
 
     if summary.error_message:
         doc.heading(2, "Error")
         doc.text(target_db_error_text(summary.error_message))
 
     return doc.render()
+
+
+def _pending_run_scope(job_execution_id: UUID) -> tuple[str | None, str | None]:
+    """Return the suite and table group names of a test run that has no run record yet, from its job's arguments.
+
+    Raises MCPResourceNotAccessible when the job targets a suite kind MCP does not serve.
+    """
+    job = JobExecution.get(job_execution_id)
+    suite = TestSuite.get(job.kwargs.get("test_suite_id", "")) if job else None
+    if suite is None:
+        return None, None
+    if suite.suite_type not in MCP_SUITE_TYPES:
+        raise MCPResourceNotAccessible("Test run", str(job_execution_id))
+    table_group = TableGroup.get(suite.table_groups_id)
+    return suite.test_suite, table_group.table_groups_name if table_group else None
 
 
 def _scope_descriptor(
@@ -377,7 +427,7 @@ def _render_test_run_section(doc: MdDoc, run: TestRunSummary) -> None:
     if run.dismissed_ct:
         doc.field("Dismissed", run.dismissed_ct)
     if run.dq_score_testing is not None:
-        doc.field("Testing Score", f"{run.dq_score_testing:.1f}")
+        doc.field("Testing Score", friendly_score(run.dq_score_testing))
 
 
 def _render_run_version(doc: MdDoc, run: TestRunSummary) -> None:

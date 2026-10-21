@@ -1,12 +1,12 @@
 from testgen.commands.test_generation import resolve_generation_profile_run
 from testgen.common.database.database_service import get_flavor_service
-from testgen.common.enums import SuiteType
+from testgen.common.enums import MANAGED_TEST_TYPES, SuiteType
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import MANAGED_TEST_TYPES, TestDefinition
+from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.sampling_requirements import sampled_profile_gaps
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
