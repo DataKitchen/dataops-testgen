@@ -485,6 +485,30 @@ def test_a_timestamp_at_midnight_compares_as_its_date(stored, incoming, same):
     assert (contract_import._comparable(stored) == contract_import._comparable(incoming)) is same
 
 
+@pytest.mark.parametrize(
+    ("stored", "incoming", "same"),
+    [
+        ("0.0", "0", True),
+        ("-12.000", "-12", True),
+        ("2.5", "2", False),
+        ("0.50", "0.5", True),
+        ("007", "7", False),
+    ],
+)
+def test_a_decimal_compares_without_trailing_zeros(stored, incoming, same):
+    assert (contract_import._comparable(stored) == contract_import._comparable(incoming)) is same
+
+
+@pytest.mark.parametrize("stored", [None, ""])
+def test_a_blank_threshold_compares_as_the_0_it_runs_as(stored):
+    changes = _plan(
+        [_incoming(term_id="email-nulls", threshold_value="0")],
+        [_baseline(term_id="email-nulls", threshold_value=stored)],
+    )
+
+    assert [(change.action, change.reason) for change in changes] == [(ImportAction.skip, ContractTermReason.UNCHANGED)]
+
+
 def test_a_term_the_document_omits_is_deleted():
     absent = _baseline(test_type="Unique", term_id="email-unique")
 
