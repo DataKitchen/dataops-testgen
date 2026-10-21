@@ -378,7 +378,7 @@ const CodeEditor = (/** @type Properties */ props) => {
 
 const highlightStyle = HighlightStyle.define([
     { tag: [tags.definition(tags.propertyName), tags.propertyName], color: 'var(--tg-code-key)' },
-    { tag: [tags.string, tags.special(tags.string)], color: 'var(--tg-code-string)' },
+    { tag: [tags.string, tags.special(tags.string), tags.content], color: 'var(--tg-code-string)' },
     { tag: [tags.lineComment, tags.comment], color: 'var(--tg-code-comment)', fontStyle: 'italic' },
     { tag: [tags.separator, tags.punctuation, tags.squareBracket, tags.brace], color: 'var(--tg-code-punctuation)' },
     { tag: [tags.meta, tags.keyword, tags.typeName, tags.labelName, tags.attributeValue], color: 'var(--tg-code-meta)' },
@@ -422,36 +422,12 @@ const editorTheme = EditorView.theme({
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-code-editor {
-    --tg-code-key: #0550ae;
-    --tg-code-string: #116329;
-    --tg-code-comment: #6e7781;
-    --tg-code-punctuation: #6e7781;
-    --tg-code-meta: #8250df;
-    --tg-code-selection: #d7e4ff;
-    --tg-code-active-line: #0000000a;
-    --tg-code-match: #fdd83566;
-    --tg-code-match-selected: #ff980080;
-
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
     overflow: hidden;
     border: 1px solid var(--border-color);
     background-color: var(--dk-card-background);
-}
-
-@media (prefers-color-scheme: dark) {
-    .tg-code-editor {
-        --tg-code-key: #79c0ff;
-        --tg-code-string: #a5d6a7;
-        --tg-code-comment: #8b949e;
-        --tg-code-punctuation: #8b949e;
-        --tg-code-meta: #d2a8ff;
-        --tg-code-selection: #3a4a6b;
-        --tg-code-active-line: #ffffff0d;
-        --tg-code-match: #fdd83533;
-        --tg-code-match-selected: #ff980066;
-    }
 }
 
 .tg-code-editor--search {

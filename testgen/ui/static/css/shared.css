@@ -102,6 +102,16 @@ body {
     --table-hover-color: #ecf0f1;
     --table-selection-color: rgba(0,145,234,.28);
     --table-header-background: var(--dk-card-background);
+
+    --tg-code-key: #0550ae;
+    --tg-code-string: #116329;
+    --tg-code-comment: #6e7781;
+    --tg-code-punctuation: #6e7781;
+    --tg-code-meta: #8250df;
+    --tg-code-selection: #d7e4ff;
+    --tg-code-active-line: #0000000a;
+    --tg-code-match: #fdd83566;
+    --tg-code-match-selected: #ff980080;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -164,6 +174,16 @@ body {
         --table-hover-color: rgb(38, 39, 48);
         --table-selection-color: rgba(0,145,234,.28);
         --table-header-background: var(--dk-card-background);
+
+        --tg-code-key: #79c0ff;
+        --tg-code-string: #a5d6a7;
+        --tg-code-comment: #8b949e;
+        --tg-code-punctuation: #8b949e;
+        --tg-code-meta: #d2a8ff;
+        --tg-code-selection: #3a4a6b;
+        --tg-code-active-line: #ffffff0d;
+        --tg-code-match: #fdd83533;
+        --tg-code-match-selected: #ff980066;
     }
 }
 
