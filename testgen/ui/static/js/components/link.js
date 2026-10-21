@@ -32,7 +32,7 @@ const Link = (/** @type Properties */ props) => {
     const href = getValue(props.href);
     const params = getValue(props.params) ?? {};
     const open_new = !!getValue(props.open_new);
-    const onClick = getValue(props.onClick);
+    const onClick = props.onClick;
     const isExternal = /http(s)?:\/\//.test(href);
 
     const element = a(

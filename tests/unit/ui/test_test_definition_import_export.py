@@ -116,7 +116,7 @@ def test_export_serializes_with_exclude_defaults():
     with patch("testgen.ui.views.test_definitions.export_definitions", return_value=document) as export:
         get_test_definitions_json_data(MagicMock(), test_suite)
 
-    export.assert_called_once_with(test_suite, Origin.both, None, None)
+    export.assert_called_once_with(test_suite, Origin.both, None, None, None)
     assert document.model_dump_json.call_args.kwargs["exclude_defaults"] is True
 
 

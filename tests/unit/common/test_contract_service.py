@@ -98,6 +98,19 @@ def test_freezing_sets_the_freeze_time():
     assert frozen.label == "first"
 
 
+def test_freezing_records_who_froze_the_version():
+    suite = _suite()
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+    ):
+        frozen = contract_service.freeze_version(suite, username="alice")
+
+    assert frozen.frozen_by == "alice"
+
+
 def test_freezing_stores_the_rendered_bytes():
     suite = _suite()
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
@@ -265,6 +278,33 @@ def test_discarding_returns_the_number_of_terms_removed():
         for term in conjuncts
     )
     assert term_count == 3
+
+
+def test_a_versions_term_count_leaves_out_the_tests_testgen_manages():
+    version = SuiteVersion(id=uuid4(), version=2)
+    session = MagicMock()
+    session.scalar.return_value = 5
+    with patch("testgen.common.contract_service.get_current_session", return_value=session):
+        assert contract_service.term_count(version.id) == 5
+
+    conjuncts = _conjuncts(session.scalar.call_args.args[0].whereclause)
+    assert any(equality_conjunct(term, "version_id", "test_definitions", version.id) for term in conjuncts)
+    assert any(
+        getattr(term.left, "key", None) == "test_type" and term.operator is operators.not_in_op
+        for term in conjuncts
+    )
+
+
+def test_a_versions_term_count_narrows_by_the_clauses_given():
+    version_id = uuid4()
+    session = MagicMock()
+    session.scalar.return_value = 2
+    with patch("testgen.common.contract_service.get_current_session", return_value=session):
+        assert contract_service.term_count(version_id, TestDefinition.table_name == "orders") == 2
+
+    conjuncts = _conjuncts(session.scalar.call_args.args[0].whereclause)
+    assert any(equality_conjunct(term, "version_id", "test_definitions", version_id) for term in conjuncts)
+    assert any(equality_conjunct(term, "table_name", "test_definitions", "orders") for term in conjuncts)
 
 
 def test_discarding_the_contracts_only_version_is_refused():
