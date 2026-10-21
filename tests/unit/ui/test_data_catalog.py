@@ -116,3 +116,14 @@ def test_catalog_page_number_without_a_page_shows_the_selected_item():
         assert get_catalog_page_number("tg", CatalogFilters(), None, "column_abc_def") == 4
     page_of_item.assert_called_once_with("tg", CatalogFilters(), "column", "abc_def")
     assert get_catalog_page_number("tg", CatalogFilters(), None, None) == 0
+
+
+@pytest.mark.parametrize("fetch_name", ["get_latest_test_issues", "get_related_test_suites"])
+def test_a_columns_tests_include_contracts(fetch_name):
+    from testgen.ui.views import data_catalog
+
+    fetch = getattr(data_catalog, fetch_name)
+    with patch(f"{VIEW_MODULE}.fetch_all_from_db", return_value=[]) as fetch_all:
+        fetch.__wrapped__("tg-id", "orders", "amount")
+
+    assert "test_suites.suite_type IN ('regular', 'contract')" in fetch_all.call_args.args[0]

@@ -15,7 +15,7 @@ from testgen.common.database.database_service import (
     execute_db_queries,
     fetch_dict_from_db,
 )
-from testgen.common.enums import SuiteType
+from testgen.common.enums import TEST_SUITE_TYPES
 from testgen.common.flavors import reports_table_group_schema
 from testgen.common.models import with_database_session
 from testgen.common.models.test_suite import TestSuite
@@ -322,8 +322,12 @@ def run_observability_exporter(project_code, test_suite):
     test_suites = TestSuite.select_minimal_where(
         TestSuite.project_code == project_code,
         TestSuite.test_suite == test_suite,
-        TestSuite.suite_type == SuiteType.REGULAR,
+        TestSuite.suite_type.in_(TEST_SUITE_TYPES),
     )
+    if not test_suites:
+        raise click.ClickException(f"Project {project_code} has no test suite named {test_suite}.")
+    if len(test_suites) > 1:
+        raise click.ClickException(f"Project {project_code} has {len(test_suites)} test suites named {test_suite}.")
     qty_of_exported_events = export_test_results(test_suites[0].id)
     click.echo(f"{qty_of_exported_events} events have been exported.")
 

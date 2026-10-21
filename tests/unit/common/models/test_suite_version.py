@@ -298,6 +298,19 @@ def test_open_draft_copies_the_document_forward_without_sharing_it():
     assert session.add.call_args.args[0] is draft
 
 
+def test_open_draft_is_authored_by_the_acting_user():
+    suite_id = uuid4()
+    with (
+        patch.object(SuiteVersion, "in_force_for", return_value=None),
+        patch.object(SuiteVersion, "next_version_for", return_value=1),
+        patch("testgen.common.models.suite_version.get_current_session", return_value=MagicMock()),
+        patch("testgen.common.models.suite_version.acting_username", return_value="alice"),
+    ):
+        draft, _ = SuiteVersion.open_draft(suite_id)
+
+    assert draft.created_by == "alice"
+
+
 def test_open_draft_restates_the_carried_document_version_as_the_new_ones():
     # The document's own `version` is what a reader of the exported contract sees. Deep-copying
     # it forward unchanged would leave every version of the contract claiming to be the first.

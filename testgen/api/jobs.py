@@ -90,13 +90,11 @@ def submit_test_run(
     test_suite: TestSuite = resolve_test_suite("edit", TEST_SUITE_TYPES),  # noqa: B008
     body: TestRunRequest | None = None,
 ):
-    """Submit a test execution job for a test suite or a contract.
-
-    Runs against the table group's schema. A referential test's comparison schema can be
-    overridden for this run.
+    """Runs against the table group's schema; a contract runs one of its versions. A referential
+    test's comparison schema can be overridden for this run.
 
     A contract runs its active version, or its draft when no version has been frozen, unless
-    ``version`` names another. Only a run of the active version counts as the contract's
+    `version` names another. Only a run of the active version counts as the contract's
     status; a run of the draft or of a superseded version does not.
     """
     try:
@@ -145,9 +143,7 @@ def submit_test_generation(
     test_suite: TestSuite = resolve_test_suite("edit", TEST_SUITE_TYPES),  # noqa: B008
     body: TestGenerationRequest | None = None,
 ):
-    """Submit a test generation job for a test suite or a contract.
-
-    Generates from the test suite's stored generation sets when none are given,
+    """Generates from the test suite's stored generation sets when none are given,
     falling back to Standard. A contract always generates its own fixed set of test types into
     its draft version and generates the draft's metadata. Before its table group has been
     profiled, the metadata is generated from the data catalog alone and only schema conformance tests are
@@ -155,10 +151,10 @@ def submit_test_generation(
 
     The value hash test types (Match Text, Numeric and Date Hash, their Keyed variants, and Match
     Epoch Sum, in the Table Comparison set) are generated only from a profiling run that computed
-    value hashes. That needs ``profile_table_comparison`` on the table group and a profiling run
+    value hashes. That needs `profile_table_comparison` on the table group and a profiling run
     since it was turned on; otherwise they are not generated.
 
-    For a contract, ``regenerate`` chooses what is refreshed; omit it to refresh everything. Tests
+    For a contract, `regenerate` chooses what is refreshed; omit it to refresh everything. Tests
     alone cannot be regenerated before the table group has been profiled.
     """
     regenerate = body.regenerate if body else None

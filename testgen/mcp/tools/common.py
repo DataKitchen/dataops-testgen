@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime
 from enum import StrEnum
@@ -736,12 +737,15 @@ def _default_render_diff_value(value: object) -> str | None:
 
     * ``bool`` → ``"Yes"`` / ``"No"``
     * ``None`` or ``""`` → ``None`` (rendered as em-dash by the table cell)
+    * ``dict`` / ``list`` → JSON
     * else → ``str(value)``
     """
     if isinstance(value, bool):
         return "Yes" if value else "No"
     if value is None or value == "":
         return None
+    if isinstance(value, dict | list):
+        return json.dumps(value, default=str)
     return str(value)
 
 

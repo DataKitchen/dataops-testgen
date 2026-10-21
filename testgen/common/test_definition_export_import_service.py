@@ -18,7 +18,7 @@ from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
     table_group_qualifies_table_refs,
 )
-from testgen.common.enums import SuiteType, TestScope
+from testgen.common.enums import MANAGED_TEST_TYPES, SuiteType, TestScope
 from testgen.common.flavors import reports_table_group_schema
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
@@ -27,7 +27,6 @@ from testgen.common.models.data_table import DataTable
 from testgen.common.models.suite_version import SuiteVersion, VersionState
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import (
-    MANAGED_TEST_TYPES,
     NON_PUBLIC_TEST_TYPES,
     TestDefinition,
     TestType,

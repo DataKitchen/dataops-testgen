@@ -134,7 +134,10 @@ def test_a_rule_no_test_type_checks_stays_in_the_document_marked_unverifiable():
     table = split.metadata_document["schema"][0]
     kept = [*table["quality"], *table["properties"][0]["quality"]]
     assert all(any(is_unverifiable_marker(entry) for entry in rule["customProperties"]) for rule in kept)
-    assert split.unverifiable_rules == ["orders: rule 2", "orders.email: rule 2"]
+    assert split.unverifiable_rules == [
+        "orders: rule 2 (text)",
+        "orders.email: rule 2 (library duplicateValues in percent, mustBeLessOrEqualTo)",
+    ]
 
 
 def _property(split: contract_import.SplitDocument, name: str) -> dict:
@@ -225,6 +228,41 @@ def test_a_declaration_with_no_exact_test_type_is_reported():
     assert split.unresolved_declarations == ["orders.email: unique"]
 
 
+def test_an_unverifiable_rule_with_an_empty_unit_is_described_as_written():
+    document = _document()
+    document["schema"][0]["quality"].append({"metric": "rowCount", "unit": "", "mustBeGreaterThan": 0})
+
+    split = _split(document)
+
+    assert "orders: rule 3 (library rowCount in '', mustBeGreaterThan)" in split.unverifiable_rules
+
+
+def test_relationships_are_reported_and_kept():
+    document = _document()
+    document["schema"][0]["properties"][0]["relationships"] = [{"type": "foreignKey", "to": "customers.email"}]
+    document["schema"][0]["relationships"] = [
+        {"type": "foreignKey", "from": "orders.email", "to": "customers.email"},
+    ]
+
+    split = _split(document)
+
+    assert split.unresolved_declarations == ["orders.email: relationships", "orders: relationships"]
+    assert split.metadata_document["schema"][0]["relationships"]
+    assert split.metadata_document["schema"][0]["properties"][0]["relationships"]
+
+
+def test_a_quality_list_every_rule_of_which_became_a_term_leaves_the_metadata():
+    document = _document()
+    document["schema"][0]["quality"] = document["schema"][0]["quality"][:1]
+    document["schema"][0]["properties"][0]["quality"] = document["schema"][0]["properties"][0]["quality"][:1]
+
+    split = _split(document)
+
+    table = split.metadata_document["schema"][0]
+    assert "quality" not in table
+    assert "quality" not in table["properties"][0]
+
+
 def test_testgen_term_entries_are_dropped_from_the_metadata():
     document = _document()
     document["schema"][0]["properties"][1]["customProperties"] = [{
@@ -283,7 +321,7 @@ def test_a_rule_naming_a_managed_test_type_is_kept_unverifiable():
     split = _split(document)
 
     assert "Schema_Conformance" not in {term.test_type for term in split.terms}
-    assert "orders: rule 3" in split.unverifiable_rules
+    assert "orders: rule 3 (custom for engine testgen)" in split.unverifiable_rules
 
 
 def test_a_custom_rule_takes_its_column_name_from_its_implementation():
@@ -435,6 +473,18 @@ def test_an_identical_term_is_unchanged():
     assert [(change.action, change.reason) for change in changes] == [(ImportAction.skip, ContractTermReason.UNCHANGED)]
 
 
+@pytest.mark.parametrize(
+    ("stored", "incoming", "same"),
+    [
+        ("2022-02-11 00:00:00", "2022-02-11", True),
+        ("2022-02-11T00:00:00.000", "2022-02-11", True),
+        ("2022-02-11 08:30:00", "2022-02-11", False),
+    ],
+)
+def test_a_timestamp_at_midnight_compares_as_its_date(stored, incoming, same):
+    assert (contract_import._comparable(stored) == contract_import._comparable(incoming)) is same
+
+
 def test_a_term_the_document_omits_is_deleted():
     absent = _baseline(test_type="Unique", term_id="email-unique")
 
@@ -575,8 +625,9 @@ def test_a_column_the_catalog_does_not_hold_is_left_as_written():
 # --- preview and apply ---
 
 
-def _db_stubs(stack: ExitStack, *, draft=None, baseline=()):
+def _db_stubs(stack: ExitStack, *, draft=None, baseline=(), id_holder=None):
     session = MagicMock()
+    stack.enter_context(patch(f"{MODULE}.contract_holding_id", return_value=id_holder))
     stack.enter_context(patch(f"{MODULE}.get_current_session", return_value=session))
     stack.enter_context(patch(f"{MODULE}.all_test_types", return_value=_TEST_TYPES))
     stack.enter_context(patch(f"{MODULE}._baseline_terms", return_value=list(baseline)))
@@ -671,6 +722,21 @@ def test_applying_writes_the_draft_then_commits_then_reconciles_conformance():
     assert sorted(term.test_type for term in added) == ["Max_Val", "Required", "Row_Ct"]
     assert all(term.version_id == draft_id for term in added)
     assert next(term for term in added if term.test_type == "Max_Val").baseline_value == "500"
+
+
+def test_a_new_contract_whose_id_another_contract_in_the_table_group_has_is_refused():
+    holder = MagicMock(id=uuid4(), test_suite="Orders")
+    with ExitStack() as stack, pytest.raises(contract_import.ContractIdTakenError) as excinfo:
+        _db_stubs(stack, id_holder=holder)
+        contract_import.prepare_import(
+            yaml.safe_dump(_document()), MagicMock(table_group_schema="public"), _connection(), None
+        )
+
+    assert excinfo.value.problems == [
+        f"$.id: contract `Orders` (`{holder.id}`) in this table group already has the contract `id` "
+        "`orders-contract`. To update that contract, import the document into it. To create a separate "
+        "contract, change the document's `id`."
+    ]
 
 
 def _apply_stubs(stack: ExitStack, session: MagicMock, draft_id) -> None:

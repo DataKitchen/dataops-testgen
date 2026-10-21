@@ -97,7 +97,9 @@ def get_project(
     doc.field("Name", project.project_name)
     doc.field("Connections", summary.connection_count)
     doc.field("Table groups", summary.table_group_count)
-    doc.field("Test suites", summary.test_suite_count)
+    suite_count = summary.test_suite_count + summary.contract_count
+    contracts = f" ({summary.contract_count} contracts)" if summary.contract_count else ""
+    doc.field("Test suites", f"{suite_count}{contracts}")
     doc.field("Test definitions", summary.test_definition_count)
     doc.field("Profiling runs", summary.profiling_run_count)
     doc.field("Test runs", summary.test_run_count)
@@ -127,7 +129,7 @@ def list_test_suites(
         Field(description="Optional suite type to narrow to: `Regular` or `Contract`. Omit to list both."),
     ] = None,
 ) -> str:
-    """List a project's test suites and contracts with their latest run statistics."""
+    """List a project's test suites, contracts included, with latest run statistics."""
     if not project_code:
         return "Missing required parameter `project_code`."
 
@@ -158,7 +160,7 @@ def list_test_suites(
             doc.field("Generation sets", ", ".join(s.generation_sets))
 
         if s.latest_run_id:
-            doc.field("Latest run", f"`{s.latest_run_id}` ({s.latest_run_start})")
+            doc.field("Latest run", f"`{s.latest_run_id}` ({format_datetime(s.latest_run_start)})")
             results_summary = (
                 f"{s.last_run_test_ct or 0} tests: "
                 f"{s.last_run_passed_ct or 0} passed, "
@@ -169,6 +171,8 @@ def list_test_suites(
             doc.field("Results", results_summary)
             if s.last_run_dismissed_ct:
                 doc.field("Dismissed", s.last_run_dismissed_ct)
+        elif s.suite_type == SuiteType.CONTRACT:
+            doc.text("_No completed run counts as contract status. Preview runs are excluded._")
         else:
             doc.text("_No completed runs._")
 
@@ -225,7 +229,8 @@ def get_test_suite(
     doc.field("Export to observability", suite.export_to_observability)
     doc.field("Automatically deactivate tests that fail validation", suite.deactivate_invalid_tests)
     doc.field("Generation sets", ", ".join(suite.generation_sets or []) or "Not set, defaults to Standard")
-    doc.field("Available generation sets", ", ".join(list_generation_sets()))
+    if suite.suite_type != SuiteType.CONTRACT:
+        doc.field("Available generation sets", ", ".join(list_generation_sets()))
 
     doc.field("Total tests", stats.total)
     doc.field("Locked tests", stats.locked)

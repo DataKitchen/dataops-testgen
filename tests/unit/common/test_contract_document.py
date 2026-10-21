@@ -432,11 +432,20 @@ def test_a_recognized_string_column_declares_its_format():
         _column("email", "string", "Email"),
         _column("zip", "string", "Zip"),
         _column("zip_number", "integer", "Zip"),
+        _column("zip3", "string", "Zip3"),
+        _column("postal_code", "string", "Zip US/Canada"),
         _column("note", "string", "Description"),
     ])
 
     options = {prop["name"]: prop.get("logicalTypeOptions") for prop in document["schema"][0]["properties"]}
-    assert options == {"email": {"format": "email"}, "zip": {"format": "us-zip"}, "zip_number": None, "note": None}
+    assert options == {
+        "email": {"format": "email"},
+        "zip": {"format": "us-zip"},
+        "zip_number": None,
+        "zip3": {"format": "us-zip3"},
+        "postal_code": None,
+        "note": None,
+    }
 
 
 def test_a_format_profiling_no_longer_recognizes_is_removed_and_other_options_kept():

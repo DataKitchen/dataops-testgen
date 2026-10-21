@@ -645,7 +645,7 @@ def test_list_test_notes_basic(mock_td, mock_notes, db_session_mock):
     assert "Alpha Truncation" in result
     assert "`name`" in result
     assert "`orders`" in result
-    assert "2 note(s)" in result
+    assert "Notes: 2." in result
     assert "Threshold looks wrong" in result
     assert "alice" in result
     assert "2026-04-01 10:00" in result
@@ -1311,7 +1311,7 @@ def test_update_test_multi_field(mock_resolve_td, mock_tt_model, db_session_mock
         str(td.id),
         fields={"threshold_value": "80", "severity": "Fail", "test_active": False},
     )
-    assert "3 field" in result
+    assert "Fields changed: 3." in result
     td.save.assert_called_once()
 
 
@@ -1409,7 +1409,7 @@ def test_validate_custom_test_would_fail_shows_preview_with_view_pii(
     result = validate_custom_test(str(uuid4()), "SELECT * FROM orders WHERE amount < 0")
 
     assert "would fail" in result.lower()
-    assert "3 row(s) matching the failure criteria" in result
+    assert "3 rows matching the failure criteria" in result
     assert "order_id" in result
     assert "ORD-123" in result
     assert "[redacted]" not in result

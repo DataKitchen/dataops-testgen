@@ -778,21 +778,18 @@ def test_a_term_with_no_contract_identity_is_refused_by_name():
 @pytest.mark.parametrize(
     ("test_type", "fields"),
     [
-        ("Required", {"threshold_value": None}),
-        ("Required", {"threshold_value": ""}),
         ("Required", {"threshold_value": "   "}),
         ("Required", {"threshold_value": "many"}),
+        ("LOV_Match", {"baseline_value": "5", "threshold_value": "0"}),
         ("Missing_Pct", {"baseline_ct": "50", "baseline_value_ct": "40", "threshold_value": None}),
         ("Missing_Pct", {"baseline_ct": "0", "baseline_value_ct": "0", "threshold_value": "2.0"}),
         ("Missing_Pct", {"baseline_ct": None, "baseline_value_ct": "40", "threshold_value": "2.0"}),
         ("Missing_Pct", {"baseline_ct": "50", "baseline_value_ct": "60", "threshold_value": "0.5"}),
         ("Missing_Pct", {"baseline_ct": "-5", "baseline_value_ct": "1", "threshold_value": "0.5"}),
-        ("Row_Ct_Pct", {"baseline_ct": "50", "threshold_value": None}),
         ("Row_Ct_Pct", {"baseline_ct": "0", "threshold_value": "10"}),
         ("LOV_Match", {"baseline_value": "Val1,Val2", "threshold_value": "0"}),
         ("Pattern_Match", {"baseline_value": "", "threshold_value": "0"}),
         ("Match_Null_Ct", {"baseline_ct": None}),
-        ("Match_Row_Ct", {"threshold_value": None}),
         ("Dupe_Rows", {"groupby_names": "order_id"}),
         ("Dupe_Rows", {"groupby_names": '"order_id", line_no'}),
         ("SQL_Metric", {"column_name": None, "custom_query": "SELECT 1"}),
@@ -801,8 +798,8 @@ def test_a_term_with_no_contract_identity_is_refused_by_name():
     ],
 )
 def test_a_term_whose_values_cannot_be_stated_exactly_renders_custom(test_type, fields):
-    """TestGen still runs such a term -- a cleared bound reads as NULL and passes -- so the
-    contract carries it as a ``custom`` rule rather than failing the freeze or export."""
+    """TestGen still runs such a term, so the contract carries it as a ``custom`` rule rather
+    than failing the freeze or export."""
     term = _term(test_type=test_type, **fields)
     rule = project_rule(term, _test_type(test_type), SqlFlavorCode.POSTGRESQL)
     assert rule["type"] == "custom"
@@ -810,6 +807,34 @@ def test_a_term_whose_values_cannot_be_stated_exactly_renders_custom(test_type, 
     assert "query" not in rule
     assert not [key for key in rule if key.startswith("must")]
     assert not validate_document(_wrap(rule, rule_scope(term, _test_type(test_type))))
+
+
+@pytest.mark.parametrize(
+    ("test_type", "fields", "bound"),
+    [
+        ("Required", {"threshold_value": None}, {"mustBeLessOrEqualTo": 0}),
+        ("Required", {"threshold_value": ""}, {"mustBeLessOrEqualTo": 0}),
+        ("LOV_Match", {"baseline_value": "('A','B')", "threshold_value": None}, {"mustBeLessOrEqualTo": 0}),
+        ("Pattern_Match", {"baseline_value": "[A-Z]{3}", "threshold_value": ""}, {"mustBeLessOrEqualTo": 0}),
+        ("Row_Ct", {"threshold_value": None}, {"mustBeGreaterOrEqualTo": 0}),
+        ("Match_Row_Ct", {"threshold_value": None}, {"mustBe": 0}),
+        ("Row_Ct_Pct", {"baseline_ct": "50", "threshold_value": None}, {"mustBe": 50}),
+    ],
+)
+def test_a_blank_threshold_renders_as_the_zero_execution_runs_it_with(test_type, fields, bound):
+    term = _term(test_type=test_type, **fields)
+    rule = project_rule(term, _test_type(test_type), SqlFlavorCode.POSTGRESQL)
+
+    assert rule["type"] == "library"
+    assert {key: value for key, value in rule.items() if key.startswith("must")} == bound
+
+
+def test_an_unquoted_numeric_value_list_renders_its_values():
+    term = _term(test_type="LOV_Match", baseline_value="(1, 2,3)", threshold_value="0")
+    rule = project_rule(term, _test_type("LOV_Match"), SqlFlavorCode.POSTGRESQL)
+
+    assert rule["type"] == "library"
+    assert rule["arguments"] == {"validValues": ["1", "2", "3"]}
 
 
 def test_unique_pct_renders_as_a_custom_rule():

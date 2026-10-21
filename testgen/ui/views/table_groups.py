@@ -8,9 +8,11 @@ from sqlalchemy.exc import IntegrityError
 
 from testgen.commands.run_catalog_refresh import submit_table_group_setup
 from testgen.common.database.table_group_service import (
+    DeleteBlocker,
     SchemaMoveRefused,
     apply_schema_move,
     apply_table_group_flavor_rules,
+    cascade_delete_table_group,
     catalog_membership,
     move_table_group_schema,
     schema_label_for_table_group,
@@ -20,10 +22,8 @@ from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import ProfilingRunNotificationSettings
-from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal, default_profiling_masks
-from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.monitor_service import enable_monitoring
 from testgen.common.sampling_requirements import sampled_profile_gaps
@@ -659,19 +659,21 @@ class TableGroupsPage(Page):
     @with_database_session
     def _execute_delete(self, table_group_id: str) -> None:
         table_group_name = st.session_state.get("tg_delete_dialog", {}).get("table_group", {}).get("table_groups_name", "")
-        if ProfilingRun.has_active_job_for(TableGroup, table_group_id) or TestRun.has_active_job_for(TableGroup, table_group_id):
+        table_group = TableGroup.get(table_group_id)
+        blocker = cascade_delete_table_group(table_group) if table_group else None
+        if blocker == DeleteBlocker.JOB:
             st.toast(
-                "This Table Group has an unfinished run and cannot be deleted. Cancel the run first.",
+                "This Table Group has a job in progress and cannot be deleted."
+                " Try again when it finishes, or cancel it first.",
                 icon=":material/error:",
             )
-        elif not JobExecution.cancel_queued_catalog_refreshes(TableGroup, table_group_id):
+        elif blocker == DeleteBlocker.CATALOG_REFRESH:
             st.toast(
                 "This Table Group has a data catalog refresh in progress and cannot be deleted."
                 " Try again when the refresh finishes.",
                 icon=":material/error:",
             )
         else:
-            TableGroup.cascade_delete([table_group_id])
             select_table_groups_minimal_where.clear()
             st.toast(f"Table Group {table_group_name} has been deleted.", icon=":material/check:")
         st.session_state.pop("tg_delete_dialog", None)

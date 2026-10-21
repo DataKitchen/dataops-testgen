@@ -30,14 +30,14 @@ from testgen.common.contract_import import (
 )
 from testgen.common.contract_service import CheckableRuleError, InvalidContractDocumentError, OwnedFieldError
 from testgen.common.database.test_suite_service import validate_test_suite_fields
-from testgen.common.enums import JOB_STATUS_LABEL, SuiteType
+from testgen.common.enums import JOB_STATUS_LABEL, MANAGED_TEST_TYPES, SuiteType
 from testgen.common.flavors import SqlFlavorCode
 from testgen.common.merge_patch import apply_merge_patch
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.suite_version import SuiteVersion, VersionState, format_version, version_state
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import MANAGED_TEST_TYPES, TestDefinition, TestType
+from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.odcs.quality_rules import CONVERSION_PROPERTIES
 from testgen.common.test_definition_export_import_service import ImportAction
@@ -340,7 +340,7 @@ def export_contract(
     suite = resolve_contract(test_suite_id)
     try:
         target = contract_service.version_for_export(suite, version)
-        exported = contract_service.export_version(target)
+        exported = contract_service.export_version(target, contract_name=suite.test_suite)
     except ValueError as e:
         # Covers the renderer's own refusals too -- an orphaned term, an unmapped flavor, a
         # test type excluded from contracts -- each of which names what to fix.
@@ -452,7 +452,9 @@ def get_contract_metadata(
         raise MCPUserError(str(e)) from e
 
     hide_source_data = mcp_source_data_protected()
-    document = _narrow(target.metadata_document or {}, section, table_name, column_name)
+    document = _narrow(
+        contract_service.document_with_contract_name(target, suite), section, table_name, column_name
+    )
     if hide_source_data:
         document = _with_placeholders(document)
     text = yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
@@ -518,8 +520,9 @@ def update_contract_metadata(
 
     A quality rule that a test type checks is refused: add it as a test with `create_test`. A rule
     no test type checks is saved marked unverifiable, and is exported with the contract but not
-    run. `apiVersion`, `kind`, `id`, and `version` cannot be changed. A change that would make the
-    document invalid is refused with the path of each problem, and nothing is saved.
+    run. `apiVersion`, `kind`, `id`, and `version` cannot be changed, and `name` is the contract's
+    name: rename the contract with `update_test_suite`. A change that would make the document
+    invalid is refused with the path of each problem, and nothing is saved.
 
     Under source-data protection, send each `<hidden:…>` placeholder back to keep its value.
     """
@@ -529,6 +532,8 @@ def update_contract_metadata(
     if current is None:
         raise MCPUserError(f"Contract `{suite.test_suite}` has no version to change.")
     before = copy.deepcopy(current.metadata_document or {})
+    if "name" in before:
+        before["name"] = suite.test_suite
     patch = _resolve_placeholders(patch, before)
     document = patch if parsed_mode is MetadataUpdateMode.REPLACE else apply_merge_patch(before, patch)
     hide_source_data = mcp_source_data_protected()
@@ -557,7 +562,10 @@ def update_contract_metadata(
     _render_document_changes(doc, before, version.metadata_document or {}, hide_source_data, heading="Changes")
     if saved.unverifiable_rules:
         doc.heading(2, f"Stored as unverifiable ({len(saved.unverifiable_rules)})")
-        doc.text("No test type checks these rules. They are exported with the contract and are not run.")
+        doc.text(
+            "No test type checks these rules. They are exported with the contract and are not run. "
+            "`testgen://contract-rule-mappings` lists the rule shapes that become tests."
+        )
         doc.bullets([_inline_text(label) for label in saved.unverifiable_rules])
     if saved.untested_declarations:
         doc.heading(2, f"Declarations with no test ({len(saved.untested_declarations)})")
@@ -669,7 +677,12 @@ def diff_contract_versions(
     if not changes:
         doc.text("No test changed.")
     if page == 1:
-        _render_document_changes(doc, source.metadata_document or {}, target.metadata_document or {}, hide_source_data)
+        _render_document_changes(
+            doc,
+            contract_service.document_with_contract_name(source, suite),
+            contract_service.document_with_contract_name(target, suite),
+            hide_source_data,
+        )
 
     if changes and not page_changes:
         doc.text(f"No tests on page {page} (total: {len(changes)}).")
@@ -939,7 +952,7 @@ def discard_contract_draft(
 
     doc = MdDoc()
     doc.heading(1, f"Discarded {format_version(draft.version, VersionState.DRAFT)} of contract `{suite.test_suite}`")
-    doc.field("Tests removed", removed)
+    doc.field("Tests removed besides schema conformance", removed)
     doc.field("Contract is now at", format_version(now_at.version, VersionState.ACTIVE))
     return doc.render()
 
@@ -962,8 +975,8 @@ def import_contract(
     test_suite_name: Annotated[
         str | None,
         Field(
-            description="Name for the contract being created. Defaults to the name the document declares, and is "
-            "required when it declares none.",
+            description="Name for the contract being created, which becomes the document's `name`. Defaults to "
+            "the name the document declares, and is required when it declares none.",
         ),
     ] = None,
     mode: Annotated[
@@ -975,11 +988,12 @@ def import_contract(
 
     The document is the whole agreement. Its quality rules, and column constraints such as a
     maximum or a required column, become the contract's tests; the rest becomes its metadata.
-    Tests the contract holds that the document does not state are deleted. Preview first, and check
-    the deletions.
+    Tests the contract holds that the document does not state are deleted, and every test it states
+    is locked against test generation. Preview first, and check the deletions.
 
     Supply exactly one of `test_suite_id` and `table_group_id`. An import never changes a frozen
-    version, and a document whose contract `id` differs from the contract's is refused.
+    version. A document whose contract `id` differs from the contract's is refused, as is a new
+    contract whose `id` another contract in the table group already has.
 
     A rule TestGen cannot check stays in the document, marked unverifiable. SQL in the document is
     not translated between database dialects; the response warns when the document declares a
@@ -1089,6 +1103,11 @@ def _render_import(
     doc.field("Rules and constraints that became tests", plan.resolved_count)
     doc.field("Rules kept as unverifiable", len(plan.unverifiable_rules))
     doc.field("Constraints no test checks", len(plan.unresolved_declarations))
+    doc.text(
+        f"Every test the document states {'is' if preview else 'was'} locked, unchanged ones included, "
+        "so test generation does not change or delete it. The counts above leave out schema conformance: "
+        "each table the document declares gets a Schema Conformance test, checking its columns and types."
+    )
 
     if plan.server_type_warning:
         doc.text(f"Warning: {plan.server_type_warning}")
@@ -1121,11 +1140,14 @@ def _render_import(
 
     if plan.unverifiable_rules:
         doc.heading(2, f"Kept as unverifiable ({len(plan.unverifiable_rules)})")
-        doc.text("TestGen cannot check these rules. They stay in the contract's document and are not run.")
+        doc.text(
+            "TestGen cannot check these rules. They stay in the contract's document and are not run. "
+            "`testgen://contract-rule-mappings` lists the rule shapes that become tests."
+        )
         doc.bullets([_inline_text(label) for label in plan.unverifiable_rules])
     if plan.unresolved_declarations:
         doc.heading(2, f"Constraints no test checks ({len(plan.unresolved_declarations)})")
-        doc.text("No test checks exactly these column constraints. They stay in the contract's document.")
+        doc.text("No test checks exactly these constraints. They stay in the contract's document.")
         doc.bullets([_inline_text(label) for label in plan.unresolved_declarations])
     return doc.render()
 

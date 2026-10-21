@@ -135,6 +135,13 @@ def test_list_for_suite_names_who_froze_each_version():
     assert "frozen_by" in SuiteVersionListItem.__dataclass_fields__
 
 
+def test_list_for_suite_term_count_leaves_out_the_managed_test_types():
+    with patch.object(SuiteVersion, "_paginate", return_value=([], 0)) as paginate:
+        SuiteVersion.list_for_suite(uuid4(), page=1, limit=20)
+    sql = _compile(paginate.call_args.args[0])
+    assert "test_definitions.test_type NOT IN ('Schema_Conformance')" in sql
+
+
 def test_list_for_suite_narrows_both_run_subqueries_to_the_suite():
     suite_id = uuid4()
     with patch.object(SuiteVersion, "_paginate", return_value=([], 0)) as paginate:

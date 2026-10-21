@@ -293,7 +293,7 @@ def test_create_test_suite_contract_with_tables_generates_them_and_reports_it(db
     generate.assert_called_once_with(initialize.call_args.args[0].id,
                                      table_names=["orders", "customers"])
     assert "**Declared tables:** `orders`, `customers`" in out
-    assert "**Tests:** 42" in out
+    assert "**Tests besides schema conformance:** 42" in out
     assert "no profiling results" not in out
 
 

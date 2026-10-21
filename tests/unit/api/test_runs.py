@@ -113,6 +113,7 @@ def _mock_job(**overrides):
         "completed_at": datetime.now(UTC),
         "external_url": None,
         "caller_metadata": None,
+        "kwargs": {},
     }
     defaults.update(overrides)
     job = MagicMock()
@@ -220,18 +221,21 @@ def test_get_test_run_names_a_contract_runs_version(
     assert (result.version.number, result.version.state, result.version.counts_as_status) == expected
 
 
+@patch(f"{MODULE}.get_current_session")
 @patch(f"{MODULE}.TestRun")
-def test_get_test_run_pending_no_run(mock_tr_cls):
-    job = _mock_job(status="pending", started_at=None, completed_at=None)
+def test_get_test_run_pending_no_run(mock_tr_cls, mock_session):
+    job = _mock_job(status="pending", started_at=None, completed_at=None, kwargs={"test_suite_id": str(TEST_SUITE_ID)})
     mock_tr_cls.get.return_value = None
+    mock_session.return_value.scalar.return_value = TABLE_GROUP_ID
 
     result = get_test_run(job)
 
     assert result.id == job.id
     assert result.status == "pending"
-    assert result.test_suite_id is None
-    assert result.table_group_id is None
+    assert result.test_suite_id == TEST_SUITE_ID
+    assert result.table_group_id == TABLE_GROUP_ID
     assert result.result is None
+    assert result.version is None
 
 
 # --- get_profiling_run ---
@@ -266,14 +270,14 @@ def test_get_profiling_run_completed(mock_pr_cls, mock_issue_cls):
 
 @patch(f"{MODULE}.ProfilingRun")
 def test_get_profiling_run_pending_no_run(mock_pr_cls):
-    job = _mock_job(status="pending", started_at=None, completed_at=None)
+    job = _mock_job(status="pending", started_at=None, completed_at=None, kwargs={"table_group_id": str(TABLE_GROUP_ID)})
     mock_pr_cls.get.return_value = None
 
     result = get_profiling_run(job)
 
     assert result.id == job.id
     assert result.status == "pending"
-    assert result.table_group_id is None
+    assert result.table_group_id == TABLE_GROUP_ID
     assert result.result is None
 
 
