@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dataops-testgen"
 version = "5.134.0"
-description = "DataKitchen's Data Quality DataOps TestGen"
+description = "Open-source data quality tool that profiles tables, generates tests from the profiling results, and monitors freshness, volume, and schema."
 authors = [
     { "name" = "DataKitchen, Inc.", "email" = "info@datakitchen.io" },
 ]
@@ -26,7 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: System :: Monitoring",
 ]
-keywords = [ "dataops", "data", "quality", "testing", "database", "profiling" ]
+keywords = [ "data-quality", "data-testing", "data-profiling", "data-observability", "data-validation", "dataops", "mcp" ]
 requires-python = ">=3.11"
 
 dependencies = [
@@ -129,7 +129,7 @@ salesforce_data360 = "testgen.common.database.salesforce_data360_dialect:Salesfo
 "Documentation" = "https://docs.datakitchen.io/testgen/what-is-testgen/"
 "Release Notes" = "https://docs.datakitchen.io/testgen/release-notes/"
 "Slack" = "https://data-observability-slack.datakitchen.io/join"
-"Homepage" = "https://example.com"
+"Homepage" = "https://datakitchen.io/products/dataops-testgen/"
 
 [tool.setuptools]
 include-package-data = true
