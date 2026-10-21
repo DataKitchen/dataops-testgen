@@ -22,7 +22,7 @@ from testgen.common.models.data_column import (
     ColumnProfileSummary,
     DataColumnChars,
 )
-from testgen.common.models.data_table import DataTable
+from testgen.common.models.data_table import CatalogLevel, CatalogTag, DataTable, column_cde, parse_catalog_tags
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.job_execution import QUEUED_MESSAGE, JobExecution
 from testgen.common.models.profile_result import ProfileResult
@@ -36,10 +36,13 @@ from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.services.source_data_protection import mcp_source_data_only, mcp_source_data_protected
 from testgen.mcp.tools.common import (
     DocGroup,
+    build_contains_pattern,
     build_ilike_pattern,
+    format_catalog_tags_cell,
     format_page_footer,
     format_page_info,
     format_run_duration,
+    format_semantic_table_type,
     next_scheduled_run,
     parse_column_order_by,
     parse_general_type,
@@ -48,9 +51,13 @@ from testgen.mcp.tools.common import (
     parse_run_status_filter,
     parse_suggested_data_type,
     parse_uuid,
+    render_catalog_tags,
+    require_filter_text,
     resolve_profiling_run,
     resolve_table_group,
     run_status_filter_options,
+    tag_filter_clauses,
+    tag_filter_description,
     target_db_error_text,
     validate_limit,
     validate_page,
@@ -72,9 +79,12 @@ def get_table(
     table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from `get_data_inventory`.")],
     table_name: Annotated[str, Field(description="Table name exactly as stored in TestGen (case-sensitive).")],
 ) -> str:
-    """Get an overview of a table with profiling highlights.
-    Returns structural metadata, the column list, quality scores, and the hygiene
-    issue count from the latest profiling run.
+    """Get a table's catalog metadata, latest profile, and column list.
+
+    Returns structural metadata, the semantic table type, quality scores, the description, critical data element
+    flag, and catalog tags, then the latest completed profiling run and the column list. When the table has no value
+    of its own for a tag, the table group's value is shown, marked as inherited. Tags with no value are omitted. A
+    table that has not been profiled returns its catalog metadata only.
     """
     tg = resolve_table_group(table_group_id)
 
@@ -91,19 +101,31 @@ def get_table(
     if overview.object_type == ObjectType.FILES:
         doc.field("Object type", overview.object_type.title())
         doc.field("File count", overview.file_ct)
+    doc.field("Semantic table type", format_semantic_table_type(overview.functional_table_type))
     doc.field("Record count", overview.record_ct)
     doc.field("Column count", overview.column_ct)
-    doc.field("Critical data elements", overview.cde_count)
+    doc.field("Critical data element columns", overview.cde_count)
     doc.field("Profiling Score", friendly_score(overview.dq_score_profiling))
     doc.field("Testing Score", friendly_score(overview.dq_score_testing))
-    doc.field("Hygiene issues (confirmed)", overview.hygiene_issue_count)
-    doc.field("Last profiled", overview.latest_profile_started_at)
-    doc.field("Profiling Run", overview.latest_profile_job_execution_id, code=True)
+
+    doc.heading(2, "Catalog metadata")
+    if overview.description:
+        doc.field("Description", _inline_text(overview.description))
+    doc.field("Critical data element", overview.critical_data_element)
+    render_catalog_tags(doc, parse_catalog_tags(overview.catalog_tags))
+
+    doc.heading(2, "Profile")
+    if overview.latest_profile_job_execution_id:
+        doc.field("Profiling Run", overview.latest_profile_job_execution_id, code=True)
+        doc.field("Profiled at", overview.latest_profile_started_at)
+        doc.field("Hygiene issues (confirmed)", overview.hygiene_issue_count)
+    else:
+        doc.text("_This table has not been profiled yet. Run profiling for the table group with `run_profiling`._")
 
     if overview.columns:
         doc.heading(2, "Columns")
         doc.table(
-            ["Column", "General Type", "Semantic Data Type", "DB type", "Has nulls"],
+            ["Column", "General Type", "Semantic Data Type", "DB Type", "Has Nulls"],
             [
                 [
                     c.column_name,
@@ -122,9 +144,14 @@ def get_table(
     return doc.render()
 
 
+def _inline_text(value: str) -> str:
+    """User-entered free text for a single field line: markdown escaped, line breaks folded."""
+    return MdDoc.escape(" ".join(value.splitlines()))
+
+
 @with_database_session
 @mcp_permission("catalog")
-def list_column_profiles(
+def list_columns(
     table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from `get_data_inventory`.")],
     table_name: Annotated[str | None, Field(description="Optional — scope to one table (case-sensitive).")] = None,
     columns: Annotated[
@@ -191,8 +218,14 @@ def list_column_profiles(
     cde: Annotated[
         bool | None,
         Field(
-            description="When `true`, match columns flagged as a Critical Data Element (directly or inherited from the "
-            "table); when `false`, exclude CDE columns.",
+            description="When `true`, match columns that are a critical data element by their own flag or, when they "
+            "have none, the table's; when `false`, match the rest.",
+        ),
+    ] = None,
+    xde: Annotated[
+        bool | None,
+        Field(
+            description="When `true`, match only columns marked as an excluded data element; when `false`, omit them.",
         ),
     ] = None,
     suggested_data_type: Annotated[
@@ -211,9 +244,8 @@ def list_column_profiles(
     semantic_data_type: Annotated[
         str | None,
         Field(
-            description="Substring match (case-insensitive) on Semantic Data Type. Bare tokens auto-wrap with `%`; an "
-            "explicit `%` is honored as a wildcard. See `testgen://column-profile-fields` for the canonical value "
-            "list.",
+            description="Matches columns whose semantic data type contains this text, ignoring case. Use `%` as a "
+            "wildcard within the text. See `testgen://column-profile-fields` for the values profiling assigns.",
         ),
     ] = None,
     pii_category: Annotated[
@@ -221,6 +253,29 @@ def list_column_profiles(
         Field(description="PII category — `ID`, `Name`, `Demographic`, or `Contact`."),
     ] = None,
     pii_risk_level: Annotated[str | None, Field(description="PII risk level — `High`, `Moderate`, or `Low`.")] = None,
+    data_source: Annotated[str | None, Field(description=tag_filter_description("data_source", CatalogLevel.COLUMN))] = None,
+    source_system: Annotated[
+        str | None, Field(description=tag_filter_description("source_system", CatalogLevel.COLUMN))
+    ] = None,
+    source_process: Annotated[
+        str | None, Field(description=tag_filter_description("source_process", CatalogLevel.COLUMN))
+    ] = None,
+    business_domain: Annotated[
+        str | None, Field(description=tag_filter_description("business_domain", CatalogLevel.COLUMN))
+    ] = None,
+    stakeholder_group: Annotated[
+        str | None, Field(description=tag_filter_description("stakeholder_group", CatalogLevel.COLUMN))
+    ] = None,
+    transform_level: Annotated[
+        str | None, Field(description=tag_filter_description("transform_level", CatalogLevel.COLUMN))
+    ] = None,
+    aggregation_level: Annotated[
+        str | None, Field(description=tag_filter_description("aggregation_level", CatalogLevel.COLUMN))
+    ] = None,
+    data_product: Annotated[str | None, Field(description=tag_filter_description("data_product", CatalogLevel.COLUMN))] = None,
+    data_classification: Annotated[
+        str | None, Field(description=tag_filter_description("data_classification", CatalogLevel.COLUMN))
+    ] = None,
     order_by: Annotated[
         str | None,
         Field(
@@ -231,8 +286,11 @@ def list_column_profiles(
     limit: Annotated[int, Field(description="Page size (default 100, max 500).")] = 100,
     page: Annotated[int, Field(description="Page number starting at 1 (default 1).")] = 1,
 ) -> str:
-    """List per-column profile headers across a table group.
-    Supports optional profile-predicate filters.
+    """List the columns of a table group with catalog flags, tags, and profile headers.
+
+    Lists profiled and unprofiled columns, or, with `job_execution_id`, the columns that run profiled. Filters combine
+    with AND. Filters on profile values match only profiled columns. Tag filters match the column's own value or, when
+    it has none, the table's or table group's.
     """
     validate_page(page)
     validate_limit(limit, 500)
@@ -252,31 +310,32 @@ def list_column_profiles(
     if columns:
         clauses.append(DataColumnChars.column_name.in_(columns))
 
+    profile_clauses = []
     if null_ratio_above is not None:
-        clauses.append(ProfileResult.null_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0) > null_ratio_above)
+        profile_clauses.append(ProfileResult.null_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0) > null_ratio_above)
     if null_ratio_below is not None:
-        clauses.append(ProfileResult.null_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0) < null_ratio_below)
+        profile_clauses.append(ProfileResult.null_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0) < null_ratio_below)
     if distinct_ratio_above is not None:
-        clauses.append(
+        profile_clauses.append(
             ProfileResult.distinct_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0) > distinct_ratio_above
         )
     if distinct_ratio_below is not None:
-        clauses.append(
+        profile_clauses.append(
             ProfileResult.distinct_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0) < distinct_ratio_below
         )
     if filled_ratio_above is not None:
-        clauses.append(
+        profile_clauses.append(
             ProfileResult.filled_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0) > filled_ratio_above
         )
     if filled_ratio_below is not None:
-        clauses.append(
+        profile_clauses.append(
             ProfileResult.filled_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0) < filled_ratio_below
         )
 
     if score_profiling_above is not None:
-        clauses.append(DataColumnChars.dq_score_profiling > score_profiling_above / 100)
+        profile_clauses.append(DataColumnChars.dq_score_profiling > score_profiling_above / 100)
     if score_profiling_below is not None:
-        clauses.append(DataColumnChars.dq_score_profiling < score_profiling_below / 100)
+        profile_clauses.append(DataColumnChars.dq_score_profiling < score_profiling_below / 100)
     if score_testing_above is not None:
         clauses.append(DataColumnChars.dq_score_testing > score_testing_above / 100)
     if score_testing_below is not None:
@@ -287,37 +346,25 @@ def list_column_profiles(
     elif pii is False:
         clauses.append(DataColumnChars.pii_flag.is_(None))
 
-    if cde is True:
-        # A column is a CDE when either it or its parent table is flagged.
-        clauses.append(
-            or_(
-                DataColumnChars.critical_data_element.is_(True),
-                DataTable.critical_data_element.is_(True),
-            )
-        )
-    elif cde is False:
-        clauses.append(
-            DataColumnChars.critical_data_element.isnot(True),
-        )
-        clauses.append(
-            DataTable.critical_data_element.isnot(True),
-        )
+    if cde is not None:
+        clauses.append(column_cde().is_(cde))
+    if xde is not None:
+        clauses.append(func.coalesce(DataColumnChars.excluded_data_element, False).is_(xde))
 
     if suggested_data_type is not None:
         prefix = SUGGESTED_DATA_TYPE_TO_PREFIX[parse_suggested_data_type(suggested_data_type)]
         if prefix is None:
-            clauses.append(ProfileResult.datatype_suggestion.isnot(None))
+            profile_clauses.append(ProfileResult.datatype_suggestion.isnot(None))
         else:
-            clauses.append(ProfileResult.datatype_suggestion.ilike(f"{prefix}%"))
+            profile_clauses.append(ProfileResult.datatype_suggestion.ilike(f"{prefix}%"))
 
     if general_type is not None:
         clauses.append(DataColumnChars.general_type == parse_general_type(general_type))
     if semantic_data_type is not None:
-        if not semantic_data_type.strip():
-            raise MCPUserError("`semantic_data_type` cannot be empty.")
-        clauses.append(
+        require_filter_text("semantic_data_type", semantic_data_type)
+        profile_clauses.append(
             DataColumnChars.functional_data_type.ilike(
-                build_ilike_pattern(semantic_data_type), escape="\\"
+                build_contains_pattern(semantic_data_type), escape="\\"
             )
         )
     if pii_category is not None:
@@ -337,6 +384,23 @@ def list_column_profiles(
         else:
             clauses.append(DataColumnChars.pii_flag.like(f"{risk_code}/%"))
 
+    clauses.extend(tag_filter_clauses(
+        {
+            "data_source": data_source,
+            "source_system": source_system,
+            "source_process": source_process,
+            "business_domain": business_domain,
+            "stakeholder_group": stakeholder_group,
+            "transform_level": transform_level,
+            "aggregation_level": aggregation_level,
+            "data_product": data_product,
+            "data_classification": data_classification,
+        },
+        CatalogLevel.COLUMN,
+    ))
+    if profile_clauses:
+        clauses.extend([ProfileResult.profile_run_id.isnot(None), *profile_clauses])
+
     order_value: ColumnOrderBy | None = parse_column_order_by(order_by) if order_by else None
 
     data, total = DataColumnChars.list_for_table_group(
@@ -350,14 +414,16 @@ def list_column_profiles(
 
     if not data:
         if page > 1:
-            return f"No column profiles on page {page} (total: {total})."
-        return f"No column profiles found for table group `{table_group_id}`."
+            return f"No columns on page {page} (total: {total})."
+        if clauses:
+            return "No columns match the supplied filters."
+        return f"No columns found for table group `{table_group_id}`."
 
     doc = MdDoc()
     scope_descriptor = f"table group `{table_group_id}`"
     if table_name:
         scope_descriptor = f"table `{table_name}` in {scope_descriptor}"
-    doc.heading(1, f"Column profiles for {scope_descriptor}")
+    doc.heading(1, f"Columns in {scope_descriptor}")
 
     page_info = format_page_info(total, page, limit)
     if page_info:
@@ -365,12 +431,19 @@ def list_column_profiles(
 
     headers = [
         "Column", "Table", "General Type", "Semantic Data Type", "Suggestion",
-        "PII", "CDE",
+        "PII", "CDE", "XDE",
         "Records", "Nulls", "Distinct", "Filled",
-        "Profiling Score", "Testing Score", "Hygiene issues",
+        "Profiling Score", "Testing Score", "Hygiene Issues", "Catalog Tags",
     ]
-    rows = [_render_column_profile_row(c) for c in data]
+    rows = []
+    any_inherited = False
+    for column in data:
+        catalog_tags = parse_catalog_tags(column.catalog_tags)
+        any_inherited = any_inherited or any(tag.inherited_from for tag in catalog_tags)
+        rows.append(_render_column_row(column, catalog_tags))
     doc.table(headers, rows, code=[0, 1])
+    if any_inherited:
+        doc.text("_A tag value marked (table) or (table group) is inherited from the column's table or table group._")
 
     footer = format_page_footer(total, page, limit)
     if footer:
@@ -468,7 +541,7 @@ def _with_provenance_label(value: Any, provenance: str | None) -> Any:
     return f"{value} ({provenance})" if value is not None and provenance else value
 
 
-def _render_column_profile_row(c: ColumnProfileSummary) -> list:
+def _render_column_row(c: ColumnProfileSummary, catalog_tags: list[CatalogTag]) -> list:
     return [
         c.column_name,
         c.table_name,
@@ -476,7 +549,8 @@ def _render_column_profile_row(c: ColumnProfileSummary) -> list:
         c.functional_data_type,
         c.datatype_suggestion,
         _format_pii(c.pii_flag),
-        "Y" if c.critical_data_element else None,
+        "Y" if c.critical_data_element else "",
+        "Y" if c.excluded_data_element else "",
         c.record_ct,
         c.null_value_ct,
         c.distinct_value_ct,
@@ -484,6 +558,7 @@ def _render_column_profile_row(c: ColumnProfileSummary) -> list:
         friendly_score(c.dq_score_profiling),
         friendly_score(c.dq_score_testing),
         c.hygiene_issue_count,
+        format_catalog_tags_cell(catalog_tags),
     ]
 
 
@@ -776,7 +851,7 @@ def _render_table_group_summary(doc: MdDoc, s: TableGroupSummary) -> None:
 
 
 # ---------------------------------------------------------------------------
-# get_column_profile_detail
+# get_column
 # ---------------------------------------------------------------------------
 
 # Friendly labels for `std_pattern_match` — mirrors `standardPatternLabels` in
@@ -852,7 +927,7 @@ def _is_pii_redacted_for_caller(tg: TableGroup, pii_flag: str | None) -> bool:
 
 @with_database_session
 @mcp_permission("catalog")
-def get_column_profile_detail(
+def get_column(
     table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from `get_data_inventory`.")],
     table_name: Annotated[str, Field(description="Table name exactly as stored in TestGen (case-sensitive).")],
     column_name: Annotated[str, Field(description="Column name exactly as stored in TestGen (case-sensitive).")],
@@ -860,12 +935,16 @@ def get_column_profile_detail(
         str | None,
         Field(
             description="UUID of a profiling run, e.g. from `list_profiling_summaries`. When omitted, uses the "
-            "column's latest complete run.",
+            "column's latest completed run.",
         ),
     ] = None,
 ) -> str:
-    """Get the value distribution and statistics for one column.
-    Fields are type-specific, taken from the column's profiling run.
+    """Get a column's catalog metadata and its profile from one profiling run.
+
+    The profile is type-specific and comes from the column's latest completed profiling run, or from the run given by
+    `job_execution_id`. A column that has not been profiled returns its catalog metadata only. When the column has no
+    value of its own for a flag or tag, the table's or table group's value is shown, marked as inherited. Tags with no
+    value are omitted.
     """
     tg = resolve_table_group(table_group_id)
 
@@ -885,27 +964,24 @@ def get_column_profile_detail(
     if detail is None:
         raise MCPResourceNotAccessible("Column", column_name)
 
-    if detail.profile_run_id is None:
-        if job_execution_id:
-            raise MCPUserError(
-                f"Profiling run `{job_execution_id}` did not include column `{column_name}`."
-            )
+    if detail.profile_run_id is None and job_execution_id:
         raise MCPUserError(
-            f"Column `{column_name}` has not been profiled yet. "
-            "Run profiling for the table group first."
+            f"Profiling run `{job_execution_id}` did not include column `{column_name}`."
         )
 
     # Only a run that finished has measured every column and classified what it measured.
     # Stated as what is allowed rather than what is not, so a status added later is refused
     # until someone decides otherwise.
-    if detail.profile_run_status != JobStatus.COMPLETED:
+    if detail.profile_run_id is not None and detail.profile_run_status != JobStatus.COMPLETED:
         _raise_run_not_ready(detail)
 
     payload = dataclasses.asdict(detail)
     if detail.pii_flag and not get_project_permissions().has_permission("view_pii", tg.project_code):
         mask_profiling_pii(payload, {detail.column_name})
 
-    return _render_column_profile_detail(payload, table_group_qualifies_table_refs(tg.id))
+    return _render_column_profile_detail(
+        payload, table_group_qualifies_table_refs(tg.id), bool(tg.profile_exclude_xde)
+    )
 
 
 def _raise_run_not_ready(detail: ColumnProfileDetail) -> None:
@@ -930,29 +1006,49 @@ def _raise_run_not_ready(detail: ColumnProfileDetail) -> None:
     raise MCPUserError("\n".join(lines))
 
 
-def _render_column_profile_detail(p: dict, qualifies: bool) -> str:
-    """Render a column profile detail payload as grouped Markdown sections."""
+def _render_column_profile_detail(p: dict, qualifies: bool, profiling_excludes_xde: bool) -> str:
+    """Render a column's catalog metadata and profile payload as grouped Markdown sections."""
     doc = MdDoc()
     fq_name = _qualified_table_name(p["schema_name"], p["table_name"], qualifies)
-    doc.heading(1, f"Column Profile: `{p['column_name']}` in `{fq_name}`")
+    doc.heading(1, f"Column: `{p['column_name']}` in `{fq_name}`")
 
     general_type = p.get("general_type")
 
-    # Run identity + L1 header fields
-    doc.field("Profiling Run", p["profile_run_je_id"], code=True)
-    doc.field("Profiled at", p["profile_run_started_at"])
-    doc.field("General Type", _format_general_type(general_type))
-    doc.field("Data Type", p["db_data_type"])
-    doc.field("Semantic Data Type", p["functional_data_type"])
+    doc.field("General type", _format_general_type(general_type))
+    doc.field("Data type", p["db_data_type"])
+    doc.field("Semantic data type", p["functional_data_type"])
     if p.get("datatype_suggestion"):
-        doc.field("Suggested Data Type", p["datatype_suggestion"])
-    doc.field("PII", _format_pii(p.get("pii_flag")))
-    doc.field("Critical Data Element", p.get("critical_data_element") or False)
+        doc.field("Suggested data type", p["datatype_suggestion"])
     doc.field("Profiling Score", friendly_score(p.get("dq_score_profiling")))
     doc.field("Testing Score", friendly_score(p.get("dq_score_testing")))
 
+    doc.heading(2, "Catalog metadata")
+    if p.get("description"):
+        doc.field("Description", _inline_text(p["description"]))
+    doc.field("PII", _format_pii(p.get("pii_flag")))
+    cde_marker = " (inherited from table)" if p["critical_data_element_inherited"] else ""
+    doc.field("Critical data element", f"{'Yes' if p['critical_data_element'] else 'No'}{cde_marker}")
+    doc.field("Excluded data element", p["excluded_data_element"])
+    render_catalog_tags(doc, parse_catalog_tags(p.get("catalog_tags")))
+
+    doc.heading(2, "Profile")
+    if p["profile_run_id"] is None:
+        if p["excluded_data_element"] and profiling_excludes_xde:
+            doc.text(
+                "_This column is an excluded data element and has not been profiled. To profile it, clear its "
+                "excluded data element flag with `update_catalog_metadata`._"
+            )
+        else:
+            doc.text(
+                "_This column has not been profiled yet. Run profiling for the table group with `run_profiling`._"
+            )
+        return doc.render()
+
+    doc.field("Profiling Run", p["profile_run_je_id"], code=True)
+    doc.field("Profiled at", p["profile_run_started_at"])
+
     if not p.get("query_error"):
-        doc.field("Hygiene Issues (confirmed)", p.get("hygiene_issue_count", 0))
+        doc.field("Hygiene issues (confirmed)", p.get("hygiene_issue_count", 0))
 
         # Type-specific dispatch (T and unknown fall through to common-counts only)
         if general_type == "A":
@@ -966,12 +1062,10 @@ def _render_column_profile_detail(p: dict, qualifies: bool) -> str:
         else:
             _render_unknown_block(doc, p)
     else:
-        doc.heading(2, "Profiling Error")
+        doc.heading(3, "Profiling Error")
         doc.text(target_db_error_text(p["query_error"]))
 
     return doc.render()
-
-
 
 
 def _format_general_type(value: str) -> str:
@@ -1004,70 +1098,70 @@ def _measure_field(doc: MdDoc, p: dict, label: str, measure: str, value: Any = _
 
 
 def _render_counts(doc: MdDoc, p: dict) -> None:
-    doc.heading(2, "Counts")
-    _measure_field(doc, p, "Row Count", "record_ct")
-    _measure_field(doc, p, "Value Count", "value_ct")
-    _measure_field(doc, p, "Distinct Values", "distinct_value_ct")
+    doc.heading(3, "Counts")
+    _measure_field(doc, p, "Row count", "record_ct")
+    _measure_field(doc, p, "Value count", "value_ct")
+    _measure_field(doc, p, "Distinct values", "distinct_value_ct")
     _measure_field(doc, p, "Null", "null_value_ct")
-    _measure_field(doc, p, "Dummy Values", "filled_value_ct")
-    _measure_field(doc, p, "Zero Values", "zero_value_ct")
+    _measure_field(doc, p, "Dummy values", "filled_value_ct")
+    _measure_field(doc, p, "Zero values", "zero_value_ct")
 
 
 def _render_alpha_block(doc: MdDoc, p: dict) -> None:
     hide_source_data = mcp_source_data_protected()
     _render_counts(doc, p)
-    _measure_field(doc, p, "Zero Length", "zero_length_ct")
+    _measure_field(doc, p, "Zero length", "zero_length_ct")
 
-    doc.heading(2, "Length")
-    _measure_field(doc, p, "Minimum Length", "min_length")
-    _measure_field(doc, p, "Maximum Length", "max_length")
-    _measure_field(doc, p, "Average Length", "avg_length")
+    doc.heading(3, "Length")
+    _measure_field(doc, p, "Minimum length", "min_length")
+    _measure_field(doc, p, "Maximum length", "max_length")
+    _measure_field(doc, p, "Average length", "avg_length")
 
     if not hide_source_data:
-        doc.heading(2, "Text Range")
-        _measure_field(doc, p, "Minimum Text", "min_text")
-        _measure_field(doc, p, "Maximum Text", "max_text")
+        doc.heading(3, "Text Range")
+        _measure_field(doc, p, "Minimum text", "min_text")
+        _measure_field(doc, p, "Maximum text", "max_text")
 
-    doc.heading(2, "Patterns")
-    _measure_field(doc, p, "Standard Pattern Match", "std_pattern_match", _format_std_pattern(p.get("std_pattern_match")))
-    _measure_field(doc, p, "Distinct Patterns", "distinct_pattern_ct")
+    doc.heading(3, "Patterns")
+    _measure_field(doc, p, "Standard pattern match", "std_pattern_match", _format_std_pattern(p.get("std_pattern_match")))
+    _measure_field(doc, p, "Distinct patterns", "distinct_pattern_ct")
     if not hide_source_data:
-        _measure_field(doc, p, "Frequent Patterns", "frequent_patterns", format_frequent(p.get("frequent_patterns")) or None)
-        _measure_field(doc, p, "Frequent Values", "frequent_values", format_frequent(p.get("frequent_values")) or None)
-    _measure_field(doc, p, "Distinct Standard Values", "distinct_std_value_ct")
+        _measure_field(doc, p, "Frequent patterns", "frequent_patterns", format_frequent(p.get("frequent_patterns")) or None)
+        _measure_field(doc, p, "Frequent values", "frequent_values", format_frequent(p.get("frequent_values")) or None)
+    _measure_field(doc, p, "Distinct standard values", "distinct_std_value_ct")
 
-    doc.heading(2, "Case & Composition")
-    _measure_field(doc, p, "Upper Case", "upper_case_ct")
-    _measure_field(doc, p, "Lower Case", "lower_case_ct")
+    doc.heading(3, "Case & Composition")
+    _measure_field(doc, p, "Upper case", "upper_case_ct")
+    _measure_field(doc, p, "Lower case", "lower_case_ct")
     # Mixed case is derived from the upper- and lower-case counts, so it is taken the same way
-    _measure_field(doc, p, "Mixed Case", "upper_case_ct", p.get("mixed_case_ct"))
-    _measure_field(doc, p, "Non-Alpha", "non_alpha_ct")
-    _measure_field(doc, p, "Includes Digits", "includes_digit_ct")
-    _measure_field(doc, p, "Numeric Values", "numeric_ct")
-    _measure_field(doc, p, "Date Values", "date_ct")
-    _measure_field(doc, p, "Quoted Values", "quoted_value_ct")
-    _measure_field(doc, p, "Leading Spaces", "lead_space_ct")
-    _measure_field(doc, p, "Embedded Spaces", "embedded_space_ct")
-    _measure_field(doc, p, "Average Embedded Spaces", "avg_embedded_spaces")
+    _measure_field(doc, p, "Mixed case", "upper_case_ct", p.get("mixed_case_ct"))
+    _measure_field(doc, p, "Non-alpha", "non_alpha_ct")
+    _measure_field(doc, p, "Includes digits", "includes_digit_ct")
+    _measure_field(doc, p, "Numeric values", "numeric_ct")
+    _measure_field(doc, p, "Date values", "date_ct")
+    _measure_field(doc, p, "Quoted values", "quoted_value_ct")
+    _measure_field(doc, p, "Leading spaces", "lead_space_ct")
+    _measure_field(doc, p, "Embedded spaces", "embedded_space_ct")
+    _measure_field(doc, p, "Average embedded spaces", "avg_embedded_spaces")
 
 
 def _render_numeric_block(doc: MdDoc, p: dict) -> None:
     hide_source_data = mcp_source_data_protected()
     _render_counts(doc, p)
 
-    doc.heading(2, "Distribution")
+    doc.heading(3, "Distribution")
     if not hide_source_data:
-        _measure_field(doc, p, "Minimum Value", "min_value")
-        _measure_field(doc, p, "Minimum Value > 0", "min_value_over_0")
-        _measure_field(doc, p, "Maximum Value", "max_value")
-    _measure_field(doc, p, "Average Value", "avg_value")
-    _measure_field(doc, p, "Standard Deviation", "stdev_value")
+        _measure_field(doc, p, "Minimum value", "min_value")
+        _measure_field(doc, p, "Minimum value > 0", "min_value_over_0")
+        _measure_field(doc, p, "Maximum value", "max_value")
+    _measure_field(doc, p, "Average value", "avg_value")
+    _measure_field(doc, p, "Standard deviation", "stdev_value")
 
     if not hide_source_data:
-        doc.heading(2, "Percentiles")
-        _measure_field(doc, p, "25th Percentile", "percentile_25")
-        _measure_field(doc, p, "Median Value", "percentile_50")
-        _measure_field(doc, p, "75th Percentile", "percentile_75")
+        doc.heading(3, "Percentiles")
+        _measure_field(doc, p, "25th percentile", "percentile_25")
+        _measure_field(doc, p, "Median value", "percentile_50")
+        _measure_field(doc, p, "75th percentile", "percentile_75")
 
 
 def _render_date_block(doc: MdDoc, p: dict) -> None:
@@ -1075,28 +1169,28 @@ def _render_date_block(doc: MdDoc, p: dict) -> None:
     _render_counts(doc, p)
 
     if not hide_source_data:
-        doc.heading(2, "Date Range")
-        _measure_field(doc, p, "Minimum Date", "min_date")
-        _measure_field(doc, p, "Maximum Date", "max_date")
+        doc.heading(3, "Date Range")
+        _measure_field(doc, p, "Minimum date", "min_date")
+        _measure_field(doc, p, "Maximum date", "max_date")
 
-    doc.heading(2, "Age Buckets")
-    _measure_field(doc, p, "Before 1 Year", "before_1yr_date_ct")
-    _measure_field(doc, p, "Before 5 Years", "before_5yr_date_ct")
-    _measure_field(doc, p, "Before 20 Years", "before_20yr_date_ct")
-    _measure_field(doc, p, "Within 1 Year", "within_1yr_date_ct")
-    _measure_field(doc, p, "Within 1 Month", "within_1mo_date_ct")
-    _measure_field(doc, p, "Future Dates", "future_date_ct")
+    doc.heading(3, "Age Buckets")
+    _measure_field(doc, p, "Before 1 year", "before_1yr_date_ct")
+    _measure_field(doc, p, "Before 5 years", "before_5yr_date_ct")
+    _measure_field(doc, p, "Before 20 years", "before_20yr_date_ct")
+    _measure_field(doc, p, "Within 1 year", "within_1yr_date_ct")
+    _measure_field(doc, p, "Within 1 month", "within_1mo_date_ct")
+    _measure_field(doc, p, "Future dates", "future_date_ct")
 
 
 def _render_boolean_block(doc: MdDoc, p: dict) -> None:
     _render_counts(doc, p)
 
-    doc.heading(2, "Boolean Distribution")
+    doc.heading(3, "Boolean Distribution")
     true_ct = p.get("boolean_true_ct") or 0
     value_ct = p.get("value_ct") or 0
     false_ct = max(value_ct - true_ct, 0)
-    doc.field("True Count", true_ct)
-    doc.field("False Count", false_ct)
+    doc.field("True count", true_ct)
+    doc.field("False count", false_ct)
 
 
 def _render_unknown_block(doc: MdDoc, p: dict) -> None:

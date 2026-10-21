@@ -11,14 +11,11 @@ from dataclasses import dataclass
 import streamlit as st
 
 from testgen.common.data_catalog_service import TAG_FIELDS
+from testgen.common.models.data_table import TABLE_GROUP_TAGS, CatalogLevel
 from testgen.ui.services.database_service import fetch_all_from_db
 from testgen.utils import is_uuid4
 
 CATALOG_PAGE_SIZE = 500
-
-# Table groups have no aggregation level of their own.
-_TABLE_GROUP_TAG_FIELDS = [tag for tag in TAG_FIELDS if tag != "aggregation_level"]
-
 
 @dataclass(frozen=True)
 class CatalogFilters:
@@ -72,9 +69,9 @@ class CatalogPage(typing.TypedDict):
     total_count: int
 
 
-def _effective_tag(tag: str, level: typing.Literal["column", "table"]) -> str:
-    sources = ["c", "t", "tg"] if level == "column" else ["t", "tg"]
-    if tag not in _TABLE_GROUP_TAG_FIELDS:
+def _effective_tag(tag: str, level: CatalogLevel) -> str:
+    sources = ["c", "t", "tg"] if level == CatalogLevel.COLUMN else ["t", "tg"]
+    if tag not in TABLE_GROUP_TAGS:
         sources.remove("tg")
     return f"COALESCE({', '.join(f'{source}.{tag}' for source in sources)})"
 
@@ -97,9 +94,9 @@ def _visibility_ctes(table_group_id: str, filters: CatalogFilters) -> tuple[str,
     if not filters.show_excluded:
         column_conditions.append("c.excluded_data_element IS NOT TRUE")
     for index, (tag, value) in enumerate(filters.tags):
-        params[f"tag_{index}"] = value
-        column_conditions.append(f"{_effective_tag(tag, 'column')} = :tag_{index}")
-        table_conditions.append(f"{_effective_tag(tag, 'table')} = :tag_{index}")
+        params[f"tag_{index}"] = value.lower()
+        column_conditions.append(f"LOWER({_effective_tag(tag, CatalogLevel.COLUMN)}) = :tag_{index}")
+        table_conditions.append(f"LOWER({_effective_tag(tag, CatalogLevel.TABLE)}) = :tag_{index}")
 
     column_visible = " AND ".join(column_conditions) or "TRUE"
     table_visible = " AND ".join(table_conditions) or "TRUE"
@@ -161,7 +158,7 @@ def get_catalog_page(table_group_id: str, filters: CatalogFilters, page: int) ->
                 t.add_date,
                 t.drop_date,
                 t.critical_data_element,
-                {", ".join(f"{_effective_tag(tag, 'table')} AS {tag}" for tag in TAG_FIELDS)}
+                {", ".join(f"{_effective_tag(tag, CatalogLevel.TABLE)} AS {tag}" for tag in TAG_FIELDS)}
             FROM catalog_tables ct
                 INNER JOIN data_table_chars t ON (ct.table_id = t.table_id)
                 LEFT JOIN table_groups tg ON (t.table_groups_id = tg.id)
@@ -189,7 +186,7 @@ def get_catalog_page(table_group_id: str, filters: CatalogFilters, page: int) ->
                     COALESCE(c.critical_data_element, t.critical_data_element) AS critical_data_element,
                     c.pii_flag,
                     c.excluded_data_element,
-                    {", ".join(f"{_effective_tag(tag, 'column')} AS {tag}" for tag in TAG_FIELDS)}
+                    {", ".join(f"{_effective_tag(tag, CatalogLevel.COLUMN)} AS {tag}" for tag in TAG_FIELDS)}
                 FROM catalog_columns cc
                     INNER JOIN data_column_chars c ON (cc.column_id = c.column_id)
                     INNER JOIN data_table_chars t ON (c.table_id = t.table_id)

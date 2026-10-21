@@ -223,106 +223,116 @@ def column_profile_fields_resource() -> str:
 # TestGen Column Profile Fields Reference
 
 Column profiling stores ~70 statistics per column. The fields populated
-depend on the column's `General Type` (Alpha / Numeric / Datetime / Boolean / Time / Other). The
-`get_column_profile_detail` tool emits only the fields relevant to a column's type — use
+depend on the column's general type (Alpha / Numeric / Datetime / Boolean / Time / Other). The
+`get_column` tool emits only the fields relevant to a column's type — use
 this reference to interpret what each field measures.
 
 ## All Column Types
 
-These fields are populated for every successfully-profiled column.
+The top fields and Catalog metadata appear for every column. The Profile fields are populated
+for every successfully-profiled column.
 
-### Header
-- **Profiling Run** — `job_execution_id` of the profiling run the rest of the fields come from.
-- **Profiled at** — Timestamp when the profiling run started (`YYYY-MM-DD HH:MM UTC`).
-- **General Type** — Broad category: `Alpha`, `Numeric`, `Datetime`, `Boolean`, `Time`, or `Other`.
-- **Data Type** — Native DB type as reported by the source (e.g. `varchar(50)`, `numeric(18,4)`).
-- **Semantic Data Type** — TestGen's functional classification (e.g. `Person Given Name`, `Currency`, `Datetime-Created`).
-- **Suggested Data Type** — Suggested narrower DB type given observed values (e.g. `VARCHAR(20)`, `INTEGER`). Omitted when no suggestion applies.
-- **PII** — `No` when the column has no PII flag; `Yes` when manually flagged; otherwise `Yes (<Risk> Risk[ - <Category>][ / <Detail>])` — Risk is `High`, `Moderate`, or `Low`; Category is `ID`, `Name`, `Demographic`, or `Contact`; Detail is a subtype (e.g. `Email`, `Passport`) when present.
-- **Critical Data Element** — `Yes` if the column is flagged as critical (directly or via its parent table), `No` otherwise.
+### Top fields
+- **General type** — Broad category: `Alpha`, `Numeric`, `Datetime`, `Boolean`, `Time`, or `Other`.
+- **Data type** — Native DB type as reported by the source (e.g. `varchar(50)`, `numeric(18,4)`).
+- **Semantic data type** — TestGen's functional classification (e.g. `Person Given Name`, `Currency`, `Datetime-Created`).
+- **Suggested data type** — Suggested narrower DB type given observed values (e.g. `VARCHAR(20)`, `INTEGER`). Omitted when no suggestion applies.
 - **Profiling Score** — Aggregated profiling-derived quality score, 0-100.
 - **Testing Score** — Aggregated testing-derived quality score, 0-100.
-- **Hygiene Issues (confirmed)** — Confirmed hygiene issues against this column (count). Omitted when the column has a profiling error.
+
+### Catalog metadata
+- **Description** — Free-text description of the column. Omitted when not set.
+- **PII** — `No` when the column has no PII flag; `Yes` when manually flagged; otherwise `Yes (<Risk> Risk[ - <Category>][ / <Detail>])` — Risk is `High`, `Moderate`, or `Low`; Category is `ID`, `Name`, `Demographic`, or `Contact`; Detail is a subtype (e.g. `Email`, `Passport`) when present.
+- **Critical data element** — Yes if the column is a critical data element, No otherwise. A column without its own flag takes the table's, marked "(inherited from table)".
+- **Excluded data element** — Yes if the column is an excluded data element, No otherwise. Test generation skips an excluded column, and profiling skips it when the table group's Exclude XDE setting is on.
+- **Catalog tags** — The column's catalog tags that have a value. When the column has no value of its own for a tag, the table's or table group's value is shown, marked as inherited.
+
+### Profile
+When the column has not been profiled, the Profile section holds a single line saying so, and the other Profile fields are absent.
+
+- **Profiling Run** — `job_execution_id` of the profiling run the rest of the fields come from.
+- **Profiled at** — Timestamp when the profiling run started (`YYYY-MM-DD HH:MM UTC`).
+- **Hygiene issues (confirmed)** — Confirmed hygiene issues against this column (count). Omitted when the column has a profiling error.
 
 ### Counts
-- **Row Count** — Total rows in the table (count, integer).
-- **Value Count** — Non-null values in this column (count, integer).
-- **Distinct Values** — Distinct non-null values (count, integer).
+- **Row count** — Total rows in the table (count, integer).
+- **Value count** — Non-null values in this column (count, integer).
+- **Distinct values** — Distinct non-null values (count, integer).
 - **Null** — Null values (count, integer).
-- **Dummy Values** — Dummy / placeholder values like `'?'`, `'-'`, `'unknown'` (count, integer).
-- **Zero Values** — Exact-zero or `'0'`-string values (count, integer). Populated for numeric and alpha columns.
+- **Dummy values** — Dummy / placeholder values like `'?'`, `'-'`, `'unknown'` (count, integer).
+- **Zero values** — Exact-zero or `'0'`-string values (count, integer). Populated for numeric and alpha columns.
 
 ## Alpha (text) Columns
 
-Populated when `General Type == "Alpha"`.
+Populated when `General type == "Alpha"`.
 
 ### Length
-- **Minimum Length** — Shortest string length (chars).
-- **Maximum Length** — Longest string length (chars).
-- **Average Length** — Average string length (chars, float).
+- **Minimum length** — Shortest string length (chars).
+- **Maximum length** — Longest string length (chars).
+- **Average length** — Average string length (chars, float).
 
 ### Text Range
-- **Minimum Text** — Lexicographic minimum value (raw string; **PII-redactable**).
-- **Maximum Text** — Lexicographic maximum value (raw string; **PII-redactable**).
+- **Minimum text** — Lexicographic minimum value (raw string; **PII-redactable**).
+- **Maximum text** — Lexicographic maximum value (raw string; **PII-redactable**).
 
 ### Patterns
-- **Standard Pattern Match** — Recognized standard pattern when applicable (`Email`, `Phone (USA)`,
+- **Standard pattern match** — Recognized standard pattern when applicable (`Email`, `Phone (USA)`,
   `Street Address`, `State (USA)`, `Zip Code (USA)`, `Zip Code (US/Canada)`, `Filename`, `Credit Card`,
   `Delimited Data`, `SSN (USA)`).
-- **Distinct Patterns** — Distinct character-class patterns observed (count).
-- **Frequent Patterns** — Top patterns and counts, pipe-separated.
-- **Frequent Values** — Top frequent raw values and counts (raw strings; **PII-redactable**).
-- **Distinct Standard Values** — Distinct values after standardization (count).
+- **Distinct patterns** — Distinct character-class patterns observed (count).
+- **Frequent patterns** — Top patterns and counts, pipe-separated.
+- **Frequent values** — Top frequent raw values and counts (raw strings; **PII-redactable**).
+- **Distinct standard values** — Distinct values after standardization (count).
 
 ### Case & Composition
-- **Upper Case / Lower Case / Mixed Case / Non-Alpha** — Case-distribution counts.
-- **Includes Digits** — Values containing at least one digit (count).
-- **Numeric Values** — Values parseable as numeric (count).
-- **Date Values** — Values parseable as a date (count).
-- **Quoted Values** — Values wrapped in quotes (count).
-- **Leading Spaces** — Values with leading whitespace (count).
-- **Embedded Spaces** — Values with internal whitespace (count).
-- **Average Embedded Spaces** — Average embedded-space count per value (float).
-- **Zero Length** — Empty strings (count).
+- **Upper case / Lower case / Mixed case / Non-alpha** — Case-distribution counts.
+- **Includes digits** — Values containing at least one digit (count).
+- **Numeric values** — Values parseable as numeric (count).
+- **Date values** — Values parseable as a date (count).
+- **Quoted values** — Values wrapped in quotes (count).
+- **Leading spaces** — Values with leading whitespace (count).
+- **Embedded spaces** — Values with internal whitespace (count).
+- **Average embedded spaces** — Average embedded-space count per value (float).
+- **Zero length** — Empty strings (count).
 
 ## Numeric Columns
 
-Populated when `General Type == "Numeric"`.
+Populated when `General type == "Numeric"`.
 
 ### Distribution
-- **Minimum Value** — Minimum numeric value (raw value; **PII-redactable**).
-- **Minimum Value > 0** — Minimum value strictly greater than zero (**PII-redactable**).
-- **Maximum Value** — Maximum numeric value (**PII-redactable**).
-- **Average Value** — Arithmetic mean.
-- **Standard Deviation** — Standard deviation.
+- **Minimum value** — Minimum numeric value (raw value; **PII-redactable**).
+- **Minimum value > 0** — Minimum value strictly greater than zero (**PII-redactable**).
+- **Maximum value** — Maximum numeric value (**PII-redactable**).
+- **Average value** — Arithmetic mean.
+- **Standard deviation** — Standard deviation.
 
 ### Percentiles
-- **25th Percentile** — 25th percentile (Q1).
-- **Median Value** — Median (Q2 / 50th percentile).
-- **75th Percentile** — 75th percentile (Q3).
+- **25th percentile** — 25th percentile (Q1).
+- **Median value** — Median (Q2 / 50th percentile).
+- **75th percentile** — 75th percentile (Q3).
 
 ## Datetime Columns
 
-Populated when `General Type == "Datetime"`.
+Populated when `General type == "Datetime"`.
 
 ### Date Range
-- **Minimum Date** — Minimum timestamp (**PII-redactable**).
-- **Maximum Date** — Maximum timestamp (**PII-redactable**).
+- **Minimum date** — Minimum timestamp (**PII-redactable**).
+- **Maximum date** — Maximum timestamp (**PII-redactable**).
 
 ### Age Buckets
-- **Before 1 Year** — Values older than 1 year from profiling date (count).
-- **Before 5 Years** — Values older than 5 years (count).
-- **Before 20 Years** — Values older than 20 years (count).
-- **Within 1 Year** — Values within the past year (count).
-- **Within 1 Month** — Values within the past month (count).
-- **Future Dates** — Values dated after the profiling date (count).
+- **Before 1 year** — Values older than 1 year from profiling date (count).
+- **Before 5 years** — Values older than 5 years (count).
+- **Before 20 years** — Values older than 20 years (count).
+- **Within 1 year** — Values within the past year (count).
+- **Within 1 month** — Values within the past month (count).
+- **Future dates** — Values dated after the profiling date (count).
 
 ## Boolean Columns
 
-Populated when `General Type == "Boolean"`.
+Populated when `General type == "Boolean"`.
 
-- **True Count** — Rows where the value is true (count).
-- **False Count** — Rows where the value is false (count, derived as `Value Count - True Count`).
+- **True count** — Rows where the value is true (count).
+- **False count** — Rows where the value is false (count, derived as `Value count - True count`).
 
 ## Sampled and Approximate Values
 
@@ -340,16 +350,16 @@ patterns tools show one in a `Counts` field:
 When a column is flagged as PII AND the caller's role lacks permission to view PII on the column's
 project, the following raw-value fields render as `[PII Redacted]`:
 
-- Frequent Values
-- Minimum Text
-- Maximum Text
-- Minimum Value
-- Minimum Value > 0
-- Maximum Value
-- Minimum Date
-- Maximum Date
+- Frequent values
+- Minimum text
+- Maximum text
+- Minimum value
+- Minimum value > 0
+- Maximum value
+- Minimum date
+- Maximum date
 
-Aggregates, counts, `Frequent Patterns`, and `Standard Pattern Match` are never redacted — they're
+Aggregates, counts, `Frequent patterns`, and `Standard pattern match` are never redacted — they're
 distribution-level signals that don't expose individual rows.
 
 ## Semantic Data Type — values emitted by profiling, grouped by family.
@@ -377,9 +387,9 @@ distribution-level signals that don't expose individual rows.
 
 **Entity & system**: `Entity Name`, `Process`, `Process User`, `System User`
 
-The `semantic_data_type` filter on `list_column_profiles` matches via `ILIKE`,
-so partial inputs catch related variants (e.g. `ID` matches `ID`, `ID-FK`,
-`ID-Group`, …).
+The `semantic_data_type` filter on `list_columns` matches columns whose semantic
+data type contains the text, ignoring case, so partial inputs catch related variants
+(e.g. `ID` matches `ID`, `ID-FK`, `ID-Group`, …). Use `%` as a wildcard within the text.
 """
 
 

@@ -19,7 +19,6 @@ from sqlalchemy import (
     String,
     and_,
     asc,
-    case,
     delete,
     desc,
     exists,
@@ -728,7 +727,8 @@ class ProfileResult(Entity):
 
         Each row combines per-run stats (``profile_results``) with the column's latest
         catalog attributes (``pii_flag``, ``critical_data_element``, scores) from
-        ``data_column_chars``, and its containing table's CDE from ``data_table_chars``.
+        ``data_column_chars``. A column with no critical data element flag of its own takes
+        its table's.
         Hygiene-issue counts come from the six-bucket per-column subquery on
         ``HygieneIssue``.
 
@@ -741,15 +741,11 @@ class ProfileResult(Entity):
         (e.g. ``ProfileResult.table_name == "orders"``).
         """
         from testgen.common.models.data_column import DataColumnChars
-        from testgen.common.models.data_table import DataTable
+        from testgen.common.models.data_table import DataTable, column_cde
         from testgen.common.models.hygiene_issue import HygieneIssue
 
         issue_subq = HygieneIssue.counts_by_column_subquery(profile_run_id)
-        cde_expr = case(
-            (DataColumnChars.critical_data_element.is_(True), True),
-            (DataTable.critical_data_element.is_(True), True),
-            else_=False,
-        ).label("critical_data_element")
+        cde_expr = column_cde().label("critical_data_element")
 
         natural_key = and_(
             DataColumnChars.table_groups_id == cls.table_groups_id,

@@ -12,7 +12,6 @@ from sqlalchemy import (
     String,
     and_,
     asc,
-    case,
     desc,
     func,
     select,
@@ -139,7 +138,8 @@ class ColumnProfileSummary(EntityMinimal):
     functional_data_type: str | None
     datatype_suggestion: str | None
     pii_flag: str | None
-    critical_data_element: bool | None
+    critical_data_element: bool
+    excluded_data_element: bool
     record_ct: int | None
     null_value_ct: int | None
     distinct_value_ct: int | None
@@ -149,6 +149,7 @@ class ColumnProfileSummary(EntityMinimal):
     dq_score_profiling: float | None
     dq_score_testing: float | None
     hygiene_issue_count: int
+    catalog_tags: dict | None
 
 
 @dataclass
@@ -166,8 +167,13 @@ class ColumnProfileDetail(EntityMinimal):
     functional_data_type: str | None
     datatype_suggestion: str | None
     functional_table_type: str | None
+    # Catalog metadata
+    description: str | None
     pii_flag: str | None
-    critical_data_element: bool | None
+    critical_data_element: bool
+    critical_data_element_inherited: bool
+    excluded_data_element: bool
+    catalog_tags: dict | None
     # Counts
     record_ct: int | None
     value_ct: int | None
@@ -359,7 +365,8 @@ class DataColumnChars(Entity):
         limit: int,
     ) -> tuple[list[ColumnProfileSummary], int]:
         # Local import: data_table imports DataColumnChars at module top.
-        from testgen.common.models.data_table import DataTable
+        from testgen.common.models.data_table import CatalogLevel, DataTable, catalog_tags_column, column_cde
+        from testgen.common.models.table_group import TableGroup
 
         profile_run_filter = (
             ProfileResult.profile_run_id == profiling_run_id
@@ -392,12 +399,6 @@ class DataColumnChars(Entity):
             .subquery()
         )
 
-        cde_coalesced = case(
-            (cls.critical_data_element.is_(True), True),
-            (DataTable.critical_data_element.is_(True), True),
-            else_=False,
-        ).label("critical_data_element")
-
         query = (
             select(
                 cls.column_name,
@@ -406,7 +407,8 @@ class DataColumnChars(Entity):
                 cls.functional_data_type,
                 ProfileResult.datatype_suggestion,
                 cls.pii_flag,
-                cde_coalesced,
+                column_cde().label("critical_data_element"),
+                func.coalesce(cls.excluded_data_element, False).label("excluded_data_element"),
                 ProfileResult.record_ct,
                 ProfileResult.null_value_ct,
                 ProfileResult.distinct_value_ct,
@@ -416,15 +418,19 @@ class DataColumnChars(Entity):
                 cls.dq_score_profiling,
                 cls.dq_score_testing,
                 func.coalesce(hygiene_subq.c.hygiene_issue_count, 0).label("hygiene_issue_count"),
+                catalog_tags_column(CatalogLevel.COLUMN),
             )
             .outerjoin(DataTable, DataTable.id == cls.table_id)
-            .outerjoin(
+            .outerjoin(TableGroup, TableGroup.id == cls.table_groups_id)
+            .join(
                 ProfileResult,
                 and_(
                     profile_run_filter,
                     ProfileResult.table_name == cls.table_name,
                     ProfileResult.column_name == cls.column_name,
                 ),
+                # A pinned run lists only the columns it profiled.
+                isouter=profiling_run_id is None,
             )
             .outerjoin(
                 hygiene_subq,
@@ -481,7 +487,8 @@ class DataColumnChars(Entity):
         ``last_complete_profile_run_id`` so the caller gets the latest run.
         Returns None when the column does not exist in the table group.
         """
-        from testgen.common.models.data_table import DataTable
+        from testgen.common.models.data_table import CatalogLevel, DataTable, catalog_tags_column, column_cde
+        from testgen.common.models.table_group import TableGroup
 
         profile_run_filter = (
             ProfileResult.profile_run_id == profiling_run_id
@@ -510,12 +517,6 @@ class DataColumnChars(Entity):
             .subquery()
         )
 
-        cde_coalesced = case(
-            (cls.critical_data_element.is_(True), True),
-            (DataTable.critical_data_element.is_(True), True),
-            else_=False,
-        ).label("critical_data_element")
-
         query = (
             select(
                 cls.column_name,
@@ -527,8 +528,12 @@ class DataColumnChars(Entity):
                 cls.functional_data_type,
                 ProfileResult.datatype_suggestion,
                 ProfileResult.functional_table_type,
+                cls.description,
                 cls.pii_flag,
-                cde_coalesced,
+                column_cde().label("critical_data_element"),
+                cls.critical_data_element.is_(None).label("critical_data_element_inherited"),
+                func.coalesce(cls.excluded_data_element, False).label("excluded_data_element"),
+                catalog_tags_column(CatalogLevel.COLUMN),
                 ProfileResult.record_ct,
                 ProfileResult.value_ct,
                 ProfileResult.distinct_value_ct,
@@ -588,6 +593,7 @@ class DataColumnChars(Entity):
                 JobExecution.error_message.label("profile_run_log_message"),
             )
             .outerjoin(DataTable, DataTable.id == cls.table_id)
+            .outerjoin(TableGroup, TableGroup.id == cls.table_groups_id)
             .outerjoin(
                 ProfileResult,
                 and_(
