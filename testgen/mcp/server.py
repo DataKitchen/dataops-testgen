@@ -2,16 +2,21 @@ import functools
 import inspect
 import logging
 import time
+from collections.abc import Sequence
 from enum import StrEnum
+from typing import Any
 from urllib.parse import urlparse
 
 import anyio
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.fastmcp.tools import Tool
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import ContentBlock
+from pydantic import ValidationError
 from starlette.applications import Starlette
 
 from testgen import settings
@@ -196,6 +201,38 @@ def _build_transport_security() -> TransportSecuritySettings:
         allowed_hosts=sorted(allowed_hosts),
         allowed_origins=sorted(allowed_origins),
     )
+
+
+class _TestGenMCP(FastMCP):
+    """FastMCP whose tool calls describe invalid arguments in plain words."""
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Sequence[ContentBlock] | dict[str, Any]:
+        try:
+            return await super().call_tool(name, arguments)
+        except ToolError as error:
+            tool = self._tool_manager.get_tool(name)
+            if tool is None or not isinstance(error.__cause__, ValidationError):
+                raise
+            raise ToolError(_describe_argument_errors(tool, error.__cause__)) from None
+
+
+def _describe_argument_errors(tool: Tool, error: ValidationError) -> str:
+    """List a tool call's argument errors, one bullet per argument, with no validator internals."""
+    arguments = ", ".join(f"`{name}`" for name in tool.parameters.get("properties", {}))
+    bullets = []
+    for problem in error.errors(include_url=False):
+        location = "".join(
+            f"[{part}]" if isinstance(part, int) else f".{part}" if index else str(part)
+            for index, part in enumerate(problem["loc"])
+        )
+        if problem["type"] == "extra_forbidden" and len(problem["loc"]) == 1:
+            detail = f"not an argument of `{tool.name}`. Its arguments are {arguments}."
+        elif problem["type"] == "missing":
+            detail = "required."
+        else:
+            detail = f"{problem['msg'].removeprefix('Value error, ').rstrip('.')}."
+        bullets.append(f"- `{location}`: {detail}")
+    return f"Invalid arguments for `{tool.name}`.\n\n" + "\n".join(bullets)
 
 
 def _instrument(fn, kind: HandlerKind):
@@ -459,7 +496,7 @@ def build_mcp_server(
     #   so a connecting client can attribute the absence.
     env_hides_source_only_tools = mcp_source_data_env_mode() is not SourceDataProtectionMode.OFF
 
-    mcp = FastMCP(
+    mcp = _TestGenMCP(
         "TestGen",
         instructions=_build_server_instructions(mcp_source_data_protected()),
         auth=AuthSettings(

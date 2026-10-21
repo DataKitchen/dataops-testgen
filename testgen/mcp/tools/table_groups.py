@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from sqlalchemy.exc import IntegrityError
 
 from testgen.common.database.table_group_service import (
@@ -26,6 +26,7 @@ from testgen.common.database.table_group_service import (
 from testgen.common.database.table_group_service import (
     preview_table_group as preview_table_group_service,
 )
+from testgen.common.enums import FileFormat
 from testgen.common.file_declaration_schema import FileDeclarationSpec
 from testgen.common.flavors import declares_files, table_group_schema_label
 from testgen.common.models import with_database_session
@@ -39,6 +40,7 @@ from testgen.mcp.tools.common import (
     format_flavor_label,
     format_page_footer,
     format_page_info,
+    match_enum,
     render_diff_table,
     report_no_change,
     resolve_connection,
@@ -71,6 +73,11 @@ _TABLE_COMPARISON_DESCRIPTION = (
 
 class FileDeclaration(FileDeclarationSpec):
     """One table on a file connection, named by the path its rows come from."""
+
+    @field_validator("format", mode="before")
+    @classmethod
+    def _read_format_in_any_case(cls, value: object) -> object:
+        return match_enum(value, FileFormat) or value
 
 
 def _verify_table_naming(
