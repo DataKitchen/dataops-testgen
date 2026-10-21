@@ -187,7 +187,9 @@ def authorize_post(
     code_challenge: str = Form(""),
     code_challenge_method: str = Form("S256"),
 ):
-    """Authenticate user and issue authorization code."""
+    """Takes the credentials from the sign-in page. Valid credentials redirect to `redirect_uri` with an
+    authorization code; invalid ones show the sign-in page again with a 401.
+    """
     user = User.get(username)
     if not user or not verify_password(password, user.password):
         bind(AuditContext(source=JobSource.api))
@@ -225,11 +227,15 @@ def authorize_post(
 
 
 @router.get("/logout")
-def logout(request: Request, redirect_uri: str = Query("/")):
-    """Clear the OAuth session cookie and redirect.
-
-    Enforces same-origin on redirect_uri to prevent open redirect attacks.
-    """
+def logout(
+    request: Request,
+    redirect_uri: str = Query(
+        "/",
+        description="Where to redirect after signing out, on the TestGen origin. A URL on another origin "
+        "redirects to `/` instead.",
+    ),
+):
+    """Signs the browser out of TestGen and redirects to `redirect_uri`."""
     parsed = urlparse(redirect_uri)
     if parsed.netloc and parsed.netloc != request.url.netloc:
         redirect_uri = "/"
