@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 from testgen.common.clean_sql import parse_value_list
+from testgen.common.contract_import import _BaselineTerm, plan_changes, split_document
 from testgen.common.flavors import SqlFlavorCode
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
@@ -24,10 +25,15 @@ from testgen.common.odcs.quality_rules import (
     resolve_declarations,
     resolve_rule,
 )
+from testgen.common.odcs.quality_rules import (
+    test_type_parameters as parameters_of,
+)
 from testgen.common.odcs.render import render_document
+from testgen.common.odcs.serialize import serialize_document
 from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND
 from testgen.common.odcs.validation import validate_document
 from testgen.common.read_file import get_template_files
+from testgen.common.test_definition_export_import_service import ImportAction
 
 pytestmark = pytest.mark.unit
 
@@ -79,6 +85,8 @@ _TERMS: list[tuple[str, str | None, str | None, dict]] = [
     ("Pattern_Match", "c_pattern", "string", {"baseline_value": "[A-Z]{3}", "threshold_value": "1"}),
     ("Required_No_Placeholder", "c_rnp", "string", {"baseline_value": '"",N/A,"a,b"', "threshold_value": "0"}),
     ("Email_Format", "c_email", "string", {"threshold_value": "2"}),
+    ("Email_Format", "c_email_unset", "string", {}),
+    ("Email_Format", "c_email_decimal", "string", {"threshold_value": "0.0"}),
     ("Valid_US_Zip", "c_zip", "string", {"threshold_value": "2"}),
     ("Valid_US_Zip3", "c_zip3", "string", {"threshold_value": "2"}),
     ("Valid_US_CA_Zip", "c_zip_us_ca", "string", {"threshold_value": "2"}),
@@ -88,10 +96,12 @@ _TERMS: list[tuple[str, str | None, str | None, dict]] = [
     ("Match_Null_Ct", "c_nulls", "number", {"baseline_ct": "12"}),
     ("Match_Null_Ct", "c_nulls_unset", "number", {}),
     ("Required", "c_required_unset", "string", {}),
+    ("Required", "c_required_decimal", "string", {"threshold_value": "0.0"}),
     ("Min_Val", "c_min", "number", {"baseline_value": "-5.5", "threshold_value": "0"}),
     ("Max_Val", "c_max", "integer", {"baseline_value": "100", "threshold_value": "0", "custom_metadata": _METADATA}),
     ("Max_Val", "c_max_tolerant", "integer", {"baseline_value": "100", "threshold_value": "2"}),
     ("Min_Date", "c_min_date", "date", {"baseline_value": "2026-01-01", "threshold_value": "0"}),
+    ("Min_Date", "c_min_date_midnight", "date", {"baseline_value": "2026-01-01 00:00:00", "threshold_value": "0"}),
     ("Max_Date", "c_max_date_midnight", "date", {"baseline_value": "2026-01-31 00:00:00", "threshold_value": "0"}),
     ("Max_Date", "c_max_date", "timestamp", {"baseline_value": "2026-01-31 06:00:00", "threshold_value": "0"}),
     ("Text_Length_Range", "c_length", "string",
@@ -180,8 +190,8 @@ def _declared_parameters(term: TestDefinition) -> dict:
     """The term's values for the parameters its type declares, as ``test_definitions`` holds them."""
     names = [name.strip() for name in (_CATALOGUE[term.test_type].get("default_parm_columns") or "").split(",")]
     parameters = {name: getattr(term, name) for name in names if getattr(term, name) not in (None, "")}
-    if term.test_type in DECLARATION_TEST_TYPES and "threshold_value" not in parameters:
-        # A declaration admits no exceptions, which an unset threshold also means, and states it as 0.
+    if "threshold_value" in names and "threshold_value" not in parameters:
+        # An unset threshold runs as 0, which the document states.
         parameters["threshold_value"] = "0"
     return parameters
 
@@ -236,6 +246,33 @@ def test_every_term_resolves_back_to_its_own_parameters(round_trip):
             assert _comparable(term.test_type, name, got[name]) == _comparable(term.test_type, name, value), (
                 f"{term.contract_term_id}.{name}: {got[name]!r} != {value!r}"
             )
+
+
+def test_importing_the_export_into_its_own_draft_plans_no_changes(round_trip):
+    terms, document, _ = round_trip
+    test_types = {code: _test_type(code) for code in _CATALOGUE}
+    declared_parameters = {code: parameters_of(test_type) for code, test_type in test_types.items()}
+    parameter_columns = {name for names in declared_parameters.values() for name in names}
+    baseline = [
+        _BaselineTerm(
+            id=uuid4(), test_type=term.test_type, schema_name=term.schema_name, table_name=term.table_name,
+            # A table-scoped test stores no column; the catalogue names one only to place its rule.
+            column_name=None if _CATALOGUE[term.test_type]["test_scope"] == "table" else term.column_name,
+            contract_term_id=term.contract_term_id,
+            values={name: getattr(term, name, None) for name in parameter_columns},
+            custom_metadata=term.custom_metadata,
+        )
+        for term in terms
+    ]
+    exported = yaml.safe_load(serialize_document(document))
+    split = split_document(exported, test_types, flavor=SqlFlavorCode.POSTGRESQL, qualify_tables=True)
+
+    changes = plan_changes(split.terms, baseline, schema_name="sales", declared_parameters=declared_parameters)
+
+    assert [
+        f"{change.action.value} {change.contract_term_id or change.test_type}"
+        for change in changes if change.action is not ImportAction.skip
+    ] == []
 
 
 def test_a_declared_term_keeps_the_metadata_its_rule_would_carry(round_trip):
