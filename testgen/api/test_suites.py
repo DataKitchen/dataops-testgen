@@ -5,6 +5,8 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, Query
 
 from testgen.api.deps import (
+    LimitQuery,
+    PageQuery,
     api_error,
     api_errors,
     db_session,
@@ -64,8 +66,8 @@ def list_test_suites(
         default=None,
         description="Only test suites of this type: `regular` or `contract`. Omit to list both.",
     ),
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=20, ge=1, le=100),
+    page: int = PageQuery,
+    limit: int = LimitQuery,
 ):
     """Test suites and contracts in a project, each with its test count and last completed run.
 

@@ -1,8 +1,8 @@
 """API v1 — connection reads."""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 
-from testgen.api.deps import db_session, resolve_connection, resolve_project_code
+from testgen.api.deps import LimitQuery, PageQuery, db_session, resolve_connection, resolve_project_code
 from testgen.api.enums import AUTHENTICATION_FROM_MODE
 from testgen.api.schemas import (
     ConnectionItem,
@@ -30,13 +30,10 @@ router = APIRouter(tags=["Connections"], dependencies=[Depends(db_session, scope
 )
 def list_connections(
     project_code: str = resolve_project_code("view"),
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=20, ge=1, le=100),
+    page: int = PageQuery,
+    limit: int = LimitQuery,
 ):
-    """Connections in a project, each with the number of table groups defined on it.
-
-    Connection parameters are not included — read a single connection for those.
-    """
+    """Connections in a project, each with its connection type and the number of table groups defined on it."""
     rows, total = Connection.list_for_project(project_code, page=page, limit=limit)
     return ConnectionListResponse(
         items=[
@@ -63,9 +60,9 @@ def list_connections(
 def get_connection(connection: Connection = resolve_connection("view")):  # noqa: B008
     """A connection's configuration, including the parameters used to reach its data source.
 
-    The keys under ``settings`` depend on the connection type and authentication method —
-    a Databricks connection carries ``catalog`` and ``http_path`` where a PostgreSQL one
-    carries ``database``. Credentials are never returned.
+    The keys under `settings` depend on the connection type and authentication method —
+    a Databricks connection carries `catalog` and `http_path` where a PostgreSQL one
+    carries `database`. Credentials are never returned.
     """
     return ConnectionResponse(
         connection_id=connection.connection_id,

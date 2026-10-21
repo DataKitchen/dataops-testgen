@@ -19,7 +19,9 @@ from testgen.common.database.table_group_service import (
     table_group_qualifies_table_refs,
 )
 from testgen.common.enums import SuiteType, TestScope
+from testgen.common.flavors import reports_table_group_schema
 from testgen.common.models import get_current_session
+from testgen.common.models.connection import Connection
 from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.suite_version import SuiteVersion, VersionState
@@ -129,65 +131,240 @@ def import_reason_label(reason: ImportReason, errors: dict[str, str] | None = No
 # via ``response_model_exclude_defaults=True``). On import, model_fields_set distinguishes
 # explicit from defaulted, so a non-compact file would force-write every defaulted field.
 class TestDefinitionExport(BaseModel):
-    """Test definition fields included in the export/import file."""
+    """One test definition in an export document. On import, only the fields present in the file are written: a field
+    left out keeps the matched test's value. Fields equal to their default are left out of an export.
+    """
 
     model_config = {"from_attributes": True}
 
     # Matching / identity
-    test_type: str
-    external_id: UUID | None = None
-    last_auto_gen_date: datetime | None = None
+    test_type: str = Field(
+        description="The test type, given as its code, e.g. `Alpha_Trunc`. An auto-generated test is matched on "
+        "import by its `test_type`, `table_name` and `column_name`. A matched test keeps its stored test type. A new "
+        "test cannot use a test type TestGen creates and removes itself, such as schema conformance; the import skips "
+        "it with `managed_test_type`."
+    )
+    external_id: UUID | None = Field(
+        default=None,
+        description="Manually created tests only. A UUID that identifies the test across environments, so an import "
+        "can match it. An export assigns one to each manual test that has none. A file prepared by hand must set "
+        "one, any UUID, on every manual test: an import skips a manual test without one. When a matched test has "
+        "none, it takes this value.",
+    )
+    last_auto_gen_date: datetime | None = Field(
+        default=None,
+        description="When test generation last created or refreshed the test, in UTC. `null` for a manually created "
+        "test. On import, any value marks the test as auto-generated, which decides how it is matched. The value "
+        "itself is not kept: a created test is stamped with the import time, and a matched test keeps its own.",
+    )
 
     # Provenance
-    profiling_as_of_date: datetime | None = None
-    last_manual_update: datetime | None = None
+    profiling_as_of_date: datetime | None = Field(
+        default=None,
+        description="The as-of date of the profiling results the test was generated from, in UTC: the generation "
+        "time less the table group's `profiling_delay_days`. `null` for a manually created test. An import ignores "
+        "it.",
+    )
+    last_manual_update: datetime | None = Field(
+        default=None,
+        description="When the test was last edited by hand or by an import, in UTC. An import ignores the value and "
+        "records its own time.",
+    )
 
     # Definition fields
-    table_name: str | None = None
-    column_name: str | None = None
-    test_description: str | None = None
-    test_active: bool = True
-    severity: str | None = None
-    lock_refresh: bool = False
-    export_to_observability: bool | None = None
-    skip_errors: int = 0
+    table_name: str | None = Field(
+        default=None,
+        description="The table the test checks. It must be in the target table group's data catalog; an import "
+        "skips the test otherwise.",
+    )
+    column_name: str | None = Field(
+        default=None,
+        description="What the test focuses on within the table, depending on the test type: the column a column test "
+        "checks, the aggregate expression or comma-separated categorical columns a referential test compares, or a "
+        "short label describing a custom test, unique within the test suite. Blank for table-level tests. For a "
+        "column test, the column must be in the target table group's data catalog; an import skips the test "
+        "otherwise.",
+    )
+    test_description: str | None = Field(
+        default=None, description="A description of the test."
+    )
+    test_active: bool = Field(default=True, description="Run the test. `false` deactivates it, so test runs skip it.")
+    severity: str | None = Field(
+        default=None,
+        description="How a failing result is reported: `Fail`, `Warning`, or `Log`. A `Log` result is recorded "
+        "without passing or failing. Omit to use the test suite's default severity, or the test type's when the "
+        "suite sets none.",
+    )
+    lock_refresh: bool = Field(
+        default=False,
+        description="Protect the test from test generation: a locked test keeps its parameters when tests are "
+        "regenerated. On import, `overwrite_unlocked` and `delete_unlocked` leave locked tests alone, and "
+        "`create_and_lock` locks the auto-generated tests it creates.",
+    )
+    export_to_observability: bool | None = Field(
+        default=None,
+        description="Send the test's results to DataOps Observability. `null` follows the test suite's setting.",
+    )
+    skip_errors: int = Field(
+        default=0,
+        description="Custom, duplicate-row, aggregate-comparison, and value-combination tests only. The number of "
+        "failing records, groups, or value combinations the test allows before it fails.",
+    )
 
     # Calibration fields
-    baseline_ct: str | None = None
-    baseline_unique_ct: str | None = None
-    baseline_value: str | None = None
-    baseline_value_ct: str | None = None
-    threshold_value: str | None = None
-    baseline_sum: str | None = None
-    baseline_avg: str | None = None
-    baseline_sd: str | None = None
-    lower_tolerance: str | None = None
-    upper_tolerance: str | None = None
+    baseline_ct: str | None = Field(
+        default=None,
+        description="Tests that compare against a baseline count only. The count expected at baseline, e.g. the "
+        "number of null values for `Match_Null_Ct`, or the record count for `Row_Ct_Pct` and `Missing_Pct`.",
+    )
+    baseline_unique_ct: str | None = Field(
+        default=None,
+        description="Tests that compare against a baseline distinct count only. The number of distinct values "
+        "expected at baseline, e.g. for `Match_Distinct_Ct` and `Unique_Pct`.",
+    )
+    baseline_value: str | None = Field(
+        default=None,
+        description="Tests that compare against a baseline value only. The expected value, list, or pattern, "
+        "depending on the test type: e.g. the constant for `Constant`, the earliest date for `Match_Min_Date`, the "
+        "expected values in the form `('Val1','Val2')` for `LOV_Match`, or the pattern for `Pattern_Match`.",
+    )
+    baseline_value_ct: str | None = Field(
+        default=None,
+        description="Tests that compare against a baseline only. The count of values at baseline, e.g. for "
+        "`Avg_Shift` and `Missing_Pct`. For `Distinct_Value_Ct`, the count of distinct values.",
+    )
+    threshold_value: str | None = Field(
+        default=None,
+        description="The value the test's measure is compared with. Its meaning depends on the test type: for most "
+        "tests, the number of failing values the test allows; for others, an expected value or percentage, e.g. the "
+        "expected row count for `Match_Row_Ct` or the highest divergence allowed for `Distribution_Shift`.",
+    )
+    baseline_sum: str | None = Field(
+        default=None,
+        description="Tests that compare against a baseline sum only. The sum expected at baseline, e.g. the total of "
+        "the column's values for `Match_Sum`, or their combined length in characters for `Match_Total_Length`.",
+    )
+    baseline_avg: str | None = Field(
+        default=None,
+        description="Tests that compare against a baseline mean only. The mean of the column's values at baseline, "
+        "e.g. for `Avg_Shift` and `Outlier_Pct_Above`.",
+    )
+    baseline_sd: str | None = Field(
+        default=None,
+        description="Tests that compare against a baseline spread only. The standard deviation of the column's "
+        "values at baseline, e.g. for `Avg_Shift` and `Match_Stdev`.",
+    )
+    lower_tolerance: str | None = Field(
+        default=None,
+        description="The lower bound of an acceptable range, depending on the test type: the tolerance below the "
+        "reference measure for `Aggregate_Balance_Percent` (a percent) and `Aggregate_Balance_Range` (a constant), "
+        "the minimum result for `SQL_Metric`, or the minimum length for `Text_Length_Range`. Leave blank for no "
+        "minimum where the test type allows it. When `history_calculation` is set, the test sets this bound from its "
+        "recent results, replacing the value given here.",
+    )
+    upper_tolerance: str | None = Field(
+        default=None,
+        description="The upper bound of an acceptable range, depending on the test type: the tolerance above the "
+        "reference measure for `Aggregate_Balance_Percent` (a percent) and `Aggregate_Balance_Range` (a constant), "
+        "the maximum result for `SQL_Metric`, the maximum length for `Text_Length_Range`, or the allowed difference "
+        "as a fraction of the baseline for `Match_Sum` and `Match_Stdev` (e.g. `0.001` allows 0.1 percent). When "
+        "`history_calculation_upper` is set, the test sets this bound from its recent results, replacing the value "
+        "given here.",
+    )
 
     # Subset / grouping
-    subset_condition: str | None = None
-    groupby_names: str | None = None
-    having_condition: str | None = None
-    window_date_column: str | None = None
-    window_days: int = 0
+    subset_condition: str | None = Field(
+        default=None,
+        description="Referential tests and some table-level tests only. A condition selecting the records to test, "
+        "written like a SQL `WHERE` clause, e.g. `status = 'SHIPPED'`.",
+    )
+    groupby_names: str | None = Field(
+        default=None,
+        description="Columns of the tested table, separated by commas, that the test groups by: the grouping columns "
+        "of an aggregate comparison, the columns that define a duplicate record for `Dupe_Rows`, or the key column "
+        "that identifies each row for the keyed hash tests.",
+    )
+    having_condition: str | None = Field(
+        default=None,
+        description="Aggregate comparison and value-combination tests only. A condition on the grouped records of "
+        "the tested table, written like a SQL `HAVING` clause, e.g. `SUM(sales) < 100`.",
+    )
+    window_date_column: str | None = Field(
+        default=None,
+        description="Time-window tests only. The date or timestamp column that defines the time windows.",
+    )
+    window_days: int = Field(
+        default=0,
+        description="Time-window tests only. The length of each time window, in days. The test compares the most "
+        "recent window with the window of the same length before it.",
+    )
 
     # Referential
-    match_schema_name: str | None = None
-    match_table_name: str | None = None
-    match_column_names: str | None = None
-    match_subset_condition: str | None = None
-    match_groupby_names: str | None = None
-    match_having_condition: str | None = None
+    match_schema_name: str | None = Field(
+        default=None,
+        description="Referential tests only. The schema of the second table: the matching or reference table the "
+        "test compares with.",
+    )
+    match_table_name: str | None = Field(
+        default=None, description="Referential tests only. The name of the second table."
+    )
+    match_column_names: str | None = Field(
+        default=None,
+        description="The aggregate expression to compute in the second table for an aggregate comparison, e.g. "
+        "`SUM(amount)`. For a `CUSTOM` test, the comma-separated result columns that hold PII, redacted for callers "
+        "without permission to view PII.",
+    )
+    match_subset_condition: str | None = Field(
+        default=None,
+        description="Referential tests only. A condition selecting the records of the second table to compare with, "
+        "written like a SQL `WHERE` clause, e.g. `status = 'SHIPPED'`.",
+    )
+    match_groupby_names: str | None = Field(
+        default=None,
+        description="Referential tests only. Columns of the second table, separated by commas: the grouping columns "
+        "of an aggregate comparison, or the columns compared with the tested table's `column_name` for `Combo_Match` "
+        "and `Distribution_Shift`.",
+    )
+    match_having_condition: str | None = Field(
+        default=None,
+        description="Aggregate comparison and value-combination tests only. A condition on the grouped records of "
+        "the second table, written like a SQL `HAVING` clause.",
+    )
 
     # Query / history
-    custom_query: str | None = None
-    history_calculation: str | None = None
-    history_calculation_upper: str | None = None
-    history_lookback: int = 0
+    custom_query: str | None = Field(
+        default=None,
+        description="Custom SQL, depending on the test type: for `CUSTOM`, a query returning the records that fail, "
+        "so the test passes when it returns none; for `Condition_Flag`, an expression that is true for a failing "
+        "record; for `SQL_Metric`, a query returning one numeric value; for `Table_Freshness`, the expression that "
+        "fingerprints the table's state. Rejected on other test types.",
+    )
+    history_calculation: str | None = Field(
+        default=None,
+        description="Tests whose lower bound is calculated from their own recent results only, such as "
+        "`Table_Freshness`. How the test sets `lower_tolerance` from its last `history_lookback` results: "
+        "`Value` (the latest result), `Minimum`, `Maximum`, `Sum`, `Average`, or an expression written `EXPR:[…]` "
+        "that references `{VALUE}`, `{MINIMUM}`, `{MAXIMUM}`, `{SUM}`, `{AVERAGE}` and `{STANDARD_DEVIATION}`, e.g. "
+        "`EXPR:[1.5 * {AVERAGE}]`.",
+    )
+    history_calculation_upper: str | None = Field(
+        default=None,
+        description="Tests whose upper bound is calculated from their own recent results only. How the test sets "
+        "`upper_tolerance`, with the same values as `history_calculation`.",
+    )
+    history_lookback: int = Field(
+        default=0,
+        description="Tests whose bounds are calculated from their own recent results only. The number of most recent "
+        "results the calculation uses. Ignored by `Value`, which uses only the latest result.",
+    )
 
     # URL / metadata
-    external_url: str | None = None
-    custom_metadata: dict[str, Any] | None = None
+    external_url: str | None = Field(default=None, description="A link stored with the test.")
+    custom_metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="A JSON object of key-value pairs stored with the test, up to 50 keys and 10,240 "
+        "bytes. The `odcs` key is reserved for data contract quality-rule fields and must itself be an object.",
+    )
 
     @field_validator("skip_errors", "window_days", "history_lookback", mode="before")
     @classmethod
@@ -196,53 +373,110 @@ class TestDefinitionExport(BaseModel):
 
 
 class ExportSource(BaseModel):
+    """Where a document's test definitions were exported from."""
+
     project_code: str
-    test_suite: str
-    table_group: str
-    table_group_schema: str
-    exported_at: datetime
-    testgen_version: str | None = None
+    test_suite: str = Field(description="The name of the test suite the definitions were exported from.")
+    table_group: str = Field(description="The name of that suite's table group.")
+    table_group_schema: str | None = Field(
+        default=None,
+        description="The table group's schema, or its data space on Salesforce Data 360. Absent on a file connection.",
+    )
+    exported_at: datetime = Field(description="When the document was exported, in UTC.")
+    testgen_version: str | None = Field(default=None, description="The TestGen version that exported the document.")
     contract_version: int | None = Field(
         default=None, description="Contracts only. The number of the contract version the definitions belong to."
     )
 
 
+_FORMAT_VERSION = (
+    "The document format version. `1` is the only version; an import rejects any other with `unsupported_version`."
+)
+_DEFINITIONS = "The test definitions, in file order. An import refers to each by its position, `idx`."
+
+
 class ExportDocument(BaseModel):
+    """A portable document of test definitions, as exported from a test suite and accepted by an import."""
+
     # No default: a defaulted version is stripped by default-omitting serialization,
     # leaving exported documents without their schema-version marker.
-    version: int
-    source: ExportSource
-    definitions: list[TestDefinitionExport]
+    version: int = Field(description=_FORMAT_VERSION)
+    source: ExportSource = Field(
+        description="Where the definitions were exported from. Informational: an import does not apply it."
+    )
+    definitions: list[TestDefinitionExport] = Field(description=_DEFINITIONS)
 
 
 class ImportConfig(BaseModel):
-    mode: ImportMode
-    on_match: OnMatch
-    on_new: OnNew
-    on_absence: OnAbsence
+    mode: ImportMode = Field(
+        description="`preview` reports what the import would do and changes nothing. `apply` writes every valid "
+        "definition and reports the rest as skipped. `apply_strict` writes only when no definition would be "
+        "skipped; otherwise it returns `400` with the projected result and changes nothing."
+    )
+    on_match: OnMatch = Field(
+        description="What to do with a definition that matches an existing test: `overwrite_all` updates it even "
+        "when locked, `overwrite_unlocked` updates it unless it is locked, and `skip` leaves it unchanged. An update "
+        "writes only the fields present in the file."
+    )
+    on_new: OnNew = Field(
+        description="What to do with a definition that matches no existing test: `create` creates it with the "
+        "file's `lock_refresh`, `create_and_lock` creates it and locks it when it is auto-generated, and `skip` "
+        "leaves it out."
+    )
+    on_absence: OnAbsence = Field(
+        description="What to do with existing tests that no definition in the file matches: `do_nothing`, "
+        "`delete_all` (even locked ones), or `delete_unlocked`. Tests of a type TestGen creates and removes itself, such as schema conformance tests, are never deleted."
+    )
 
 
 class ImportPayload(BaseModel):
-    """Import payload — same structure as an export document, but definitions are typed."""
+    """A document to import, in the form an export returns."""
 
-    version: int = EXPORT_FORMAT_VERSION
-    source: ExportSource | None = None
-    definitions: list[TestDefinitionExport]
+    version: int = Field(default=EXPORT_FORMAT_VERSION, description=_FORMAT_VERSION)
+    source: ExportSource | None = Field(
+        default=None, description="Where the definitions were exported from. Optional, and not applied."
+    )
+    definitions: list[TestDefinitionExport] = Field(description=_DEFINITIONS)
 
 
 class ImportItemTD(BaseModel):
-    idx: int | None = None
-    target_id: UUID | None = None
-    errors: dict[str, str] | None = None
+    idx: int | None = Field(
+        default=None,
+        description="The definition's position in the file's `definitions`, starting at 0. `null` for a deletion, "
+        "which has no entry in the file.",
+    )
+    target_id: UUID | None = Field(
+        default=None,
+        description="The ID of the test the action applies to. `null` for a definition with no match, and for a "
+        "creation in a preview.",
+    )
+    errors: dict[str, str] | None = Field(
+        default=None,
+        description="For a definition skipped as `missing_required_field` or `invalid_field`, each field at fault "
+        "mapped to what is wrong with it.",
+    )
 
 
 class ImportItem(BaseModel):
-    action: ImportAction
-    reason: ImportReason
-    tds: list[ImportItemTD]
+    action: ImportAction = Field(
+        description="`create`, `update`, `skip`, or `delete`. In a preview, what the import would do."
+    )
+    reason: ImportReason = Field(
+        description="Why the action applies: `matched` (matches an existing test), `no_match` (matches none), "
+        "`policy` (`on_match` is `skip`), `locked` (the matched test is locked and `on_match` is "
+        "`overwrite_unlocked`), `invalid_test_type` (no such test type), `managed_test_type` (a test type TestGen "
+        "creates itself), `invalid_table` (the table is not in the table group's data catalog), `invalid_column` "
+        "(the column is not in its table in the data catalog), `missing_external_id` (a manual test without "
+        "`external_id`), `missing_required_field` (a field the test type requires is blank), `invalid_field` (a "
+        "field the test type does not use, or a value it does not accept), or `absent` (an existing test the file "
+        "does not include)."
+    )
+    tds: list[ImportItemTD] = Field(description="The test definitions this action and reason apply to.")
 
 
 class ImportSummary(BaseModel):
+    """Counts of test definitions by action. In a preview, what the import would do."""
+
     created: int = 0
     updated: int = 0
     skipped: int = 0
@@ -252,17 +486,20 @@ class ImportSummary(BaseModel):
 class ContractVersion(BaseModel):
     """A contract version, by its number and its state."""
 
-    number: int
+    number: int = Field(description="The version's number, counting from 1.")
     state: VersionState = Field(description="`draft`, `active` (the agreement in force), or `superseded`.")
 
 
 class ImportResponse(BaseModel):
-    summary: ImportSummary
-    items: list[ImportItem]
+    summary: ImportSummary = Field(
+        description="How many test definitions the import created, updated, skipped, and deleted, or would in a "
+        "preview."
+    )
+    items: list[ImportItem] = Field(description="The test definitions grouped by action and reason.")
     version: ContractVersion | None = Field(
         default=None,
         description=(
-            "Contracts only. The version the import writes to, or null when it would write nothing. A preview into a "
+            "Contracts only. The version the import writes to, or `null` when it would write nothing. A preview into a "
             "frozen version names the draft that applying the import would open."
         ),
     )
@@ -378,13 +615,18 @@ def export_definitions(
             project_code=test_suite.project_code,
             test_suite=test_suite.test_suite,
             table_group=table_group.table_groups_name,
-            table_group_schema=table_group.table_group_schema,
+            table_group_schema=table_group.table_group_schema if _reports_schema(table_group) else None,
             exported_at=datetime.now(UTC),
             testgen_version=settings.VERSION,
             contract_version=contract_version.version if contract_version else None,
         ),
         definitions=definitions,
     )
+
+
+def _reports_schema(table_group: TableGroup) -> bool:
+    connection = Connection.get_by_table_group(table_group.id)
+    return reports_table_group_schema(connection.sql_flavor_code if connection else None)
 
 
 def import_definitions(

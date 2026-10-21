@@ -96,20 +96,56 @@ def create_app(version: str | None = None) -> FastAPI:
             MixpanelService().drain()
 
     tags_metadata = [
-        {"name": "Jobs", "description": "Submit, poll, cancel, and list job executions (profiling, tests, generation)."},
-        {"name": "Test Definitions", "description": "Export and import test definitions across environments."},
-        {"name": "OAuth", "description": "OAuth 2.1 authorization code flow and token management."},
-        {"name": "API", "description": "Health and version information."},
+        {"name": "Connections", "description": "Read the connections that reach a project's data sources."},
+        {
+            "name": "Table Groups",
+            "description": "Create, read, and update the table groups that set which tables TestGen profiles, tests, "
+            "and monitors.",
+        },
+        {"name": "Test Suites", "description": "Create and read test suites, data contracts included."},
+        {
+            "name": "Test Definitions",
+            "description": "Export and import test definitions as JSON documents, to promote tests between environments "
+            "or edit them in bulk.",
+        },
+        {
+            "name": "Jobs",
+            "description": "Submit profiling, test run, and test generation jobs, then follow, cancel, and list them.",
+        },
+        {
+            "name": "Runs",
+            "description": "Read profiling and test runs and their details: test results, column profiles, hygiene "
+            "issues, and Potential PII findings.",
+        },
+        {"name": "Schedules", "description": "Schedule profiling and test runs with cron expressions."},
+        {
+            "name": "Monitors",
+            "description": "Enable and configure monitoring on a table group, and read its monitors and their results.",
+        },
+        {"name": "Scores", "description": "Read a project's scores, filtered by catalog tags and broken down by category."},
+        {
+            "name": "Notifications",
+            "description": "Manage the destinations and rules that send notifications about test runs, profiling runs, "
+            "monitor runs, and score drops.",
+        },
+        {
+            "name": "OAuth",
+            "description": "OAuth 2.1 authorization code flow with PKCE, token refresh and revocation, and dynamic "
+            "client registration.",
+        },
+        {"name": "Health", "description": "Check that the API is up, and which edition and version it runs."},
     ]
 
     app = FastAPI(
         title=f"{version_data.edition} API" if version_data else "TestGen API",
         summary="REST API for DataOps Data Quality TestGen.",
         description=(
-            "Automate profiling, test execution, and test generation jobs. "
-            "Export and import test definitions for promotion across environments.\n\n"
-            "**Authentication**: OAuth 2.1 authorization code flow. "
-            "See `GET /.well-known/oauth-authorization-server` for discovery."
+            "Drive TestGen from pipelines, orchestrators, and scripts: set up table groups, test suites and "
+            "monitoring, run profiling, test generation and tests, read their results and scores, manage "
+            "notifications, and move test definitions between environments.\n\n"
+            "**Authentication**: send a personal access token or an OAuth 2.1 access token in the "
+            "`Authorization: Bearer` header. OAuth clients discover the authorization endpoints at "
+            "`GET /.well-known/oauth-authorization-server`."
         ),
         version=version or version_data.current or "dev",
         contact={"name": "DataKitchen Support", "email": "support@datakitchen.io", "url": "https://datakitchen.io"},

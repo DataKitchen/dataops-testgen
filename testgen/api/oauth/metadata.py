@@ -9,11 +9,10 @@ from testgen.common.models.oauth import OAuth2ClientAuthMethod
 router = APIRouter(tags=["OAuth"])
 
 
-@router.get("/.well-known/oauth-authorization-server")
+@router.get("/.well-known/oauth-authorization-server", summary="Read the authorization server metadata")
 def authorization_server_metadata():
-    """Return OAuth 2.1 Authorization Server Metadata per RFC 8414.
-
-    OAuth clients use this for server discovery.
+    """The authorization server metadata defined by RFC 8414: the endpoints, grant types and client authentication
+    methods an OAuth client discovers before it authorizes.
     """
     base_url = settings.BASE_URL.rstrip("/")
 

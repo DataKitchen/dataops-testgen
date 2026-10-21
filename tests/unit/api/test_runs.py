@@ -173,7 +173,7 @@ def test_get_test_run_completed(mock_tr_cls, mock_result_cls, mock_session):
     assert result.test_suite_id == TEST_SUITE_ID
     assert result.table_group_id == TABLE_GROUP_ID
     assert result.result is not None
-    assert result.result.score == 0.95
+    assert result.result.score == pytest.approx(95.0)
     assert result.result.result_counts.passed == 90
     assert result.result.result_counts.failed == 5
     assert result.result.result_counts.dismissed == 12
@@ -254,7 +254,7 @@ def test_get_profiling_run_completed(mock_pr_cls, mock_issue_cls):
     assert result.status == "completed"
     assert result.table_group_id == TABLE_GROUP_ID
     assert result.result is not None
-    assert result.result.score == 0.88
+    assert result.result.score == pytest.approx(88.0)
     assert result.result.table_ct == 10
     assert result.result.issue_counts.hygiene_issues.definite == 5
     assert result.result.issue_counts.hygiene_issues.likely == 3
@@ -548,7 +548,7 @@ def test_list_profiling_runs_envelope_and_counts_merge(mock_list, mock_counts):
     item = result.items[0]
     assert item.job_execution_id == row.job_execution_id
     assert item.table_group_id == TABLE_GROUP_ID
-    assert item.profiling_score == 0.88
+    assert item.profiling_score == pytest.approx(88.0)
     assert item.data_point_ct == 500
     assert item.issue_counts.hygiene_issues.definite == 1
     assert item.issue_counts.potential_pii.high == 4
@@ -1195,8 +1195,8 @@ def test_list_columns_envelope_and_item_shape(mock_list):
     assert item.null_value_ct == 3
     assert item.distinct_value_ct == 950
     assert item.filled_value_ct == 997
-    assert item.profiling_score == 0.92
-    assert item.testing_score == 0.87
+    assert item.profiling_score == pytest.approx(92.0)
+    assert item.testing_score == pytest.approx(87.0)
     assert item.issue_counts.hygiene_issues.definite == 2
     assert item.issue_counts.hygiene_issues.likely == 1
     assert item.issue_counts.hygiene_issues.possible == 0

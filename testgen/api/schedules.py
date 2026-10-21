@@ -7,6 +7,8 @@ from psycopg2.errors import UniqueViolation
 from sqlalchemy.exc import IntegrityError
 
 from testgen.api.deps import (
+    LimitQuery,
+    PageQuery,
     api_error,
     api_errors,
     db_session,
@@ -16,7 +18,13 @@ from testgen.api.deps import (
     resolve_test_suite,
 )
 from testgen.api.enums import SCHEDULE_KIND_FROM_JOB_KEY, SCHEDULE_KIND_TO_JOB_KEY, ScheduleKind
-from testgen.api.schemas import ErrorResponse, ScheduleCreate, ScheduleListResponse, ScheduleResponse
+from testgen.api.schemas import (
+    SCHEDULE_KIND_VALUES,
+    ErrorResponse,
+    ScheduleCreate,
+    ScheduleListResponse,
+    ScheduleResponse,
+)
 from testgen.common.cron_service import describe_cron, normalize_cron, validate_schedule
 from testgen.common.enums import TEST_SUITE_TYPES, JobKey
 from testgen.common.models import get_current_session
@@ -46,7 +54,7 @@ def create_profiling_schedule(
     table_group: TableGroup = resolve_table_group("edit"),  # noqa: B008
     body: ScheduleCreate = Body(...),  # noqa: B008
 ) -> ScheduleResponse:
-    """Profile a table group on a recurring schedule."""
+    """Profiles the table group each time the cron expression comes due, in its timezone."""
     return _create(table_group.project_code, JobKey.run_profile, {"table_group_id": str(table_group.id)}, body)
 
 
@@ -61,7 +69,7 @@ def create_test_run_schedule(
     test_suite: TestSuite = resolve_test_suite("edit", TEST_SUITE_TYPES),  # noqa: B008
     body: ScheduleCreate = Body(...),  # noqa: B008
 ) -> ScheduleResponse:
-    """Run a test suite's or a contract's tests on a recurring schedule.
+    """Runs the test suite's tests each time the cron expression comes due, in its timezone.
 
     Each scheduled run of a contract verifies the version active when it runs, or previews the
     draft when no version has been frozen.
@@ -76,9 +84,11 @@ def create_test_run_schedule(
 )
 def list_schedules(
     project_code: str = resolve_project_code("view"),
-    kind: ScheduleKind | None = Query(default=None, description="Only schedules of this kind."),  # noqa: B008
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=20, ge=1, le=100),
+    kind: ScheduleKind | None = Query(  # noqa: B008
+        default=None, description=f"Only schedules of this kind: {SCHEDULE_KIND_VALUES}."
+    ),
+    page: int = PageQuery,
+    limit: int = LimitQuery,
 ):
     """A project's profiling and test run schedules, active and paused, each with the table
     group or test suite it runs.
@@ -98,7 +108,7 @@ def list_schedules(
     summary="Read a schedule",
 )
 def get_schedule(schedule: JobSchedule = resolve_schedule("view")):  # noqa: B008
-    """A profiling or test run schedule, with when it next runs."""
+    """A profiling or test run schedule: its cron expression in words, whether it is paused, and when it next runs."""
     return _to_response(schedule)
 
 

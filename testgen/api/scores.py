@@ -7,7 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from testgen.api.deps import api_error, db_session, resolve_project_code
+from testgen.api.deps import api_error, db_session, resolve_project_code, score_percent
 from testgen.api.enums import (
     IMPACT_DIMENSION_FROM_DB,
     QUALITY_DIMENSION_FROM_DB,
@@ -70,37 +70,62 @@ _FILTER_VALUE_MAX_LEN = 256
 _FILTER_VALUE_FORBIDDEN_CHARS = frozenset("'\";\\\x00")
 
 
+_REPEAT = "Repeat the parameter to match any of several values."
+
+
+def _tag_filter_text(tag: str) -> str:
+    return (
+        f"Only data whose {tag} tag is this value. {_REPEAT} A column takes the tag of its table, or of its table "
+        "group, when it has none of its own."
+    )
+
+
 @router.get(
     "/projects/{project_code}/scores",
     response_model=ScoresResponse,
-    summary="Quality Score rollup",
+    summary="Read a project's scores",
     responses={400: {"model": ErrorResponse, "description": "Invalid filter value"}},
 )
 def get_project_scores(
     project_code: str = resolve_project_code("view"),
-    group_by: ScoresGroupBy | None = Query(default=None),  # noqa: B008
-    score_type: ScoreType = Query(default=ScoreType.total),  # noqa: B008
-    data_source: Annotated[list[str] | None, Query()] = None,
-    business_domain: Annotated[list[str] | None, Query()] = None,
-    source_system: Annotated[list[str] | None, Query()] = None,
-    source_process: Annotated[list[str] | None, Query()] = None,
-    stakeholder_group: Annotated[list[str] | None, Query()] = None,
-    transform_level: Annotated[list[str] | None, Query()] = None,
-    data_location: Annotated[list[str] | None, Query()] = None,
-    data_product: Annotated[list[str] | None, Query()] = None,
-    semantic_data_type: Annotated[list[str] | None, Query()] = None,
-    data_classification: Annotated[list[str] | None, Query()] = None,
+    group_by: ScoresGroupBy | None = Query(  # noqa: B008
+        default=None,
+        description="Break the score down by this attribute, adding a `breakdown`: `impact_dimension`, "
+        "`quality_dimension`, `table_group`, `semantic_data_type` (the type profiling infers a column holds, e.g. "
+        "email or phone number), or a catalog tag: `data_source`, `source_system`, `source_process`, "
+        "`data_location`, `business_domain`, `stakeholder_group`, `transform_level`, `data_product`, or "
+        "`data_classification`. Omit for the overall scores alone. `impact_dimension` is the most useful first "
+        "breakdown.",
+    ),
+    score_type: ScoreType = Query(  # noqa: B008
+        default=ScoreType.total,
+        description="The score each `breakdown` row reports: `total` (the default) for the Total Score, or `cde` for "
+        "the CDE Score, which covers only critical data elements (CDEs). Does not change the overall scores.",
+    ),
+    data_source: Annotated[list[str] | None, Query(description=_tag_filter_text("data source"))] = None,
+    business_domain: Annotated[list[str] | None, Query(description=_tag_filter_text("business domain"))] = None,
+    source_system: Annotated[list[str] | None, Query(description=_tag_filter_text("source system"))] = None,
+    source_process: Annotated[list[str] | None, Query(description=_tag_filter_text("source process"))] = None,
+    stakeholder_group: Annotated[list[str] | None, Query(description=_tag_filter_text("stakeholder group"))] = None,
+    transform_level: Annotated[list[str] | None, Query(description=_tag_filter_text("transform level"))] = None,
+    data_location: Annotated[
+        list[str] | None,
+        Query(description=f"Only table groups whose data location tag is this value. {_REPEAT}"),
+    ] = None,
+    data_product: Annotated[list[str] | None, Query(description=_tag_filter_text("data product"))] = None,
+    semantic_data_type: Annotated[
+        list[str] | None,
+        Query(description=f"Only columns of this semantic data type, the type profiling infers they hold. {_REPEAT}"),
+    ] = None,
+    data_classification: Annotated[list[str] | None, Query(description=_tag_filter_text("data classification"))] = None,
 ):
-    """Quality Score rollup for a project.
+    """A project's Total Score and CDE Score, with the Profiling Score and Testing Score that make up the Total
+    Score, from 0 to 100.
 
-    Returns the overall Testing Score (``total`` / ``cde`` / ``profiling`` / ``testing``).
-    When ``group_by`` is supplied, adds a ``breakdown`` ordered by ``impact`` descending —
-    the actionable signal for which group accounts for the most of the score's
-    affected data points. ``impact_dimension`` is the recommended primary breakdown.
-
-    Filter query params are repeatable: repeats within one field OR together, different
-    fields AND together. ``quality_dimension``, ``impact_dimension`` and ``table_group``
-    are groupable only, not filterable.
+    The filter parameters narrow the data scored. Values repeated within one parameter match any of them; different
+    parameters must all match. With `group_by`, the response adds a `breakdown` that lists the groups by `impact`, the
+    part of the score each group's affected data costs, largest first. `quality_dimension`, `impact_dimension` and
+    `table_group` can group the breakdown but have no filter parameter.
     """
     filters = _build_filter_list(
         data_source=data_source,
@@ -134,17 +159,17 @@ def get_project_scores(
         breakdown = [
             ScoreBreakdownRow(
                 value=_translate_group_value(group_by, row.get(engine_group_by)),
-                score=_scale_score(row.get("score")),
+                score=score_percent(row.get("score")),
                 impact=row.get("impact", 0.0),
             )
             for row in rows
         ]
 
     return ScoresResponse(
-        total=_scale_score(card.get("score")),
-        cde=_scale_score(card.get("cde_score")),
-        profiling=_scale_score(card.get("profiling_score")),
-        testing=_scale_score(card.get("testing_score")),
+        total=score_percent(card.get("score")),
+        cde=score_percent(card.get("cde_score")),
+        profiling=score_percent(card.get("profiling_score")),
+        testing=score_percent(card.get("testing_score")),
         breakdown=breakdown,
     )
 
@@ -171,13 +196,6 @@ def _build_filter_list(**named_lists: list[str] | None) -> list[dict]:
     if errors:
         raise api_error(400, "invalid_filter_value", "; ".join(errors))
     return out
-
-
-def _scale_score(raw: float | None) -> float | None:
-    """Engine scores are 0-1 fractions; the API surfaces 0-100 like the UI does."""
-    if raw is None:
-        return None
-    return raw * 100
 
 
 def _translate_group_value(group_by: ScoresGroupBy, raw_value: object) -> str | None:
