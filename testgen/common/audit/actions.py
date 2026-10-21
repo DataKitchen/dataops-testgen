@@ -25,6 +25,7 @@ class AuditTargetType(StrEnum):
     """Kinds of affected object, as records name them."""
 
     USER = "user"
+    PROJECT = "project"
     ACCESS_TOKEN = "access_token"  # noqa: S105
     OAUTH_CLIENT = "oauth_client"
     SETTING = "setting"

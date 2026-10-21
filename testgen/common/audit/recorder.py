@@ -69,6 +69,8 @@ def record(
     targets: Iterable[object] = (),
     target_count: int | None = None,
     target_name: str | None = None,
+    cause_type: AuditTargetType | None = None,
+    cause_id: object | None = None,
     changes: dict[str, dict[str, Any]] | None = None,
     only: Collection[str] | None = None,
     exclude: Collection[str] = (),
@@ -84,6 +86,8 @@ def record(
     :param targets: ids of the affected objects; only the first ``TARGETS_CAP`` are written.
     :param target_count: how many objects were affected; defaults to the number of ``targets``.
     :param target_name: name of the affected object, written only when ``target_count`` is 1.
+    :param cause_type: overrides the cause of the context, e.g. the deletion an action is a side effect of.
+    :param cause_id: id of that cause.
     :param changes: changed fields, as ``{field: {"from": ..., "to": ...}}``, for an action with no subject.
         An entry whose two values are equal is dropped.
     :param only: limits the subject's changed fields to these.
@@ -126,8 +130,8 @@ def record(
             target_count=len(target_ids) if target_count is None else target_count,
             targets=target_ids,
             target_name=target_name,
-            cause_type=context.cause_type,
-            cause_id=context.cause_id,
+            cause_type=cause_type or context.cause_type,
+            cause_id=(None if cause_id is None else str(cause_id)) if cause_type else context.cause_id,
             changes=changes,
         )
         if session is None or outcome != Outcome.SUCCEEDED:
