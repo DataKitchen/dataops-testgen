@@ -3,7 +3,7 @@
 
 DataOps TestGen is an open-source data quality tool that profiles tables, generates tests from the profiling results, and runs them on a schedule with freshness, volume, and schema monitoring.
 
-The open-source edition includes the full web UI, not just a library. You also get a CLI and an MCP server, so you can drive TestGen from a terminal or an AI assistant. It is Apache 2.0 licensed and runs the same engine and UI as TestGen Enterprise.
+The open-source edition includes the full web UI, not just a library. You also get a CLI and an MCP server, so you can drive TestGen from a terminal or an AI assistant. It is Apache 2.0 licensed and runs the same core engine and UI as TestGen Enterprise.
 
 [Interactive Product Tour](https://datakitchen.storylane.io/share/byag8vimd5tn) | [Product page](https://datakitchen.io/products/dataops-testgen/) | [Documentation](https://docs.datakitchen.io/testgen/what-is-testgen/)
 
@@ -90,7 +90,7 @@ Setup instructions: [docs.datakitchen.io/testgen/mcp](https://docs.datakitchen.i
 
 ## Open source vs Enterprise
 
-Both editions run the same core engine, with every test type, unlimited tables, and unlimited data volume. Enterprise adds multi-user access, unlimited connections and projects, enterprise security, and DataKitchen support.
+The core profiling, testing, and monitoring engine is free and open source, with unlimited tables and unlimited data volume. Enterprise adds team access, security, Commercial Pharma tests, source-data controls for AI, and support.
 
 | | Open source | Enterprise |
 |---|---|---|
@@ -99,6 +99,8 @@ Both editions run the same core engine, with every test type, unlimited tables, 
 | Database connections | 1 | Unlimited, $100 per connection per month |
 | Projects | 1 | Unlimited |
 | Enterprise security | | Included |
+| Commercial Pharma test types (12) | | Included |
+| Hide source data from AI clients (MCP) | | Included |
 | Support | Community Slack | DataKitchen support |
 
 See [datakitchen.io/pricing](https://datakitchen.io/pricing/) for current pricing.
