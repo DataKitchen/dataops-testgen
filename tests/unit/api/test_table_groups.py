@@ -144,7 +144,7 @@ def test_list_table_groups_reports_counts_and_scores(mock_cls):
     item = list_table_groups(project_code="demo", page=1, limit=20).items[0]
 
     assert (item.table_count, item.column_count, item.row_count) == (12, 140, 98000)
-    assert (item.profiling_score, item.testing_score, item.quality_score) == (0.95, 0.9, 0.855)
+    assert (item.profiling_score, item.testing_score, item.quality_score) == pytest.approx((95.0, 90.0, 85.5))
 
 
 @patch(f"{MODULE}.TableGroup")
@@ -1303,7 +1303,7 @@ def test_update_table_group_refuses_a_pii_change_without_view_pii():
         {
             "code": "pii_permission_required",
             "detail": "Changing PII detection requires permission to view PII. "
-            "Leave this setting unchanged or contact your administrator.",
+            "Leave this setting unchanged, or ask an administrator for the permission.",
         }
     ]
     result.table_group.save.assert_not_called()

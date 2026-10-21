@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
 
-from testgen.api.deps import db_session, fields_to_change, get_authorized_user
+from testgen.api.deps import db_session, fields_to_change, get_authorized_user, score_percent
 from testgen.common.models import POOL_MAX_OVERFLOW, POOL_SIZE, get_current_session
 
 JWT_KEY = base64.b64encode(b"test-secret-key-for-jwt-signing!").decode("ascii")
@@ -362,3 +362,13 @@ def test_fields_to_change_refuses_an_empty_or_null_body(body, code):
 
     assert excinfo.value.status_code == 422
     assert excinfo.value.detail["errors"][0]["code"] == code
+
+
+def test_score_percent_none_stays_none():
+    assert score_percent(None) is None
+
+
+def test_score_percent_fraction_to_percent():
+    assert score_percent(0.87) == pytest.approx(87.0)
+    assert score_percent(0.0) == pytest.approx(0.0)
+    assert score_percent(1.0) == pytest.approx(100.0)

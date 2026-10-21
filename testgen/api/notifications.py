@@ -14,6 +14,8 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from testgen.api.deps import (
+    LimitQuery,
+    PageQuery,
     api_error,
     db_session,
     fields_to_change,
@@ -75,8 +77,20 @@ from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
 
 _error_responses: dict[int | str, dict] = {
-    400: {"model": ErrorResponse, "description": "Invalid request"},
     404: {"model": ErrorResponse, "description": "Not found"},
+}
+_destination_invalid = {
+    400: {
+        "model": ErrorResponse,
+        "description": "A field fails validation, or another destination in the project has this name",
+    },
+}
+_rule_invalid = {
+    400: {
+        "model": ErrorResponse,
+        "description": "A field fails validation, or the scope or destination is not in the project or does not fit "
+        "the rule's event",
+    },
 }
 
 router = APIRouter(
@@ -89,14 +103,12 @@ router = APIRouter(
 # Module-level Query defaults so route signatures avoid B008 (function-call-in-defaults).
 # Request / response models live in ``api.schemas`` per the convention every other
 # router follows -- see ``JobListResponse`` / ``TestResultListResponse`` etc.
-_DestinationTypeQuery = Query(default=None, description="Filter to a single destination type.")
-_EventQuery = Query(default=None)
-_EnabledQuery = Query(default=None)
-# ``page`` / ``limit`` defaults match every other list endpoint in the API
-# (``page=1``, ``limit=20``, hard cap ``100``) -- see ``api/monitors.py``,
-# ``api/scores.py``, ``api/jobs.py``, ``api/test_definitions.py``.
-_PageQuery = Query(default=1, ge=1)
-_LimitQuery = Query(default=20, ge=1, le=100)
+_DestinationTypeQuery = Query(default=None, description="Only destinations of this type.")
+_EventQuery = Query(
+    default=None,
+    description="Only rules for this event: `test_run`, `profiling_run`, `monitor_run`, or `score_drop`.",
+)
+_EnabledQuery = Query(default=None, description="Only enabled rules when `true`, only paused rules when `false`.")
 _BodyRequired = Body(...)
 _CLEARABLE_RULE_FIELDS = ("total_threshold", "cde_threshold", "table_name")
 
@@ -114,10 +126,12 @@ _CLEARABLE_RULE_FIELDS = ("total_threshold", "cde_threshold", "table_name")
 def list_destinations(
     project_code: str = resolve_project_code("edit"),
     destination_type: DestinationTypeFilter | None = _DestinationTypeQuery,
-    page: int = _PageQuery,
-    limit: int = _LimitQuery,
+    page: int = PageQuery,
+    limit: int = LimitQuery,
 ) -> DestinationListResponse:
-    """List notification destinations in the project."""
+    """Email recipient lists and webhooks in a project that notification rules can send to, ordered by name, each
+    with the number of rules that use it.
+    """
     session = get_current_session()
     query = select(NotificationDestination).where(NotificationDestination.project_code == project_code)
     if destination_type is not None:
@@ -140,12 +154,15 @@ def list_destinations(
     summary="Create a destination",
     response_model=DestinationResponse,
     status_code=201,
+    responses=_destination_invalid,
 )
 def create_destination(
     project_code: str = resolve_project_code("administer"),
     body: DestinationCreate = _BodyRequired,
 ) -> DestinationResponse:
-    """Create a new notification destination."""
+    """Creates an email recipient list or a webhook that notification rules in the project can send to. `type`
+    selects which.
+    """
     payload = body.root
     try:
         if isinstance(payload, EmailDestinationCreate):
@@ -176,7 +193,9 @@ def create_destination(
 def get_destination(
     destination: NotificationDestination = resolve_notification_destination("edit"),  # noqa: B008
 ) -> DestinationResponse:
-    """Get a single notification destination by ID."""
+    """A notification destination, with the number of rules that use it. A webhook's URL is masked and its
+    authorization header value is never returned.
+    """
     return _dest_to_response(destination, _rule_counts([destination]).get(destination.id, 0))
 
 
@@ -184,12 +203,19 @@ def get_destination(
     "/notification-destinations/{destination_id}",
     summary="Update a destination",
     response_model=DestinationResponse,
+    responses={
+        400: {
+            "model": ErrorResponse,
+            "description": "A field fails validation, another destination in the project has this name, or `type` "
+            "does not match the destination",
+        },
+    },
 )
 def update_destination(
     destination: NotificationDestination = resolve_notification_destination("administer"),  # noqa: B008
     body: DestinationUpdate = _BodyRequired,
 ) -> DestinationResponse:
-    """Update fields on a destination. Passing an empty string as ``auth_header_value`` clears it."""
+    """Fields left out of the body keep their values. Send `""` as `auth_header_value` to clear it."""
     payload = body.root
     fields_to_change(payload, ignore=("type",))
     try:
@@ -227,7 +253,9 @@ def update_destination(
 def delete_destination(
     destination: NotificationDestination = resolve_notification_destination("administer"),  # noqa: B008
 ) -> DestinationDeleteResponse:
-    """Delete a destination. Every rule pointing at it is cascade-deleted; the count is reported."""
+    """Deletes every rule that sends to the destination along with it. The response gives the number of rules
+    deleted.
+    """
     rule_count = _rule_counts([destination]).get(destination.id, 0)
     destination_id = destination.id
     destination.delete()
@@ -248,14 +276,10 @@ def list_rules(
     project_code: str = resolve_project_code("view"),
     event: Literal["test_run", "profiling_run", "monitor_run", "score_drop"] | None = _EventQuery,
     enabled: bool | None = _EnabledQuery,
-    page: int = _PageQuery,
-    limit: int = _LimitQuery,
+    page: int = PageQuery,
+    limit: int = LimitQuery,
 ) -> RuleListResponse:
-    """List notification rules in the project.
-
-    Filter with ``event`` (``test_run``, ``profiling_run``, ``monitor_run``, ``score_drop``)
-    and/or ``enabled`` (``true`` / ``false``); leave both unset to return every rule.
-    """
+    """Notification rules in a project, enabled and paused, each with its event, scope, trigger and addressing."""
     clauses = []
     if event is not None:
         clauses.append(NotificationSettings.event == NotificationEvent(event))
@@ -277,12 +301,15 @@ def list_rules(
     summary="Create a rule",
     response_model=RuleResponse,
     status_code=201,
+    responses=_rule_invalid,
 )
 def create_rule(
     project_code: str = resolve_project_code("edit"),
     body: RuleCreate = _BodyRequired,
 ) -> RuleResponse:
-    """Create a notification rule addressing either inline recipients or a destination."""
+    """`event` selects what the rule watches and which scope and trigger fields apply. The rule sends to either
+    recipients listed in `addressing` or a destination.
+    """
     payload = body.root
     addressing = _resolve_addressing_in(payload.addressing, project_code)
     try:
@@ -342,7 +369,7 @@ def create_rule(
 def get_rule(
     rule: NotificationSettings = resolve_notification_rule("view"),  # noqa: B008
 ) -> RuleResponse:
-    """Get a single notification rule by ID, including its event-specific fields and addressing."""
+    """A notification rule, with its event, scope, trigger and addressing."""
     return _rule_to_response(rule)
 
 
@@ -350,15 +377,22 @@ def get_rule(
     "/notification-rules/{rule_id}",
     summary="Update a rule",
     response_model=RuleResponse,
+    responses={
+        400: {
+            "model": ErrorResponse,
+            "description": "A field fails validation, the trigger does not apply to the rule's event, or the "
+            "destination is not in the project",
+        },
+    },
 )
 def update_rule(
     rule: NotificationSettings = resolve_notification_rule("edit"),  # noqa: B008
     body: RuleUpdate = _BodyRequired,
 ) -> RuleResponse:
-    """Update a rule's addressing, trigger, thresholds, or table filter.
+    """Changes a rule's addressing, trigger, thresholds, or table filter. Fields left out of the body keep their
+    values. The event and scope cannot be changed.
 
-    Event and scope entity are immutable; pass only the fields to change. Clear an
-    optional field with the matching ``clear_*`` flag.
+    Clear an optional field with its `clear_*` flag.
     """
     # A clear flag sent as false asks for nothing.
     unset_flags = [f"clear_{field}" for field in _CLEARABLE_RULE_FIELDS if not getattr(body, f"clear_{field}")]
@@ -432,7 +466,7 @@ def update_rule(
 def delete_rule(
     rule: NotificationSettings = resolve_notification_rule("edit"),  # noqa: B008
 ) -> None:
-    """Delete a notification rule. The destination it addresses is untouched."""
+    """Deletes the rule only. The destination it sends to is kept."""
     rule.delete()
     return None
 
@@ -445,7 +479,9 @@ def delete_rule(
 def pause_rule(
     rule: NotificationSettings = resolve_notification_rule("edit"),  # noqa: B008
 ) -> RuleResponse:
-    """Pause a rule (sets ``enabled=false``). The rule stops firing but its configuration is kept."""
+    """Sets `enabled` to `false`: the rule stops sending notifications and keeps its configuration. Pausing a
+    paused rule changes nothing.
+    """
     return _set_rule_enabled(rule, False)
 
 
@@ -457,7 +493,7 @@ def pause_rule(
 def resume_rule(
     rule: NotificationSettings = resolve_notification_rule("edit"),  # noqa: B008
 ) -> RuleResponse:
-    """Resume a paused rule (sets ``enabled=true``). No-op on an already-enabled rule."""
+    """Sets `enabled` to `true`: the rule sends notifications again. Resuming an enabled rule changes nothing."""
     return _set_rule_enabled(rule, True)
 
 
