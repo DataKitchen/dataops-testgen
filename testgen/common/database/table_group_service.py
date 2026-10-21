@@ -69,9 +69,6 @@ _BIGINT_MAX = 2**63 - 1
 
 # Widths of the ``table_groups`` VARCHAR columns (030_initialize_new_schema_structure.sql).
 _MAX_LENGTHS: dict[str, int] = {
-    "profiling_table_set": 2000,
-    "profiling_include_mask": 2000,
-    "profiling_exclude_mask": 2000,
     "profile_id_column_mask": 2000,
     "profile_sk_column_mask": 150,
     "description": 1000,
@@ -85,7 +82,6 @@ _MAX_LENGTHS: dict[str, int] = {
     "data_product": 40,
     "data_classification": 40,
 }
-_LIST_COLUMNS = frozenset({"profiling_table_set", "profiling_include_mask", "profiling_exclude_mask"})
 
 _PUBLIC_FIELD_NAMES: dict[str, str] = {
     "table_groups_name": "table_group_name",
@@ -150,13 +146,7 @@ def validate_table_group_fields(
     for attr, max_length in _MAX_LENGTHS.items():
         value = getattr(table_group, attr)
         if isinstance(value, str) and len(value) > max_length:
-            if attr in _LIST_COLUMNS:
-                errors.append(
-                    f"{field(attr)} must be at most {max_length} characters in total,"
-                    " counting a comma between entries."
-                )
-            else:
-                errors.append(f"{field(attr)} must be at most {max_length} characters.")
+            errors.append(f"{field(attr)} must be at most {max_length} characters.")
 
     delay = table_group.profiling_delay_days
     if not _is_int(delay) or delay < 0:

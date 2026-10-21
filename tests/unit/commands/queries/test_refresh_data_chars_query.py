@@ -101,7 +101,7 @@ def test_include_empty_include_mask(mask):
     query, _ = sql_generator.get_schema_ddf()
 
     assert r"""AND (
-                (c.table_name LIKE 'important%' ) OR (c.table_name LIKE '%useful[_]%' )
+                (c.table_name LIKE N'important%' ) OR (c.table_name LIKE N'%useful[_]%' )
             )""" in query
 
 
@@ -133,7 +133,7 @@ def test_table_set_only():
     sql_generator = RefreshDataCharsSQL(connection, table_group)
     criteria = sql_generator._get_table_criteria()
 
-    assert "IN ('users','orders','products')" in criteria
+    assert "AND (c.table_name IN ('users', 'orders', 'products'))" in criteria
     assert "LIKE" not in criteria
 
 
@@ -164,7 +164,7 @@ def test_table_set_with_include_exclude():
     sql_generator = RefreshDataCharsSQL(connection, table_group)
     criteria = sql_generator._get_table_criteria()
 
-    assert "IN ('users','orders')" in criteria
+    assert "AND (c.table_name IN ('users', 'orders'))" in criteria
     assert "LIKE 'important%'" in criteria
     assert "AND NOT" in criteria
     assert "LIKE 'temp%'" in criteria
@@ -230,6 +230,22 @@ def test_filter_schema_columns_underscore_is_literal():
     )
     sql_generator = RefreshDataCharsSQL(connection, table_group)
     columns = _make_columns("a_b", "axb", "axxb")
+
+    filtered = sql_generator.filter_schema_columns(columns)
+
+    assert {c.table_name for c in filtered} == {"a_b"}
+
+
+def test_filter_schema_columns_escaped_underscore_is_literal():
+    connection = Connection(sql_flavor="salesforce_data360")
+    table_group = TableGroup(
+        table_group_schema="default",
+        profiling_table_set="",
+        profiling_include_mask=r"a\_%",
+        profiling_exclude_mask="",
+    )
+    sql_generator = RefreshDataCharsSQL(connection, table_group)
+    columns = _make_columns("a_b", "axb", r"a\_b")
 
     filtered = sql_generator.filter_schema_columns(columns)
 
@@ -389,13 +405,14 @@ def test_the_catalog_merge_joins_each_updated_column_to_its_alias_by_primary_key
         assert "data_column_chars.column_name" not in statement
 
 
-def test_duckdb_mask_underscore_matches_only_a_literal_underscore():
+@pytest.mark.parametrize("include_mask,exclude_mask", [("sales_%", "sales_tmp%"), (r"sales\_%", r"sales\_tmp%")])
+def test_duckdb_mask_underscore_matches_only_a_literal_underscore(include_mask, exclude_mask):
     """DuckDB's LIKE has no default escape character, so the escaped underscore needs an ESCAPE clause."""
     table_group = TableGroup(
         table_group_schema="main",
         profiling_table_set="",
-        profiling_include_mask="sales_%",
-        profiling_exclude_mask="sales_tmp%",
+        profiling_include_mask=include_mask,
+        profiling_exclude_mask=exclude_mask,
     )
     sql_generator = RefreshDataCharsSQL(Connection(sql_flavor="duckdb"), table_group)
     column = sql_generator.flavor_service.ddf_table_ref
@@ -407,3 +424,71 @@ def test_duckdb_mask_underscore_matches_only_a_literal_underscore():
     ).fetchall()
 
     assert rows == [("sales_orders",)]
+
+
+@pytest.mark.parametrize(
+    "flavor,expected_clause",
+    [
+        ("postgresql", r"(c.table_name LIKE 'sales\_%' )"),
+        ("redshift", r"(c.table_name LIKE 'sales\\_%' )"),
+        ("snowflake", r"(c.table_name LIKE 'sales\\_%' ESCAPE '\\')"),
+        ("oracle", r"(c.table_name LIKE 'sales\_%' ESCAPE '\')"),
+        ("mssql", "(c.table_name LIKE N'sales[_]%' )"),
+        ("duckdb", r"(c.table_name LIKE 'sales\_%' ESCAPE '\')"),
+        ("sap_hana", r"(c.table_name LIKE 'sales\_%' ESCAPE '\')"),
+        ("bigquery", r"(c.table_name LIKE 'sales\\_%' )"),
+        ("databricks", r"(c.table_name LIKE 'sales\\_%' )"),
+    ],
+)
+@pytest.mark.parametrize("mask", ["sales_%", r"sales\_%"])
+def test_mask_underscore_is_escaped_for_each_flavor(flavor, expected_clause, mask):
+    table_group = TableGroup(table_group_schema="test_schema", profiling_include_mask=mask)
+    sql_generator = RefreshDataCharsSQL(Connection(sql_flavor=flavor), table_group)
+
+    assert expected_clause in sql_generator._get_table_criteria()
+
+
+@pytest.mark.parametrize(
+    "flavor,expected_name,expected_mask",
+    [
+        ("postgresql", "'o''brien'", "'o''brien%'"),
+        ("bigquery", r"'o\'brien'", r"'o\'brien%'"),
+    ],
+)
+def test_single_quote_in_table_criteria_is_escaped(flavor, expected_name, expected_mask):
+    table_group = TableGroup(
+        table_group_schema="test_schema",
+        profiling_table_set="o'brien",
+        profiling_include_mask="o'brien%",
+    )
+    criteria = RefreshDataCharsSQL(Connection(sql_flavor=flavor), table_group)._get_table_criteria()
+
+    assert f"IN ({expected_name})" in criteria
+    assert f"LIKE {expected_mask}" in criteria
+
+
+@pytest.mark.parametrize(
+    "flavor,expected_mask",
+    [("snowflake", r"LIKE 'x\\'' OR 1=1) --'"), ("bigquery", r"LIKE 'x\\\' OR 1=1) --'")],
+)
+def test_trailing_backslash_cannot_end_the_literal(flavor, expected_mask):
+    table_group = TableGroup(
+        table_group_schema="test_schema",
+        profiling_table_set="orders\\",
+        profiling_include_mask="x\\' OR 1=1) --",
+    )
+    criteria = RefreshDataCharsSQL(Connection(sql_flavor=flavor), table_group)._get_table_criteria()
+
+    assert r"IN ('orders\\')" in criteria
+    assert expected_mask in criteria
+
+
+def test_table_set_is_split_into_in_lists_of_at_most_1000():
+    table_names = [f"t{i}" for i in range(2001)]
+    table_group = TableGroup(table_group_schema="test_schema", profiling_table_set=",".join(table_names))
+
+    criteria = RefreshDataCharsSQL(Connection(sql_flavor="oracle"), table_group)._get_table_criteria()
+
+    in_lists = criteria.split(" OR ")
+    assert len(in_lists) == 3
+    assert [in_list.count("'") // 2 for in_list in in_lists] == [1000, 1000, 1]

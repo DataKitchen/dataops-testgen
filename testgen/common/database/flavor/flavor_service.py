@@ -193,6 +193,7 @@ class FlavorService:
     escaped_single_quote = "''"
     literal_escapes_backslash = False
     string_literal_prefix = ""
+    # A LIKE pattern for a literal underscore, before string_literal escapes it
     escaped_underscore = "\\_"
     escape_clause = ""
     varchar_type = "VARCHAR(1000)"

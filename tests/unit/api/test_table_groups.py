@@ -708,7 +708,6 @@ def test_create_table_group_rejects_values_wider_than_their_columns():
 
     assert resp.status_code == 400
     assert [entry["detail"] for entry in _error_entries(resp)] == [
-        "`table_set` must be at most 2000 characters in total, counting a comma between entries.",
         "`business_domain` must be at most 40 characters.",
         f"`profiling_delay_days` must be at most {2**31 - 1}.",
     ]

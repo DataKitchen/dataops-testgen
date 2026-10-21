@@ -200,7 +200,7 @@ def _get_processed_profiling_table_set(profiling_table_set):
     if profiling_table_set is None:
         return []
     items = profiling_table_set.split(",")
-    items_no_quotes = [x.replace("'", "") for x in items]
+    items_no_quotes = [x.replace("'", "").strip() for x in items]
     items_remove_blank = list(filter(lambda x: x != "", items_no_quotes))
     return items_remove_blank
 

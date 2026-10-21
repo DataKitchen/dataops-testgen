@@ -218,29 +218,31 @@ default: `default_suite_desc`
 
 Comma separated list of specific table names to include when running profiling for the project database.
 
+In the four mask settings below, `%` matches any run of characters, every other character, including `_`, matches itself, and `\_` also matches `_`.
+
 #### `DEFAULT_PROFILING_INCLUDE_MASK`
 
-A SQL filter supported by the project database's `LIKE` operator for table names to include.
+Comma-separated list of table names or patterns to include. Matching is case-sensitive on most databases.
 
-default: `%%`
+default: `%`
 
 #### `DEFAULT_PROFILING_EXCLUDE_MASK`
 
-A SQL filter supported by the project database's `LIKE` operator for table names to exclude.
+Comma-separated list of table names or patterns to exclude. Matching is case-sensitive on most databases.
 
-default: `tmp%%`
+default: `tmp%`
 
 #### `DEFAULT_PROFILING_ID_COLUMN_MASK`
 
-A SQL filter supported by the project database's `LIKE` operator representing ID columns.
+Column name pattern for ID columns. Matching is not case-sensitive.
 
-default: `%%_id`
+default: `%_id`
 
 #### `DEFAULT_PROFILING_SK_COLUMN_MASK`
 
-A SQL filter supported by the project database's `LIKE` operator representing surrogate key columns.
+Column name pattern for surrogate key columns. Matching is not case-sensitive.
 
-default: `%%_sk`
+default: `%_sk`
 
 #### `OBSERVABILITY_API_URL`
 

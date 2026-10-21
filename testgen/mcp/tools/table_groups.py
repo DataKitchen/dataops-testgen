@@ -268,24 +268,31 @@ def create_table_group(
     include_mask: Annotated[
         str | None,
         Field(
-            description="Comma-separated SQL LIKE patterns to include (e.g. ``fact_%,dim_%``)."
-            " Omit for the default include mask."
+            description="Comma-separated table names or patterns to include (e.g. ``fact_%,dim_%``). `%` matches any"
+            " characters; every other character, `_` included, matches itself. Omit for the default include mask."
         ),
     ] = None,
     exclude_mask: Annotated[
         str | None,
         Field(
-            description="Comma-separated SQL LIKE patterns to exclude. Omit for the default exclude mask;"
-            " pass an empty string to exclude nothing."
+            description="Comma-separated table names or patterns to exclude. `%` matches any characters; every other"
+            " character, `_` included, matches itself. Omit for the default exclude mask; pass an empty string to"
+            " exclude nothing."
         ),
     ] = None,
     profile_id_column_mask: Annotated[
         str | None,
-        Field(description="SQL LIKE pattern marking ID columns. Omit for the default ID column mask."),
+        Field(
+            description="Column name pattern marking ID columns, not case-sensitive. `%` matches any characters;"
+            " every other character, `_` included, matches itself. Omit for the default ID column mask."
+        ),
     ] = None,
     profile_sk_column_mask: Annotated[
         str | None,
-        Field(description="SQL LIKE pattern marking surrogate-key columns. Omit for the default SK column mask."),
+        Field(
+            description="Column name pattern marking surrogate-key columns, not case-sensitive. `%` matches any"
+            " characters; every other character, `_` included, matches itself. Omit for the default SK column mask."
+        ),
     ] = None,
     profile_use_sampling: Annotated[
         bool | None,
@@ -369,8 +376,8 @@ def create_table_group(
     """Create a table group on an existing connection, by schema or by file path.
 
     The table group inherits its project from the connection. ``include_mask``
-    and ``exclude_mask`` are SQL ``LIKE`` patterns (e.g. ``fact_%,dim_%``);
-    ``table_set`` is an explicit list. All filters compose with ``AND``. A file connection takes
+    and ``exclude_mask`` are table names or patterns in which ``%`` matches any
+    characters (e.g. ``fact_%,dim_%``); ``table_set`` is an explicit list. All filters compose with ``AND``. A file connection takes
     ``file_declarations`` instead of any of those, and no ``schema``.
     """
     connection = resolve_connection(connection_id)
@@ -462,12 +469,33 @@ def update_table_group(
         list[str] | None,
         Field(description="Replacement explicit table list (full replacement of the current list)."),
     ] = None,
-    include_mask: Annotated[str | None, Field(description="Comma-separated SQL LIKE patterns to include.")] = None,
-    exclude_mask: Annotated[str | None, Field(description="Comma-separated SQL LIKE patterns to exclude.")] = None,
-    profile_id_column_mask: Annotated[str | None, Field(description="SQL LIKE pattern marking ID columns.")] = None,
+    include_mask: Annotated[
+        str | None,
+        Field(
+            description="Comma-separated table names or patterns to include. `%` matches any characters; every other"
+            " character, `_` included, matches itself."
+        ),
+    ] = None,
+    exclude_mask: Annotated[
+        str | None,
+        Field(
+            description="Comma-separated table names or patterns to exclude. `%` matches any characters; every other"
+            " character, `_` included, matches itself."
+        ),
+    ] = None,
+    profile_id_column_mask: Annotated[
+        str | None,
+        Field(
+            description="Column name pattern marking ID columns, not case-sensitive. `%` matches any characters;"
+            " every other character, `_` included, matches itself."
+        ),
+    ] = None,
     profile_sk_column_mask: Annotated[
         str | None,
-        Field(description="SQL LIKE pattern marking surrogate-key columns."),
+        Field(
+            description="Column name pattern marking surrogate-key columns, not case-sensitive. `%` matches any"
+            " characters; every other character, `_` included, matches itself."
+        ),
     ] = None,
     profile_use_sampling: Annotated[
         bool | None,

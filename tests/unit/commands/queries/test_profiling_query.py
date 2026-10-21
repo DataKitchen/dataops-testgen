@@ -35,6 +35,8 @@ def _make_profiling_sql(
     table_group = MagicMock()
     table_group.profile_flag_pii = profile_flag_pii
     table_group.profile_flag_cdes = profile_flag_cdes
+    table_group.profile_id_column_mask = "%_id"
+    table_group.profile_sk_column_mask = "%_sk"
     profiling_run = MagicMock(profiling_starttime=profiling_starttime)
     return ProfilingSQL(connection, table_group, profiling_run)
 
@@ -95,6 +97,21 @@ def test_update_profiling_results_excludes_cde_query_when_flag_unset():
 
     templates = [q[0] for q in queries]
     assert "cde_flagger_query.sql" not in templates
+
+
+@pytest.mark.parametrize(
+    "mask,expected",
+    [("%_id", r"%\_id"), ("%_sk", r"%\_sk"), ("%id", "%id"), (r"%\_id", r"%\_id"), (None, None), ("", "")],
+)
+def test_id_and_sk_masks_match_underscore_literally(mask, expected):
+    sql_generator = _make_profiling_sql()
+    sql_generator.table_group.profile_id_column_mask = mask
+    sql_generator.table_group.profile_sk_column_mask = mask
+
+    params = sql_generator._get_params()
+
+    assert params["PROFILE_ID_COLUMN_MASK"] == expected
+    assert params["PROFILE_SK_COLUMN_MASK"] == expected
 
 
 # --- calculate_sampling_params ---

@@ -369,8 +369,8 @@ from env variable: `DEFAULT_PROFILING_TABLE_SET`
 
 DEFAULT_PROFILING_INCLUDE_MASK = getenv("DEFAULT_PROFILING_INCLUDE_MASK", "%")
 """
-A SQL filter supported by the project database's `LIKE` operator for
-table names to include.
+Comma separated list of table names or patterns to include. `%` matches
+any characters; every other character, `_` included, matches itself.
 
 from env variable: `DEFAULT_PROFILING_INCLUDE_MASK`
 defaults to: `%`
@@ -378,8 +378,8 @@ defaults to: `%`
 
 DEFAULT_PROFILING_EXCLUDE_MASK = getenv("DEFAULT_PROFILING_EXCLUDE_MASK", "tmp%")
 """
-A SQL filter supported by the project database's `LIKE` operator for
-table names to exclude.
+Comma separated list of table names or patterns to exclude. `%` matches
+any characters; every other character, `_` included, matches itself.
 
 from env variable: `DEFAULT_PROFILING_EXCLUDE_MASK`
 defaults to: `tmp%`
@@ -387,8 +387,8 @@ defaults to: `tmp%`
 
 DEFAULT_PROFILING_ID_COLUMN_MASK = getenv("DEFAULT_PROFILING_ID_COLUMN_MASK", "%_id")
 """
-A SQL filter supported by the project database's `LIKE` operator
-representing ID columns.
+Column name pattern marking ID columns, not case-sensitive. `%` matches
+any characters; every other character, `_` included, matches itself.
 
 from env variable: `DEFAULT_PROFILING_ID_COLUMN_MASK`
 defaults to: `%_id`
@@ -396,8 +396,9 @@ defaults to: `%_id`
 
 DEFAULT_PROFILING_SK_COLUMN_MASK = getenv("DEFAULT_PROFILING_SK_COLUMN_MASK", "%_sk")
 """
-A SQL filter supported by the project database's `LIKE` operator
-representing surrogate key columns.
+Column name pattern marking surrogate key columns, not case-sensitive.
+`%` matches any characters; every other character, `_` included, matches
+itself.
 
 from env variable: `DEFAULT_PROFILING_SK_COLUMN_MASK`
 defaults to: `%_sk`
