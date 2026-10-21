@@ -367,7 +367,7 @@ def _append_td_summary(doc: MdDoc, td: TestDefinitionSummary) -> None:
     if td.custom_metadata:
         doc.heading(2, "Custom Metadata")
         for key, value in td.custom_metadata.items():
-            doc.field(MdDoc.escape(key), value)
+            doc.field(MdDoc.escape(key), json.dumps(value, default=str) if isinstance(value, dict | list) else value)
 
     # Parameters (editable fields from test type metadata)
     _append_parameters_section(doc, td, qualifies)
@@ -409,7 +409,7 @@ def list_test_notes(
     else:
         doc.heading(1, f"Notes for {test_name} on `{td.table_name}`")
 
-    doc.text(f"{len(notes)} note(s).")
+    doc.text(f"Notes: {len(notes)}.")
     doc.table(
         headers=["Test note ID", "Date", "Author", "Note", "Updated"],
         rows=[
@@ -643,7 +643,7 @@ def list_test_types(
 
     doc = MdDoc()
     doc.heading(1, "Test Types")
-    doc.text(f"Showing {len(test_types)} test type(s){filter_suffix}.")
+    doc.text(f"Test types shown: {len(test_types)}{filter_suffix}.")
     doc.table(
         headers=["Test Type", "Impact Dimension", "Quality Dimension", "Scope", "Description"],
         rows=[
@@ -847,7 +847,7 @@ def update_test(
         for key in fields
     ]
     doc.table(["Field", "Before", "After"], rows, code=[0])
-    doc.text(f"{len(fields)} field(s) changed.")
+    doc.text(f"Fields changed: {len(fields)}.")
     return doc.render()
 
 
@@ -910,7 +910,7 @@ def validate_custom_test(
         return doc.render()
 
     doc.text(
-        f"**Would fail:** ✗ — query returned {result.row_count} row(s) matching the failure criteria."
+        f"**Would fail:** ✗ — query returned {result.row_count} rows matching the failure criteria."
     )
     if result.preview_rows:
         doc.heading(2, "Source data preview (first row)")

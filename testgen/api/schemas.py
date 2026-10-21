@@ -56,7 +56,7 @@ from testgen.common.test_definition_export_import_service import (
 
 TestSuiteTypeField = Annotated[
     TestSuiteType,
-    Field(description="`regular` for a test suite, or `contract` for a data contract."),
+    Field(description="The kind of test suite: `regular`, or `contract` for a data contract."),
 ]
 
 SchemaName = Annotated[
@@ -1777,7 +1777,7 @@ class ContractCustomServer(BaseModel):
     """Why the contract's server entry uses the custom type."""
 
     server_type: str | None = Field(
-        description="The standard server type the connection maps to. Null when it maps to none."
+        description="The standard server type the connection maps to. `null` when it maps to none."
     )
     missing_fields: list[str] = Field(
         description="Fields `server_type` requires that the connection does not supply."
@@ -1785,11 +1785,11 @@ class ContractCustomServer(BaseModel):
 
 
 class TestSuiteCreatedResponse(TestSuiteResponse):
-    """A test suite or contract just created."""
+    """A test suite just created, regular or contract."""
 
     generation: ContractGeneration | None = Field(
         default=None,
-        description="Contracts created with `table_names` only. Null when generation failed; see "
+        description="Contracts created with `table_names` only. `null` when generation failed; see "
         "`generation_failed`.",
     )
     generation_failed: bool | None = Field(

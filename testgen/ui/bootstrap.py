@@ -2,7 +2,8 @@ import dataclasses
 import logging
 
 from testgen.common import configure_logging
-from testgen.ui.auth import Authentication
+from testgen.common.acting_user import register_acting_user_fallback
+from testgen.ui.auth import Authentication, logged_in_username
 from testgen.ui.navigation.menu import Menu
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
@@ -64,6 +65,7 @@ def run(log_level: int = logging.INFO) -> Application:
     installed_plugins = plugins.discover()
 
     configure_logging(level=log_level)
+    register_acting_user_fallback(logged_in_username)
     auth_class = Authentication
     logo_class = plugins.Logo
 

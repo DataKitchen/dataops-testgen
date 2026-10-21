@@ -431,7 +431,7 @@ def contract_rule_mappings_resource() -> str:
     doc.bullets([
         "A rule TestGen exported carries its test type under the `testgen` vendor and imports as the same test.",
         "Any other rule imports as a test only when it matches a row above exactly: a `library` rule counted in "
-        "`rows`, or a single-value `sql` rule, which imports as SQL Metric.",
+        "`rows` (the default when `unit` is absent), or a single-value `sql` rule, which imports as SQL Metric.",
         "A `custom` rule imports only when its `engine` is `testgen`.",
         "A column declaration listed above imports as its test, alongside the declaration, which stays in the document.",
     ])

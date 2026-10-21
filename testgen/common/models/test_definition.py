@@ -36,7 +36,14 @@ from sqlalchemy.sql import visitors
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.expression import case, literal
 
-from testgen.common.enums import MonitorCalculation, MonitorType, OdcsDimension, SuiteType, TestScope
+from testgen.common.enums import (
+    MANAGED_TEST_TYPES,
+    MonitorCalculation,
+    MonitorType,
+    OdcsDimension,
+    SuiteType,
+    TestScope,
+)
 from testgen.common.models import Base, get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString, ZeroIfEmptyInteger
 from testgen.common.models.entity import Entity, EntityMinimal
@@ -605,10 +612,6 @@ def _enum_by_value(enum_cls: type[StrEnum]) -> Enum:
     """
     return Enum(enum_cls, native_enum=False, values_callable=lambda cls: [member.value for member in cls])
 
-
-# Test types whose definitions TestGen creates and removes itself, never a user or a generation
-# set. Schema_Conformance follows the tables a contract declares, one definition per table.
-MANAGED_TEST_TYPES: frozenset[str] = frozenset({"Schema_Conformance"})
 
 # Scopes whose tests carry a column_name: the column under test (column), a "Test Focus" label
 # (custom), or the aggregate expression or categorical column list under test (referential).
@@ -1710,9 +1713,19 @@ class TestDefinition(Entity):
         cls.assign_missing_term_ids(target_version)
 
     @classmethod
-    def get_source_data_context(cls, test_definition_id: UUID, project_codes: list[str] | None = None) -> dict | None:
-        """Get the fields needed by the source data service for a given test definition."""
-        if cls.get(test_definition_id) is None:
+    def get_source_data_context(
+        cls,
+        test_definition_id: UUID,
+        project_codes: list[str] | None = None,
+        *,
+        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+    ) -> dict | None:
+        """Get the fields needed by the source data service for a given test definition.
+
+        Returns None when the definition is not in one of ``project_codes`` or its suite is not one of
+        ``suite_types``. A contract's definition is found in any of its versions.
+        """
+        if cls.get_for_project(test_definition_id, project_codes, suite_types=suite_types) is None:
             return None
 
         session = get_current_session()

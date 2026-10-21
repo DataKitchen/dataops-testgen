@@ -652,7 +652,7 @@ def _discard(suite, *, count=0, now_at=None, error=None):
 def test_discarding_reports_tests_removed_and_the_version_returned_to(db_session_mock):
     out = _discard(_contract(), count=41, now_at=SuiteVersion(id=uuid4(), version=3))
     assert "Discarded v4 draft of contract `Orders`" in out
-    assert "**Tests removed:** 41" in out
+    assert "**Tests removed besides schema conformance:** 41" in out
     assert "**Contract is now at:** v3 active" in out
 
 
@@ -751,6 +751,13 @@ def test_a_merge_patch_changes_one_field_and_keeps_every_other_section(db_sessio
     document = save.call_args.args[1]
     assert document == {**_WIDE_DOCUMENT, "description": {"purpose": "Orders"}}
     assert "**Version:** v5 draft" in out
+
+
+def test_a_merge_patch_after_a_rename_applies_to_the_contracts_name(db_session_mock):
+    stored = {"name": "Old name", "status": "draft"}
+    _, save = _update(_contract("Orders"), _draft(document=stored), patch={"status": "active"})
+
+    assert save.call_args.args[1] == {"name": "Orders", "status": "active"}
 
 
 def test_a_merge_patch_replaces_a_list_whole(db_session_mock):

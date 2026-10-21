@@ -68,7 +68,7 @@ EXEMPT_METHODS = {
     ),
 }
 
-# get_source_data_context is raw SQL. It guards on a scoped get() and then reads by primary key,
+# get_source_data_context is raw SQL. It guards on get_for_project() and then reads by primary key,
 # so its own statement carries no version predicate.
 UNSCOPED_STATEMENTS_ALLOWED = {"get_source_data_context"}
 

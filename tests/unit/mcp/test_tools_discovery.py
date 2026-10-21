@@ -150,6 +150,25 @@ def test_list_test_suites_returns_stats(mock_suite, db_session_mock):
     assert "3 failed" in result
     # latest_run_id is already the job execution id — surfaced directly.
     assert str(run_id) in result
+    assert f"`{run_id}` (2024-01-15 10:00 UTC)" in result
+
+
+@patch("testgen.mcp.tools.discovery.SuiteVersion")
+@patch("testgen.mcp.tools.discovery.TestSuite")
+def test_list_test_suites_contract_without_status_run_mentions_previews(mock_suite, mock_version, db_session_mock):
+    summary = MagicMock(
+        id=uuid4(), test_suite="Orders Contract", suite_type=SuiteType.CONTRACT,
+        test_suite_description=None, generation_sets=None, latest_run_id=None,
+    )
+    mock_suite.select_summary.return_value = [summary]
+    mock_version.states_for.return_value = {}
+
+    from testgen.mcp.tools.discovery import list_test_suites
+
+    result = list_test_suites("demo")
+
+    assert "No completed run counts as contract status. Preview runs are excluded." in result
+    assert "No completed runs." not in result
 
 
 @patch("testgen.mcp.tools.discovery.TestSuite")
@@ -255,11 +274,22 @@ def _mock_project_summary(**overrides):
     summary.connection_count = overrides.get("connection_count", 3)
     summary.table_group_count = overrides.get("table_group_count", 5)
     summary.test_suite_count = overrides.get("test_suite_count", 7)
+    summary.contract_count = overrides.get("contract_count", 2)
     summary.test_definition_count = overrides.get("test_definition_count", 142)
     summary.profiling_run_count = overrides.get("profiling_run_count", 12)
     summary.test_run_count = overrides.get("test_run_count", 38)
     summary.can_export_to_observability = overrides.get("can_export_to_observability", False)
     return summary
+
+
+@patch("testgen.mcp.tools.discovery.Project")
+def test_get_project_without_contracts_counts_only_test_suites(mock_project_cls, db_session_mock):
+    mock_project_cls.get.return_value = _mock_project()
+    mock_project_cls.get_summary.return_value = _mock_project_summary(contract_count=0)
+
+    from testgen.mcp.tools.discovery import get_project
+
+    assert "- **Test suites:** 7\n" in get_project("demo")
 
 
 @patch("testgen.mcp.tools.discovery.Project")
@@ -275,7 +305,7 @@ def test_get_project_returns_counts_and_config(mock_project_cls, db_session_mock
     assert "Demo Project" in out
     assert "**Connections:** 3" in out
     assert "**Table groups:** 5" in out
-    assert "**Test suites:** 7" in out
+    assert "**Test suites:** 9 (2 contracts)" in out
     assert "**Test definitions:** 142" in out
     assert "**Profiling runs:** 12" in out
     assert "**Test runs:** 38" in out
@@ -734,6 +764,11 @@ def test_the_block_names_active_draft_and_counted_version(db_session_mock):
     assert '- **Active version:** v3 active — "Q3 agreement" (frozen 2026-09-12 14:03 UTC)' in out
     assert "**Draft:** v4 draft" in out
     assert "**Tests counted from:** v4 draft" in out
+
+
+def test_a_contract_lists_no_available_generation_sets(db_session_mock):
+    out = _get(_contract_suite(), ContractState(active=None, draft=MagicMock(version=1, frozen_at=None)))
+    assert "Available generation sets" not in out
 
 
 def test_the_verification_is_the_latest_run_of_the_active_version(db_session_mock):

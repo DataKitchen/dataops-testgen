@@ -1,8 +1,11 @@
 from types import SimpleNamespace
+from unittest.mock import patch
 from uuid import uuid4
 
+import click
 import pytest
 
+from testgen.commands import run_observability_exporter as exporter
 from testgen.commands.run_observability_exporter import (
     _get_event_data,
     _get_input_parameters,
@@ -169,3 +172,22 @@ def _exported_schema(event):
 def test_the_exported_schema_follows_what_the_database_type_reports(sql_flavor_code, expected):
     """A flavor with no schema to report sends none, rather than the engine's default."""
     assert _exported_schema(_event(sql_flavor_code=sql_flavor_code)) == expected
+
+
+@pytest.mark.parametrize(
+    ("suites", "message"),
+    [
+        ([], "Project demo has no test suite named Orders."),
+        ([SimpleNamespace(id=uuid4()), SimpleNamespace(id=uuid4())], "Project demo has 2 test suites named Orders."),
+    ],
+)
+def test_exporting_a_name_that_matches_no_suite_or_several_is_refused(suites, message):
+    with (
+        patch.object(exporter.TestSuite, "select_minimal_where", return_value=suites),
+        patch.object(exporter, "export_test_results") as export,
+        patch("testgen.common.models.get_current_session"),
+        pytest.raises(click.ClickException, match=message),
+    ):
+        exporter.run_observability_exporter.__wrapped__("demo", "Orders")
+
+    export.assert_not_called()

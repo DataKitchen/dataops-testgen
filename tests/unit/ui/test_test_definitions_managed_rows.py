@@ -5,7 +5,8 @@ from uuid import uuid4
 
 import pytest
 
-from testgen.common.models.test_definition import MANAGED_TEST_TYPES, TestDefinition
+from testgen.common.enums import MANAGED_TEST_TYPES
+from testgen.common.models.test_definition import TestDefinition
 from testgen.ui.views import test_definitions as view
 
 pytestmark = pytest.mark.unit

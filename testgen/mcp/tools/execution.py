@@ -156,7 +156,7 @@ def generate_tests(
         )),
     ] = None,
 ) -> str:
-    """Submit a test-generation job for a test suite or a contract.
+    """Submit a test-generation job for a test suite, including a contract.
     Auto-creates test definitions from the latest profiling results for the table group;
     locked and manually created test definitions are preserved. Returns immediately with
     a job_execution_id.

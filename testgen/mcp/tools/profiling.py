@@ -595,13 +595,19 @@ def get_profiling_run(
     if summary is None or summary.project_code not in perms.allowed_codes:
         raise MCPResourceNotAccessible("Profiling run", job_execution_id)
 
+    table_group_name = summary.table_groups_name
+    if summary.profiling_run_id is None:
+        job = JobExecution.get(summary.job_execution_id)
+        table_group = TableGroup.get(job.kwargs.get("table_group_id", "")) if job else None
+        table_group_name = table_group.table_groups_name if table_group else None
+
     doc = MdDoc()
-    tg_label = summary.table_groups_name or "—"
+    tg_label = table_group_name or "—"
     schema_label = table_group_schema_label(summary.sql_flavor_code)
     doc.heading(1, f"Profiling run: {tg_label}")
     doc.field("Profiling Run", summary.job_execution_id, code=True)
-    if summary.table_groups_name:
-        doc.field("Table group", summary.table_groups_name)
+    if table_group_name:
+        doc.field("Table group", table_group_name)
     if schema_label and summary.table_group_schema:
         doc.field(schema_label, summary.table_group_schema)
     doc.field("Status", summary.status_label)
@@ -1098,7 +1104,7 @@ def get_column_frequent_values(
     rows = frequent_entries(profile.frequent_values)
     if not rows:
         doc.text(
-            f"_Frequency data not available — high cardinality "
+            f"_Frequency data not available — profiling recorded none for this column "
             f"(distinct count: {profile.distinct_value_ct})._"
         )
         return doc.render()
@@ -1161,7 +1167,7 @@ def get_column_patterns(
     rows = frequent_entries(profile.frequent_patterns)
     if not rows:
         doc.text(
-            f"_Pattern data not available — high cardinality "
+            f"_Pattern data not available — profiling recorded none for this column "
             f"(distinct count: {profile.distinct_value_ct})._"
         )
         return doc.render()

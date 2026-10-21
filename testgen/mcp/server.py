@@ -54,6 +54,8 @@ DATA MODEL
 Projects contain Connections (to data sources: databases or file storage) and Table Groups (sets of tables to profile
 and test together).
 Table Groups contains Test Suites — collections of Test Definitions with configured thresholds.
+A Contract is a kind of Test Suite whose tests and metadata are versioned: its latest frozen version is the
+agreement in force, and it exports as an ODCS document.
 Every test parameter, including baseline values (baseline_*), thresholds, and tolerances, can be set directly when
 creating a test. Test generation fills them from profiling, but no test type requires profiling.
 Test Runs execute a Test Suite and produce Test Results (one per Test Definition).

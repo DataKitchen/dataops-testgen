@@ -86,9 +86,9 @@ def export_test_definitions(
         "one exists, otherwise the active version.",
     ),
 ) -> ExportDocument:
-    """Export test definitions from a test suite or a contract as a portable JSON document.
+    """A portable JSON document of a test suite's test definitions; for a contract, those of one version.
 
-    A contract's export names the exported version in ``source.contract_version``.
+    A contract's export names the exported version in `source.contract_version`.
     """
     version_id = None
     if version is not None:
@@ -120,10 +120,9 @@ def import_test_definitions(
     body: ImportRequest,
     test_suite: TestSuite = resolve_test_suite("edit", TEST_SUITE_TYPES),  # noqa: B008
 ) -> ImportResponse:
-    """Import test definitions into a test suite or a contract from a portable JSON document.
-
-    A contract's import writes to its draft, opening one from the active version when there is
-    none. The response names that version. A refusal applies nothing.
+    """Writes a portable JSON document's test definitions into a test suite. A contract's import
+    writes to its draft, opening one from the active version when there is none. The response names
+    that version. A refusal applies nothing.
     """
     try:
         return import_definitions(test_suite, body.config, body.payload)

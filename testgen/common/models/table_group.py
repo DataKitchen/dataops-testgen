@@ -732,7 +732,13 @@ class TableGroup(Entity):
             FROM test_runs tr
                 JOIN test_suites ts ON ts.id = tr.test_suite_id
                 LEFT JOIN job_executions je ON je.id = tr.id
-            WHERE ts.suite_type = 'regular'
+            WHERE ts.suite_type IN ('regular', 'contract')
+                -- A contract's preview run: it checked a version not frozen when it started
+                AND (tr.version_id IS NULL OR EXISTS (
+                    SELECT 1 FROM suite_versions sv
+                    WHERE sv.id = tr.version_id
+                        AND (sv.test_suite_id IS NULL OR tr.test_starttime >= sv.frozen_at)
+                ))
             GROUP BY ts.table_groups_id
         )
         SELECT

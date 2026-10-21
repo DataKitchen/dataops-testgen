@@ -2,6 +2,7 @@ import typing
 
 import streamlit as st
 
+from testgen.common.enums import TEST_SUITE_TYPES
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
@@ -33,7 +34,7 @@ class ProjectDashboardPage(Page):
 
         with st.spinner("Loading data ..."):
             table_groups = get_table_group_summaries(project_code, for_dashboard=True)
-            test_suites = get_test_suite_summaries(project_code)
+            test_suites = get_test_suite_summaries(project_code, suite_types=TEST_SUITE_TYPES)
             project_summary = get_project_summary(project_code)
 
         table_groups_sort = st.session_state.get("overview_table_groups_sort") or "latest_activity_date"

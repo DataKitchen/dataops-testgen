@@ -358,7 +358,7 @@ def _render_created_suite(
         )
     if generation is not None:
         doc.field("Declared tables", ", ".join(f"`{name}`" for name in generation.tables_declared))
-        doc.field("Tests", generation.term_count)
+        doc.field("Tests besides schema conformance", generation.term_count)
         if generation.tables_not_in_catalog:
             doc.text(
                 "The data catalog holds no columns for "

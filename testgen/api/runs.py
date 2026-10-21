@@ -133,7 +133,8 @@ def get_test_run(job: JobExecution = resolve_job("view", JobExecution.job_key ==
             result_counts=ResultCounts.model_validate(counts, from_attributes=True),
         )
 
-    test_suite_id = test_run.test_suite_id if test_run else None
+    # A run that has not started has no run record; its job names the suite it was submitted for.
+    test_suite_id = test_run.test_suite_id if test_run else job.kwargs.get("test_suite_id")
     table_group_id = None
     if test_suite_id:
         table_group_id = get_current_session().scalar(
@@ -308,7 +309,7 @@ def get_profiling_run(job: JobExecution = resolve_job("view", JobExecution.job_k
     return ProfilingRunResponse(
         id=job.id,
         status=job.status,
-        table_group_id=profiling_run.table_groups_id if profiling_run else None,
+        table_group_id=profiling_run.table_groups_id if profiling_run else job.kwargs.get("table_group_id"),
         started_at=job.started_at,
         completed_at=job.completed_at,
         result=result,

@@ -17,7 +17,7 @@ from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
     table_group_qualifies_table_refs,
 )
-from testgen.common.enums import JobSource, SuiteType
+from testgen.common.enums import MANAGED_TEST_TYPES, JobSource, SuiteType
 from testgen.common.flavors import TableGroupSchemaLabel, table_group_schema_label
 from testgen.common.generation_set_service import CONTRACT_GENERATION_SET, MONITOR_GENERATION_SET
 from testgen.common.models import database_session, get_current_session, with_database_session
@@ -26,7 +26,6 @@ from testgen.common.models.project import Project
 from testgen.common.models.suite_version import FrozenVersionError, RemovedInDraftError
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_definition import (
-    MANAGED_TEST_TYPES,
     MISSING_TEST_DEFINITION_MESSAGE,
     NON_PUBLIC_TEST_TYPES,
     ManagedTestDefinitionError,

@@ -9,6 +9,7 @@ first (``prepare_import``, which writes nothing) and applied only on request (``
 
 import copy
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -24,6 +25,7 @@ from testgen.common import contract_document
 from testgen.common.contract_rules import (
     RuleResolver,
     all_test_types,
+    describe_rule,
     nested_properties,
     rule_label,
 )
@@ -32,13 +34,13 @@ from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
     table_group_qualifies_table_refs,
 )
+from testgen.common.enums import MANAGED_TEST_TYPES, SuiteType
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, FLAVOR_CODE_TO_LABEL, SqlFlavorCode
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import (
-    MANAGED_TEST_TYPES,
     ODCS_RULE_METADATA_KEY,
     TERM_ID_MAX_LENGTH,
     InvalidTestDefinitionFields,
@@ -85,6 +87,20 @@ class ContractTermReason(StrEnum):
     UNCHANGED = "unchanged"
     NEW = "new"
     ABSENT = "absent"
+
+
+class ContractIdTakenError(InvalidContractDocumentError):
+    """Raised when a document would create a contract whose ``id`` another contract in the table group holds."""
+
+    def __init__(self, document_id: str, holder: TestSuite):
+        self.document_id = document_id
+        self.holder_id = holder.id
+        self.holder_name = holder.test_suite
+        super().__init__([
+            f"$.id: contract `{holder.test_suite}` (`{holder.id}`) in this table group already has the contract `id` "
+            f"`{document_id}`. To update that contract, import the document into it. To create a separate "
+            "contract, change the document's `id`."
+        ])
 
 
 class ContractIdentityError(ValueError):
@@ -209,7 +225,8 @@ def split_document(
             resolved = resolver.resolve(rule, scope, table_name, column_name)
             if resolved is None:
                 kept.append(mark_unverifiable(rule) if isinstance(rule, dict) else rule)
-                unverifiable.append(rule_label(rule, index, f"{table_name}.{column_name}" if column_name else table_name))
+                label = rule_label(rule, index, f"{table_name}.{column_name}" if column_name else table_name)
+                unverifiable.append(f"{label} ({describe_rule(rule)})")
                 continue
             test_type = test_types[resolved.test_type]
             rule_metadata = drop_generated_metadata(
@@ -254,6 +271,8 @@ def split_document(
             first_term = len(terms)
             if isinstance(prop.get("quality"), list):
                 prop["quality"] = resolve_rules(prop["quality"], RuleScope.COLUMN, table_name, column_name)
+                if not prop["quality"]:
+                    del prop["quality"]
             for resolved in resolve_declarations(prop, known):
                 terms.append(IncomingTerm(
                     test_type=resolved.test_type, table_name=table_name, column_name=column_name,
@@ -273,6 +292,8 @@ def split_document(
                 if not any(same_claim(term, other) for other in column_terms):
                     terms.append(term)
             unresolved += [f"{table_name}.{column_name}: {path}" for path in unnamed.unresolved]
+            if prop.get("relationships"):
+                unresolved.append(f"{table_name}.{column_name}: relationships")
             # The terms own what they declare: render writes it again from them, so a term edited or
             # deleted later is never contradicted by a stale copy here.
             for path in unnamed.owned:
@@ -297,6 +318,11 @@ def split_document(
                 unresolved += [
                     f"{path}: {declared}" for declared in resolve_unnamed_declarations(nested, frozenset()).unresolved
                 ]
+
+        if table.get("quality") == []:
+            del table["quality"]
+        if table.get("relationships"):
+            unresolved.append(f"{table_name}: relationships")
 
     _check_term_ids(terms)
     return SplitDocument(
@@ -326,6 +352,20 @@ def check_identity(target_document: dict[str, Any] | None, incoming_id: str | No
     target_id = (target_document or {}).get("id")
     if target_id and incoming_id and str(target_id) != str(incoming_id):
         raise ContractIdentityError(str(target_id), str(incoming_id))
+
+
+def contract_holding_id(table_group_id: UUID, document_id: str) -> TestSuite | None:
+    """A contract in the table group with a version whose document ``id`` is ``document_id``, or None."""
+    return get_current_session().scalars(
+        select(TestSuite)
+        .join(SuiteVersion, SuiteVersion.test_suite_id == TestSuite.id)
+        .where(
+            TestSuite.table_groups_id == table_group_id,
+            TestSuite.suite_type == SuiteType.CONTRACT,
+            SuiteVersion.metadata_document["id"].astext == document_id,
+        )
+        .limit(1)
+    ).first()
 
 
 def server_type_warning(document: dict[str, Any], connection: Connection) -> str | None:
@@ -458,10 +498,17 @@ def _parameter_values(test_type: str, parameters: dict[str, Any], declared_param
     return {name: _comparable(parameters.get(name)) for name in declared_parameters.get(test_type, [])}
 
 
+_MIDNIGHT = re.compile(r"^(\d{4}-\d{2}-\d{2})[ T]00:00:00(\.0+)?$")
+
+
 def _comparable(value: Any) -> str | None:
+    """``value`` as text to compare a parameter by. A timestamp at midnight compares as its date,
+    which is how a date bound renders in the document."""
     if value is None or value == "":
         return None
-    return str(value).strip()
+    text = str(value).strip()
+    midnight = _MIDNIGHT.match(text)
+    return midnight.group(1) if midnight else text
 
 
 def _custom_metadata(metadata: dict[str, Any], existing: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -539,13 +586,16 @@ def prepare_import(
 
     ``suite`` is the contract whose draft the document is imported into; without one, the plan creates a
     contract in ``table_group``. Raises ``InvalidContractDocumentError`` for a document that is
-    not valid ODCS, and ``ContractIdentityError`` for one whose ``id`` differs from ``suite``'s.
+    not valid ODCS, ``ContractIdentityError`` for one whose ``id`` differs from ``suite``'s, and
+    ``ContractIdTakenError`` for a new contract whose ``id`` another contract in ``table_group`` has.
     """
     document = parse_document(payload)
     current = None
     if suite is not None:
         current = SuiteVersion.draft_for(suite.id) or SuiteVersion.in_force_for(suite.id)
         check_identity(current.metadata_document if current else None, document.get("id"))
+    elif document.get("id") and (holder := contract_holding_id(table_group.id, str(document["id"]))):
+        raise ContractIdTakenError(str(document["id"]), holder)
 
     flavor = SqlFlavorCode(connection.sql_flavor_code)
     test_types = all_test_types()
@@ -617,6 +667,7 @@ def apply_import(
     # document the earlier bundled versions do and is the one TestGen renders into.
     document["apiVersion"] = ODCS_API_VERSION
     document["version"] = SuiteVersion.document_version(version.version)
+    document["name"] = suite.test_suite
     _match_physical_types(document, table_group, FLAVOR_CODE_TO_FAMILY[flavor])
     version.metadata_document = document
     version.odcs_api_version = ODCS_API_VERSION

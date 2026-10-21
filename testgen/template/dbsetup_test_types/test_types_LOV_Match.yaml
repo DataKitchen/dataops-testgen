@@ -51,7 +51,7 @@ test_types:
     test_type: LOV_Match
     sql_flavor: bigquery
     measure: |-
-      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+      SUM(CASE WHEN {COLUMN_NAME} NOT IN {BASELINE_VALUE} AND CAST({COLUMN_NAME} AS {VARCHAR_TYPE}) <> '' THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -59,7 +59,7 @@ test_types:
     test_type: LOV_Match
     sql_flavor: databricks
     measure: |-
-      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+      SUM(CASE WHEN {COLUMN_NAME} NOT IN {BASELINE_VALUE} AND CAST({COLUMN_NAME} AS {VARCHAR_TYPE}) <> '' THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -67,7 +67,7 @@ test_types:
     test_type: LOV_Match
     sql_flavor: mssql
     measure: |-
-      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+      SUM(CASE WHEN {COLUMN_NAME} NOT IN {BASELINE_VALUE} AND CAST({COLUMN_NAME} AS {VARCHAR_TYPE}) <> '' THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -75,7 +75,7 @@ test_types:
     test_type: LOV_Match
     sql_flavor: postgresql
     measure: |-
-      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+      SUM(CASE WHEN {COLUMN_NAME} NOT IN {BASELINE_VALUE} AND CAST({COLUMN_NAME} AS {VARCHAR_TYPE}) <> '' THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -83,7 +83,7 @@ test_types:
     test_type: LOV_Match
     sql_flavor: redshift
     measure: |-
-      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+      SUM(CASE WHEN {COLUMN_NAME} NOT IN {BASELINE_VALUE} AND CAST({COLUMN_NAME} AS {VARCHAR_TYPE}) <> '' THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -91,7 +91,7 @@ test_types:
     test_type: LOV_Match
     sql_flavor: redshift_spectrum
     measure: |-
-      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+      SUM(CASE WHEN {COLUMN_NAME} NOT IN {BASELINE_VALUE} AND CAST({COLUMN_NAME} AS {VARCHAR_TYPE}) <> '' THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -99,7 +99,7 @@ test_types:
     test_type: LOV_Match
     sql_flavor: snowflake
     measure: |-
-      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+      SUM(CASE WHEN {COLUMN_NAME} NOT IN {BASELINE_VALUE} AND CAST({COLUMN_NAME} AS VARCHAR) <> '' THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -123,7 +123,7 @@ test_types:
     test_type: LOV_Match
     sql_flavor: salesforce_data360
     measure: |-
-      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+      SUM(CASE WHEN {COLUMN_NAME} NOT IN {BASELINE_VALUE} AND CAST({COLUMN_NAME} AS VARCHAR) <> '' THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -131,7 +131,7 @@ test_types:
     test_type: LOV_Match
     sql_flavor: duckdb
     measure: |-
-      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+      SUM(CASE WHEN {COLUMN_NAME} NOT IN {BASELINE_VALUE} AND CAST({COLUMN_NAME} AS {VARCHAR_TYPE}) <> '' THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -142,9 +142,9 @@ test_types:
     sql_flavor: bigquery
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT NULLIF(`{COLUMN_NAME}`, '') AS `{COLUMN_NAME}`, COUNT(*) AS count
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
       FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
-      WHERE NULLIF(`{COLUMN_NAME}`, '') NOT IN {BASELINE_VALUE}
+      WHERE `{COLUMN_NAME}` NOT IN {BASELINE_VALUE} AND CAST(`{COLUMN_NAME}` AS {VARCHAR_TYPE}) <> ''
       GROUP BY `{COLUMN_NAME}`
       LIMIT {LIMIT};
     error_type: Test Results
@@ -154,7 +154,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT NULLIF(`{COLUMN_NAME}`, '') AS `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE NULLIF(`{COLUMN_NAME}`, '') NOT IN {BASELINE_VALUE} GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` NOT IN {BASELINE_VALUE} AND CAST(`{COLUMN_NAME}` AS {VARCHAR_TYPE}) <> '' GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
     error_type: Test Results
   - id: '1153'
     test_id: '1019'
@@ -162,7 +162,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT TOP {LIMIT} NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" ;
+      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" NOT IN {BASELINE_VALUE} AND CAST("{COLUMN_NAME}" AS {VARCHAR_TYPE}) <> '' GROUP BY "{COLUMN_NAME}" ;
     error_type: Test Results
   - id: '1096'
     test_id: '1019'
@@ -170,7 +170,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" NOT IN {BASELINE_VALUE} AND CAST("{COLUMN_NAME}" AS {VARCHAR_TYPE}) <> '' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1014'
     test_id: '1019'
@@ -178,7 +178,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" NOT IN {BASELINE_VALUE} AND CAST("{COLUMN_NAME}" AS {VARCHAR_TYPE}) <> '' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1414'
     test_id: '1019'
@@ -186,7 +186,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" NOT IN {BASELINE_VALUE} AND CAST("{COLUMN_NAME}" AS {VARCHAR_TYPE}) <> '' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1210'
     test_id: '1019'
@@ -194,7 +194,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" NOT IN {BASELINE_VALUE} AND CAST("{COLUMN_NAME}" AS VARCHAR) <> '' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '8014'
     test_id: '1019'
@@ -218,7 +218,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE "{COLUMN_NAME}" NOT IN {BASELINE_VALUE} AND CAST("{COLUMN_NAME}" AS VARCHAR) <> '' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '11044'
     test_id: '1019'
@@ -226,6 +226,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" NOT IN {BASELINE_VALUE} AND CAST("{COLUMN_NAME}" AS {VARCHAR_TYPE}) <> '' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

@@ -1,5 +1,6 @@
 """Guards on the generation templates as a whole, not on any single test type."""
 
+import re
 from pathlib import Path
 
 import testgen
@@ -109,3 +110,17 @@ def test_generic_freshness_fingerprints_cast_before_defaulting_nulls():
     ]
 
     assert [path.name for path in templates if "COALESCE(@@@," in path.read_text()] == []
+
+
+def test_every_read_of_profiling_results_leaves_out_dropped_columns():
+    reads = re.compile(r"\b(?:FROM|JOIN)\s+profile_results\b", re.IGNORECASE)
+    offenders = sorted(
+        str(path.relative_to(TEMPLATE_ROOT))
+        for path in _generation_templates()
+        if len(reads.findall(text := path.read_text())) > text.count("drop_date")
+    )
+
+    assert offenders == [], (
+        "a generation template reads profile_results without leaving out the columns the data catalog marks "
+        "dropped, so it generates tests that error on every run. Offenders: " + ", ".join(offenders)
+    )
