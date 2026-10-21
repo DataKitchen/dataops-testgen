@@ -42,7 +42,7 @@ from testgen.common.models.test_suite import TestSuite
 from testgen.common.odcs.quality_rules import CONVERSION_PROPERTIES
 from testgen.common.test_definition_export_import_service import ImportAction
 from testgen.mcp.exceptions import MCPUserError
-from testgen.mcp.permissions import mcp_permission
+from testgen.mcp.permissions import get_mcp_username, mcp_permission
 from testgen.mcp.services.source_data_protection import mcp_source_data_only, mcp_source_data_protected
 from testgen.mcp.tools.common import (
     DocGroup,
@@ -897,7 +897,7 @@ def freeze_contract_version(
         )
         raise MCPUserError(f"Contract `{suite.test_suite}` has no draft to freeze.{detail}")
     try:
-        frozen = contract_service.freeze_version(suite, label=label)
+        frozen = contract_service.freeze_version(suite, label=label, username=get_mcp_username())
     except InvalidContractDocumentError as e:
         raise MCPUserError(
             "The draft cannot be frozen because its document does not validate:\n"

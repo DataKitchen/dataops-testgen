@@ -1,11 +1,18 @@
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
-from testgen.common.enums import JobStatus
+from testgen.common.enums import JobStatus, SuiteType
+from testgen.common.models.suite_version import ContractState, SuiteVersion
 from testgen.common.models.test_run import TestRunSummary
-from testgen.ui.services.contract_run_service import run_version_block, run_version_caption
+from testgen.ui.services.contract_run_service import (
+    run_test_suite_options,
+    run_version_block,
+    run_version_caption,
+    run_version_line,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -88,3 +95,53 @@ def test_a_regular_run():
     run = _run(test_starttime=AFTER)
     assert run_version_block(run) is None
     assert run_version_caption(run) is None
+
+
+def _version(number: int, frozen: bool) -> SuiteVersion:
+    return SuiteVersion(id=uuid4(), version=number, frozen_at=FROZEN if frozen else None)
+
+
+def test_the_run_line_of_the_active_version():
+    active = _version(3, True)
+    assert run_version_line(active, active) == "Version: v3 active"
+
+
+def test_the_run_line_of_a_draft_says_it_is_a_preview():
+    assert run_version_line(_version(4, False), _version(3, True)) == (
+        "Version: v4 draft. This run is a preview and does not count as the contract's status."
+    )
+
+
+def test_the_run_line_of_a_first_draft_says_it_is_a_preview():
+    assert run_version_line(_version(1, False), None) == (
+        "Version: v1 draft. This run is a preview and does not count as the contract's status."
+    )
+
+
+def test_the_run_line_of_a_superseded_version_names_the_agreement_in_force():
+    assert run_version_line(_version(2, True), _version(3, True)) == (
+        "Version: v2 superseded. v3 is the agreement in force."
+    )
+
+
+def test_run_options_name_each_contracts_default_version():
+    regular = SimpleNamespace(id=uuid4(), test_suite="orders_tests", suite_type=SuiteType.REGULAR)
+    frozen = SimpleNamespace(id=uuid4(), test_suite="orders_contract", suite_type=SuiteType.CONTRACT)
+    first = SimpleNamespace(id=uuid4(), test_suite="new_contract", suite_type=SuiteType.CONTRACT)
+    states = {
+        frozen.id: ContractState(active=_version(3, True), draft=_version(4, False)),
+        first.id: ContractState(active=None, draft=_version(1, False)),
+    }
+
+    assert run_test_suite_options([regular, frozen, first], states) == [
+        {"value": str(regular.id), "label": "orders_tests", "suite_type": SuiteType.REGULAR, "version_line": None},
+        {"value": str(frozen.id), "label": "orders_contract", "suite_type": SuiteType.CONTRACT,
+         "version_line": "Version: v3 active"},
+        {"value": str(first.id), "label": "new_contract", "suite_type": SuiteType.CONTRACT,
+         "version_line": "Version: v1 draft. This run is a preview and does not count as the contract's status."},
+    ]
+
+
+def test_a_contract_without_versions_carries_no_run_line():
+    contract = SimpleNamespace(id=uuid4(), test_suite="empty", suite_type=SuiteType.CONTRACT)
+    assert run_test_suite_options([contract], {})[0]["version_line"] is None

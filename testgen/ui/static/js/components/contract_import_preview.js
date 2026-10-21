@@ -80,7 +80,7 @@ const ContractImportPreview = (/** @type Properties */ props) => {
                 return Alert(
                     { type: 'error', icon: 'error' },
                     div(preview.error),
-                    ul((preview.problems ?? []).map((problem) => li(problem))),
+                    preview.problems?.length ? ul({ class: 'mt-1 mb-0 pl-4' }, preview.problems.map((problem) => li(problem))) : null,
                 );
             }
 

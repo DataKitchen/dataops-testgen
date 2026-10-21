@@ -1,0 +1,74 @@
+/* Highlight.js token colors, from the same palette as the code editor. */
+pre code.hljs {
+    display: block;
+    overflow-x: auto;
+    padding: 1em;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+code.hljs {
+    padding: 3px 5px;
+}
+
+.hljs {
+    color: var(--primary-text-color);
+    background: var(--form-field-color);
+}
+
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-name,
+.hljs-selector-class,
+.hljs-selector-id,
+.hljs-selector-tag {
+    color: var(--tg-code-key);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-symbol,
+.hljs-link,
+.hljs-template-variable,
+.hljs-meta .hljs-string {
+    color: var(--tg-code-string);
+}
+
+.hljs-comment,
+.hljs-quote {
+    color: var(--tg-code-comment);
+    font-style: italic;
+}
+
+.hljs-punctuation,
+.hljs-bullet,
+.hljs-operator {
+    color: var(--tg-code-punctuation);
+}
+
+.hljs-keyword,
+.hljs-meta,
+.hljs-type,
+.hljs-built_in,
+.hljs-section,
+.hljs-doctag,
+.hljs-title {
+    color: var(--tg-code-meta);
+}
+
+.hljs-deletion {
+    color: var(--error-color);
+}
+
+.hljs-addition {
+    color: var(--green);
+}
+
+.hljs-emphasis {
+    font-style: italic;
+}
+
+.hljs-strong {
+    font-weight: 700;
+}

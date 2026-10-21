@@ -48,6 +48,7 @@ class SuiteVersionListItem:
     label: str | None
     created_by: str | None
     frozen_at: datetime | None
+    frozen_by: str | None
     term_count: int
     run_count: int
     latest_run_id: UUID | None
@@ -66,6 +67,7 @@ class SuiteVersion(Entity):
     metadata_document: dict[str, Any] | None = Column(postgresql.JSONB(none_as_null=True))
     frozen_document: str | None = Column(String)
     frozen_at: datetime | None = Column(postgresql.TIMESTAMP(timezone=True))
+    frozen_by: str | None = Column(String)
     odcs_api_version: str | None = Column(String)
     label: str | None = Column(NullIfEmptyString)
     created_by: str | None = Column(String)
@@ -319,7 +321,7 @@ class SuiteVersion(Entity):
         )
         query = (
             select(
-                cls.id, cls.version, cls.label, cls.created_by, cls.frozen_at,
+                cls.id, cls.version, cls.label, cls.created_by, cls.frozen_at, cls.frozen_by,
                 term_count.label("term_count"), run_count.label("run_count"),
                 latest.c.id.label("latest_run_id"), latest.c.status.label("latest_run_status"),
                 latest.c.test_starttime.label("latest_run_started_at"),

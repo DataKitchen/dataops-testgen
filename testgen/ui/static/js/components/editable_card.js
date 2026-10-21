@@ -7,6 +7,9 @@
  * @property {function} onSave
  * @property {function?} onCancel
  * @property {function?} hasChanges
+ * @property {boolean?} editable - hides the Edit button when false; defaults to true
+ * @property {object?} editing - VanJS state holding whether the card is editing, for a caller that closes it
+ * @property {string?} testId
  */
 import { getValue } from '../utils.js';
 import van from '../van.min.js';
@@ -16,7 +19,7 @@ import { Button } from './button.js';
 const { div } = van.tags;
 
 const EditableCard = (/** @type Properties */ props) => {
-    const editing = van.state(false);
+    const editing = props.editing ?? van.state(false);
     const onCancel = van.derive(() => {
         const cancelFunction = props.onCancel?.val ?? props.onCancel;
         return () => {
@@ -31,6 +34,7 @@ const EditableCard = (/** @type Properties */ props) => {
 
     return Card({
         title: props.title,
+        testId: props.testId,
         content: [
             () => editing.val ? getValue(props.editingContent) : getValue(props.content),
             () => editing.val ? div(
@@ -51,7 +55,7 @@ const EditableCard = (/** @type Properties */ props) => {
                 }),
             ) : '',
         ],
-        actionContent: () => !editing.val ? Button({
+        actionContent: () => !editing.val && (getValue(props.editable) ?? true) ? Button({
             type: 'stroked',
             label: 'Edit',
             icon: 'edit',

@@ -2,6 +2,7 @@
  * @typedef Properties
  * @type {object}
  * @property {string[]} tables
+ * @property {string[]?} unverifiable - the tables to mark as not in the table group
  * @property {object} selected - VanJS state holding the selected table names
  * @property {((selected: string[]) => void)?} onChange
  * @property {boolean?} disabled
@@ -15,7 +16,11 @@ const { div, span } = van.tags;
 
 const ContractTablePicker = (/** @type Properties */ props) => {
     const tables = getValue(props.tables) ?? [];
-    const options = tables.map((name) => ({ label: name, value: name }));
+    const unverifiable = new Set(getValue(props.unverifiable) ?? []);
+    const options = tables.map((name) => ({
+        label: unverifiable.has(name) ? `${name} (unverifiable)` : name,
+        value: name,
+    }));
     const selectAll = () => {
         props.selected.val = [...tables];
         props.onChange?.(props.selected.val);
