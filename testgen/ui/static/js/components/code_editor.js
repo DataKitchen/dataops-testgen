@@ -476,4 +476,4 @@ stylesheet.replace(`
 }
 `);
 
-export { CodeEditor };
+export { CodeEditor, editorTheme, highlightStyle, stylesheet as codeEditorStylesheet };

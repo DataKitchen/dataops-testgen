@@ -48,6 +48,7 @@ from testgen.ui.services.contract_import_service import (
     import_preview,
     read_contract_file,
 )
+from testgen.ui.services.contract_run_service import run_test_suite_options
 from testgen.ui.services.query_cache import (
     get_contract_states,
     get_project_summary,
@@ -204,10 +205,9 @@ class TestSuitesPage(Page):
             run_tests_data = {
                 "title": "Run Tests",
                 "project_code": project_code,
-                "test_suites": [
-                    {"value": str(ts.id), "label": ts.test_suite, "suite_type": ts.suite_type}
-                    for ts in test_suites if str(ts.id) == str(run_tests_ts_id)
-                ],
+                "test_suites": run_test_suite_options(
+                    [ts for ts in test_suites if str(ts.id) == str(run_tests_ts_id)], states
+                ),
                 "default_test_suite_id": str(run_tests_ts_id) if run_tests_ts_id else None,
                 "result": st.session_state.get(RUN_TESTS_RESULT_KEY),
             }
@@ -237,7 +237,10 @@ class TestSuitesPage(Page):
                 with database_session():
                     JobExecution.submit(
                         job_key="run-tests",
-                        kwargs={"test_suite_id": str(selected_id)},
+                        kwargs={
+                            "test_suite_id": str(selected_id),
+                            **({"version_id": str(data["version_id"])} if data.get("version_id") else {}),
+                        },
                         source=JobSource.ui,
                         project_code=project_code,
                     )

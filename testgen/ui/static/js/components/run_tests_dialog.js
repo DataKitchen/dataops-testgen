@@ -4,6 +4,8 @@
  * @property {string} value
  * @property {string} label
  * @property {string?} suite_type
+ * @property {string?} version_line - names the contract version the run checks
+ * @property {string?} version_id - the contract version to run, when not the default
  *
  * @typedef Result
  * @type {object}
@@ -69,6 +71,9 @@ const RunTestsDialog = (/** @type Properties */ props) => {
                 strong({}, selectedTestSuite.val?.label ?? ''),
                 '?',
             ),
+        () => selectedTestSuite.val?.version_line
+            ? span({ class: 'text-secondary', 'data-testid': 'run-tests-version' }, selectedTestSuite.val.version_line)
+            : '',
         () => selectedTestSuite.val
             ? ''
             : div({ style: 'margin: auto;' }, 'Select a test suite to run.'),
@@ -97,6 +102,7 @@ const RunTestsDialog = (/** @type Properties */ props) => {
                         payload: {
                             test_suite_id: selectedTestSuite.val?.value,
                             test_suite_name: selectedTestSuite.val?.label,
+                            version_id: selectedTestSuite.val?.version_id ?? null,
                         },
                     }),
                 }),
