@@ -408,6 +408,8 @@ class ExportDocument(BaseModel):
 
 
 class ImportConfig(BaseModel):
+    """How an import treats matched, new, and absent test definitions, and whether it applies them."""
+
     mode: ImportMode = Field(
         description="`preview` reports what the import would do and changes nothing. `apply` writes every valid "
         "definition and reports the rest as skipped. `apply_strict` writes only when no definition would be "
@@ -440,6 +442,8 @@ class ImportPayload(BaseModel):
 
 
 class ImportItemTD(BaseModel):
+    """One test definition an import action applies to: its place in the file and the test it matches."""
+
     idx: int | None = Field(
         default=None,
         description="The definition's position in the file's `definitions`, starting at 0. `null` for a deletion, "
@@ -458,6 +462,8 @@ class ImportItemTD(BaseModel):
 
 
 class ImportItem(BaseModel):
+    """One action and its reason, with the test definitions it applies to. In a preview, what the import would do."""
+
     action: ImportAction = Field(
         description="`create`, `update`, `skip`, or `delete`. In a preview, what the import would do."
     )
@@ -491,6 +497,8 @@ class ContractVersion(BaseModel):
 
 
 class ImportResponse(BaseModel):
+    """The result of an import. In a preview, what the import would do."""
+
     summary: ImportSummary = Field(
         description="How many test definitions the import created, updated, skipped, and deleted, or would in a "
         "preview."
