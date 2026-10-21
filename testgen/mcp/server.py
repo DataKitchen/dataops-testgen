@@ -9,6 +9,7 @@ import anyio
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.tools import Tool
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
@@ -636,7 +637,21 @@ def build_mcp_server(
         except Exception:
             LOG.warning("Plugin %s failed to load; skipping its MCP tools", plugin.package)
 
+    for tool in mcp._tool_manager.list_tools():
+        _reject_undeclared_arguments(tool)
+
     return mcp
+
+
+def _reject_undeclared_arguments(tool: Tool) -> None:
+    """Make a tool refuse arguments it does not declare, and state that in its input schema.
+
+    The SDK's argument model ignores undeclared fields, so a misplaced or misspelled argument
+    would be dropped silently and the call would run without it.
+    """
+    tool.fn_metadata.arg_model.model_config["extra"] = "forbid"
+    tool.fn_metadata.arg_model.model_rebuild(force=True)
+    tool.parameters["additionalProperties"] = False
 
 
 def build_mcp_app(

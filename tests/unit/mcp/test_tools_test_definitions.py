@@ -1980,6 +1980,73 @@ def test_bulk_update_tests_scopes_to_a_version(mock_resolve_suite, mock_session,
     )
 
 
+@pytest.mark.usefixtures("routes_in_place")
+@patch("testgen.mcp.tools.test_definitions._set_test_values")
+@patch.object(TestDefinition, "list_for_ids")
+def test_bulk_update_tests_by_ids_changes_only_the_named_tests(mock_list, mock_set, db_session_mock):
+    suite_id = uuid4()
+    named = [_make_td_minimal(test_id=uuid4()), _make_td_minimal(test_id=uuid4())]
+    for td in named:
+        td.test_suite_id = suite_id
+    mock_list.return_value = named
+
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    result = bulk_update_tests(action="disable", test_definition_ids=[str(td.id) for td in named])
+
+    assert "Disabled 2 tests" in result
+    assert "named in the request" in result
+    assert "- **Test suite:** demo_suite" in result
+    ids, values = mock_set.call_args.args
+    assert sorted(ids, key=str) == sorted([td.id for td in named], key=str)
+    assert values == {"test_active": False}
+
+
+@pytest.mark.usefixtures("routes_in_place")
+@patch("testgen.mcp.tools.test_definitions._set_test_values")
+@patch.object(TestDefinition, "list_for_ids")
+def test_bulk_update_tests_by_ids_across_suites_names_no_single_suite(mock_list, mock_set, db_session_mock):
+    named = [_make_td_minimal(test_id=uuid4()), _make_td_minimal(test_id=uuid4())]
+    for td in named:
+        td.test_suite_id = uuid4()
+    mock_list.return_value = named
+
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    result = bulk_update_tests(action="enable", test_definition_ids=[str(td.id) for td in named])
+
+    assert "Enabled 2 tests" in result
+    assert "Test suite" not in result
+    assert mock_set.call_args.args[1] == {"test_active": True, "test_definition_status": None}
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"test_definition_ids": [str(uuid4())], "test_suite_id": str(uuid4())}, "not both"),
+        ({}, "Supply either `test_definition_ids`"),
+        ({"test_definition_ids": [str(uuid4())], "table_name": "orders"}, "cannot be combined"),
+    ],
+)
+@patch("testgen.mcp.tools.test_definitions._set_test_values")
+def test_bulk_update_tests_rejects_an_ambiguous_selection(mock_set, kwargs, message, db_session_mock):
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    with pytest.raises(MCPUserError, match=message):
+        bulk_update_tests(action="disable", **kwargs)
+    mock_set.assert_not_called()
+
+
+@patch("testgen.mcp.tools.test_definitions._set_test_values")
+@patch.object(TestDefinition, "list_for_ids", return_value=[])
+def test_bulk_update_tests_by_ids_changes_nothing_when_one_is_unusable(_mock_list, mock_set, db_session_mock):
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    with pytest.raises(MCPUserError, match="Nothing was changed. Test definitions not found or not accessible"):
+        bulk_update_tests(action="disable", test_definition_ids=[str(uuid4())])
+    mock_set.assert_not_called()
+
+
 # -- delete_tests -------------------------------------------------------------
 
 
@@ -3007,13 +3074,36 @@ def test_bulk_update_routes_the_matched_tests_to_the_draft(db_session_mock):
               return_value=(draft.id, {matched: copy_id})) as route,
         patch("testgen.mcp.tools.test_definitions.SuiteVersion.get", return_value=draft),
     ):
-        out = bulk_update_tests(str(suite.id), "disable")
+        out = bulk_update_tests(test_suite_id=str(suite.id), action="disable")
     route.assert_called_once_with(suite.id, [matched])
     sql = str(db_session_mock.execute.call_args.args[0].compile(
         dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
     ))
     assert str(copy_id) in sql and str(matched) not in sql
     assert "Disabled 1 tests in suite `Orders`" in out
+    assert "**Version:** v4 draft" in out
+
+
+@patch("testgen.mcp.tools.test_definitions._set_test_values")
+@patch.object(TestDefinition, "list_for_ids")
+def test_bulk_update_tests_by_ids_routes_to_the_draft_and_counts_each_row_once(mock_list, mock_set, db_session_mock):
+    suite = _contract_suite()
+    in_force, draft_copy, draft = uuid4(), uuid4(), SuiteVersion(id=uuid4(), version=4)
+    named = [_make_td_minimal(test_id=in_force), _make_td_minimal(test_id=draft_copy)]
+    for td in named:
+        td.test_suite_id = suite.id
+    mock_list.return_value = named
+    with (
+        patch("testgen.mcp.tools.test_definitions.TestSuite.get", return_value=suite),
+        patch.object(
+            TestDefinition, "resolve_writable", return_value=(draft.id, {in_force: draft_copy, draft_copy: draft_copy})
+        ),
+        patch("testgen.mcp.tools.test_definitions.SuiteVersion.get", return_value=draft),
+    ):
+        out = bulk_update_tests(action="disable", test_definition_ids=[str(in_force), str(draft_copy)])
+
+    assert mock_set.call_args.args[0] == [draft_copy]
+    assert "Disabled 1 tests" in out
     assert "**Version:** v4 draft" in out
 
 
@@ -3024,7 +3114,7 @@ def test_bulk_update_matching_nothing_opens_no_draft(db_session_mock):
         patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
         patch("testgen.mcp.tools.test_definitions.TestDefinition.resolve_writable") as route,
     ):
-        out = bulk_update_tests(str(suite.id), "disable")
+        out = bulk_update_tests(test_suite_id=str(suite.id), action="disable")
     route.assert_not_called()
     assert "No tests matched" in out
 
