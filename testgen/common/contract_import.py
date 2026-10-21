@@ -495,18 +495,27 @@ def _natural_key(test_type: str, schema_name: str | None, table_name: str | None
 
 
 def _parameter_values(test_type: str, parameters: dict[str, Any], declared_parameters: dict[str, list[str]]) -> dict:
-    return {name: _comparable(parameters.get(name)) for name in declared_parameters.get(test_type, [])}
+    """The comparable value of each parameter ``test_type`` declares. A blank threshold compares as
+    the 0 test execution runs it with, which is how the document states it."""
+    values = {name: _comparable(parameters.get(name)) for name in declared_parameters.get(test_type, [])}
+    if "threshold_value" in values and values["threshold_value"] is None:
+        values["threshold_value"] = "0"
+    return values
 
 
 _MIDNIGHT = re.compile(r"^(\d{4}-\d{2}-\d{2})[ T]00:00:00(\.0+)?$")
+_DECIMAL = re.compile(r"^-?(0|[1-9]\d*)\.\d+$")
 
 
 def _comparable(value: Any) -> str | None:
     """``value`` as text to compare a parameter by. A timestamp at midnight compares as its date,
-    which is how a date bound renders in the document."""
+    which is how a date bound renders in the document, and a decimal number compares without the
+    trailing zeros of its fraction, so a whole number compares as an integer."""
     if value is None or value == "":
         return None
     text = str(value).strip()
+    if _DECIMAL.match(text):
+        return text.rstrip("0").rstrip(".")
     midnight = _MIDNIGHT.match(text)
     return midnight.group(1) if midnight else text
 
