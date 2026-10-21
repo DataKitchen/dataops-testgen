@@ -10,6 +10,8 @@ class BigqueryFlavorService(FlavorService):
     quote_character = "`"
     escaped_single_quote = "\\'"
     literal_escapes_backslash = True
+    # A string literal reads its own backslash escapes, so LIKE needs two to see one
+    escaped_underscore = "\\\\_"
     varchar_type = "STRING"
     url_scheme = "bigquery"
 
