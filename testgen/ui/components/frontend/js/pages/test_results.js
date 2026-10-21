@@ -74,7 +74,7 @@ const STATUS_COLORS = {
 };
 
 /** Composite icon button: flag with a diagonal strikethrough (pen_size_1 rotated). */
-const CONTRACT_EDIT_DISABLED_TEXT = "Editing a contract's tests is coming soon.";
+const CONTRACT_EDIT_DISABLED_TEXT = "Edit a contract's tests on its Test Definitions page.";
 
 const ClearFlagButton = ({ disabled, onclick, tooltip = 'Clear flag' }) => {
     return withTooltip(btn(

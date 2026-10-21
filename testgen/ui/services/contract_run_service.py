@@ -5,7 +5,13 @@ from typing import Any
 from uuid import UUID
 
 from testgen.common.enums import SuiteType
-from testgen.common.models.suite_version import ContractState, SuiteVersion, format_version, version_state
+from testgen.common.models.suite_version import (
+    ContractState,
+    SuiteVersion,
+    SuiteVersionListItem,
+    format_version,
+    version_state,
+)
 from testgen.common.models.test_run import TestRunSummary
 
 PREVIEW_NOTE = "A preview does not count as the contract's status."
@@ -38,7 +44,9 @@ def run_version_block(run: TestRunSummary) -> dict[str, str] | None:
     return {"value": f"{text} · {classification}", "tooltip": tooltip}
 
 
-def run_version_line(version: SuiteVersion, active: SuiteVersion | None) -> str:
+def run_version_line(
+    version: SuiteVersion | SuiteVersionListItem, active: SuiteVersion | SuiteVersionListItem | None
+) -> str:
     """The Run Tests dialog's line naming the version a run checks, and whether the run counts."""
     is_active = active is not None and version.version == active.version
     label = format_version(version.version, version_state(version.frozen_at, is_active))

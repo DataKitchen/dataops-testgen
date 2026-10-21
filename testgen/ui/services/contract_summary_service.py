@@ -1,15 +1,22 @@
 """What the contract summary row on the test-definitions page shows for the selected version."""
 
+from collections.abc import Sequence
 from typing import Any
 
-from testgen.common.models.suite_version import SuiteVersion, VersionState, format_version, version_state
+from testgen.common.models.suite_version import (
+    SuiteVersion,
+    SuiteVersionListItem,
+    VersionState,
+    format_version,
+    version_state,
+)
 from testgen.common.models.test_run import TestRunSummary
 
 NOT_FROZEN_YET = "Not frozen yet. Runs of the draft are previews."
 
 
 def contract_summary(
-    versions: list[SuiteVersion],
+    versions: Sequence[SuiteVersion | SuiteVersionListItem],
     selected_version: int | None,
     can_edit: bool,
     verification: TestRunSummary | None,
@@ -32,7 +39,7 @@ def contract_summary(
         raise ValueError("A contract has at least one version.")
     selected = next((version for version in ordered if version.version == selected_version), editable)
 
-    def label(version: SuiteVersion) -> str:
+    def label(version: SuiteVersion | SuiteVersionListItem) -> str:
         return format_version(version.version, version_state(version.frozen_at, version is active))
 
     caption = None
