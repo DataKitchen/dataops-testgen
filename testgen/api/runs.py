@@ -75,6 +75,7 @@ from testgen.common.models.hygiene_issue import HygieneIssue, HygieneIssueListRo
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profile_result import ColumnProfileRow, ColumnSort, ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunHistoryRow
+from testgen.common.models.suite_version import VersionState
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResult, TestRunResultRow
@@ -157,11 +158,21 @@ def get_test_run(job: JobExecution = resolve_job("view", JobExecution.job_key ==
 
 def _run_version(job_id: UUID) -> TestRunVersion | None:
     summaries, _ = TestRun.select_summary(job_execution_id=job_id, suite_types=TEST_SUITE_TYPES)
-    run_version = summaries[0].run_version if summaries else None
-    if run_version is None:
+    if not summaries:
+        return None
+    summary = summaries[0]
+    if summary.version_discarded:
+        return TestRunVersion(
+            number=None, state=VersionState.DRAFT, counts_as_status=False, preview=True, discarded=True
+        )
+    if (run_version := summary.run_version) is None:
         return None
     return TestRunVersion(
-        number=run_version.number, state=run_version.state, counts_as_status=run_version.counts_as_status
+        number=run_version.number,
+        state=run_version.state,
+        counts_as_status=run_version.counts_as_status,
+        preview=summary.is_preview,
+        discarded=False,
     )
 
 
@@ -255,7 +266,7 @@ def list_test_run_results(
     page: int = PageQuery,
     limit: int = LimitQuery,
 ):
-    """The results of a test run's individual tests, with each test's measure, threshold and status."""
+    """The results of a test run's individual tests, with each test's measure, threshold, and status."""
     clauses = []
     if status:
         clauses.append(TestResult.status == RESULT_STATUS_TO_DB[status])

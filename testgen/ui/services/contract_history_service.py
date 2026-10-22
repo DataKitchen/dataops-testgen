@@ -93,7 +93,7 @@ def version_comparison(suite: TestSuite, source: int, target: int) -> dict[str, 
         label = format_version(version.version, version_state(version.frozen_at, is_active))
         result[f"{side}_label"] = label
         try:
-            documents[side] = contract_service.export_version(version).text
+            documents[side] = contract_service.export_version(version, contract_name=suite.test_suite).text
         except ValueError as e:
             result["error"] = f"{label} could not be rendered. {e}"
     result["source_document"] = None if result["error"] else documents["source"]

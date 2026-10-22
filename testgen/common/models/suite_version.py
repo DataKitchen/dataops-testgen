@@ -183,22 +183,6 @@ class SuiteVersion(Entity):
         return cls._compile_for_sql(cls.resolved_for(literal_column(suite_column)), suite_column)
 
     @classmethod
-    def is_draft(cls, version_id: UUID | str | None) -> bool:
-        """Whether the id names a suite's open draft.
-
-        False for the placeholder, for a version that no longer exists, and for no id at all.
-        """
-        if version_id is None:
-            return False
-        return get_current_session().scalar(
-            select(cls.id).where(
-                cls.id == version_id,
-                cls.test_suite_id.is_not(None),
-                cls.frozen_at.is_(None),
-            )
-        ) is not None
-
-    @classmethod
     def is_frozen_agreement(cls, version_id: UUID | str | None) -> bool:
         """Whether the id names a frozen version a suite owns.
 

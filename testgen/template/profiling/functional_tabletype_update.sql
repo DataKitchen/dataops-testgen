@@ -6,7 +6,7 @@ SELECT pg_advisory_xact_lock(hashtextextended(CAST(:TABLE_GROUPS_ID AS VARCHAR),
 -- group, and two table groups of one project over the same schema stage the same
 -- (project_code, schema_name, table_name), so the run id is what selects this run's rows.
 UPDATE profile_results
-   SET functional_table_type = COALESCE(s.table_period)||'-'||COALESCE(s.table_type)
+   SET functional_table_type = CONCAT_WS('-', s.table_period, s.table_type)
 FROM stg_functional_table_updates s
 WHERE s.project_code = profile_results.project_code
   AND s.schema_name = profile_results.schema_name

@@ -284,10 +284,10 @@ def run_contract_generation(
 
     1. when ``table_names`` is omitted and the draft declares no tables, declares every table in
        the data catalog;
-    2. with governance, and unless ``refresh_identity`` is false, refreshes the contract's
+    2. with catalog metadata, and unless ``refresh_identity`` is false, refreshes the contract's
        description and tags from the table group; then declares the catalog columns of
        ``table_names`` -- or of every declared table -- refreshes their types, and refreshes the
-       fields of profiling and governance when they are selected;
+       fields of profiling and catalog metadata when they are selected;
     3. with tests and a completed profiling run, generates the Contract set's terms for those of the
        tables the run profiled;
     4. gives each table the draft declares its Schema Conformance test, whatever ``table_names``
@@ -296,7 +296,7 @@ def run_contract_generation(
        each column.
 
     Which columns get terms, profiled values and a primary key follows the data catalog's
-    excluded flag, whether or not governance refreshes the document's marker.
+    excluded flag, whether or not catalog metadata refreshes the document's marker.
 
     Generation deletes the unlocked generated terms of the tables it covers that it did not
     produce again, so it never covers a table the run has no results for: without a profiling
@@ -306,7 +306,8 @@ def run_contract_generation(
 
     Generation reaches the database on its own connection and commits each statement itself,
     so the document is committed before the terms are generated. A failure past that point
-    leaves the document generated with the terms missing; generating again resolves it.
+    leaves the document generated with terms missing, or present without a contract identity;
+    generating again resolves both, and freezing mints the missing identities.
     """
     test_suite, table_group, connection = _contract_context(test_suite_id)
     session = get_current_session()
@@ -321,10 +322,10 @@ def run_contract_generation(
         table_names = contract_document.declared_tables(document) or contract_document.catalog_table_names(
             table_group.id
         )
-    if refresh_identity and RegenerationGroup.GOVERNANCE in selected:
+    if refresh_identity and RegenerationGroup.CATALOG in selected:
         contract_document.refresh_identity(document, table_group)
     column_counts = contract_document.refresh_tables(
-        document, table_group, table_names, profiling=profiling, governance=RegenerationGroup.GOVERNANCE in selected
+        document, table_group, table_names, profiling=profiling, catalog_metadata=RegenerationGroup.CATALOG in selected
     )
     draft.metadata_document = document
     flag_modified(draft, "metadata_document")

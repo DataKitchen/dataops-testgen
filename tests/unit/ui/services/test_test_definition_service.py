@@ -1,9 +1,16 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 
+from testgen.common.enums import SuiteType
 from testgen.common.models.test_definition import TestDefinition, TestType
-from testgen.ui.services.test_definition_service import save_from_dialog
+from testgen.ui.services.test_definition_service import (
+    MANAGED_ADD_MESSAGE,
+    MANAGED_EDIT_MESSAGE,
+    dialog_table_columns,
+    save_from_dialog,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -18,14 +25,26 @@ DIVERGENCE = TestType(
     default_parm_required="Y",
 )
 ROW_COUNT = TestType(test_type="Row_Count", test_name_short="Row Count", test_scope="table")
+REGULAR_SUITE = MagicMock(suite_type=SuiteType.REGULAR)
+CONTRACT = MagicMock(suite_type=SuiteType.CONTRACT)
 
 
-def _save(definition: TestDefinition, test_type: TestType) -> tuple[str | None, bool]:
+def _save(
+    definition: TestDefinition,
+    test_type: TestType,
+    suite: MagicMock = REGULAR_SUITE,
+    declared: list[str] | None = None,
+    stored_table: str | None = None,
+    stored_type: str | None = None,
+) -> tuple[str | None, bool]:
     with (
         patch(f"{SERVICE_MODULE}.TestType.get", return_value=test_type),
+        patch(f"{SERVICE_MODULE}.writable_tables", return_value=declared),
+        patch(f"{SERVICE_MODULE}._stored_table_name", return_value=stored_table),
+        patch(f"{SERVICE_MODULE}._stored_test_type", return_value=stored_type or test_type.test_type),
         patch.object(TestDefinition, "save") as save,
     ):
-        error = save_from_dialog(definition)
+        error = save_from_dialog(definition, suite)
     return error, save.called
 
 
@@ -60,8 +79,99 @@ def test_non_public_type_is_saved_without_validation():
     definition = TestDefinition(test_type="Volume_Trend", custom_query="SELECT COUNT(*)")
 
     with patch(f"{SERVICE_MODULE}.TestType.get") as get_test_type, patch.object(TestDefinition, "save") as save:
-        assert save_from_dialog(definition) is None
+        assert save_from_dialog(definition, REGULAR_SUITE) is None
 
     get_test_type.assert_not_called()
     save.assert_called_once()
     assert definition.custom_query == "SELECT COUNT(*)"
+
+
+SCHEMA_CONFORMANCE = TestType(test_type="Schema_Conformance", test_name_short="Schema Conformance", test_scope="table")
+
+
+def test_new_test_of_a_managed_type_is_refused():
+    definition = TestDefinition(test_type="Schema_Conformance", table_name="t1")
+
+    assert _save(definition, SCHEMA_CONFORMANCE) == (MANAGED_ADD_MESSAGE, False)
+
+
+def test_edit_of_a_managed_test_is_refused():
+    definition = TestDefinition(id=uuid4(), test_type="Schema_Conformance", table_name="t1")
+
+    assert _save(definition, SCHEMA_CONFORMANCE) == (MANAGED_EDIT_MESSAGE, False)
+
+
+def test_edit_changing_a_managed_test_to_another_type_is_refused():
+    definition = TestDefinition(id=uuid4(), test_type="Row_Count", table_name="t1")
+
+    assert _save(definition, ROW_COUNT, stored_type="Schema_Conformance") == (MANAGED_EDIT_MESSAGE, False)
+
+
+UNDECLARED_MESSAGE = (
+    "The contract does not declare the table customers. Add it under Declared Tables on the Contract Metadata tab, "
+    "or choose a declared table."
+)
+
+
+def test_new_test_on_a_table_the_contract_does_not_declare_is_refused():
+    definition = TestDefinition(test_type="Row_Count", table_name="customers")
+
+    assert _save(definition, ROW_COUNT, CONTRACT, declared=["orders"]) == (UNDECLARED_MESSAGE, False)
+
+
+@pytest.mark.parametrize("table_name", [None, ""])
+def test_new_test_naming_no_table_on_a_contract_is_refused(table_name):
+    definition = TestDefinition(test_type="CUSTOM", table_name=table_name)
+
+    assert _save(definition, ROW_COUNT, CONTRACT, declared=["orders"]) == (
+        "A test on a contract must name one of the tables the contract declares.",
+        False,
+    )
+
+
+def test_new_test_on_a_declared_table_is_saved():
+    definition = TestDefinition(test_type="Row_Count", table_name="orders")
+
+    assert _save(definition, ROW_COUNT, CONTRACT, declared=["orders"]) == (None, True)
+
+
+def test_edit_moving_a_test_to_an_undeclared_table_is_refused():
+    definition = TestDefinition(id=uuid4(), test_type="Row_Count", table_name="customers")
+
+    assert _save(definition, ROW_COUNT, CONTRACT, declared=["orders"], stored_table="orders") == (
+        UNDECLARED_MESSAGE,
+        False,
+    )
+
+
+def test_edit_keeping_an_undeclared_table_is_saved():
+    definition = TestDefinition(id=uuid4(), test_type="Row_Count", table_name="customers")
+
+    assert _save(definition, ROW_COUNT, CONTRACT, declared=["orders"], stored_table="customers") == (None, True)
+
+
+def test_regular_suite_saves_a_test_on_any_table():
+    definition = TestDefinition(test_type="Row_Count", table_name="customers")
+
+    assert _save(definition, ROW_COUNT, REGULAR_SUITE, declared=None) == (None, True)
+
+
+TABLE_COLUMNS = [
+    {"table_name": "orders", "column_name": "id"},
+    {"table_name": "customers", "column_name": "id"},
+    {"table_name": "payments", "column_name": "id"},
+]
+
+
+def test_dialog_offers_every_table_on_a_regular_suite():
+    with patch(f"{SERVICE_MODULE}.writable_tables", return_value=None):
+        assert dialog_table_columns(REGULAR_SUITE, TABLE_COLUMNS) == TABLE_COLUMNS
+
+
+def test_dialog_offers_the_declared_tables_and_the_edited_tests_table_on_a_contract():
+    with patch(f"{SERVICE_MODULE}.writable_tables", return_value=["orders"]):
+        assert [c["table_name"] for c in dialog_table_columns(CONTRACT, TABLE_COLUMNS)] == ["orders"]
+        assert [c["table_name"] for c in dialog_table_columns(CONTRACT, TABLE_COLUMNS, "payments")] == [
+            "orders",
+            "payments",
+        ]

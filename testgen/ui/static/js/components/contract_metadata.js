@@ -90,6 +90,11 @@ const ContractMetadata = (/** @type Properties */ props) => {
     const tablesRefusal = refusal('tables_result');
     const markers = van.derive(() => documentRefusal.val?.markers ?? data.val.unverifiable_markers ?? []);
     const dismiss = (key) => dismissed[key].val = peek(data)[key]?.token ?? null;
+    // A refusal describes the content that was saved, so a change after it clears the alert and its markers
+    van.derive(() => {
+        selected.val;
+        dismiss('tables_result');
+    });
 
     return div(
         { class: 'flex-column fx-gap-4', 'data-testid': 'contract-metadata' },
@@ -141,7 +146,10 @@ const ContractMetadata = (/** @type Properties */ props) => {
                     markers,
                     statusBar: {},
                     height: DOCUMENT_HEIGHT,
-                    onChange: (value) => text.val = value,
+                    onChange: (value) => {
+                        text.val = value;
+                        dismiss('document_result');
+                    },
                 }),
                 span({ class: 'text-caption' }, peek(data).comments_caption),
             ),

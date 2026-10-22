@@ -26,11 +26,16 @@ WITH ranked_test_runs
       WHERE s.project_code = :project_code
         AND r.test_starttime <= :score_history_cutoff_time
         AND je.status = 'completed'
-        -- A run counts once the version it verified was in force when it ran. See the same
-        -- predicate in rollup_scores_test_table_group.sql.
+        -- A run counts when the version it verified was the one in force when it started. See the
+        -- same predicate in rollup_scores_test_table_group.sql.
         AND (r.version_id IS NULL OR EXISTS (SELECT 1 FROM suite_versions sv
                      WHERE sv.id = r.version_id
-                       AND (sv.test_suite_id IS NULL OR r.test_starttime >= sv.frozen_at))))
+                       AND (sv.test_suite_id IS NULL
+                            OR (r.test_starttime >= sv.frozen_at
+                                AND NOT EXISTS (SELECT 1 FROM suite_versions nv
+                                                 WHERE nv.test_suite_id = sv.test_suite_id
+                                                   AND nv.version > sv.version
+                                                   AND r.test_starttime >= nv.frozen_at))))))
 INSERT INTO score_history_latest_runs
        (definition_id, score_history_cutoff_time, test_suite_id, last_test_run_id)
 SELECT :definition_id as definition_id, :score_history_cutoff_time as score_history_cutoff_time, test_suite_id, test_run_id

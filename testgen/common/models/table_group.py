@@ -1300,10 +1300,17 @@ class TableGroup(Entity):
         USING table_groups tg
         WHERE tg.id = dcs.table_groups_id AND tg.id IN :table_group_ids;
 
+        DELETE FROM data_structure_log dsl
+        USING table_groups tg
+        WHERE tg.id = dsl.table_groups_id AND tg.id IN :table_group_ids;
+
+        DELETE FROM job_executions
+        WHERE kwargs->>'table_group_id' IN :table_group_id_texts;
+
         DELETE FROM job_schedules
         WHERE (kwargs->>'table_group_id')::UUID IN :table_group_ids;
         """
-        params = {"table_group_ids": tuple(ids)}
+        params = {"table_group_ids": tuple(ids), "table_group_id_texts": tuple(str(id_) for id_ in ids)}
         db_session = get_current_session()
         db_session.execute(text(query), params)
         cls.delete_where(cls.id.in_(ids))

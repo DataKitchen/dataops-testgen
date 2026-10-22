@@ -413,13 +413,13 @@ _REGENERATION_GROUP_TEXT = {
         "Regenerates the contract's tests from the latest profiling. Locked tests are kept.",
     ),
     RegenerationGroup.PROFILING: (
-        "Profiling",
+        "Profiling results",
         "Updates functional types, keys, formats, and the values profiling observed.",
     ),
-    RegenerationGroup.GOVERNANCE: (
-        "Descriptions and governance",
-        "Updates descriptions, tags, classification, PII, and other attributes from the data catalog. "
-        "Replaces edits made to these in the contract.",
+    RegenerationGroup.CATALOG: (
+        "Catalog metadata",
+        "Updates descriptions, tags, classification, and the PII, critical data element, and excluded flags "
+        "from the data catalog.",
     ),
 }
 
@@ -434,8 +434,9 @@ def contract_regeneration_message(
             f"No tests were regenerated for the contract '{contract_name}' because none of its tables have been "
             "profiled."
         )
-    regenerated = ", ".join(_REGENERATION_GROUP_TEXT[group][0] for group in result.groups)
-    message = f"Regeneration completed for the contract '{contract_name}': {regenerated}."
+    groups = [_REGENERATION_GROUP_TEXT[group][0].lower() for group in result.groups]
+    regenerated = " and ".join(groups) if len(groups) <= 2 else f"{', '.join(groups[:-1])}, and {groups[-1]}"
+    message = f"The contract '{contract_name}' was regenerated: {regenerated}."
     if not result.tables_not_profiled:
         return message
     skipped = []
@@ -466,7 +467,7 @@ def build_generate_tests_data(test_suite_id: str) -> dict:
         contract_test_types = set(get_generation_set_test_types(CONTRACT_GENERATION_SET))
         sampled_unavailable = {code: name for code, name in sampled_unavailable.items() if code in contract_test_types}
     return {
-        "title": "Generate Tests",
+        "title": "Regenerate Contract" if is_contract else "Generate Tests",
         "test_suite_id": str(generate_suite.id),
         "test_suite_name": generate_suite.test_suite,
         "is_contract": is_contract,
@@ -616,8 +617,22 @@ def wizard_table_group_selected(payload: dict) -> None:
         "id": str(table_group.id),
         "name": table_group.table_groups_name,
         "profiled_at": make_json_safe(profile_run.profiling_starttime) if profile_run else None,
+        "unreached_profiling_age": None if profile_run else _unreached_profiling_age(table_group),
         "tables": catalog_table_names(table_group.id),
     }
+
+
+def _unreached_profiling_age(table_group: TableGroup) -> int | None:
+    """``table_group``'s minimum profiling age in days when it has completed profiling runs but test generation
+    reads none of them, because none is that old yet. ``None`` otherwise."""
+    delay_days = table_group.profiling_delay_days
+    if not delay_days or resolve_generation_profile_run(table_group) is not None:
+        return None
+    return delay_days if ProfilingRun.latest_readable_id(table_group.id) is not None else None
+
+
+def _days(count: int) -> str:
+    return f"{count} {'day' if count == 1 else 'days'}"
 
 
 def contract_file_uploaded(payload: dict) -> None:
@@ -745,18 +760,25 @@ def _add_contract_from_tables(suite: TestSuite, table_group: TableGroup, table_n
         not created.generation_failed and generation is not None and generation.term_count == 0 and bool(not_profiled)
     )
     kind = " schema" if no_quality_tests else ""
-    rows = [_row(WizardRowIcon.SUCCESS, f"Contract {name} created{_with_tests(created.suite.id, kind)}.")]
+    rows = [
+        _row(
+            WizardRowIcon.SUCCESS,
+            f"Contract {name} created{_with_tests(created.suite.id, kind)}.",
+            _contract_link(created.suite),
+        )
+    ]
     if created.generation_failed:
         rows.append(
             _row(WizardRowIcon.WARNING, "Generating the contract failed. Generate its tests on the Test Suites page.")
         )
     elif no_quality_tests:
         in_catalog = [table for table in generation.tables_declared if table not in not_in_catalog]
-        cause = (
-            "has not been profiled"
-            if set(not_profiled) == set(in_catalog)
-            else f"has no profiling results for {', '.join(not_profiled)}"
-        )
+        if set(not_profiled) != set(in_catalog):
+            cause = f"has no profiling results for {', '.join(not_profiled)}"
+        elif age := _unreached_profiling_age(table_group):
+            cause = f"has no profiling run that has reached its minimum profiling age of {_days(age)}"
+        else:
+            cause = "has not been profiled"
         rows.append(
             _row(
                 WizardRowIcon.SKIPPED,
@@ -778,7 +800,7 @@ def _add_contract_from_file(suite: TestSuite, table_group: TableGroup, content: 
     text = f"Contract {created.suite.test_suite} created{_with_tests(created.suite.id)}."
     if unverifiable := len(plan.unverifiable_rules):
         text += f" {unverifiable} {'rule cannot' if unverifiable == 1 else 'rules cannot'} be verified."
-    rows = [_row(WizardRowIcon.SUCCESS, text)]
+    rows = [_row(WizardRowIcon.SUCCESS, text, _contract_link(created.suite))]
     if created.conformance_failed:
         rows.append(
             _row(
@@ -788,6 +810,14 @@ def _add_contract_from_file(suite: TestSuite, table_group: TableGroup, content: 
         )
     rows += _contract_info_rows(created.custom_server_reason, connection.sql_flavor_code, plan.tables_not_in_catalog)
     return rows
+
+
+def _contract_link(suite: TestSuite) -> dict:
+    return {
+        "label": "View it on the test definitions page",
+        "href": "test-suites:definitions",
+        "params": {"test_suite_id": str(suite.id), "project_code": suite.project_code},
+    }
 
 
 def _with_tests(suite_id: UUID, kind: str = "") -> str:

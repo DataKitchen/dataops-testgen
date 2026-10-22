@@ -94,8 +94,15 @@ class RefreshDataCharsSQL:
         return table_criteria
 
     def _like_pattern(self, mask: str) -> str:
-        # `\_` is the usual way to write a literal underscore in a LIKE pattern, so stored masks may carry it
-        escaped = re.sub(r"\\?_", lambda _: self.flavor_service.escaped_underscore, mask)
+        # `%` is the only wildcard; every other character matches itself. `\_` is the usual way to write a literal
+        # underscore in a LIKE pattern, so stored masks may carry it, and it matches an underscore.
+        literals = {
+            "_": self.flavor_service.escaped_underscore,
+            "\\_": self.flavor_service.escaped_underscore,
+            "\\": self.flavor_service.escaped_backslash,
+            "[": self.flavor_service.escaped_left_bracket,
+        }
+        escaped = re.sub(r"\\_|[_\\[]", lambda match: literals[match.group()], mask)
         return self.flavor_service.string_literal(escaped)
 
     def filter_schema_columns(self, columns: list[ColumnChars]) -> list[ColumnChars]:

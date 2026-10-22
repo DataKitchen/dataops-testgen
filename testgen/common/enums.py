@@ -382,8 +382,8 @@ MANAGED_TEST_TYPES: frozenset[str] = frozenset({"Schema_Conformance"})
 
 class RegenerationGroup(StrEnum):
     """What a contract regeneration refreshes besides declaring the catalog's columns and refreshing
-    their types: its terms, what profiling infers, or the descriptions and governance attributes
-    people write."""
+    their types: its terms, what profiling infers, or the catalog metadata: descriptions, tags, classification,
+    and the critical, PII, and excluded flags."""
     TESTS = "tests"
     PROFILING = "profiling"
-    GOVERNANCE = "governance"
+    CATALOG = "catalog"

@@ -90,6 +90,7 @@ def test_freezing_sets_the_freeze_time():
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
     with (
         patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(TestDefinition, "assign_missing_term_ids"),
         patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
     ):
@@ -104,6 +105,7 @@ def test_freezing_records_who_froze_the_version():
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
     with (
         patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(TestDefinition, "assign_missing_term_ids"),
         patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
     ):
@@ -117,6 +119,7 @@ def test_freezing_stores_the_rendered_bytes():
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
     with (
         patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(TestDefinition, "assign_missing_term_ids"),
         patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
     ):
@@ -131,6 +134,7 @@ def test_freezing_records_the_api_version_the_bytes_were_validated_against():
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, odcs_api_version=None)
     with (
         patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(TestDefinition, "assign_missing_term_ids"),
         patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
     ):
@@ -144,6 +148,7 @@ def test_freezing_without_a_label_leaves_the_drafts_label_untouched():
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, label="carried over")
     with (
         patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(TestDefinition, "assign_missing_term_ids"),
         patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
     ):
@@ -157,12 +162,44 @@ def test_freezing_does_not_touch_the_drafts_author():
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, created_by="original-author")
     with (
         patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(TestDefinition, "assign_missing_term_ids"),
         patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
     ):
         frozen = contract_service.freeze_version(suite, label="first")
 
     assert frozen.created_by == "original-author"
+
+
+def test_freezing_mints_the_missing_term_ids_on_the_draft_before_rendering():
+    """A generation that fails between inserting terms and stamping their identity leaves terms
+    with none; a declaration cannot render without one, so freezing repairs the draft first."""
+    suite = _suite()
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
+    calls = MagicMock()
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(TestDefinition, "assign_missing_term_ids", calls.mint),
+        patch.object(contract_service.render, "render_document", calls.render),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+    ):
+        calls.render.return_value = _VALID_MERGED_DOCUMENT
+        contract_service.freeze_version(suite)
+
+    assert [call[0] for call in calls.mock_calls] == ["mint", "render"]
+    calls.mint.assert_called_once_with(draft.id)
+
+
+def test_freezing_without_a_draft_mints_nothing():
+    suite = _suite()
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=None),
+        patch.object(TestDefinition, "assign_missing_term_ids") as mint,
+    ):
+        with pytest.raises(ValueError, match="no draft"):
+            contract_service.freeze_version(suite)
+
+    mint.assert_not_called()
 
 
 def test_freezing_without_a_draft_is_refused():
@@ -178,6 +215,7 @@ def test_an_invalid_merge_blocks_the_freeze_and_leaves_the_draft_a_draft():
     invalid_document = {"version": "1.0.0", "apiVersion": ODCS_API_VERSION, "kind": ODCS_KIND}  # no id
     with (
         patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(TestDefinition, "assign_missing_term_ids"),
         patch.object(contract_service.render, "render_document", return_value=invalid_document),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
     ):
@@ -194,6 +232,7 @@ def test_the_validators_own_messages_reach_the_caller():
     invalid_document = {"version": "1.0.0", "apiVersion": ODCS_API_VERSION, "kind": ODCS_KIND}  # no id
     with (
         patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(TestDefinition, "assign_missing_term_ids"),
         patch.object(contract_service.render, "render_document", return_value=invalid_document),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
     ):
@@ -212,6 +251,7 @@ def test_freezing_a_document_declaring_an_unbundled_api_version_is_refused_not_c
     document = {"version": "1.0.0", "apiVersion": "v3.0.2", "kind": ODCS_KIND, "id": "c1"}
     with (
         patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(TestDefinition, "assign_missing_term_ids"),
         patch.object(contract_service.render, "render_document", return_value=document),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
     ):
@@ -1426,3 +1466,16 @@ def test_exporting_a_suite_that_keeps_no_versions_is_refused():
     suite.suite_type = SuiteType.REGULAR
     with pytest.raises(ValueError, match="not a contract"):
         contract_service.version_for_export(suite)
+
+
+@pytest.mark.parametrize(("draft", "number"), [(SuiteVersion(id=uuid4(), version=4), 4), (None, 6)])
+def test_generation_lands_in_the_draft_or_the_one_the_job_opens_without_opening_it(draft, number):
+    suite = MagicMock(id=uuid4())
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(SuiteVersion, "next_version_for", return_value=6),
+        patch.object(TestDefinition, "resolve_writable") as resolve_writable,
+    ):
+        assert contract_service.generation_destination(suite) == number
+
+    resolve_writable.assert_not_called()

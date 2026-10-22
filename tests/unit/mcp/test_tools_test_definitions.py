@@ -306,6 +306,56 @@ def test_get_test_with_last_result(mock_td, mock_tr, mock_notes, db_session_mock
     assert "Table is empty" in result
 
 
+@pytest.mark.parametrize(("test_severity", "suite_severity", "shown"), [
+    ("Warning", "Log", "**Severity:** Warning"),
+    (None, "Log", "**Severity:** Log (test suite default)"),
+    (None, None, "**Severity:** Fail (test type default)"),
+])
+@patch("testgen.mcp.tools.test_definitions.TestSuite")
+@patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
+@patch("testgen.mcp.tools.test_definitions.TestResult")
+@patch("testgen.mcp.tools.test_definitions.TestDefinition")
+def test_get_test_shows_the_severity_execution_applies(
+    mock_td, mock_tr, mock_notes, mock_suite, test_severity, suite_severity, shown, db_session_mock,
+):
+    td = MagicMock(
+        id=uuid4(), display_name="Row Count", column_name=None, table_name="orders", test_scope=None,
+        impact_dimension=None, default_impact_dimension=None, dq_dimension=None, flagged=False,
+        severity=test_severity, default_severity="Fail", export_to_observability=False, last_auto_gen_date=None,
+        profiling_as_of_date=None, last_manual_update=None, external_url=None, custom_metadata=None,
+        param_columns=set(), param_fields=[], test_description=None, default_test_description=None, usage_notes=None,
+    )
+    mock_td.get_for_project.return_value = td
+    mock_notes.get_notes.return_value = []
+    mock_tr.select_history.return_value = []
+    mock_suite.get.return_value = MagicMock(suite_type=SuiteType.REGULAR, severity=suite_severity)
+
+    from testgen.mcp.tools.test_definitions import get_test
+
+    assert shown in get_test(str(td.id))
+
+
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+@patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
+@patch("testgen.mcp.tools.test_definitions.TestDefinition")
+def test_list_tests_shows_the_suite_default_severity_for_a_test_without_one(
+    mock_td, mock_notes, mock_resolve, db_session_mock,
+):
+    mock_resolve.return_value = MagicMock(id=uuid4(), suite_type=SuiteType.REGULAR, severity="Log")
+    item = MagicMock(
+        display_name="Row Count", table_name="orders", column_name=None, test_active=True, severity=None,
+        default_severity="Fail", lock_refresh=False, flagged=False, last_auto_gen_date=None, last_manual_update=None,
+    )
+    mock_td.list_for_suite.return_value = ([item], 1)
+    mock_notes.get_notes_count_by_ids.return_value = {}
+
+    from testgen.mcp.tools.test_definitions import list_tests
+
+    row = next(line for line in list_tests(str(uuid4())).splitlines() if "Row Count" in line)
+    assert "| Log |" in row
+    assert "Fail" not in row
+
+
 @patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
 @patch("testgen.mcp.tools.test_definitions.TestResult")
 @patch("testgen.mcp.tools.test_definitions.TestDefinition")
@@ -1254,6 +1304,21 @@ def _make_td_orm(test_type="Alpha_Trunc", threshold_value="64", severity="Warnin
 
 @patch("testgen.mcp.tools.test_definitions.TestType")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_refuses_a_managed_test(mock_resolve_td, mock_tt_model, db_session_mock):
+    td = _make_td_orm(test_type="Schema_Conformance")
+    mock_resolve_td.return_value = td
+
+    from testgen.mcp.tools.test_definitions import update_test
+
+    with pytest.raises(MCPUserError, match=f"Test definition `{td.id}` is managed by TestGen"):
+        update_test(str(td.id), fields={"severity": "Fail"})
+
+    td.save.assert_not_called()
+    mock_tt_model.get.assert_not_called()
+
+
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
 def test_update_test_happy_path(mock_resolve_td, mock_tt_model, db_session_mock):
     td = _make_td_orm()
     mock_resolve_td.return_value = td
@@ -1337,25 +1402,81 @@ def test_update_test_reports_only_the_fields_that_change(mock_resolve_td, mock_t
 
 
 @pytest.mark.parametrize(
-    ("stored", "sent"),
-    [("Warning", "Warning"), (None, ""), ("", None), (None, None)],
+    ("field", "stored", "sent"),
+    [
+        ("severity", "Warning", "Warning"),
+        ("severity", None, ""),
+        ("severity", "", None),
+        ("severity", None, None),
+        ("custom_metadata", {"task": "t1", "pipeline": "p1"}, {"pipeline": "p1", "task": "t1"}),
+        ("test_active", True, "Y"),
+        ("test_active", True, "yes"),
+        ("lock_refresh", False, "N"),
+        ("flagged", True, "yes"),
+        ("skip_errors", 0, None),
+        ("skip_errors", 0, ""),
+        ("skip_errors", 3, "3"),
+    ],
 )
-def test_update_test_that_changes_nothing_saves_nothing(db_session_mock, stored, sent):
+def test_update_test_that_changes_nothing_saves_nothing(db_session_mock, field, stored, sent):
     """A no-op edit saves nothing and rolls back the draft that routing a frozen row may have opened."""
-    td = _orm_td(id=uuid4(), version_id=uuid4(), severity=stored)
+    td = _orm_td(id=uuid4(), version_id=uuid4(), **{field: stored})
+    td.editable_fields.return_value = td.editable_fields.return_value | {field}
     td.last_manual_update = "unchanged"
     with (
         _update_context(td, suite=_contract_suite(), old_version=3),
         patch.object(TestDefinition, "resolve_writable", return_value=(td.version_id, {td.id: td.id})),
         patch("testgen.mcp.tools.common.get_current_session") as session,
     ):
-        result = update_test(str(td.id), fields={"severity": sent})
+        result = update_test(str(td.id), fields={field: sent})
 
     assert "No fields changed — supplied values matched the current state." in result
     assert "Fields changed" not in result
     td.save.assert_not_called()
     session.return_value.rollback.assert_called_once()
     assert td.last_manual_update == "unchanged"
+
+
+@pytest.mark.parametrize(("sent", "stored"), [("No", False), ("FALSE", False), (" n ", False), (False, False)])
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_reads_a_yes_no_string_as_a_boolean(mock_resolve_td, mock_tt_model, db_session_mock, sent, stored):
+    td = _make_td_orm()
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    result = update_test(str(td.id), fields={"test_active": sent})
+
+    assert td.test_active is stored
+    assert "| `test_active` | Yes | No |" in result
+    td.save.assert_called_once()
+
+
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_reads_a_yes_no_string_as_a_boolean_flag(mock_resolve_td, mock_tt_model, db_session_mock):
+    td = _make_td_orm()
+    td.flagged = False
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    update_test(str(td.id), fields={"flagged": "yes"})
+
+    assert td.flagged is True
+    td.save.assert_called_once()
+
+
+@pytest.mark.parametrize("sent", ["maybe", "", 1, None])
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_refuses_a_flag_that_is_not_yes_or_no(mock_resolve_td, mock_tt_model, db_session_mock, sent):
+    td = _make_td_orm()
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    with pytest.raises(MCPUserError, match="`lock_refresh` must be true or false."):
+        update_test(str(td.id), fields={"lock_refresh": sent})
+    td.save.assert_not_called()
 
 
 @patch("testgen.mcp.tools.test_definitions.mcp_source_data_protected", return_value=True)
@@ -1589,12 +1710,17 @@ def routes_in_place():
         yield
 
 
+def _matched_row(row_id=None, test_type="Alpha_Trunc"):
+    """A row of the ``(id, test_type)`` select ``bulk_update_tests`` runs on a suite filter."""
+    return MagicMock(id=row_id or uuid4(), test_type=test_type)
+
+
 @pytest.mark.usefixtures("routes_in_place")
 @patch("testgen.mcp.tools.test_definitions.get_current_session")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
 def test_bulk_update_tests_disable_no_filter(mock_resolve_suite, mock_session, db_session_mock):
     mock_resolve_suite.return_value = _make_suite()
-    mock_session.return_value.scalars.return_value.all.return_value = [uuid4(), uuid4(), uuid4()]
+    mock_session.return_value.execute.return_value.all.return_value = [_matched_row(), _matched_row(), _matched_row()]
 
     from testgen.mcp.tools.test_definitions import bulk_update_tests
 
@@ -1613,7 +1739,7 @@ def test_bulk_update_tests_enable_with_table_filter(
     mock_resolve_suite, mock_resolve_tt, mock_session, db_session_mock
 ):
     mock_resolve_suite.return_value = _make_suite()
-    mock_session.return_value.scalars.return_value.all.return_value = [uuid4()]
+    mock_session.return_value.execute.return_value.all.return_value = [_matched_row()]
 
     from testgen.mcp.tools.test_definitions import bulk_update_tests
 
@@ -1645,7 +1771,7 @@ def test_bulk_update_tests_invalid_action(mock_resolve_suite, mock_session, db_s
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
 def test_bulk_update_tests_no_match(mock_resolve_suite, mock_session, db_session_mock):
     mock_resolve_suite.return_value = _make_suite()
-    mock_session.return_value.scalars.return_value.all.return_value = []
+    mock_session.return_value.execute.return_value.all.return_value = []
 
     from testgen.mcp.tools.test_definitions import bulk_update_tests
 
@@ -2014,6 +2140,66 @@ def test_create_test_rejects_volume_trend(
     mock_tg.get.assert_not_called()
 
 
+@patch("testgen.common.contract_rules.SuiteVersion")
+@patch("testgen.mcp.tools.test_definitions.TestDefinition")
+@patch("testgen.mcp.tools.test_definitions.TableGroup")
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_type")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_create_test_refuses_a_table_the_contract_does_not_declare(
+    mock_resolve_suite, mock_resolve_tt, mock_tt_model, mock_tg, mock_td, mock_version, db_session_mock,
+):
+    from testgen.common.enums import SuiteType
+
+    suite = _make_suite()
+    suite.suite_type = SuiteType.CONTRACT
+    mock_resolve_suite.return_value = suite
+    mock_resolve_tt.return_value = "Row_Ct"
+    mock_tt_model.get.return_value = _make_test_type(code="Row_Ct", short_name="Row Count", scope="table")
+    mock_tg.get.return_value = _make_table_group()
+    mock_version.draft_for.return_value = MagicMock(
+        metadata_document={"schema": [{"name": "orders"}, {"name": "payments"}]}
+    )
+
+    from testgen.mcp.tools.test_definitions import create_test
+
+    with pytest.raises(MCPUserError) as exc_info:
+        create_test(test_suite_id=str(uuid4()), test_type="Row Count", table_name="customers")
+
+    assert str(exc_info.value) == (
+        "Test definition creation rejected. No changes saved.\n\nContract `demo_suite` does not declare table "
+        "`customers`. A test on a contract can only target a table the contract declares. "
+        "Declared tables: `orders`, `payments`."
+    )
+    mock_td.assert_not_called()
+
+
+@patch("testgen.common.contract_rules.SuiteVersion")
+@patch("testgen.mcp.tools.test_definitions.TestDefinition")
+@patch("testgen.mcp.tools.test_definitions.TableGroup")
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_type")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_create_test_on_a_contract_that_declares_no_tables_says_so(
+    mock_resolve_suite, mock_resolve_tt, mock_tt_model, mock_tg, mock_td, mock_version, db_session_mock,
+):
+    from testgen.common.enums import SuiteType
+
+    suite = _make_suite()
+    suite.suite_type = SuiteType.CONTRACT
+    mock_resolve_suite.return_value = suite
+    mock_resolve_tt.return_value = "Row_Ct"
+    mock_tt_model.get.return_value = _make_test_type(code="Row_Ct", short_name="Row Count", scope="table")
+    mock_tg.get.return_value = _make_table_group()
+    mock_version.draft_for.return_value = MagicMock(metadata_document={})
+
+    from testgen.mcp.tools.test_definitions import create_test
+
+    with pytest.raises(MCPUserError, match="The contract declares no tables.$"):
+        create_test(test_suite_id=str(uuid4()), test_type="Row Count", table_name="customers")
+    mock_td.assert_not_called()
+
+
 @patch("testgen.mcp.tools.test_definitions.TestType")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
 def test_update_test_allows_existing_non_public_test_type(mock_resolve_td, mock_tt_model, db_session_mock):
@@ -2046,7 +2232,7 @@ def test_update_test_allows_existing_non_public_test_type(mock_resolve_td, mock_
 def test_bulk_update_tests_scopes_to_a_version(mock_resolve_suite, mock_session, db_session_mock):
     mock_resolve_suite.return_value = _make_suite()
     session = MagicMock()
-    session.scalars.return_value.all.return_value = [uuid4()]
+    session.execute.return_value.all.return_value = [_matched_row()]
     mock_session.return_value = session
 
     from testgen.mcp.tools.test_definitions import bulk_update_tests
@@ -2114,6 +2300,75 @@ def test_bulk_update_tests_rejects_an_ambiguous_selection(mock_set, kwargs, mess
 
     with pytest.raises(MCPUserError, match=message):
         bulk_update_tests(action="disable", **kwargs)
+    mock_set.assert_not_called()
+
+
+@pytest.mark.usefixtures("routes_in_place")
+@patch("testgen.mcp.tools.test_definitions._set_test_values")
+@patch.object(TestDefinition, "list_for_ids")
+def test_bulk_update_tests_by_ids_keeps_the_tests_testgen_manages(mock_list, mock_set, db_session_mock):
+    changed = _make_td_minimal(test_id=uuid4())
+    managed = _make_td_minimal(test_id=uuid4(), test_type="Schema_Conformance")
+    mock_list.return_value = [changed, managed]
+
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    result = bulk_update_tests(action="disable", test_definition_ids=[str(changed.id), str(managed.id)])
+
+    assert mock_set.call_args.args[0] == [changed.id]
+    assert "Disabled 1 tests" in result
+    assert "**Kept, managed by TestGen:** 1" in result
+
+
+@patch("testgen.mcp.tools.test_definitions._set_test_values")
+@patch.object(TestDefinition, "list_for_ids")
+def test_bulk_update_tests_by_ids_naming_only_managed_tests_changes_nothing(mock_list, mock_set, db_session_mock):
+    managed = _make_td_minimal(test_id=uuid4(), test_type="Schema_Conformance")
+    mock_list.return_value = [managed]
+
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    with pytest.raises(MCPUserError, match="Nothing was changed. TestGen manages these tests, so they cannot be enabled") as error:
+        bulk_update_tests(action="enable", test_definition_ids=[str(managed.id)])
+    assert str(managed.id) in str(error.value)
+    mock_set.assert_not_called()
+
+
+@pytest.mark.usefixtures("routes_in_place")
+@patch("testgen.mcp.tools.test_definitions._set_test_values")
+@patch("testgen.mcp.tools.test_definitions.get_current_session")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_bulk_update_tests_by_filter_keeps_the_tests_testgen_manages(
+    mock_resolve_suite, mock_session, mock_set, db_session_mock
+):
+    mock_resolve_suite.return_value = _make_suite()
+    changed = _matched_row()
+    mock_session.return_value.execute.return_value.all.return_value = [changed, _matched_row(test_type="Schema_Conformance")]
+
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    result = bulk_update_tests(test_suite_id=str(uuid4()), action="disable")
+
+    assert mock_set.call_args.args[0] == [changed.id]
+    assert "Disabled 1 tests in suite `demo_suite`" in result
+    assert "**Kept, managed by TestGen:** 1" in result
+
+
+@patch("testgen.mcp.tools.test_definitions._set_test_values")
+@patch("testgen.mcp.tools.test_definitions.get_current_session")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_bulk_update_tests_by_filter_matching_only_managed_tests_changes_nothing(
+    mock_resolve_suite, mock_session, mock_set, db_session_mock
+):
+    mock_resolve_suite.return_value = _make_suite()
+    mock_session.return_value.execute.return_value.all.return_value = [_matched_row(test_type="Schema_Conformance")]
+
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    result = bulk_update_tests(test_suite_id=str(uuid4()), action="disable")
+
+    assert "# No tests to disable" in result
+    assert "TestGen manages the 1 tests that matched the filter (no filter), so they cannot be disabled." in result
     mock_set.assert_not_called()
 
 
@@ -3035,6 +3290,7 @@ def test_create_on_a_contract_names_the_version_it_landed_in(db_session_mock):
         patch("testgen.mcp.tools.test_definitions.resolve_test_type", return_value="Alpha_Trunc"),
         patch("testgen.mcp.tools.test_definitions.TestType.get", return_value=_make_test_type()),
         patch("testgen.mcp.tools.test_definitions.TableGroup.get", return_value=_make_table_group()),
+        patch("testgen.mcp.tools.test_definitions.check_table_declared"),
         patch("testgen.mcp.tools.test_definitions.TestDefinition") as td_cls,
         patch("testgen.mcp.tools.test_definitions.TestDefinitionNote.get_notes", return_value=[]),
         patch("testgen.mcp.tools.test_definitions.TestSuite.get", return_value=suite),
@@ -3199,7 +3455,7 @@ def test_delete_by_suite_filter_matching_nothing_opens_no_draft(db_session_mock)
 def test_bulk_update_routes_the_matched_tests_to_the_draft(db_session_mock):
     suite = _contract_suite()
     matched, copy_id, draft = uuid4(), uuid4(), SuiteVersion(id=uuid4(), version=4)
-    db_session_mock.scalars.return_value.all.return_value = [matched]
+    db_session_mock.execute.return_value.all.return_value = [_matched_row(matched)]
     db_session_mock.execute.return_value.rowcount = 1
     with (
         patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
@@ -3242,7 +3498,7 @@ def test_bulk_update_tests_by_ids_routes_to_the_draft_and_counts_each_row_once(m
 
 def test_bulk_update_matching_nothing_opens_no_draft(db_session_mock):
     suite = _contract_suite()
-    db_session_mock.scalars.return_value.all.return_value = []
+    db_session_mock.execute.return_value.all.return_value = []
     with (
         patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
         patch("testgen.mcp.tools.test_definitions.TestDefinition.resolve_writable") as route,

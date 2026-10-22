@@ -824,7 +824,8 @@ defaults to: 10485760 (10 MiB)
 CONTRACT_IMPORT_MAX_BYTES: int = int(getenv("TG_CONTRACT_IMPORT_MAX_BYTES", str(10 * 1024 * 1024)))
 """
 Largest ODCS contract file accepted for upload in the UI, in bytes. The UI also caps it at what fits
-in one Streamlit WebSocket message (`server.maxMessageSize`, 200 MB by default) after base64 encoding.
+in one message from the browser to Streamlit (`server.maxWidgetStateSize`, 25 MB by default) after
+base64 encoding: 18,684,464 bytes with the default.
 
 from env variable: `TG_CONTRACT_IMPORT_MAX_BYTES`
 defaults to: 10485760 (10 MiB)

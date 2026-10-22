@@ -78,6 +78,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
     const selectedSets = van.state(storedSets.filter((s) => generationSets.includes(s)));
     const regenerationGroups = getValue(props.regeneration_groups) ?? [];
     const testsDisabledReason = getValue(props.tests_disabled_reason);
+    const hasResult = () => !!getValue(props.result);
     const groupChecked = Object.fromEntries(
         regenerationGroups.map(({ value }) => [value, van.state(!(value === 'tests' && testsDisabledReason))]),
     );
@@ -87,9 +88,9 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
 
     const question = isContract
         ? div(
-            span('Generate tests for the contract '),
+            span('Regenerate the contract '),
             strong({}, testSuiteName),
-            span('?'),
+            span(' from the latest profiling and the data catalog?'),
         )
         : div(
             span('Execute test generation for the test suite '),
@@ -108,12 +109,14 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                 required: true,
                 options: generationSets.map(s => ({ value: s, label: s })),
                 portalClass: 'generate-tests--select',
+                disabled: hasResult,
             })
             : '',
         isContract
             ? div(
                 { class: 'flex-column fx-gap-2' },
                 div({ class: 'text-caption' }, 'Regenerate'),
+                div({ class: 'text-secondary text-small' }, 'Columns and their data types are always refreshed from the data catalog.'),
                 ...regenerationGroups.map(({ value, label, help }) => {
                     const disabled = value === 'tests' && !!testsDisabledReason;
                     return div(
@@ -122,7 +125,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                             name: `regenerate-${value}`,
                             label,
                             checked: groupChecked[value],
-                            disabled,
+                            disabled: () => disabled || hasResult(),
                             onChange: (checked) => groupChecked[value].val = checked,
                         }),
                         div({ class: 'text-secondary text-small pl-5' }, disabled ? testsDisabledReason : help),
@@ -235,7 +238,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
             ? div(
                 { class: 'flex-row fx-justify-content-flex-end mt-3' },
                 Button({
-                    label: 'Generate Tests',
+                    label: isContract ? 'Regenerate Contract' : 'Generate Tests',
                     type: 'stroked',
                     color: 'primary',
                     width: 'auto',

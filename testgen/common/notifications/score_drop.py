@@ -179,10 +179,10 @@ def send_score_drop_notifications(notification_data: list[tuple[ScoreDefinition,
         ScoreDropNotificationSettings.score_definition_id.in_({d.id for d, *_ in notification_data}),
     )
     ns_per_score_id = defaultdict(list)
-    project_name = None
+    project_name_per_score_id = {}
     for (ns, project_name) in get_current_session().execute(query).fetchall():
         ns_per_score_id[ns.score_definition_id].append(ns)
-        project_name = project_name
+        project_name_per_score_id[ns.score_definition_id] = project_name
 
     diff_per_score_id = defaultdict(list)
     for definition, *data in notification_data:
@@ -222,7 +222,7 @@ def send_score_drop_notifications(notification_data: list[tuple[ScoreDefinition,
                 continue
 
             context = {
-                "project_name": project_name,
+                "project_name": project_name_per_score_id[score_id],
                 "definition": definition,
                 "scorecard_url": "".join(
                     (

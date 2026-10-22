@@ -44,9 +44,10 @@ class UnreadableContractFileError(ValueError):
 
 
 def contract_file_max_bytes() -> int:
-    """The largest contract file accepted: the configured limit, capped by what fits in one Streamlit
-    WebSocket message once the file is base64-encoded into the component value."""
-    transport_bytes = st.config.get_option("server.maxMessageSize") * 1024 * 1024
+    """The largest contract file accepted: the configured limit, capped by the largest message Streamlit
+    accepts from the browser once the file is base64-encoded into the component value."""
+    # Streamlit counts this option in decimal megabytes.
+    transport_bytes = st.config.get_option("server.maxWidgetStateSize") * 1_000_000
     return min(settings.CONTRACT_IMPORT_MAX_BYTES, transport_bytes * 3 // 4 - _FILE_MESSAGE_ENVELOPE_BYTES)
 
 

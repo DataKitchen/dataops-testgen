@@ -33,6 +33,7 @@ WITH score_detail
         AND  r.column_names = dcc.column_name)
        WHERE r.test_run_id = :RUN_ID
          AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'
+         AND r.result_status IS DISTINCT FROM 'Log'
       GROUP BY r.test_run_id, r.table_name, r.column_names ),
 score_calc
   AS ( SELECT test_run_id,

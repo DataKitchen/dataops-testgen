@@ -13,7 +13,7 @@ from tests.unit.sql_assertions import conjuncts, equality_conjunct, is_null_conj
 pytestmark = pytest.mark.unit
 
 
-def _governance(**fields) -> dict:
+def _catalog_metadata(**fields) -> dict:
     return {
         "description": None, "critical_data_element": None, "pii_flag": None, "excluded_data_element": None,
         "functional_table_type": None, **dict.fromkeys(TAG_FIELDS), **fields,
@@ -23,7 +23,7 @@ def _governance(**fields) -> dict:
 def _column(name: str, logical_type: str | None = "string", functional_data_type: str | None = None, **fields):
     return SimpleNamespace(
         column_name=name, db_data_type="text", logical_type=logical_type, functional_data_type=functional_data_type,
-        **_governance(**fields),
+        **_catalog_metadata(**fields),
     )
 
 
@@ -87,7 +87,7 @@ def test_catalog_columns_scopes_to_the_table_group_and_the_exact_table_and_drop(
     assert ordering.modifier is operators.asc_op
 
 
-# --- refresh_tables: governance ---
+# --- refresh_tables: catalog metadata ---
 
 
 def test_refreshing_declares_a_table_not_yet_declared_and_counts_its_columns():
@@ -115,7 +115,7 @@ def test_a_column_carries_its_description_classification_and_tags():
 
 def test_a_column_carries_only_the_tags_it_sets_itself():
     document = {"schema": []}
-    table = SimpleNamespace(**_governance(business_domain="sales"))
+    table = SimpleNamespace(**_catalog_metadata(business_domain="sales"))
 
     _refresh(
         document,
@@ -131,7 +131,7 @@ def test_a_column_carries_only_the_tags_it_sets_itself():
 
 def test_a_table_carries_only_the_tags_it_sets_itself():
     document = {"schema": []}
-    table = SimpleNamespace(**_governance(business_domain="sales"))
+    table = SimpleNamespace(**_catalog_metadata(business_domain="sales"))
 
     _refresh(
         document, [_column("id")], table=table,
@@ -154,12 +154,22 @@ def test_a_column_flagged_as_pii_carries_a_pii_custom_property():
 
 def test_a_column_of_a_critical_table_is_a_critical_data_element():
     document = {"schema": []}
-    table = SimpleNamespace(**_governance(critical_data_element=True))
+    table = SimpleNamespace(**_catalog_metadata(critical_data_element=True))
 
     _refresh(document, [_column("id")], table=table)
 
     prop, = document["schema"][0]["properties"]
     assert prop["criticalDataElement"] is True
+
+
+def test_a_column_flagged_not_critical_stays_so_in_a_critical_table():
+    document = {"schema": []}
+    table = SimpleNamespace(**_catalog_metadata(critical_data_element=True))
+
+    _refresh(document, [_column("id", critical_data_element=False)], table=table)
+
+    prop, = document["schema"][0]["properties"]
+    assert "criticalDataElement" not in prop
 
 
 def test_a_column_that_is_not_critical_carries_no_flag():
@@ -173,7 +183,7 @@ def test_a_column_that_is_not_critical_carries_no_flag():
 
 def test_a_table_carries_its_description_flag_and_tags_as_custom_properties():
     document = {"schema": []}
-    table = SimpleNamespace(**_governance(
+    table = SimpleNamespace(**_catalog_metadata(
         description="Customer orders", critical_data_element=True, data_classification="internal",
     ))
 
@@ -201,7 +211,7 @@ def test_a_refresh_replaces_catalog_values_and_keeps_fields_no_source_supplies()
             ],
         }],
     }]}
-    table = SimpleNamespace(**_governance(description="Catalog description"))
+    table = SimpleNamespace(**_catalog_metadata(description="Catalog description"))
 
     _refresh(
         document,
@@ -239,12 +249,12 @@ def test_values_the_catalog_no_longer_holds_are_removed():
 
 def test_a_table_the_catalog_no_longer_flags_loses_its_table_fields():
     document = {"schema": []}
-    _refresh(document, [_column("id")], table=SimpleNamespace(**_governance(
+    _refresh(document, [_column("id")], table=SimpleNamespace(**_catalog_metadata(
         description="Orders", critical_data_element=True, source_system="erp",
         functional_table_type="cumulative-transaction",
     )))
 
-    _refresh(document, [_column("id")], table=SimpleNamespace(**_governance()))
+    _refresh(document, [_column("id")], table=SimpleNamespace(**_catalog_metadata()))
 
     descriptor = document["schema"][0]
     assert set(descriptor) == {"name", "properties"}
@@ -370,11 +380,12 @@ def test_a_description_with_no_purpose_gains_one():
     ("window-summary",
      "One row per combination of grouping keys, holding aggregated measures; older rows roll off as new rows arrive."),
     ("cumulative-domain", "Rows accumulate and are not removed."),
+    ("transaction", "One row per transaction."),
 ])
 def test_a_table_states_the_granularity_profiling_inferred(table_type, granularity):
     document = {"schema": []}
 
-    _refresh(document, [_column("id")], table=SimpleNamespace(**_governance(functional_table_type=table_type)))
+    _refresh(document, [_column("id")], table=SimpleNamespace(**_catalog_metadata(functional_table_type=table_type)))
 
     descriptor = document["schema"][0]
     assert descriptor["dataGranularityDescription"] == granularity
@@ -517,13 +528,25 @@ def _profile(table: str, column: str, **values):
     return SimpleNamespace(table_name=table, column_name=column, **{**fields, **values})
 
 
-def _fill(document: dict, profiles: list, catalog_excluded: dict[str, bool] | None = None) -> None:
+def _fill(
+    document: dict,
+    profiles: list,
+    catalog_excluded: dict[str, bool] | None = None,
+    catalog_pii: dict[str, str | None] | None = None,
+) -> None:
+    catalog_excluded = catalog_excluded or {}
+    catalog_pii = catalog_pii or {}
     session = MagicMock()
     session.scalar.return_value = datetime(2026, 10, 14, 9, 30)
     session.scalars.return_value = profiles
     session.execute.return_value = [
-        SimpleNamespace(table_name="orders", column_name=name, excluded_data_element=excluded)
-        for name, excluded in (catalog_excluded or {}).items()
+        SimpleNamespace(
+            table_name="orders",
+            column_name=name,
+            excluded_data_element=catalog_excluded.get(name, False),
+            pii_flag=catalog_pii.get(name),
+        )
+        for name in {**catalog_excluded, **catalog_pii}
     ]
     with patch.object(contract_document, "get_current_session", return_value=session):
         contract_document.fill_profiled_values(document, uuid4(), uuid4(), ["orders"])
@@ -630,6 +653,59 @@ def test_profiled_values_follow_the_catalogs_exclusion_over_the_documents_marker
     assert _profiled_values(code) == {"minLength": 2, "maxLength": 4}
 
 
+def test_a_column_the_catalog_flags_pii_gets_no_profiled_values_and_loses_any_it_holds():
+    document = _document(
+        {"name": "salary", "logicalType": "number", "customProperties": [
+            {"property": "profiledValues", "value": {"minimum": 1000, "maximum": 90000}},
+        ]},
+        {"name": "birth_date", "logicalType": "date"},
+        {"name": "amount", "logicalType": "number",
+         "customProperties": [{"property": "pii", "value": True}]},
+    )
+
+    _fill(
+        document,
+        [
+            _profile("orders", "salary", min_value=1000.0, max_value=95000.0),
+            _profile("orders", "birth_date", min_date=datetime(1950, 1, 1), max_date=datetime(2005, 1, 1)),
+            _profile("orders", "amount", min_value=1.0, max_value=9.0),
+        ],
+        catalog_pii={"salary": "B/FINANCE/Salary", "birth_date": "MANUAL", "amount": None},
+    )
+
+    salary, birth_date, amount = document["schema"][0]["properties"]
+    assert "customProperties" not in salary
+    assert _profiled_values(birth_date) is None
+    assert _profiled_values(amount) == {"minimum": 1, "maximum": 9}
+
+
+def test_a_column_the_catalog_no_longer_holds_follows_its_pii_marker():
+    document = _document(
+        {"name": "ssn", "logicalType": "string", "customProperties": [
+            {"property": "pii", "value": True},
+            {"property": "profiledValues", "value": {"minLength": 9, "maxLength": 11}},
+        ]},
+    )
+
+    _fill(document, [_profile("orders", "ssn", min_length=9, max_length=11)])
+
+    prop, = document["schema"][0]["properties"]
+    assert _profiled_values(prop) is None
+    assert contract_document.is_pii(prop)
+
+
+def test_refreshing_a_pii_column_drops_its_profiled_values_whichever_groups_are_refreshed():
+    document = {"schema": [{"name": "orders", "properties": [
+        {"name": "salary", "logicalType": "number",
+         "customProperties": [{"property": "profiledValues", "value": {"minimum": 1000, "maximum": 90000}}]},
+    ]}]}
+
+    _refresh(document, [_column("salary", "number", pii_flag="MANUAL")], profiling=False, catalog_metadata=False)
+
+    prop, = document["schema"][0]["properties"]
+    assert _profiled_values(prop) is None
+
+
 # --- regeneration groups ---
 
 
@@ -652,15 +728,15 @@ def _catalog() -> tuple[list, SimpleNamespace]:
         _column("email", "string", "Email", pii_flag=True),
         _column("added", "date"),
     ]
-    table = SimpleNamespace(**_governance(description="Catalog table", functional_table_type="cumulative-transaction"))
+    table = SimpleNamespace(**_catalog_metadata(description="Catalog table", functional_table_type="cumulative-transaction"))
     return columns, table
 
 
-def test_a_refresh_without_governance_keeps_hand_edits_and_refreshes_profiling():
+def test_a_refresh_without_catalog_metadata_keeps_hand_edits_and_refreshes_profiling():
     document = _hand_edited_document()
     columns, table = _catalog()
 
-    _refresh(document, columns, table=table, governance=False)
+    _refresh(document, columns, table=table, catalog_metadata=False)
 
     descriptor = document["schema"][0]
     assert descriptor["description"] == "Hand-written table"
@@ -675,7 +751,7 @@ def test_a_refresh_without_governance_keeps_hand_edits_and_refreshes_profiling()
     assert added["name"] == "added"
 
 
-def test_a_refresh_without_profiling_keeps_it_and_refreshes_governance():
+def test_a_refresh_without_profiling_keeps_it_and_refreshes_catalog_metadata():
     document = _hand_edited_document()
     columns, table = _catalog()
 
@@ -702,7 +778,7 @@ def test_a_refresh_of_neither_group_declares_new_columns_and_refreshes_types_onl
         patch.object(contract_document, "catalog_columns", return_value=columns),
         patch.object(contract_document, "_catalog_table", return_value=table),
     ):
-        contract_document.refresh_tables(document, _table_group(), ["orders"], profiling=False, governance=False)
+        contract_document.refresh_tables(document, _table_group(), ["orders"], profiling=False, catalog_metadata=False)
 
     expected = _hand_edited_document()
     id_prop, email = expected["schema"][0]["properties"]
@@ -712,7 +788,7 @@ def test_a_refresh_of_neither_group_declares_new_columns_and_refreshes_types_onl
     assert document == expected
 
 
-def test_a_column_the_catalog_excludes_gets_no_key_or_format_while_governance_keeps_its_marker():
+def test_a_column_the_catalog_excludes_gets_no_key_or_format_while_catalog_metadata_keeps_its_marker():
     document = {"schema": [{"name": "orders", "properties": [
         {"name": "id"},
         {"name": "email", "customProperties": [{"property": "profiledValues", "value": {"minLength": 3}}]},
@@ -721,7 +797,7 @@ def test_a_column_the_catalog_excludes_gets_no_key_or_format_while_governance_ke
     _refresh(document, [
         _column("id", "integer", "ID-Unique", excluded_data_element=True),
         _column("email", "string", "Email", excluded_data_element=True),
-    ], governance=False)
+    ], catalog_metadata=False)
 
     for prop in document["schema"][0]["properties"]:
         assert not contract_document.is_excluded(prop), prop["name"]

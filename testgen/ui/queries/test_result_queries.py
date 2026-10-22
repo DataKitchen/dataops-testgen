@@ -3,6 +3,7 @@ from typing import Literal
 import pandas as pd
 import streamlit as st
 
+from testgen.common.enums import MANAGED_TEST_TYPES
 from testgen.common.models.test_definition import TestDefinitionNote
 from testgen.ui.services.database_service import fetch_df_from_db, fetch_one_from_db
 
@@ -167,6 +168,7 @@ def get_test_results(
     df = fetch_df_from_db(query, params)
     df["test_date"] = pd.to_datetime(df["test_date"])
     df["flagged_display"] = df["flagged"].apply(lambda value: "Yes" if value else "No")
+    df["is_managed"] = df["test_type"].isin(MANAGED_TEST_TYPES)
     _add_notes_count(df)
     return df
 
@@ -285,7 +287,9 @@ def get_test_results_count(
     column_name: str | None = None,
     action: Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
     flagged: bool | None = None,
+    managed_only: bool = False,
 ) -> int:
+    """Count the run's results matching the filters; with ``managed_only``, only those of managed test types."""
     where_clause = _build_where_clause(test_statuses, test_type_id, table_name, column_name, action)
     flagged_join = ""
     flagged_clause = ""
@@ -298,11 +302,14 @@ def get_test_results_count(
     {flagged_join}
     WHERE r.test_run_id = :run_id
         {where_clause}
-        {flagged_clause};
+        {flagged_clause}
+        {"AND r.test_type IN :managed_test_types" if managed_only else ""};
     """
     params = _build_params(run_id, test_statuses, test_type_id, table_name, column_name, action)
     if flagged is not None:
         params["flagged"] = flagged
+    if managed_only:
+        params["managed_test_types"] = tuple(sorted(MANAGED_TEST_TYPES))
     result = fetch_one_from_db(query, params)
     return int(result["cnt"]) if result else 0
 
