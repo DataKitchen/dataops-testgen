@@ -4,6 +4,9 @@ import typing
 import streamlit as st
 import streamlit_authenticator as stauth
 
+from testgen.common.audit.actions import AuditAction, Outcome
+from testgen.common.audit.record import Actor
+from testgen.common.audit.recorder import record
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
@@ -51,7 +54,10 @@ class LoginPage(Page):
 
         if authentication_status is False:
             st.error("Username or password is incorrect.")
+            record(AuditAction.USER_SIGNED_IN, outcome=Outcome.FAILED, actor=Actor.attempted(username))
             MixpanelService().send_event("login-denied", username=username)
+            # The status outlives the submit that set it, and would report this attempt again on every rerun
+            session.authentication_status = None
 
         if authentication_status is None:
             session.auth.end_user_session()

@@ -4,6 +4,8 @@ from typing import Literal
 import extra_streamlit_components as stx
 import streamlit as st
 
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record
 from testgen.common.auth import decode_jwt_token, get_jwt_signing_key
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models.project_membership import RoleType
@@ -88,6 +90,7 @@ class Authentication:
     def login_user(self, username: str) -> None:
         self.user = get_user(username)
         self.user.save(update_latest_login=True)
+        record(AuditAction.USER_SIGNED_IN)
         self.load_user_role()
         MixpanelService().send_event("login", include_usage=True, role=self.role)
 
@@ -108,6 +111,15 @@ class Authentication:
             self.role = membership.role if membership else None
         else:
             self.role = None
+
+    def sign_out(self) -> None:
+        if self.user:
+            record(AuditAction.USER_SIGNED_OUT)
+        self.end_user_session()
+        # The auth cookie is not cleared immediately, so the next run must not restore the session from it
+        self.logging_out = True
+        # streamlit_authenticator sets authentication_status implicitly
+        session.authentication_status = None
 
     def end_user_session(self) -> None:
         self._clear_jwt_cookie()

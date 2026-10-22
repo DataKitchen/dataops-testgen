@@ -2,7 +2,7 @@
 import pytest
 
 from testgen.common.database.flavor import duckdb_flavor_service
-from testgen.testing.fixtures import db_session_mock, patched_settings  # noqa: F401
+from testgen.testing.fixtures import audit_log, db_session_mock, patched_settings  # noqa: F401
 
 
 @pytest.fixture(autouse=True)

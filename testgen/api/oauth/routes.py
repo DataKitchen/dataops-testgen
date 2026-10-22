@@ -22,7 +22,11 @@ from testgen import settings
 from testgen.api.deps import db_session
 from testgen.api.oauth.login import render_login_page
 from testgen.api.oauth.server import TestGenAuthorizationServer
+from testgen.common.audit.actions import AuditAction, Outcome
+from testgen.common.audit.record import Actor
+from testgen.common.audit.recorder import AuditContext, bind, record
 from testgen.common.auth import create_jwt_token, decode_jwt_token, verify_password
+from testgen.common.enums import JobSource
 from testgen.common.models import get_current_session
 from testgen.common.models.oauth import OAuth2Client, OAuth2ClientAuthMethod
 from testgen.common.models.user import User
@@ -189,9 +193,13 @@ def authorize_post(
     code_challenge: str = Form(""),
     code_challenge_method: str = Form("S256"),
 ):
-    """Authenticate user and issue authorization code."""
+    """Takes the credentials from the sign-in page. Valid credentials redirect to `redirect_uri` with an
+    authorization code; invalid ones show the sign-in page again with a 401.
+    """
     user = User.get(username)
     if not user or not verify_password(password, user.password):
+        bind(AuditContext(source=JobSource.api))
+        record(AuditAction.USER_SIGNED_IN, outcome=Outcome.FAILED, actor=Actor.attempted(username))
         client_name = _get_client_name(client_id)
         return HTMLResponse(
             render_login_page(
@@ -209,6 +217,9 @@ def authorize_post(
             headers=_security_headers(),
         )
 
+    bind(AuditContext(source=JobSource.api, actor=Actor.of(user)))
+    record(AuditAction.USER_SIGNED_IN)
+
     body = {
         "response_type": response_type,
         "client_id": client_id,
@@ -222,14 +233,21 @@ def authorize_post(
 
 
 @router.get("/logout", summary="Sign out")
-def logout(request: Request, redirect_uri: str = Query("/")):
-    """Clear the OAuth session cookie and redirect.
-
-    Enforces same-origin on redirect_uri to prevent open redirect attacks.
-    """
+def logout(
+    request: Request,
+    redirect_uri: str = Query(
+        "/",
+        description="Where to redirect after signing out, on the TestGen origin. A URL on another origin "
+        "redirects to `/` instead.",
+    ),
+):
+    """Signs the browser out of TestGen and redirects to `redirect_uri`."""
     parsed = urlparse(redirect_uri)
     if parsed.netloc and parsed.netloc != request.url.netloc:
         redirect_uri = "/"
+    if user := _get_existing_user(request):
+        bind(AuditContext(source=JobSource.api, actor=Actor.of(user)))
+        record(AuditAction.USER_SIGNED_OUT)
     response = RedirectResponse(url=redirect_uri, status_code=302)
     response.delete_cookie(key=OAUTH_SESSION_COOKIE, path="/")
     return response

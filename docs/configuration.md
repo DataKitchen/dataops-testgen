@@ -35,6 +35,19 @@ Maximum log files to keep (one file per day), when `TESTGEN_LOG_TO_FILE` is turn
 
 default: `90`
 
+#### `TESTGEN_AUDIT_LOG_ENABLED`
+
+Writes audit records to `audit.log`, in the directory set by `TESTGEN_LOG_FILE_PATH`, one JSON object per line.
+Independent of `TESTGEN_LOG_TO_FILE`.
+
+default: `yes`
+
+#### `TESTGEN_AUDIT_LOG_MAX_QTY`
+
+Maximum audit log files to keep (one file per day), when `TESTGEN_AUDIT_LOG_ENABLED` is turned on.
+
+default: `90`
+
 #### `TG_DECRYPT_SALT`
 
 Salt used to encrypt and decrypt user secrets. Only allows ascii characters.
