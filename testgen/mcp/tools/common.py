@@ -5,6 +5,7 @@ from enum import StrEnum
 from typing import NoReturn, TypeVar
 from uuid import UUID
 
+from pydantic import BeforeValidator
 from sqlalchemy import func, select
 
 from testgen.common import contract_service
@@ -114,7 +115,7 @@ _ParsedEnum = TypeVar("_ParsedEnum", bound=StrEnum)
 _MappedValue = TypeVar("_MappedValue")
 
 
-def match_enum(value: str, enum_cls: type[_ParsedEnum]) -> _ParsedEnum | None:
+def match_enum(value: object, enum_cls: type[_ParsedEnum]) -> _ParsedEnum | None:
     """Look up an enum member by its value, ignoring case and surrounding whitespace.
 
     Returns ``None`` when nothing matches so callers can shape their own error message.
@@ -123,6 +124,14 @@ def match_enum(value: str, enum_cls: type[_ParsedEnum]) -> _ParsedEnum | None:
         return None
     normalized = value.strip().lower()
     return next((member for member in enum_cls if member.value.lower() == normalized), None)
+
+
+def any_case(enum_cls: type[StrEnum]) -> BeforeValidator:
+    """A validator for an enum-typed argument that reads its value in any case and with surrounding whitespace.
+
+    A value that matches no member passes through unchanged, so the enum's own validation refuses it.
+    """
+    return BeforeValidator(lambda value: match_enum(value, enum_cls) or value)
 
 
 def match_mapping(value: str, mapping: Mapping[str, _MappedValue]) -> _MappedValue | None:
@@ -916,10 +925,7 @@ def not_a_contract_error(suite: TestSuite) -> MCPUserError:
 
 
 def unknown_version_error(error: contract_service.UnknownVersionError) -> MCPUserError:
-    return MCPUserError(
-        f"Contract `{error.suite.test_suite}` has no version {error.version}. "
-        f"Its versions are v1\u2013v{error.highest}."
-    )
+    return MCPUserError(f"Contract `{error.suite.test_suite}` has no version {error.version}. {error.versions_held}")
 
 
 def resolve_test_suite(test_suite_id: str) -> TestSuite:

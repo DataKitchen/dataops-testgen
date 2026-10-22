@@ -114,7 +114,7 @@ def contract_version_error(
     return api_error(
         400,
         "unknown_version",
-        f"This contract has no version {error.version}. Its versions are v1\u2013v{error.highest}.",
+        f"This contract has no version {error.version}. {error.versions_held}",
     )
 
 

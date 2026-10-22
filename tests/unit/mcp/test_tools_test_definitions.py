@@ -1321,6 +1321,86 @@ def test_update_test_multi_field(mock_resolve_td, mock_tt_model, db_session_mock
 
 @patch("testgen.mcp.tools.test_definitions.TestType")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_reports_only_the_fields_that_change(mock_resolve_td, mock_tt_model, db_session_mock):
+    td = _make_td_orm(threshold_value="64", severity="Warning")
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    from testgen.mcp.tools.test_definitions import update_test
+
+    result = update_test(str(td.id), fields={"threshold_value": "64", "severity": "Fail"})
+
+    assert "| `severity` | Warning | Fail |" in result
+    assert "`threshold_value`" not in result
+    assert "Fields changed: 1." in result
+    td.save.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("stored", "sent"),
+    [("Warning", "Warning"), (None, ""), ("", None), (None, None)],
+)
+def test_update_test_that_changes_nothing_saves_nothing(db_session_mock, stored, sent):
+    """A no-op edit saves nothing and rolls back the draft that routing a frozen row may have opened."""
+    td = _orm_td(id=uuid4(), version_id=uuid4(), severity=stored)
+    td.last_manual_update = "unchanged"
+    with (
+        _update_context(td, suite=_contract_suite(), old_version=3),
+        patch.object(TestDefinition, "resolve_writable", return_value=(td.version_id, {td.id: td.id})),
+        patch("testgen.mcp.tools.common.get_current_session") as session,
+    ):
+        result = update_test(str(td.id), fields={"severity": sent})
+
+    assert "No fields changed — supplied values matched the current state." in result
+    assert "Fields changed" not in result
+    td.save.assert_not_called()
+    session.return_value.rollback.assert_called_once()
+    assert td.last_manual_update == "unchanged"
+
+
+@patch("testgen.mcp.tools.test_definitions.mcp_source_data_protected", return_value=True)
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_under_protection_never_says_a_hidden_value_matched(
+    mock_resolve_td, mock_tt_model, _protected, db_session_mock
+):
+    """A "no change" answer would confirm a guess at a value reads hide, so a hidden field always counts as written."""
+    td = _make_td_orm(threshold_value="64")
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    from testgen.mcp.tools.test_definitions import update_test
+
+    result = update_test(str(td.id), fields={"threshold_value": "64"})
+
+    assert "No fields changed" not in result
+    assert "| `threshold_value` | — | 64 |" in result
+    assert "Fields changed: 1." in result
+    td.save.assert_called_once()
+
+
+def test_update_by_an_active_id_compares_against_the_drafts_copy(db_session_mock):
+    """The active row already holds the value, but the draft's copy does not, so the edit is real."""
+    active_version, draft = uuid4(), SuiteVersion(id=uuid4(), version=4)
+    active = _orm_td(id=uuid4(), version_id=active_version, severity="Warning")
+    copy = _orm_td(id=uuid4(), version_id=draft.id, severity="Fail")
+    rows = {active.id: active, copy.id: copy}
+    with (
+        _update_context(active, suite=_contract_suite(), versions={draft.id: draft}, old_version=3),
+        patch(
+            "testgen.mcp.tools.test_definitions.resolve_test_definition",
+            side_effect=lambda row_id: rows[UUID(row_id)],
+        ),
+        patch.object(TestDefinition, "resolve_writable", return_value=(draft.id, {active.id: copy.id})),
+    ):
+        out = update_test(str(active.id), fields={"severity": "Warning"})
+
+    assert "| `severity` | Fail | Warning |" in out
+    copy.save.assert_called_once()
+
+
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
 def test_update_test_custom_metadata_json_string_coerced(mock_resolve_td, mock_tt_model, db_session_mock):
     td = _make_td_orm()
     td.editable_fields.return_value = td.editable_fields.return_value | {"custom_metadata"}
@@ -2501,14 +2581,67 @@ def test_delete_tests_token_does_not_confirm_a_different_selection(
 @patch.object(TestDefinition, "list_for_ids")
 def test_delete_tests_refuses_a_managed_test_before_asking(mock_list, mock_delete, db_session_mock):
     """The delete would refuse it after the user confirmed; refusing first spares them a prompt that cannot succeed."""
-    mock_list.return_value = [_make_td_minimal(), _make_td_minimal(test_type="Schema_Conformance")]
+    managed = _make_schema_conformance(table_name="orders")
+    mock_list.return_value = [_make_td_minimal(), managed]
     ctx = _confirming_ctx()
 
-    with pytest.raises(MCPUserError, match="TestGen manages this test"):
+    with pytest.raises(MCPUserError) as raised:
         asyncio.run(delete_tests(ctx, test_definition_ids=[str(td.id) for td in mock_list.return_value]))
 
+    message = str(raised.value)
+    assert message.startswith("Nothing was deleted. TestGen manages these tests")
+    assert f"- Schema Conformance on `orders` (`{managed.id}`)" in message.splitlines()
     ctx.elicit.assert_not_awaited()
     assert not confirmation._pending, "a token was issued for a delete that cannot happen"
+    mock_delete.assert_not_called()
+
+
+def _make_schema_conformance(table_name="orders"):
+    td = _make_td_minimal(table_name=table_name, column_name=None, test_type="Schema_Conformance")
+    td.test_name_short = "Schema Conformance"
+    return td
+
+
+@pytest.mark.usefixtures("routes_in_place", "no_pending_tokens")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinitionNote, "count_stored_on", return_value=0)
+@patch.object(TestDefinition, "select_minimal_where")
+def test_delete_tests_by_filter_keeps_the_tests_testgen_manages(
+    mock_select, _mock_notes, mock_delete, mock_resolve_suite, db_session_mock
+):
+    mock_resolve_suite.return_value = _make_suite()
+    kept = _make_schema_conformance()
+    deleted = _make_td_minimal()
+    mock_select.return_value = [deleted, kept]
+    ctx = _confirming_ctx()
+
+    result = asyncio.run(delete_tests(ctx, test_suite_id=str(uuid4()), table_name="orders"))
+
+    assert _deleted_ids(mock_delete) == [deleted.id]
+    assert "Deleted 1 tests" in result
+    assert "**Kept, managed by TestGen:** 1" in result
+    prompt = ctx.elicit.await_args.args[0]
+    assert "Tests: 1" in prompt
+    assert "Keeps 1 tests that TestGen manages, such as Schema Conformance." in prompt
+
+
+@pytest.mark.usefixtures("no_pending_tokens")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinition, "select_minimal_where")
+def test_delete_tests_by_filter_matching_only_managed_tests_deletes_nothing(
+    mock_select, mock_delete, mock_resolve_suite, db_session_mock
+):
+    mock_resolve_suite.return_value = _make_suite()
+    mock_select.return_value = [_make_schema_conformance()]
+    ctx = _confirming_ctx()
+
+    result = asyncio.run(delete_tests(ctx, test_suite_id=str(uuid4()), table_name="orders"))
+
+    assert "# No tests to delete" in result
+    assert "TestGen manages the 1 tests that matched" in result
+    ctx.elicit.assert_not_awaited()
     mock_delete.assert_not_called()
 
 
@@ -2756,7 +2889,7 @@ def test_update_routed_to_the_draft_returns_the_new_id_and_names_the_draft(db_se
 
     td.save.side_effect = _route
     with _update_context(td, suite=_contract_suite(), versions={draft.id: draft}, old_version=3):
-        out = update_test(str(old_id), fields={"severity": "Warning"})
+        out = update_test(str(old_id), fields={"severity": "Fail"})
     assert f"`{new_id}`" in out
     assert f"was `{old_id}`, in v3 active" in out
     assert "use the new ID from now on" in out
@@ -2792,7 +2925,7 @@ def test_update_of_a_draft_row_names_the_draft_without_a_new_id(db_session_mock)
     draft = SuiteVersion(id=uuid4(), version=4)
     td = _orm_td(id=uuid4(), version_id=draft.id)
     with _update_context(td, suite=_contract_suite(), versions={draft.id: draft}):
-        out = update_test(str(td.id), fields={"severity": "Warning"})
+        out = update_test(str(td.id), fields={"severity": "Fail"})
     assert "**Version:** v4 draft" in out
     assert "was `" not in out
 
@@ -2805,7 +2938,7 @@ def test_update_of_a_test_the_draft_removed_names_the_draft(db_session_mock):
         _update_context(td, suite=_contract_suite(), versions={draft.id: draft}, old_version=3),
         pytest.raises(MCPUserError, match=rf"Test `{td.id}` was removed in v4 draft of contract `Orders`"),
     ):
-        update_test(str(td.id), fields={"severity": "Warning"})
+        update_test(str(td.id), fields={"severity": "Fail"})
 
 
 def test_update_with_an_id_the_model_refuses_names_the_version(db_session_mock):
@@ -2818,7 +2951,7 @@ def test_update_with_an_id_the_model_refuses_names_the_version(db_session_mock):
             match=rf"Test `{td.id}` belongs to v2 superseded of contract `Orders`, which can no longer be edited",
         ),
     ):
-        update_test(str(td.id), fields={"severity": "Warning"})
+        update_test(str(td.id), fields={"severity": "Fail"})
 
 
 def test_update_of_an_active_test_the_draft_cannot_match_says_so(db_session_mock):
@@ -2832,7 +2965,7 @@ def test_update_of_an_active_test_the_draft_cannot_match_says_so(db_session_mock
             match=rf"Test `{td.id}` in v3 active of contract `Orders` cannot be matched to its copy in v4 draft",
         ),
     ):
-        update_test(str(td.id), fields={"severity": "Warning"})
+        update_test(str(td.id), fields={"severity": "Fail"})
 
 
 def test_delete_of_active_tests_the_draft_cannot_match_names_only_those(db_session_mock):

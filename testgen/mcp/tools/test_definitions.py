@@ -79,6 +79,7 @@ from testgen.mcp.tools.common import (
     parse_quality_dimension,
     parse_uuid,
     raise_validation_error,
+    report_no_change,
     resolve_contract_version,
     resolve_test_definition,
     resolve_test_note,
@@ -805,6 +806,19 @@ def update_test(
         if writable_id is not None and writable_id != td.id:
             td = resolve_test_definition(str(writable_id))
 
+    hidden = CALIBRATION_SHAPED_PARAM_COLUMNS if mcp_source_data_protected() else frozenset()
+    # Compared on the row the write lands on; report_no_change's rollback discards a draft routing opened.
+    # A hidden field is never compared: "no change" would confirm a guess at its value.
+    fields = {
+        key: value
+        for key, value in fields.items()
+        if key in hidden or _format_diff(getattr(td, key, None)) != _format_diff(value)
+    }
+    if not fields:
+        doc = MdDoc()
+        doc.heading(1, f"Test definition `{old_id}` updated")
+        return report_no_change(doc)
+
     before: dict = {key: getattr(td, key, None) for key in fields}
     # An edit to a row of a frozen version must not reach the database before save() moves it
     # to the draft's copy, so the queries below must not autoflush it.
@@ -843,7 +857,6 @@ def update_test(
     # parameters section omits — writing one field would otherwise disclose its prior
     # value. Blanked per field rather than dropping the column, so the caller can still
     # see what changed for everything else.
-    hidden = CALIBRATION_SHAPED_PARAM_COLUMNS if mcp_source_data_protected() else frozenset()
     rows = [
         [
             key,
@@ -1132,6 +1145,7 @@ def _render_deleted(
     note_count: int,
     suite: TestSuite | None,
     version: SuiteVersion | None,
+    kept: int,
 ) -> str:
     """Render the scope acted on, the count, the version written, and the deleted tests by the IDs removed."""
     doc = MdDoc()
@@ -1141,6 +1155,8 @@ def _render_deleted(
         _version_field(doc, suite, version)
     if note_count:
         doc.field("Notes deleted", note_count)
+    if kept:
+        doc.field("Kept, managed by TestGen", kept)
 
     listed = deleted[:_DELETED_LISTING_LIMIT]
     rows = [
@@ -1179,7 +1195,7 @@ def _route_for_delete(
     return [(td, deleted_id) for deleted_id, td in deleted_by_id.items()], writes
 
 
-def _delete_resolved_tests(scope: str, selected: list[TestDefinitionMinimal]) -> str:
+def _delete_resolved_tests(scope: str, selected: list[TestDefinitionMinimal], kept: int) -> str:
     """Delete the already-resolved tests from the version each suite writes to, and render what went.
 
     Every suite's rows are mapped onto its writable version before anything is deleted, so a
@@ -1197,7 +1213,7 @@ def _delete_resolved_tests(scope: str, selected: list[TestDefinitionMinimal]) ->
 
     suite, version_id = writes[0] if len(writes) == 1 else (None, None)
     version = SuiteVersion.get(version_id) if suite is not None and suite.suite_type == SuiteType.CONTRACT else None
-    return _render_deleted(scope, deleted, note_count, suite, version)
+    return _render_deleted(scope, deleted, note_count, suite, version, kept)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1205,6 +1221,7 @@ class _DeleteSelection:
     scope: str
     tests: list[TestDefinitionMinimal]
     no_match: str | None = None
+    kept: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -1213,6 +1230,7 @@ class _DeletePlan:
     selected_ids: frozenset[UUID]
     test_count: int
     note_count: int
+    kept: int
 
     @property
     def operation_id(self) -> str:
@@ -1236,7 +1254,8 @@ def _select_tests_to_delete(
 ) -> _DeleteSelection:
     """Validate a ``delete_tests`` request and resolve the tests it selects.
 
-    A suite filter that matches nothing yields an empty selection carrying the response for it.
+    A suite filter leaves out the tests TestGen manages and counts them as kept. A filter that
+    matches nothing else yields an empty selection carrying the response for it.
     """
     if test_definition_ids is not None and test_suite_id is not None:
         raise MCPUserError(
@@ -1276,7 +1295,18 @@ def _select_tests_to_delete(
             f"({_describe_filters(table_name, test_type)}). Nothing was deleted."
         )
         return _DeleteSelection(scope, [], doc.render())
-    return _DeleteSelection(scope, selected)
+
+    deletable = [td for td in selected if td.test_type not in MANAGED_TEST_TYPES]
+    kept = len(selected) - len(deletable)
+    if not deletable:
+        doc = MdDoc()
+        doc.heading(1, "No tests to delete")
+        doc.text(
+            f"TestGen manages the {kept} tests that matched the filter ({_describe_filters(table_name, test_type)}) "
+            "and removes them when what they check goes away. Nothing was deleted."
+        )
+        return _DeleteSelection(scope, [], doc.render(), kept)
+    return _DeleteSelection(scope, deletable, kept=kept)
 
 
 @with_database_session
@@ -1294,9 +1324,13 @@ def _plan_test_deletion(
     selection = _select_tests_to_delete(test_definition_ids, test_suite_id, table_name, test_type)
     if selection.no_match is not None:
         return selection.no_match
-    if any(td.test_type in MANAGED_TEST_TYPES for td in selection.tests):
+    if managed := [td for td in selection.tests if td.test_type in MANAGED_TEST_TYPES]:
         # The delete itself refuses these; refusing here keeps the user from confirming a delete that cannot happen.
-        raise MCPUserError(str(ManagedTestDefinitionError()))
+        raise_validation_error(
+            [f"{td.test_name_short or td.test_type} on `{td.table_name}` (`{td.id}`)" for td in managed],
+            "Nothing was deleted. TestGen manages these tests and removes them when what they check goes away, so "
+            "they cannot be deleted on their own. Leave them out of `test_definition_ids`:",
+        )
     try:
         deleted, _ = _route_for_delete(selection.tests)
         note_count = TestDefinitionNote.count_stored_on([deleted_id for _, deleted_id in deleted])
@@ -1308,6 +1342,7 @@ def _plan_test_deletion(
         selected_ids=frozenset(td.id for td in selection.tests),
         test_count=len(deleted),
         note_count=note_count,
+        kept=selection.kept,
     )
 
 
@@ -1327,7 +1362,7 @@ def _delete_planned_tests(
             "The tests this request selects changed while it waited for confirmation. Nothing was deleted. "
             "Call `delete_tests` again to confirm the tests it selects now."
         )
-    return _delete_resolved_tests(selection.scope, selection.tests)
+    return _delete_resolved_tests(selection.scope, selection.tests, selection.kept)
 
 
 async def delete_tests(
@@ -1366,7 +1401,8 @@ async def delete_tests(
     """Delete tests, either by ID or by suite filter, once the user confirms.
 
     The user is shown what the request deletes and must confirm before anything is
-    removed. Nothing is deleted unless every named test can be. Notes on a deleted test
+    removed. Nothing is deleted unless every named test can be; a suite filter leaves out
+    the tests TestGen manages, such as Schema Conformance. Notes on a deleted test
     go with it; past test results stay, though their source-data drill-down stops
     resolving. A refresh lock does not block a delete. To stop a test running but keep
     it, disable it with ``bulk_update_tests`` instead.
@@ -1379,7 +1415,8 @@ async def delete_tests(
     await confirm_destructive_action(
         ctx,
         operation_id=plan.operation_id,
-        prompt=f"Delete {plan.scope}?",
+        prompt=f"Delete {plan.scope}?"
+        + (f" Keeps {plan.kept} tests that TestGen manages, such as Schema Conformance." if plan.kept else ""),
         counts={"Tests": plan.test_count, "Notes": plan.note_count},
         confirmation_token=confirmation_token,
     )

@@ -2301,6 +2301,11 @@ def test_export_without_a_version_reads_what_the_suite_resolves_to():
             "unknown_version",
             "This contract has no version 9. Its versions are v1\u2013v3.",
         ),
+        (
+            UnknownVersionError(MagicMock(), 2, 1),
+            "unknown_version",
+            "This contract has no version 2. Its only version is v1.",
+        ),
     ],
 )
 def test_export_refuses_a_version_the_suite_does_not_hold(error, code, detail):

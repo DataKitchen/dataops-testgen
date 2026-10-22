@@ -153,6 +153,13 @@ class UnknownVersionError(ValueError):
         self.version = version
         self.highest = highest
 
+    @property
+    def versions_held(self) -> str:
+        """A sentence naming the versions the contract holds."""
+        if self.highest == 1:
+            return "Its only version is v1."
+        return f"Its versions are v1\u2013v{self.highest}."
+
 
 def version_by_number(suite: TestSuite, version: int) -> SuiteVersion:
     """The contract's version carrying ``version``.

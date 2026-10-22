@@ -24,6 +24,7 @@ from testgen.mcp.tools.common import (
     MCP_SUITE_TYPES,
     DocGroup,
     FailureGroupBy,
+    any_case,
     format_page_footer,
     format_page_info,
     parse_enum,
@@ -509,6 +510,7 @@ def get_failure_trend(
     ] = "30 days",
     bucket: Annotated[
         BucketInterval,
+        any_case(BucketInterval),
         Field(description="Time bucket size — 'day' or 'week' (default 'day')."),
     ] = BucketInterval.DAY,
     exclude_today: Annotated[
