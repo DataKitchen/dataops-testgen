@@ -67,9 +67,12 @@ class HygieneIssueType:
     exact_measures: list[str] | None
 
 
-def _literal_underscore(mask: str | None) -> str | None:
-    # The masks match in the app database's ILIKE, where `_` would otherwise be a wildcard
-    return re.sub(r"(?<!\\)_", r"\\_", mask) if mask else mask
+def _app_db_like_pattern(mask: str | None) -> str | None:
+    # The masks match in the app database's ILIKE, where `_` would otherwise be a wildcard and `\` the escape
+    # character. `\_` is the usual way to write a literal underscore in a LIKE pattern, so it stays one.
+    if not mask:
+        return mask
+    return re.sub(r"\\_|_|\\", lambda match: "\\\\" if match.group() == "\\" else "\\_", mask)
 
 
 class ProfilingSQL:
@@ -94,8 +97,8 @@ class ProfilingSQL:
             "RUN_DATE": to_sql_timestamp(self.run_date),
             "SQL_FLAVOR": self.flavor,
             "DATA_SCHEMA": self.table_group.table_group_schema,
-            "PROFILE_ID_COLUMN_MASK": _literal_underscore(self.table_group.profile_id_column_mask),
-            "PROFILE_SK_COLUMN_MASK": _literal_underscore(self.table_group.profile_sk_column_mask),
+            "PROFILE_ID_COLUMN_MASK": _app_db_like_pattern(self.table_group.profile_id_column_mask),
+            "PROFILE_SK_COLUMN_MASK": _app_db_like_pattern(self.table_group.profile_sk_column_mask),
             "MAX_PATTERN_LENGTH": self.max_pattern_length,
         }
         if column_chars:

@@ -237,7 +237,7 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup, /** 
         div(
             { class: 'flex-row fx-gap-5', style: 'flex: 1 1 50%;' },
             Link({ emit,
-                label: `${tableGroup.latest_hygiene_issues_ct} hygiene issues`,
+                label: hygieneIssuesLabel(tableGroup.latest_hygiene_issues_ct),
                 href: 'profiling-runs:hygiene',
                 params: {
                     run_id: tableGroup.latest_profile_job_execution_id,
@@ -376,19 +376,30 @@ hr.tg-overview--table-group-divider {
 }
 `);
 
+
+const hygieneIssuesLabel = (/** @type {number | null} */ count) => {
+    const total = count ?? 0;
+    return `${total} hygiene ${total === 1 ? 'issue' : 'issues'}`;
+};
+
 export { ProjectDashboard };
 
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
+    const callToken = {};
+    parentElement.callToken = callToken;
+
     let componentState = parentElement.state;
-    if (componentState === undefined) {
+    // Null when a cleanup ran after this element was mounted: rebuild it from scratch.
+    if (!componentState) {
         componentState = {};
         for (const [key, value] of Object.entries(data)) {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
         componentState.emit = createEmitter(setTriggerValue);
+        parentElement.replaceChildren();
         van.add(parentElement, ProjectDashboard(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {
@@ -399,6 +410,10 @@ export default (component) => {
     }
 
     return () => {
+        // Streamlit runs a superseded call's cleanup when that call resolves late; only the latest call's tears down.
+        if (parentElement.callToken !== callToken) {
+            return;
+        }
         parentElement.state = null;
     };
 };

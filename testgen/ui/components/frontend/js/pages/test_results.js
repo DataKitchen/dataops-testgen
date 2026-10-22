@@ -413,6 +413,7 @@ const TestResults = (/** @type Properties */ props) => {
     // Pagination state from Python
     const currentPage = van.derive(() => getValue(props.page) ?? 0);
     const totalCount = van.derive(() => getValue(props.total_count) ?? 0);
+    const managedCount = van.derive(() => getValue(props.managed_count) ?? 0);
     const pageSize = van.derive(() => getValue(props.page_size) ?? 500);
 
     // Filter options from Python (full unfiltered set)
@@ -488,6 +489,18 @@ const TestResults = (/** @type Properties */ props) => {
     let selectedIds = [];
     const selectedIdSetForRestore = new Set();
     const selectedIdsCount = van.state(0);
+    // The selected ids of results of tests TestGen manages, kept in step with selectedIdSetForRestore
+    const managedSelectedIds = new Set();
+    const managedSelectedCount = van.state(0);
+    const addSelected = (item) => {
+        selectedIdSetForRestore.add(item.test_result_id);
+        if (item.is_managed) managedSelectedIds.add(item.test_result_id);
+    };
+    const clearSelected = () => {
+        selectedIdSetForRestore.clear();
+        managedSelectedIds.clear();
+        managedSelectedCount.val = 0;
+    };
 
     // Select All handler (declared early — used by checkbox column)
     const onSelectAllToggle = (checked) => {
@@ -496,14 +509,15 @@ const TestResults = (/** @type Properties */ props) => {
             for (const item of items.rawVal) {
                 const state = getCheckboxState(item.test_result_id);
                 state.val = true;
-                selectedIdSetForRestore.add(item.test_result_id);
+                addSelected(item);
             }
             selectedIds = [...selectedIdSetForRestore];
             selectedIdsCount.val = selectedIds.length;
+            managedSelectedCount.val = managedSelectedIds.size;
         } else {
             clearAllCheckboxStates();
             selectedIds = [];
-            selectedIdSetForRestore.clear();
+            clearSelected();
         }
     };
 
@@ -526,7 +540,7 @@ const TestResults = (/** @type Properties */ props) => {
         if (!multiSelect.val) {
             clearAllCheckboxStates();
             selectedIds = [];
-            selectedIdSetForRestore.clear();
+            clearSelected();
         }
     });
 
@@ -542,10 +556,11 @@ const TestResults = (/** @type Properties */ props) => {
             for (const item of currentItems) {
                 const state = getCheckboxState(item.test_result_id);
                 state.val = true;
-                selectedIdSetForRestore.add(item.test_result_id);
+                addSelected(item);
             }
             selectedIds = [...selectedIdSetForRestore];
             selectedIdsCount.val = selectedIds.length;
+            managedSelectedCount.val = managedSelectedIds.size;
         }
 
         return currentItems.map(item => {
@@ -584,11 +599,12 @@ const TestResults = (/** @type Properties */ props) => {
                 if (item) activeSet.add(item.test_result_id);
             }
             // Update restore set: only modify entries for current page items
-            for (const id of currentPageItemIds) {
-                if (activeSet.has(id)) {
-                    selectedIdSetForRestore.add(id);
+            for (const item of items.rawVal) {
+                if (activeSet.has(item.test_result_id)) {
+                    addSelected(item);
                 } else {
-                    selectedIdSetForRestore.delete(id);
+                    selectedIdSetForRestore.delete(item.test_result_id);
+                    managedSelectedIds.delete(item.test_result_id);
                 }
             }
             for (const [id, state] of checkboxStates) {
@@ -598,6 +614,7 @@ const TestResults = (/** @type Properties */ props) => {
             }
             selectedIds = [...selectedIdSetForRestore];
             selectedIdsCount.val = selectedIds.length;
+            managedSelectedCount.val = managedSelectedIds.size;
             // If user deselected rows while selectAll was on, turn selectAll off
             if (selectAll.rawVal && activeSet.size < currentPageItemIds.size) {
                 selectAll.val = false;
@@ -715,11 +732,29 @@ const TestResults = (/** @type Properties */ props) => {
             const disabled = multiSelect.val
                 ? !isAll && count === 0
                 : (() => { const row = selectedRow.val; return !row || row.result_status === 'Passed'; })();
+            const managed = isAll
+                ? { total: totalCount.val, managed: managedCount.val }
+                : multiSelect.val
+                    ? { total: count, managed: managedSelectedCount.val }
+                    : { total: selectedRow.val ? 1 : 0, managed: selectedRow.val?.is_managed ? 1 : 0 };
+            const allManaged = managed.total > 0 && managed.managed === managed.total;
+            const muteTooltip = allManaged
+                ? (managed.total === 1
+                    ? 'TestGen manages the selected test. It cannot be muted.'
+                    : 'TestGen manages the selected tests. They cannot be muted.')
+                : managed.managed > 0
+                    ? 'Mute selected tests for future runs. Results of tests TestGen manages are left out.'
+                    : 'Mute selected tests for future runs';
             return div(
                 { 'data-testid': 'disposition-actions', class: 'flex-row fx-gap-1' },
                 Button({ type: 'icon', icon: 'check_circle', tooltip: 'Confirm selected as relevant', disabled, onclick: () => onDisposition('Confirmed') }),
                 Button({ type: 'icon', icon: 'cancel', tooltip: 'Dismiss selected as not relevant', disabled, onclick: () => onDisposition('Dismissed') }),
-                Button({ type: 'icon', icon: 'notifications_off', tooltip: 'Mute selected tests for future runs', disabled, onclick: () => onDisposition('Inactive') }),
+                Button({
+                    type: 'icon', icon: 'notifications_off',
+                    tooltip: muteTooltip,
+                    disabled: disabled || allManaged,
+                    onclick: () => onDisposition('Inactive'),
+                }),
                 Button({ type: 'icon', icon: 'restart_alt', tooltip: 'Clear action on selected', disabled, onclick: () => onDisposition('No Decision') }),
             );
         },
@@ -792,7 +827,7 @@ const TestResults = (/** @type Properties */ props) => {
                 if (!selectAll.rawVal) {
                     clearAllCheckboxStates();
                     selectedIds = [];
-                    selectedIdSetForRestore.clear();
+                    clearSelected();
                 }
                 emit('PageChanged', { payload: { page: 0, page_size: newPerPage } });
             } else {
@@ -1018,7 +1053,7 @@ const TestResults = (/** @type Properties */ props) => {
                     div(
                         { class: 'flex-row fx-gap-2 fx-justify-content-flex-end' },
                         ...[
-                            permissions.val.can_edit && row.test_definition_exists ? Button({
+                            permissions.val.can_edit && row.test_definition_exists && !row.is_managed ? Button({
                                 type: 'stroked', icon: 'edit', label: 'Edit', width: 'auto',
                                 disabled: !!runInfo.val.is_contract,
                                 tooltip: runInfo.val.is_contract ? CONTRACT_EDIT_DISABLED_TEXT : undefined,
@@ -1184,14 +1219,19 @@ export { TestResults };
 export default (component) => {
     let { data, setTriggerValue, parentElement } = component;
 
+    const callToken = {};
+    parentElement.callToken = callToken;
+
     let componentState = parentElement.state;
-    if (componentState === undefined) {
+    // Null when a cleanup ran after this element was mounted: rebuild it from scratch.
+    if (!componentState) {
         componentState = {};
         for (const [key, value] of Object.entries(data)) {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
         componentState.emit = createEmitter(setTriggerValue);
+        parentElement.replaceChildren();
         van.add(parentElement, TestResults(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {
@@ -1201,5 +1241,11 @@ export default (component) => {
         }
     }
 
-    return () => { parentElement.state = null; };
+    return () => {
+        // Streamlit runs a superseded call's cleanup when that call resolves late; only the latest call's tears down.
+        if (parentElement.callToken !== callToken) {
+            return;
+        }
+        parentElement.state = null;
+    };
 };

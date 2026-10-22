@@ -258,15 +258,15 @@ def test_submit_test_generation_rejects_unknown_set(mock_je_cls, _mock_resolve):
 
 
 
-def _submit_contract(regenerate=None, *, profiled=True):
+def _submit_contract(regenerate=None, *, profiled=True, draft=None):
     test_suite = _mock_test_suite(suite_type=SuiteType.CONTRACT)
     with (
         patch(f"{MODULE}.resolve_generation_sets", return_value=["Contract"]),
         patch(f"{MODULE}.TableGroup") as mock_tg_cls,
         patch(f"{MODULE}.resolve_generation_profile_run", return_value=uuid4() if profiled else None),
         patch(f"{MODULE}.JobExecution") as mock_je_cls,
-        patch(f"{MODULE}.TestDefinition.resolve_writable", return_value=(DRAFT_ID, {})),
-        patch(f"{MODULE}.SuiteVersion.get", return_value=MagicMock(version=5)),
+        patch("testgen.common.contract_service.SuiteVersion.draft_for", return_value=draft),
+        patch("testgen.common.contract_service.SuiteVersion.next_version_for", return_value=5),
     ):
         mock_tg_cls.get.return_value = MagicMock(table_groups_name="orders_tg")
         mock_je_cls.submit.return_value = _mock_job(job_key="run-test-generation")
@@ -275,46 +275,49 @@ def _submit_contract(regenerate=None, *, profiled=True):
     return result, mock_je_cls.submit
 
 
-DRAFT_ID = uuid4()
-
-
 def test_submit_test_generation_names_the_draft_a_contract_generates_into():
     result, _ = _submit_contract()
 
     assert result.version == ContractVersion(number=5, state=VersionState.DRAFT)
 
 
+def test_submit_test_generation_names_the_contracts_open_draft():
+    result, _ = _submit_contract(draft=MagicMock(version=7))
+
+    assert result.version == ContractVersion(number=7, state=VersionState.DRAFT)
+
+
 def test_submit_test_generation_names_no_version_for_a_regular_suite():
     with (
         patch(f"{MODULE}.resolve_generation_sets", return_value=["Standard"]),
         patch(f"{MODULE}.JobExecution") as mock_je_cls,
-        patch(f"{MODULE}.TestDefinition.resolve_writable") as resolve_writable,
+        patch("testgen.common.contract_service.SuiteVersion.draft_for") as draft_for,
     ):
         mock_je_cls.submit.return_value = _mock_job(job_key="run-test-generation")
         result = submit_test_generation(_mock_test_suite(), None)
 
     assert result.version is None
-    resolve_writable.assert_not_called()
+    draft_for.assert_not_called()
 
 
 def test_submit_test_generation_submits_a_contract_regenerating_everything_by_default():
     result, submit = _submit_contract()
 
     assert submit.call_args.kwargs["kwargs"]["generation_sets"] == ["Contract"]
-    assert submit.call_args.kwargs["kwargs"]["regenerate"] == ["tests", "profiling", "governance"]
-    assert result.regenerate == ["tests", "profiling", "governance"]
+    assert submit.call_args.kwargs["kwargs"]["regenerate"] == ["tests", "profiling", "catalog"]
+    assert result.regenerate == ["tests", "profiling", "catalog"]
     assert result.note is None
 
 
 def test_submit_test_generation_passes_a_contracts_chosen_groups_in_order():
-    result, submit = _submit_contract(["governance", "tests"])
+    result, submit = _submit_contract(["catalog", "tests"])
 
-    assert submit.call_args.kwargs["kwargs"]["regenerate"] == ["tests", "governance"]
-    assert result.regenerate == ["tests", "governance"]
+    assert submit.call_args.kwargs["kwargs"]["regenerate"] == ["tests", "catalog"]
+    assert result.regenerate == ["tests", "catalog"]
 
 
 def test_submit_test_generation_says_what_an_unprofiled_contract_skips():
-    result, submit = _submit_contract(["profiling", "governance"], profiled=False)
+    result, submit = _submit_contract(["profiling", "catalog"], profiled=False)
 
     submit.assert_called_once()
     assert result.note == "Table group `orders_tg` has not been profiled, so the values profiling observed are not refreshed."
@@ -344,7 +347,7 @@ def test_test_generation_request_refuses_an_empty_list_of_groups():
 
 
 def test_test_generation_request_refuses_an_unknown_group():
-    with pytest.raises(ValidationError, match="'tests', 'profiling' or 'governance'"):
+    with pytest.raises(ValidationError, match="'tests', 'profiling' or 'catalog'"):
         TestGenerationRequest(regenerate=["docs"])
 
 

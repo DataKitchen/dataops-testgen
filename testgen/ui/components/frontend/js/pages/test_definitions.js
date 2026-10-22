@@ -87,6 +87,18 @@ const BLANK_PARAM_FIELDS = {
     history_lookback: null,
 };
 
+const isAllManaged = ({ total, managed }) => total > 0 && managed === total;
+
+/** A toolbar action's tooltip: why it is disabled when TestGen manages the whole selection, and that it leaves the managed tests out when it manages part of it. */
+const managedActionTooltip = (label, action, selection) => {
+    if (isAllManaged(selection)) {
+        return selection.total === 1
+            ? `TestGen manages the selected test. It cannot be ${action}.`
+            : `TestGen manages the selected tests. They cannot be ${action}.`;
+    }
+    return selection.managed > 0 ? `${label}. Tests TestGen manages are left out.` : label;
+};
+
 /** Composite icon button: flag with a diagonal strikethrough (pen_size_1 rotated). */
 const ClearFlagButton = ({ disabled, onclick }) => {
     return withTooltip(btn(
@@ -218,6 +230,7 @@ const TestDefinitions = (/** @type object */ props) => {
     // Pagination state from Python
     const currentPage = van.derive(() => getValue(props.page) ?? 0);
     const totalCount = van.derive(() => getValue(props.total_count) ?? 0);
+    const managedCount = van.derive(() => getValue(props.managed_count) ?? 0);
     const pageSize = van.derive(() => getValue(props.page_size) ?? 500);
 
     // Sort state initialized from Python
@@ -247,6 +260,18 @@ const TestDefinitions = (/** @type object */ props) => {
 
     let selectedIds = [];
     const selectedIdSetForRestore = new Set();
+    // The selected ids of tests TestGen manages, kept in step with selectedIdSetForRestore
+    const managedSelectedIds = new Set();
+    const managedSelectedCount = van.state(0);
+    const addSelected = (item) => {
+        selectedIdSetForRestore.add(item.id);
+        if (item.is_managed) managedSelectedIds.add(item.id);
+    };
+    const clearSelected = () => {
+        selectedIdSetForRestore.clear();
+        managedSelectedIds.clear();
+        managedSelectedCount.val = 0;
+    };
     const getSelectedDefinitionIds = () => {
         if (multiSelectMode.val) return [...selectedIdSetForRestore];
         return selectedRowId.val ? [selectedRowId.val] : [];
@@ -261,14 +286,15 @@ const TestDefinitions = (/** @type object */ props) => {
             for (const item of testDefinitions.rawVal) {
                 const state = getCheckboxState(item.id);
                 state.val = true;
-                selectedIdSetForRestore.add(item.id);
+                addSelected(item);
             }
             selectedIds = [...selectedIdSetForRestore];
             selectedIdsCount.val = selectedIds.length;
+            managedSelectedCount.val = managedSelectedIds.size;
         } else {
             clearAllCheckboxStates();
             selectedIds = [];
-            selectedIdSetForRestore.clear();
+            clearSelected();
         }
     };
 
@@ -291,7 +317,7 @@ const TestDefinitions = (/** @type object */ props) => {
             clearAllCheckboxStates();
             selectedIds = [];
             selectedIdsCount.val = 0;
-            selectedIdSetForRestore.clear();
+            clearSelected();
         }
     });
 
@@ -304,6 +330,17 @@ const TestDefinitions = (/** @type object */ props) => {
         const row = selectedRowId.val ? testDefinitions.val.find(r => r.id === selectedRowId.val) : null;
         return row ? [row] : [];
     });
+    const managedSelection = () => {
+        if (selectAll.val) {
+            return { total: totalCount.val, managed: managedCount.val };
+        }
+        if (multiSelectMode.val) {
+            return { total: selectedIdsCount.val, managed: managedSelectedCount.val };
+        }
+        const rows = selectedRows.val;
+        return { total: rows.length, managed: rows.filter(r => r.is_managed).length };
+    };
+
     const singleSelected = van.derive(() =>
         !multiSelectMode.val && selectedRows.val.length === 1 ? selectedRows.val[0] : null
     );
@@ -341,10 +378,11 @@ const TestDefinitions = (/** @type object */ props) => {
             for (const item of currentItems) {
                 const state = getCheckboxState(item.id);
                 state.val = true;
-                selectedIdSetForRestore.add(item.id);
+                addSelected(item);
             }
             selectedIds = [...selectedIdSetForRestore];
             selectedIdsCount.val = selectedIds.length;
+            managedSelectedCount.val = managedSelectedIds.size;
         }
 
         return currentItems.map(item => {
@@ -398,11 +436,12 @@ const TestDefinitions = (/** @type object */ props) => {
                 if (item) activeSet.add(item.id);
             }
             // Update restore set: only modify entries for current page items
-            for (const id of currentPageItemIds) {
-                if (activeSet.has(id)) {
-                    selectedIdSetForRestore.add(id);
+            for (const item of testDefinitions.rawVal) {
+                if (activeSet.has(item.id)) {
+                    addSelected(item);
                 } else {
-                    selectedIdSetForRestore.delete(id);
+                    selectedIdSetForRestore.delete(item.id);
+                    managedSelectedIds.delete(item.id);
                 }
             }
             for (const [id, state] of checkboxStates) {
@@ -412,6 +451,7 @@ const TestDefinitions = (/** @type object */ props) => {
             }
             selectedIds = [...selectedIdSetForRestore];
             selectedIdsCount.val = selectedIds.length;
+            managedSelectedCount.val = managedSelectedIds.size;
             // If user deselected rows while selectAll was on, turn selectAll off
             if (selectAll.rawVal && activeSet.size < currentPageItemIds.size) {
                 selectAll.val = false;
@@ -441,7 +481,7 @@ const TestDefinitions = (/** @type object */ props) => {
                     clearAllCheckboxStates();
                     selectedIds = [];
                     selectedIdsCount.val = 0;
-                    selectedIdSetForRestore.clear();
+                    clearSelected();
                 }
                 emit('PageChanged', { payload: { page: 0, page_size: newPerPage } });
             } else {
@@ -481,6 +521,8 @@ const TestDefinitions = (/** @type object */ props) => {
             const count = selectedIdsCount.val;
             const hasSelection = isAll || (multiSelectMode.val ? count > 0 : selected.length > 0);
             const isSingle = !isAll && selected.length === 1;
+            const managed = managedSelection();
+            const allManaged = isAllManaged(managed);
             // Only send minimal fields to avoid serialization issues
             const minimalSelected = () => selected.map(r => ({
                 id: r.id, table_name: r.table_name, column_name: r.column_name,
@@ -488,9 +530,9 @@ const TestDefinitions = (/** @type object */ props) => {
             }));
             return div(
                 { 'data-testid': 'edit-actions', class: 'flex-row fx-gap-1' },
-                Button({ type: 'icon', icon: 'file_copy', tooltip: 'Copy/Move', disabled: !hasSelection, onclick: () => emit('CopyMoveDialogOpened', { payload: isAll ? 'all' : minimalSelected() }) }),
+                Button({ type: 'icon', icon: 'file_copy', tooltip: managedActionTooltip('Copy/Move', 'copied or moved', managed), disabled: !hasSelection || allManaged, onclick: () => emit('CopyMoveDialogOpened', { payload: isAll ? 'all' : minimalSelected() }) }),
                 Button({
-                    type: 'icon', icon: 'delete', tooltip: 'Delete', disabled: !hasSelection,
+                    type: 'icon', icon: 'delete', tooltip: managedActionTooltip('Delete', 'deleted', managed), disabled: !hasSelection || allManaged,
                     onclick: () => isAll
                         ? emit('DeleteAllOpened', {})
                         : emit('DeleteDialogOpened', { payload: getSelectedDefinitionIds().map(id => ({ id })) }),
@@ -512,6 +554,8 @@ const TestDefinitions = (/** @type object */ props) => {
             const allInactive = !multiSelectMode.val && selected.length > 0 && selected.every(r => r.test_active_display === 'No');
             const allLocked = !multiSelectMode.val && selected.length > 0 && selected.every(r => r.lock_refresh_display === 'Yes');
             const allUnlocked = !multiSelectMode.val && selected.length > 0 && selected.every(r => r.lock_refresh_display === 'No');
+            const managed = managedSelection();
+            const allManaged = isAllManaged(managed);
             const emitAttribute = (attribute, value) => {
                 if (isAll) {
                     emit('UpdateAttributeAll', { payload: { attribute, value } });
@@ -521,12 +565,12 @@ const TestDefinitions = (/** @type object */ props) => {
             };
             return div(
                 { 'data-testid': 'disposition-actions', class: 'flex-row fx-gap-1' },
-                Button({ type: 'icon', icon: 'check_circle', tooltip: 'Activate selected', disabled: noSelection || allActive, onclick: () => emitAttribute('test_active', true) }),
-                Button({ type: 'icon', icon: 'notifications_off', tooltip: 'Deactivate selected', disabled: noSelection || allInactive, onclick: () => emitAttribute('test_active', false) }),
+                Button({ type: 'icon', icon: 'check_circle', tooltip: managedActionTooltip('Activate selected', 'activated', managed), disabled: noSelection || allActive || allManaged, onclick: () => emitAttribute('test_active', true) }),
+                Button({ type: 'icon', icon: 'notifications_off', tooltip: managedActionTooltip('Deactivate selected', 'deactivated', managed), disabled: noSelection || allInactive || allManaged, onclick: () => emitAttribute('test_active', false) }),
                 div({ class: 'td-header-separator' }),
-                canEdit.val ? Button({ type: 'icon', icon: 'lock', tooltip: 'Lock selected', disabled: noSelection || allLocked, onclick: () => emitAttribute('lock_refresh', true) }) : '',
+                canEdit.val ? Button({ type: 'icon', icon: 'lock', tooltip: managedActionTooltip('Lock selected', 'locked', managed), disabled: noSelection || allLocked || allManaged, onclick: () => emitAttribute('lock_refresh', true) }) : '',
                 canEdit.val ? Button({
-                    type: 'icon', icon: 'lock_open', tooltip: 'Unlock selected', disabled: noSelection || allUnlocked,
+                    type: 'icon', icon: 'lock_open', tooltip: managedActionTooltip('Unlock selected', 'unlocked', managed), disabled: noSelection || allUnlocked || allManaged,
                     onclick: () => isAll
                         ? emit('UnlockAllOpened', {})
                         : emit('UnlockDialogOpened', { payload: getSelectedDefinitionIds().map(id => ({ id })) }),
@@ -679,6 +723,7 @@ const TestDefinitions = (/** @type object */ props) => {
                         ? span('Are you sure you want to unlock ', strong({}, `${info.count}`), ' selected test definitions?')
                         : span('Are you sure you want to unlock the selected test definition?')
                     ),
+                    info.managed_note ? span({ class: 'text-secondary' }, info.managed_note) : '',
                     div(
                         { class: 'flex-row fx-justify-flex-end fx-gap-2' },
                         Button({
@@ -885,7 +930,7 @@ const TestDefinitions = (/** @type object */ props) => {
                     { 'data-testid': 'test-definition-detail', class: 'tg-td--detail flex-column fx-gap-4' },
                     div(
                         { class: 'flex-row fx-gap-2 fx-justify-content-flex-end' },
-                        canEdit.val ? Button({
+                        canEdit.val && !row.is_managed ? Button({
                             type: 'stroked', icon: 'edit', label: 'Edit', width: 'auto',
                             style: 'background: var(--button-generic-background-color);',
                             onclick: () => emit('EditDialogOpened', { payload: { id: row.id } }),
@@ -2335,8 +2380,12 @@ export { TestDefinitions, EditDialogComponent };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
+    const callToken = {};
+    parentElement.callToken = callToken;
+
     let componentState = parentElement.state;
-    if (componentState === undefined) {
+    // Null when a cleanup ran after this element was mounted: rebuild it from scratch.
+    if (!componentState) {
         componentState = {};
         for (const [key, value] of Object.entries(data)) {
             componentState[key] = van.state(value);
@@ -2344,6 +2393,7 @@ export default (component) => {
         parentElement.state = componentState;
         componentState.emit = createEmitter(setTriggerValue);
         componentState.signal = enterPage(PAGE_KEY);
+        parentElement.replaceChildren();
         van.add(parentElement, TestDefinitions(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {
@@ -2354,6 +2404,10 @@ export default (component) => {
     }
 
     return () => {
+        // Streamlit runs a superseded call's cleanup when that call resolves late; only the latest call's tears down.
+        if (parentElement.callToken !== callToken) {
+            return;
+        }
         exitPage(PAGE_KEY);
         parentElement.state = null;
     };

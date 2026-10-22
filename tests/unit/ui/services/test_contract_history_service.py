@@ -145,10 +145,12 @@ def _compare(source, target, documents):
     }
     with (
         patch.object(service.contract_service, "version_for_export", side_effect=lambda _, number: _version(versions, number)),
-        patch.object(service.contract_service, "export_version", side_effect=documents),
+        patch.object(service.contract_service, "export_version", side_effect=documents) as export_version,
         patch.object(service.SuiteVersion, "in_force_for", return_value=versions[3]),
     ):
-        return service.version_comparison(suite, source, target)
+        result = service.version_comparison(suite, source, target)
+    assert {call.kwargs["contract_name"] for call in export_version.call_args_list} == {suite.test_suite}
+    return result
 
 
 def test_a_comparison_carries_both_documents_named_by_version():

@@ -602,14 +602,19 @@ export { ScoreExplorer };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
+    const callToken = {};
+    parentElement.callToken = callToken;
+
     let componentState = parentElement.state;
-    if (componentState === undefined) {
+    // Null when a cleanup ran after this element was mounted: rebuild it from scratch.
+    if (!componentState) {
         componentState = {};
         for (const [key, value] of Object.entries(data)) {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
         componentState.emit = createEmitter(setTriggerValue);
+        parentElement.replaceChildren();
         van.add(parentElement, ScoreExplorer(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {
@@ -619,5 +624,11 @@ export default (component) => {
         }
     }
 
-    return () => { parentElement.state = null; };
+    return () => {
+        // Streamlit runs a superseded call's cleanup when that call resolves late; only the latest call's tears down.
+        if (parentElement.callToken !== callToken) {
+            return;
+        }
+        parentElement.state = null;
+    };
 };

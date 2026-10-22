@@ -389,6 +389,10 @@ class TestSuite(Entity):
             WHERE test_suite_id IN :test_suite_ids
         );
 
+        DELETE FROM job_executions
+        WHERE kwargs->>'test_suite_id' IN :test_suite_id_texts
+            OR kwargs->>'monitor_suite_id' IN :test_suite_id_texts;
+
         DELETE FROM test_runs
         WHERE test_suite_id IN :test_suite_ids;
 
@@ -402,5 +406,8 @@ class TestSuite(Entity):
         WHERE (kwargs->>'test_suite_id')::UUID IN :test_suite_ids;
         """
         db_session = get_current_session()
-        db_session.execute(text(query), {"test_suite_ids": tuple(ids)})
+        db_session.execute(
+            text(query),
+            {"test_suite_ids": tuple(ids), "test_suite_id_texts": tuple(str(id_) for id_ in ids)},
+        )
         cls.delete_where(cls.id.in_(ids))

@@ -279,7 +279,7 @@ def list_rules(
     page: int = PageQuery,
     limit: int = LimitQuery,
 ) -> RuleListResponse:
-    """Notification rules in a project, enabled and paused, each with its event, scope, trigger and addressing."""
+    """Notification rules in a project, enabled and paused, each with its event, scope, trigger, and addressing."""
     clauses = []
     if event is not None:
         clauses.append(NotificationSettings.event == NotificationEvent(event))
@@ -369,7 +369,7 @@ def create_rule(
 def get_rule(
     rule: NotificationSettings = resolve_notification_rule("view"),  # noqa: B008
 ) -> RuleResponse:
-    """A notification rule, with its event, scope, trigger and addressing."""
+    """A notification rule, with its event, scope, trigger, and addressing."""
     return _rule_to_response(rule)
 
 

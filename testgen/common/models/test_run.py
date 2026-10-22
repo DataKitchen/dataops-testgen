@@ -294,6 +294,31 @@ class TestRun(Entity):
         )
         return get_current_session().scalar(query)
 
+    def checked_version_in_force(self) -> bool:
+        """Whether the run checked the version in force when it started, as every run of a suite that keeps
+        no versions does. A preview, a run of a draft since discarded, and a run of a version superseded
+        before the run started did not."""
+        if self.version_id is None:
+            return True
+        session = get_current_session()
+        version = session.execute(
+            select(SuiteVersion.version, SuiteVersion.frozen_at, SuiteVersion.test_suite_id)
+            .where(SuiteVersion.id == self.version_id)
+        ).first()
+        if version is None:
+            return False
+        if version.test_suite_id is None:
+            return True
+        in_force_at_start = session.scalar(
+            select(func.max(SuiteVersion.version)).where(
+                SuiteVersion.test_suite_id == version.test_suite_id,
+                SuiteVersion.frozen_at <= (self.test_starttime or datetime.now(UTC)).replace(tzinfo=UTC),
+            )
+        )
+        return RunVersion(
+            version.version, version.frozen_at, None, self.test_starttime, in_force_at_start
+        ).checked_version_in_force
+
     @property
     def ct_by_status(self):
         return {

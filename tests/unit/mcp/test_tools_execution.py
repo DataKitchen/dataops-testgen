@@ -386,9 +386,9 @@ def test_generate_tests_submits_a_profiled_contract(
     out = generate_tests(str(suite_id))
 
     assert mock_job_exec.submit.call_args.kwargs["kwargs"] == {
-        "test_suite_id": str(suite_id), "generation_sets": ["Contract"], "regenerate": ["tests", "profiling", "governance"],
+        "test_suite_id": str(suite_id), "generation_sets": ["Contract"], "regenerate": ["tests", "profiling", "catalog"],
     }
-    assert "**Regenerate:** `tests`, `profiling`, `governance`" in out
+    assert "**Regenerate:** `tests`, `profiling`, `catalog`" in out
     assert "Contract" in out
     assert "Test suite" not in out
 
@@ -455,7 +455,7 @@ def test_generate_tests_suite_not_found_or_inaccessible(mock_suite_cls, mock_job
     mock_job_exec.submit.assert_not_called()
 
 
-def _generate(suite, *, draft=None, regenerate=None, run_id=_UNSET):
+def _generate(suite, *, draft=None, next_version=None, regenerate=None, run_id=_UNSET):
     from testgen.mcp.tools.execution import generate_tests
 
     events = []
@@ -467,12 +467,9 @@ def _generate(suite, *, draft=None, regenerate=None, run_id=_UNSET):
             "testgen.mcp.tools.execution.resolve_generation_profile_run",
             return_value=uuid4() if run_id is _UNSET else run_id,
         ),
-        patch.object(
-            TestDefinition,
-            "resolve_writable",
-            side_effect=lambda *_: events.append("open draft") or (draft.id, {}),
-        ) as route,
-        patch.object(SuiteVersion, "get", side_effect=lambda version_id: draft if version_id == draft.id else None),
+        patch.object(TestDefinition, "resolve_writable") as route,
+        patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(SuiteVersion, "next_version_for", return_value=next_version),
         patch(
             "testgen.mcp.tools.execution.JobExecution.submit",
             side_effect=lambda **_: events.append("submit") or MagicMock(id=uuid4()),
@@ -483,32 +480,36 @@ def _generate(suite, *, draft=None, regenerate=None, run_id=_UNSET):
     return out, route, submit, events
 
 
-def test_generating_for_a_frozen_only_contract_opens_the_draft_before_submitting(db_session_mock):
+def test_generating_for_a_frozen_only_contract_names_the_draft_the_job_opens_without_opening_it(db_session_mock):
     suite = _contract_suite()
-    draft = SuiteVersion(id=uuid4(), version=4)
-    out, route, submit, events = _generate(suite, draft=draft)
-    assert route.call_args.args == (suite.id,)
-    assert events == ["open draft", "submit"]
+    out, route, submit, _ = _generate(suite, draft=None, next_version=4)
+    route.assert_not_called()
     assert submit.call_args.kwargs["kwargs"]["test_suite_id"] == str(suite.id)
     assert "**Version:** v4 draft" in out
 
 
+def test_generating_for_a_contract_with_a_draft_names_that_draft(db_session_mock):
+    out, route, _, _ = _generate(_contract_suite(), draft=SuiteVersion(id=uuid4(), version=5), next_version=6)
+    route.assert_not_called()
+    assert "**Version:** v5 draft" in out
+
+
 def test_generating_a_contract_passes_the_chosen_groups_in_order(db_session_mock):
     out, _, submit, _ = _generate(
-        _contract_suite(), draft=SuiteVersion(id=uuid4(), version=2), regenerate=["governance", "tests"]
+        _contract_suite(), draft=SuiteVersion(id=uuid4(), version=2), regenerate=["catalog", "tests"]
     )
 
-    assert submit.call_args.kwargs["kwargs"]["regenerate"] == ["tests", "governance"]
-    assert "**Regenerate:** `tests`, `governance`" in out
+    assert submit.call_args.kwargs["kwargs"]["regenerate"] == ["tests", "catalog"]
+    assert "**Regenerate:** `tests`, `catalog`" in out
     assert "not been profiled" not in out
 
 
 def test_generating_a_contract_reads_the_groups_in_any_case(db_session_mock):
     _, _, submit, _ = _generate(
-        _contract_suite(), draft=SuiteVersion(id=uuid4(), version=2), regenerate=["Governance", " TESTS "]
+        _contract_suite(), draft=SuiteVersion(id=uuid4(), version=2), regenerate=["Catalog", " TESTS "]
     )
 
-    assert submit.call_args.kwargs["kwargs"]["regenerate"] == ["tests", "governance"]
+    assert submit.call_args.kwargs["kwargs"]["regenerate"] == ["tests", "catalog"]
 
 
 def test_generating_profiling_for_an_unprofiled_contract_says_profiled_values_are_not_refreshed(db_session_mock):
@@ -522,7 +523,7 @@ def test_generating_profiling_for_an_unprofiled_contract_says_profiled_values_ar
 
 @pytest.mark.parametrize(("regenerate", "run_id", "message"), [
     ([], uuid4(), "Select at least one regeneration group"),
-    (["tests", "docs"], uuid4(), "Unknown regeneration group `docs`. Accepted values: `tests`, `profiling`, `governance`."),
+    (["tests", "docs"], uuid4(), "Unknown regeneration group `docs`. Accepted values: `tests`, `profiling`, `catalog`."),
     (["tests"], None, "The table group has not been profiled. Run profiling to regenerate tests."),
 ])
 def test_generating_a_contract_refuses_an_invalid_choice_of_groups(db_session_mock, regenerate, run_id, message):

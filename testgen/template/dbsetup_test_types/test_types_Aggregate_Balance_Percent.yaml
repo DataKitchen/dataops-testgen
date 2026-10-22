@@ -23,8 +23,8 @@ test_types:
   default_parm_prompts: |-
     Record Subset Condition,Grouping Columns,Group Subset Condition,Matching Schema Name,Matching Table Name,Matching Aggregate Expression,Matching Record Subset Condition,Matching Grouping Columns,Matching Group Subset Condition,Lower Tolerance Percent,Upper Tolerance Percent,Threshold Failure Count
   default_parm_help: |-
-    Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.|Category columns in main table separated by commas (e.g. GROUP BY columns)|Condition defining a subset of aggregate records in main table (e.g. HAVING clause)|Schema location of matching table|Matching table name|Aggregate expression in the matching table, such as SUM(amount), COUNT(order_id), or COUNT(DISTINCT customer_id).|Condition selecting the records in the matching table to compare against, written like a SQL WHERE clause. Example: status = 'SHIPPED'.|Category columns in matching table separated by commas (e.g. GROUP BY columns)|Condition defining a subset of aggregate records in matching table (e.g. HAVING clause)|Allowable tolerance below the reference measure expressed as a percent|Allowable tolerance above the reference measure expressed as a percent|The number of mismatched groups that are acceptable before the test fails.
-  default_parm_required: N,Y,N,Y,Y,Y,N,Y,N,N,N,N
+    Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.|Category columns in main table separated by commas (e.g. GROUP BY columns)|Condition defining a subset of aggregate records in main table (e.g. HAVING clause)|Schema location of matching table|Matching table name|Aggregate expression in the matching table, such as SUM(amount), COUNT(order_id), or COUNT(DISTINCT customer_id).|Condition selecting the records in the matching table to compare against, written like a SQL WHERE clause. Example: status = 'SHIPPED'.|Category columns in matching table separated by commas (e.g. GROUP BY columns)|Condition defining a subset of aggregate records in matching table (e.g. HAVING clause)|Lowest allowed difference from the reference measure, as a percent. Use a negative number for a difference below the reference, for example -5.|Highest allowed difference from the reference measure, as a percent, for example 10.|The number of mismatched groups that are acceptable before the test fails.
+  default_parm_required: N,Y,N,Y,Y,Y,N,Y,N,A,A,N
   default_severity: Fail
   run_type: QUERY
   test_scope: referential
@@ -36,7 +36,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    This test compares sums or counts of a column rolled up to one or more category combinations across two different tables. Both tables must be accessible at the same time. Use it to confirm that two datasets closely match within the tolerance you set -- that the sum of a measure or count of a value remains sufficiently consistent between categories. You could use this test to compare sales per product within one month to another, when you want to be alerted if the difference for any product falls outside of the range defined as 5% below to 10% above the prior month. A failure here means that one or more value combinations fail to match within the set tolerances. New categories or combinations will cause failure.
+    This test compares sums or counts of a column rolled up to one or more category combinations across two different tables. Both tables must be accessible at the same time. Use it to confirm that two datasets closely match within the tolerance you set -- that the sum of a measure or count of a value remains sufficiently consistent between categories. You could use this test to compare sales per product within one month to another, when you want to be alerted if the difference for any product falls outside of the range from 5% below to 10% above the prior month, with a lower tolerance of -5 and an upper tolerance of 10. A failure here means that one or more value combinations fail to match within the set tolerances. New categories or combinations will cause failure.
   active: Y
   ai_redact_values: false
   algorithm: Aggregate reconciliation
@@ -68,7 +68,7 @@ test_types:
       ) s
       WHERE (total IS NOT NULL AND match_total IS NULL)
          OR (total IS NULL AND match_total IS NOT NULL)
-         OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+         OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0)
       ORDER BY {GROUPBY_NAMES}
       LIMIT {LIMIT};
     error_type: Test Results
@@ -95,7 +95,7 @@ test_types:
           GROUP BY {GROUPBY_NAMES} ) s
         WHERE (total IS NOT NULL AND match_total IS NULL)
           OR (total IS NULL AND match_total IS NOT NULL)
-          OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+          OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0)
         ORDER BY {GROUPBY_NAMES}
         LIMIT {LIMIT};
     error_type: Test Results
@@ -122,7 +122,7 @@ test_types:
           GROUP BY {GROUPBY_NAMES} ) s
         WHERE (total IS NOT NULL AND match_total IS NULL)
           OR (total IS NULL AND match_total IS NOT NULL)
-          OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+          OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0)
         ORDER BY {GROUPBY_NAMES};
     error_type: Test Results
   - id: '1248'
@@ -148,7 +148,7 @@ test_types:
           GROUP BY {GROUPBY_NAMES} ) s
         WHERE (total IS NOT NULL AND match_total IS NULL)
           OR (total IS NULL AND match_total IS NOT NULL)
-          OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+          OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0)
         ORDER BY {GROUPBY_NAMES}
         LIMIT {LIMIT};
     error_type: Test Results
@@ -175,7 +175,7 @@ test_types:
           GROUP BY {GROUPBY_NAMES} ) s
         WHERE (total IS NOT NULL AND match_total IS NULL)
           OR (total IS NULL AND match_total IS NOT NULL)
-          OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+          OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0)
         ORDER BY {GROUPBY_NAMES}
         LIMIT {LIMIT};
     error_type: Test Results
@@ -202,7 +202,7 @@ test_types:
           GROUP BY {GROUPBY_NAMES} ) s
         WHERE (total IS NOT NULL AND match_total IS NULL)
           OR (total IS NULL AND match_total IS NOT NULL)
-          OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+          OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0)
         ORDER BY {GROUPBY_NAMES}
         LIMIT {LIMIT};
     error_type: Test Results
@@ -229,7 +229,7 @@ test_types:
           GROUP BY {GROUPBY_NAMES} ) s
         WHERE (total IS NOT NULL AND match_total IS NULL)
           OR (total IS NULL AND match_total IS NOT NULL)
-          OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+          OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0)
         ORDER BY {GROUPBY_NAMES}
         LIMIT {LIMIT};
     error_type: Test Results
@@ -256,7 +256,7 @@ test_types:
           GROUP BY {GROUPBY_NAMES} ) s
         WHERE (total IS NOT NULL AND match_total IS NULL)
           OR (total IS NULL AND match_total IS NOT NULL)
-          OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+          OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0)
         ORDER BY {GROUPBY_NAMES}
         FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Test Results
@@ -283,7 +283,7 @@ test_types:
           GROUP BY {GROUPBY_NAMES} ) s
         WHERE (total IS NOT NULL AND match_total IS NULL)
           OR (total IS NULL AND match_total IS NOT NULL)
-          OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+          OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0)
         ORDER BY {GROUPBY_NAMES}
         LIMIT {LIMIT}
     error_type: Test Results
@@ -310,7 +310,7 @@ test_types:
           GROUP BY {GROUPBY_NAMES} ) s
         WHERE (total IS NOT NULL AND match_total IS NULL)
           OR (total IS NULL AND match_total IS NOT NULL)
-          OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+          OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0)
         ORDER BY {GROUPBY_NAMES}
         LIMIT {LIMIT};
     error_type: Test Results
@@ -337,7 +337,7 @@ test_types:
           GROUP BY {GROUPBY_NAMES} ) s
         WHERE (total IS NOT NULL AND match_total IS NULL)
           OR (total IS NULL AND match_total IS NOT NULL)
-          OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+          OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0)
         ORDER BY {GROUPBY_NAMES}
         LIMIT {LIMIT};
     error_type: Test Results
@@ -377,7 +377,7 @@ test_types:
                GROUP BY {GROUPBY_NAMES} ) s
                WHERE (total IS NOT NULL AND match_total IS NULL)
                    OR (total IS NULL AND match_total IS NOT NULL)
-                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0));
+                   OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0);
   - id: '2409'
     test_type: Aggregate_Balance_Percent
     sql_flavor: databricks
@@ -413,7 +413,7 @@ test_types:
                GROUP BY {GROUPBY_NAMES} ) s
                WHERE (total IS NOT NULL AND match_total IS NULL)
                    OR (total IS NULL AND match_total IS NOT NULL)
-                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0));
+                   OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0);
   - id: '2209'
     test_type: Aggregate_Balance_Percent
     sql_flavor: mssql
@@ -449,7 +449,7 @@ test_types:
                GROUP BY {GROUPBY_NAMES} ) s
                WHERE (total IS NOT NULL AND match_total IS NULL)
                    OR (total IS NULL AND match_total IS NOT NULL)
-                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0));
+                   OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0);
   - id: '2309'
     test_type: Aggregate_Balance_Percent
     sql_flavor: postgresql
@@ -485,7 +485,7 @@ test_types:
                GROUP BY {GROUPBY_NAMES} ) s
                WHERE (total IS NOT NULL AND match_total IS NULL)
                    OR (total IS NULL AND match_total IS NOT NULL)
-                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0));
+                   OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0);
   - id: '2009'
     test_type: Aggregate_Balance_Percent
     sql_flavor: redshift
@@ -521,7 +521,7 @@ test_types:
                GROUP BY {GROUPBY_NAMES} ) s
                WHERE (total IS NOT NULL AND match_total IS NULL)
                    OR (total IS NULL AND match_total IS NOT NULL)
-                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0));
+                   OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0);
   - id: '2509'
     test_type: Aggregate_Balance_Percent
     sql_flavor: redshift_spectrum
@@ -557,7 +557,7 @@ test_types:
                GROUP BY {GROUPBY_NAMES} ) s
                WHERE (total IS NOT NULL AND match_total IS NULL)
                    OR (total IS NULL AND match_total IS NOT NULL)
-                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0));
+                   OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0);
   - id: '2109'
     test_type: Aggregate_Balance_Percent
     sql_flavor: snowflake
@@ -593,7 +593,7 @@ test_types:
                GROUP BY {GROUPBY_NAMES} ) s
                WHERE (total IS NOT NULL AND match_total IS NULL)
                    OR (total IS NULL AND match_total IS NOT NULL)
-                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0));
+                   OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0);
   - id: '8009'
     test_type: Aggregate_Balance_Percent
     sql_flavor: oracle
@@ -629,7 +629,7 @@ test_types:
                GROUP BY {GROUPBY_NAMES} ) s
                WHERE (total IS NOT NULL AND match_total IS NULL)
                    OR (total IS NULL AND match_total IS NOT NULL)
-                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+                   OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0)
   - id: '8009'
     test_type: Aggregate_Balance_Percent
     sql_flavor: sap_hana
@@ -665,7 +665,7 @@ test_types:
                GROUP BY {GROUPBY_NAMES} ) s
                WHERE (total IS NOT NULL AND match_total IS NULL)
                    OR (total IS NULL AND match_total IS NOT NULL)
-                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+                   OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0)
   - id: '10002'
     test_type: Aggregate_Balance_Percent
     sql_flavor: salesforce_data360
@@ -701,7 +701,7 @@ test_types:
                GROUP BY {GROUPBY_NAMES} ) s
                WHERE (total IS NOT NULL AND match_total IS NULL)
                    OR (total IS NULL AND match_total IS NOT NULL)
-                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0));
+                   OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0);
   - id: '11004'
     test_type: Aggregate_Balance_Percent
     sql_flavor: duckdb
@@ -737,4 +737,4 @@ test_types:
                GROUP BY {GROUPBY_NAMES} ) s
                WHERE (total IS NOT NULL AND match_total IS NULL)
                    OR (total IS NULL AND match_total IS NOT NULL)
-                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0));
+                   OR (total NOT BETWEEN match_total + ABS(match_total) * {LOWER_TOLERANCE}/100.0 AND match_total + ABS(match_total) * {UPPER_TOLERANCE}/100.0);

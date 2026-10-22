@@ -1,4 +1,5 @@
-"""Resolving a contract document's quality rules onto test types, and walking the rules a document holds."""
+"""Resolving a contract document's quality rules onto test types, walking the rules a document holds, and the
+tables a contract's tests may target."""
 
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -6,13 +7,50 @@ from typing import Any
 
 from sqlalchemy import select
 
+from testgen.common.contract_document import declared_tables
 from testgen.common.database.table_group_service import table_group_qualifies_table_refs
+from testgen.common.enums import SuiteType
 from testgen.common.flavors import SqlFlavorCode
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES, TestType
+from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.common.odcs.quality_rules import Operator, ResolvedTerm, RuleScope, resolve_rule, test_type_parameters
+
+
+class UndeclaredTableError(ValueError):
+    """A test on a contract targets a table the contract does not declare."""
+
+    def __init__(self, contract_name: str, table_name: str | None, declared: list[str]) -> None:
+        self.contract_name = contract_name
+        self.table_name = table_name
+        self.declared = declared
+        super().__init__(
+            f"Contract {contract_name} does not declare table {table_name}."
+            if table_name
+            else f"A test on contract {contract_name} must name one of its declared tables."
+        )
+
+
+def writable_tables(suite: TestSuite | TestSuiteMinimal) -> list[str] | None:
+    """The tables a test on ``suite`` may target: those the contract version its writes land on declares.
+
+    ``None`` when ``suite`` is not a contract, since any table group table is a valid target then.
+    """
+    if suite.suite_type != SuiteType.CONTRACT:
+        return None
+    # A write to a contract with no draft opens one from the version in force, copying its document.
+    version = SuiteVersion.draft_for(suite.id) or SuiteVersion.in_force_for(suite.id)
+    return declared_tables(version.metadata_document if version else None)
+
+
+def check_table_declared(suite: TestSuite | TestSuiteMinimal, table_name: str | None) -> None:
+    """Raise ``UndeclaredTableError`` when ``suite`` is a contract that does not declare ``table_name``."""
+    tables = writable_tables(suite)
+    if tables is not None and table_name not in tables:
+        raise UndeclaredTableError(suite.test_suite, table_name, tables)
 
 
 def all_test_types() -> dict[str, TestType]:

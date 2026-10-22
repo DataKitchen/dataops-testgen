@@ -99,7 +99,7 @@ def create_app(version: str | None = None) -> FastAPI:
         {"name": "Connections", "description": "Read the connections that reach a project's data sources."},
         {
             "name": "Table Groups",
-            "description": "Create, read, and update the table groups that set which tables TestGen profiles, tests, "
+            "description": "Create, read, update, and delete the table groups that set which tables TestGen profiles, tests, "
             "and monitors.",
         },
         {"name": "Test Suites", "description": "Create and read test suites, data contracts included."},
@@ -143,9 +143,9 @@ def create_app(version: str | None = None) -> FastAPI:
         title=f"{version_data.edition} API" if version_data else "TestGen API",
         summary="REST API for DataOps Data Quality TestGen.",
         description=(
-            "Drive TestGen from pipelines, orchestrators, and scripts: set up table groups, test suites and "
-            "monitoring, run profiling, test generation and tests, read their results and scores, manage "
-            "notifications, and move test definitions between environments.\n\n"
+            "Drive TestGen from pipelines, orchestrators, and scripts: set up table groups, test suites, and "
+            "monitoring; run profiling, test generation, and tests; read their results and scores; manage "
+            "notifications; and move test definitions between environments.\n\n"
             "**Authentication**: send a personal access token or an OAuth 2.1 access token in the "
             "`Authorization: Bearer` header. OAuth clients discover the authorization endpoints at "
             "`GET /.well-known/oauth-authorization-server`."

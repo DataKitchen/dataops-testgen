@@ -16,6 +16,8 @@ class MssqlFlavorService(FlavorService):
 
     concat_operator = "+"
     escaped_underscore = "[_]"
+    escaped_backslash = "\\"
+    escaped_left_bracket = "[[]"
     row_limiting_clause = "top"
     # A plain literal is converted to the database code page, which drops characters outside it.
     string_literal_prefix = "N"

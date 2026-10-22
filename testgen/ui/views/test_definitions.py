@@ -79,9 +79,10 @@ from testgen.ui.services.query_cache import (
     select_test_definitions_where,
     select_test_suites_minimal_where,
 )
-from testgen.ui.services.test_definition_service import save_from_dialog
+from testgen.ui.services.test_definition_service import dialog_table_columns, save_from_dialog
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.contract_dialogs import contract_props, follow_editable_version
+from testgen.ui.views.test_runs import run_started_message
 from testgen.utils import dataframe_to_json_records, make_json_safe, to_dataframe
 
 LOG = logging.getLogger("testgen")
@@ -112,6 +113,15 @@ TD_IMPORT_DIALOG_KEY = "td:import_dialog"
 TD_IMPORT_PREVIEW_KEY = "td:import_preview"
 TD_IMPORT_RESULT_KEY = "td:import_result"
 TD_MANAGED_LEFT_OUT_KEY = "td:managed_left_out"
+
+DELETE_ACTION = "deleted"
+COPY_MOVE_ACTION = "copied or moved"
+MANAGED_STATUS_ACTIONS: dict[tuple[str, bool], str] = {
+    ("test_active", True): "activated",
+    ("test_active", False): "deactivated",
+    ("lock_refresh", True): "locked",
+    ("lock_refresh", False): "unlocked",
+}
 
 REFUSED_WRITE_ERRORS = (ManagedTestDefinitionError, FrozenVersionError, RemovedInDraftError)
 CONTRACT_CHANGED_MESSAGE = "This contract changed since the page loaded. Refresh the page and try again."
@@ -213,6 +223,9 @@ class TestDefinitionsPage(Page):
             df, total_count = get_test_definitions(test_suite, table_name, column_name, test_type, sorting_columns,
                                                     page_index=current_page, page_size=current_page_size,
                                                     flagged_filter=flagged, version_id=read_version_id)
+            managed_count = get_managed_count(
+                test_suite, table_name, column_name, test_type, flagged_filter=flagged, version_id=read_version_id
+            )
             test_types = run_test_type_lookup_query().to_dict("records")
             table_columns = get_columns(str(table_group.id))
             filter_columns_df = get_test_suite_columns(test_suite_id, read_version_id)
@@ -266,7 +279,7 @@ class TestDefinitionsPage(Page):
             add_dialog = {
                 "open": True,
                 "test_types": test_types,
-                "table_columns": table_columns,
+                "table_columns": dialog_table_columns(test_suite, table_columns),
                 "table_groups_id": str(table_group.id),
                 "table_group_schema": table_group.table_group_schema,
                 "test_suite": test_suite_info,
@@ -281,7 +294,7 @@ class TestDefinitionsPage(Page):
                 "open": True,
                 "test_definition": selected_def,
                 "test_types": test_types,
-                "table_columns": table_columns,
+                "table_columns": dialog_table_columns(test_suite, table_columns, selected_def.get("table_name")),
                 "table_group_schema": table_group.table_group_schema,
                 "test_suite": test_suite_info,
                 "qualifies_table_refs_with_schema": qualifies_table_refs_with_schema,
@@ -299,7 +312,12 @@ class TestDefinitionsPage(Page):
 
         unlock_dialog = None
         if selected := st.session_state.get(TD_UNLOCK_DIALOG_KEY):
-            unlock_dialog = {"open": True, "count": len(selected), "ids": [s["id"] for s in selected]}
+            unlock_dialog = {
+                "open": True,
+                "count": len(selected),
+                "ids": [s["id"] for s in selected],
+                "managed_note": _managed_left_out_note(st.session_state.get(TD_MANAGED_LEFT_OUT_KEY, 0)),
+            }
 
         copy_move_dialog = None
         if selected := st.session_state.get(TD_COPY_MOVE_DIALOG_KEY):
@@ -378,18 +396,15 @@ class TestDefinitionsPage(Page):
             row_df = df[df["id"] == test_def_id]
             if not row_df.empty:
                 test_def = dataframe_to_json_records(row_df)[0]
+                if test_def.get("is_managed"):
+                    return
                 st.session_state[TD_EDIT_DIALOG_KEY] = test_def
 
-        def open_without_managed(dialog_key: str, rows: list[dict]) -> None:
+        def open_without_managed(dialog_key: str, rows: list[dict], refused_action: str) -> None:
             managed = _managed_ids([row["id"] for row in rows])
             kept = [row for row in rows if row["id"] not in managed]
             if rows and not kept:
-                st.toast(
-                    "TestGen manages the selected test. It cannot be deleted, moved, or copied."
-                    if len(rows) == 1
-                    else "TestGen manages the selected tests. They cannot be deleted, moved, or copied.",
-                    icon=":material/error:",
-                )
+                st.toast(_managed_refusal(refused_action, len(rows)), icon=":material/error:")
                 return
             st.session_state[dialog_key] = kept
             st.session_state[TD_MANAGED_LEFT_OUT_KEY] = len(managed)
@@ -404,7 +419,9 @@ class TestDefinitionsPage(Page):
         @with_database_session
         def on_delete_dialog_opened(selected: list) -> None:
             open_without_managed(
-                TD_DELETE_DIALOG_KEY, [{"id": s["id"] if isinstance(s, dict) else s} for s in selected or []]
+                TD_DELETE_DIALOG_KEY,
+                [{"id": s["id"] if isinstance(s, dict) else s} for s in selected or []],
+                DELETE_ACTION,
             )
 
         @with_database_session
@@ -412,20 +429,24 @@ class TestDefinitionsPage(Page):
             all_ids = get_test_definition_ids(
                 test_suite, table_name, column_name, test_type, flagged_filter=flagged, version_id=read_version_id
             )
-            open_without_managed(TD_DELETE_DIALOG_KEY, [{"id": id_} for id_ in all_ids])
+            open_without_managed(TD_DELETE_DIALOG_KEY, [{"id": id_} for id_ in all_ids], DELETE_ACTION)
 
+        @with_database_session
         def on_unlock_dialog_opened(selected: list) -> None:
-            if selected and isinstance(selected[0], dict):
-                st.session_state[TD_UNLOCK_DIALOG_KEY] = [{"id": s["id"]} for s in selected]
-            else:
-                st.session_state[TD_UNLOCK_DIALOG_KEY] = selected
+            open_without_managed(
+                TD_UNLOCK_DIALOG_KEY,
+                [{"id": s["id"] if isinstance(s, dict) else s} for s in selected or []],
+                MANAGED_STATUS_ACTIONS[("lock_refresh", False)],
+            )
 
         @with_database_session
         def on_unlock_all_opened(*_) -> None:
             all_ids = get_test_definition_ids(
                 test_suite, table_name, column_name, test_type, flagged_filter=flagged, version_id=read_version_id
             )
-            st.session_state[TD_UNLOCK_DIALOG_KEY] = [{"id": id_} for id_ in all_ids]
+            open_without_managed(
+                TD_UNLOCK_DIALOG_KEY, [{"id": id_} for id_ in all_ids], MANAGED_STATUS_ACTIONS[("lock_refresh", False)]
+            )
 
         @with_database_session
         def on_copy_move_dialog_opened(selected) -> None:
@@ -440,7 +461,7 @@ class TestDefinitionsPage(Page):
                     for r in results
                 ]
             # selected contains minimal row dicts (id, table_name, column_name, test_type, lock_refresh)
-            open_without_managed(TD_COPY_MOVE_DIALOG_KEY, selected)
+            open_without_managed(TD_COPY_MOVE_DIALOG_KEY, selected, COPY_MOVE_ACTION)
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, None)
 
@@ -458,6 +479,7 @@ class TestDefinitionsPage(Page):
 
         def on_unlock_dialog_closed(*_) -> None:
             st.session_state.pop(TD_UNLOCK_DIALOG_KEY, None)
+            st.session_state.pop(TD_MANAGED_LEFT_OUT_KEY, None)
 
         def on_copy_move_dialog_closed(*_) -> None:
             st.session_state.pop(TD_COPY_MOVE_DIALOG_KEY, None)
@@ -471,7 +493,7 @@ class TestDefinitionsPage(Page):
             apply_test_definition_flavor_rules(
                 definition, table_group, qualifies_table_refs=qualifies_table_refs_with_schema
             )
-            return save_from_dialog(definition)
+            return save_from_dialog(definition, test_suite)
 
         @with_database_session
         def on_add_test_saved(test_def: dict) -> None:
@@ -526,12 +548,14 @@ class TestDefinitionsPage(Page):
             st.cache_data.clear()
             follow_contract_draft()
             st.session_state.pop(TD_UNLOCK_DIALOG_KEY, None)
+            st.session_state.pop(TD_MANAGED_LEFT_OUT_KEY, None)
 
-        @with_database_session
-        def on_update_attribute(payload: dict) -> None:
-            attribute = payload["attribute"]
-            ids = payload["ids"]
-            value = payload["value"]
+        def update_attribute(attribute: str, ids: list[str], value: bool) -> None:
+            ids, refusal = _without_managed(attribute, value, ids)
+            if refusal:
+                st.toast(refusal, icon=":material/error:")
+            if not ids:
+                return
             try:
                 TestDefinition.set_status_attribute(attribute, ids, value)
             except REFUSED_WRITE_ERRORS as error:
@@ -541,20 +565,15 @@ class TestDefinitionsPage(Page):
             follow_contract_draft()
 
         @with_database_session
+        def on_update_attribute(payload: dict) -> None:
+            update_attribute(payload["attribute"], payload["ids"], payload["value"])
+
+        @with_database_session
         def on_update_attribute_all(payload: dict) -> None:
-            attribute = payload["attribute"]
-            value = payload["value"]
             all_ids = get_test_definition_ids(
                 test_suite, table_name, column_name, test_type, flagged_filter=flagged, version_id=read_version_id
             )
-            if all_ids:
-                try:
-                    TestDefinition.set_status_attribute(attribute, all_ids, value)
-                except REFUSED_WRITE_ERRORS as error:
-                    refuse_write(error)
-                    return
-                st.cache_data.clear()
-                follow_contract_draft()
+            update_attribute(payload["attribute"], all_ids, payload["value"])
 
 
         @with_database_session
@@ -667,7 +686,7 @@ class TestDefinitionsPage(Page):
             selected_id = data.get("test_suite_id")
             selected_name = data.get("test_suite_name")
             success = True
-            message = f"Test run started for test suite '{selected_name}'."
+            message = run_started_message(test_suite.suite_type, selected_name)
             show_link = session.current_page != "test-runs"
             try:
                 JobExecution.submit(
@@ -920,6 +939,7 @@ class TestDefinitionsPage(Page):
                 },
                 "page": current_page,
                 "total_count": total_count,
+                "managed_count": managed_count,
                 "page_size": current_page_size,
                 "sort_state": sort_state,
                 "permissions": {
@@ -1368,17 +1388,7 @@ def get_test_definitions(
     the DB using ``select_test_definitions_page()``; otherwise fetches all rows
     via ``select_test_definitions_where()``.  ``total_count`` is always the full matching count.
     """
-    clauses = [TestDefinition.test_suite_id == test_suite.id]
-    if table_name:
-        clauses.append(TestDefinition.table_name == table_name)
-    if column_name:
-        clauses.append(TestDefinition.column_name.ilike(column_name))
-    if test_type:
-        clauses.append(TestDefinition.test_type == test_type)
-    if flagged_filter == "Flagged":
-        clauses.append(TestDefinition.flagged == True)
-    elif flagged_filter == "Not Flagged":
-        clauses.append(TestDefinition.flagged == False)
+    clauses = _filter_clauses(test_suite, table_name, column_name, test_type, flagged_filter)
 
     sort_funcs = {"ASC": asc, "DESC": desc}
 
@@ -1417,6 +1427,7 @@ def get_test_definitions(
     df["test_active_display"] = df["test_active"].apply(lambda value: "Yes" if value else "No")
     df["lock_refresh_display"] = df["lock_refresh"].apply(lambda value: "Yes" if value else "No")
     df["flagged_display"] = df["flagged"].apply(lambda value: "Yes" if value else "No")
+    df["is_managed"] = df["test_type"].isin(MANAGED_TEST_TYPES)
     if not df.empty:
         notes_counts = TestDefinitionNote.get_notes_count_by_ids([str(td_id) for td_id in df["id"]])
         df["notes_count"] = df["id"].map(notes_counts).fillna(0).astype(int)
@@ -1452,6 +1463,29 @@ def _managed_ids(ids: list[str]) -> set[str]:
     return {str(row.id) for row in rows}
 
 
+def _managed_refusal(action: str, count: int) -> str:
+    """The message refusing an action on a selection made up only of tests TestGen manages."""
+    if count == 1:
+        return f"TestGen manages the selected test. It cannot be {action}."
+    return f"TestGen manages the selected tests. They cannot be {action}."
+
+
+def _without_managed(attribute: str, value: bool, ids: list[str]) -> tuple[list[str], str | None]:
+    """The ids a status change writes to, and the message refusing it when every selected test is managed.
+
+    Activating, deactivating, locking, and unlocking leave out the tests TestGen manages; flagging applies to every
+    test.
+    """
+    action = MANAGED_STATUS_ACTIONS.get((attribute, bool(value)))
+    if action is None:
+        return ids, None
+    managed = _managed_ids(ids)
+    kept = [id_ for id_ in ids if str(id_) not in managed]
+    if ids and not kept:
+        return [], _managed_refusal(action, len(ids))
+    return kept, None
+
+
 def _managed_left_out_note(count: int) -> str | None:
     """The line telling the user how many selected tests a bulk dialog leaves out because TestGen manages them."""
     if not count:
@@ -1461,14 +1495,13 @@ def _managed_left_out_note(count: int) -> str | None:
     return f"{count} selected tests are managed by TestGen and are left out."
 
 
-def get_test_definition_ids(
+def _filter_clauses(
     test_suite: TestSuite,
-    table_name: str | None = None,
-    column_name: str | None = None,
-    test_type: str | None = None,
-    flagged_filter: str | None = None,
-    version_id: UUID | None = None,
-) -> list[str]:
+    table_name: str | None,
+    column_name: str | None,
+    test_type: str | None,
+    flagged_filter: str | None,
+) -> list:
     clauses = [TestDefinition.test_suite_id == test_suite.id]
     if table_name:
         clauses.append(TestDefinition.table_name == table_name)
@@ -1480,6 +1513,34 @@ def get_test_definition_ids(
         clauses.append(TestDefinition.flagged == True)
     elif flagged_filter == "Not Flagged":
         clauses.append(TestDefinition.flagged == False)
+    return clauses
+
+
+def get_managed_count(
+    test_suite: TestSuite,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    test_type: str | None = None,
+    flagged_filter: str | None = None,
+    version_id: UUID | None = None,
+) -> int:
+    """The number of tests matching the filters that are of a managed test type."""
+    return len(select_test_definitions_minimal_where(
+        *_filter_clauses(test_suite, table_name, column_name, test_type, flagged_filter),
+        TestDefinition.test_type.in_(MANAGED_TEST_TYPES),
+        version_id=version_id,
+    ))
+
+
+def get_test_definition_ids(
+    test_suite: TestSuite,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    test_type: str | None = None,
+    flagged_filter: str | None = None,
+    version_id: UUID | None = None,
+) -> list[str]:
+    clauses = _filter_clauses(test_suite, table_name, column_name, test_type, flagged_filter)
     results = select_test_definitions_where(*clauses, version_id=version_id)
     return [str(r.id) for r in results]
 

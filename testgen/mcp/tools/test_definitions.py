@@ -8,9 +8,10 @@ from uuid import UUID
 
 from mcp.server.fastmcp import Context
 from pydantic import Field, ValidationError
-from sqlalchemy import select, update
+from sqlalchemy import TypeDecorator, select, update
 
 from testgen.common import contract_service
+from testgen.common.contract_rules import UndeclaredTableError, check_table_declared
 from testgen.common.custom_test_validation import validate_custom_query
 from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
@@ -176,6 +177,20 @@ _VERSION_ARG_DESCRIPTION = (
 )
 
 
+def _undeclared_table_error(error: UndeclaredTableError) -> MCPUserError:
+    declared = ", ".join(f"`{name}`" for name in error.declared)
+    problem = (
+        f"Contract `{error.contract_name}` does not declare table `{error.table_name}`."
+        if error.table_name
+        else f"A test on contract `{error.contract_name}` must name a table."
+    )
+    return MCPUserError(
+        f"Test definition creation rejected. No changes saved.\n\n{problem} A test on a contract can only target "
+        "a table the contract declares. "
+        + (f"Declared tables: {declared}." if declared else "The contract declares no tables.")
+    )
+
+
 def _reject_non_public_test_type(tt: TestType) -> None:
     if tt.test_type in NON_PUBLIC_TEST_TYPES:
         raise MCPUserError(f"{tt.test_name_short} is not an available test type.")
@@ -246,7 +261,7 @@ def list_tests(
                 td.table_name,
                 td.column_name or None,
                 "Yes" if td.test_active else "No",
-                td.severity or td.default_severity or None,
+                td.severity or suite.severity or td.default_severity or None,
                 "Yes" if td.lock_refresh else "No",
                 "Yes" if td.flagged else "No",
                 str(note_ct) if note_ct else None,
@@ -347,7 +362,12 @@ def _append_td_summary(doc: MdDoc, td: TestDefinitionSummary) -> None:
     # Configuration
     doc.heading(2, "Configuration")
     doc.field("Active", "Yes" if td.test_active else "No")
-    severity = td.severity or (f"{td.default_severity} (test type default)" if td.default_severity else None)
+    if td.severity:
+        severity = td.severity
+    elif suite and suite.severity:
+        severity = f"{suite.severity} (test suite default)"
+    else:
+        severity = f"{td.default_severity} (test type default)" if td.default_severity else None
     if severity:
         doc.field("Severity", severity)
     doc.field("Locked", "Yes" if td.lock_refresh else "No")
@@ -677,6 +697,40 @@ def _raise_validation_errors(err: InvalidTestDefinitionFields, header: str) -> N
     raise MCPUserError(f"{header}\n\n{bullets}") from err
 
 
+_YN_VALUES = {"y": True, "yes": True, "true": True, "n": False, "no": False, "false": False}
+
+
+_BOOLEAN_FIELDS = TestDefinition._yn_columns | {"flagged"}
+
+
+def _coerce_yn_fields(fields: dict) -> None:
+    """Parse ``test_active``, ``lock_refresh``, and ``flagged`` to booleans in place, from a boolean or a yes/no
+    string in any case.
+
+    Raises ``MCPUserError`` on any other value.
+    """
+    for key in _BOOLEAN_FIELDS & fields.keys():
+        value = fields[key]
+        if isinstance(value, bool):
+            continue
+        parsed = _YN_VALUES.get(value.strip().lower()) if isinstance(value, str) else None
+        if parsed is None:
+            raise MCPUserError(f"`{key}` must be true or false.")
+        fields[key] = parsed
+
+
+def _is_unchanged(td: TestDefinition, key: str, value: object) -> bool:
+    """Whether writing ``value`` to ``key`` would store what ``td`` already holds, compared as the column stores it."""
+    current = getattr(td, key, None)
+    column = TestDefinition.__table__.columns.get(key)
+    if column is not None and isinstance(column.type, TypeDecorator):
+        current = column.type.process_bind_param(current, None)
+        value = column.type.process_bind_param(value, None)
+    if isinstance(current, dict) and isinstance(value, dict):
+        return current == value
+    return _format_diff(current) == _format_diff(value)
+
+
 def _coerce_custom_metadata(fields: dict) -> None:
     """Accept ``custom_metadata`` as a JSON string for convenience, parsing it to an object in place.
 
@@ -724,6 +778,11 @@ def create_test(
     if table_group is None:
         raise MCPUserError("Test suite is not associated with a table group.")
 
+    try:
+        check_table_declared(suite, table_name)
+    except UndeclaredTableError as error:
+        raise _undeclared_table_error(error) from error
+
     td = TestDefinition(
         test_suite_id=suite.id,
         table_groups_id=table_group.id,
@@ -737,6 +796,7 @@ def create_test(
 
     fields = fields or {}
     _coerce_custom_metadata(fields)
+    _coerce_yn_fields(fields)
     accepted = td.editable_fields(tt)
     rejected = sorted(set(fields) - accepted)
     if rejected:
@@ -779,8 +839,16 @@ def update_test(
         ),
     ],
 ) -> str:
-    """Update fields on an existing test. Atomic — no partial save."""
+    """Update fields on an existing test. Atomic — no partial save.
+
+    A test TestGen manages, such as Schema Conformance, cannot be updated.
+    """
     td = resolve_test_definition(test_definition_id)
+    if td.test_type in MANAGED_TEST_TYPES:
+        raise MCPUserError(
+            f"Update rejected. No changes saved. Test definition `{td.id}` is managed by TestGen, which creates, "
+            "updates, and removes it itself, so it cannot be updated."
+        )
     tt = TestType.get(td.test_type)
     if tt is None:
         raise MCPUserError("This test definition's test type is no longer defined, so it cannot be updated.")
@@ -789,6 +857,7 @@ def update_test(
         raise MCPUserError("No fields supplied to update.")
 
     _coerce_custom_metadata(fields)
+    _coerce_yn_fields(fields)
     accepted = td.editable_fields(tt)
     rejected = sorted(set(fields) - accepted)
     if rejected:
@@ -812,7 +881,7 @@ def update_test(
     fields = {
         key: value
         for key, value in fields.items()
-        if key in hidden or _format_diff(getattr(td, key, None)) != _format_diff(value)
+        if key in hidden or not _is_unchanged(td, key, value)
     }
     if not fields:
         doc = MdDoc()
@@ -980,7 +1049,8 @@ def bulk_update_tests(
 ) -> str:
     """Enable or disable tests in bulk, either by ID or by suite filter.
 
-    Nothing is changed unless every named test can be.
+    Tests TestGen manages, such as Schema Conformance, are left out and reported as kept. Otherwise nothing is
+    changed unless every named test can be.
     """
     bulk_action = parse_enum(action, BulkAction, "action")
     if test_definition_ids is not None and test_suite_id is not None:
@@ -1008,7 +1078,14 @@ def bulk_update_tests(
                 "`table_name` and `test_type` narrow `test_suite_id` and cannot be combined "
                 "with `test_definition_ids`."
             )
-        selected = _resolve_named_tests(test_definition_ids, nothing_done="Nothing was changed.")
+        named = _resolve_named_tests(test_definition_ids, nothing_done="Nothing was changed.")
+        selected = [td for td in named if td.test_type not in MANAGED_TEST_TYPES]
+        kept = len(named) - len(selected)
+        if not selected:
+            raise_validation_error(
+                [f"{td.test_name_short or td.test_type} on `{td.table_name}` (`{td.id}`)" for td in named],
+                f"Nothing was changed. TestGen manages these tests, so they cannot be {verb.lower()}:",
+            )
         ids_by_suite: dict[UUID, list[UUID]] = {}
         for td in selected:
             ids_by_suite.setdefault(td.test_suite_id, []).append(td.id)
@@ -1027,6 +1104,8 @@ def bulk_update_tests(
         doc = MdDoc()
         doc.heading(1, f"{verb} {len(updated_ids)} tests")
         doc.field("Scope", "the tests named in the request")
+        if kept:
+            doc.field("Kept, managed by TestGen", kept)
         if len(writes) == 1:
             suite, version_id = writes[0]
             doc.field("Test suite", suite.test_suite)
@@ -1043,12 +1122,22 @@ def bulk_update_tests(
         where_clauses.append(TestDefinition.test_type == tt_code)
     filter_str = _describe_filters(table_name, test_type)
 
-    matched = get_current_session().scalars(select(TestDefinition.id).where(*where_clauses)).all()
+    rows = get_current_session().execute(select(TestDefinition.id, TestDefinition.test_type).where(*where_clauses)).all()
     doc = MdDoc()
-    if not matched:
+    if not rows:
         doc.heading(1, "No tests matched")
         doc.text(
             f"No tests in suite `{suite.test_suite}` matched the filter ({filter_str}). Nothing changed."
+        )
+        return doc.render()
+
+    matched = [row.id for row in rows if row.test_type not in MANAGED_TEST_TYPES]
+    kept = len(rows) - len(matched)
+    if not matched:
+        doc.heading(1, f"No tests to {bulk_action.value}")
+        doc.text(
+            f"TestGen manages the {kept} tests that matched the filter ({filter_str}), so they cannot be "
+            f"{verb.lower()}. Nothing changed."
         )
         return doc.render()
 
@@ -1059,6 +1148,8 @@ def bulk_update_tests(
     if suite.suite_type == SuiteType.CONTRACT:
         _version_field(doc, suite, SuiteVersion.get(version_id))
     doc.field("Filter", filter_str)
+    if kept:
+        doc.field("Kept, managed by TestGen", kept)
     return doc.render()
 
 
