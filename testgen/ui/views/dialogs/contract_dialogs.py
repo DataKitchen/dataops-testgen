@@ -167,6 +167,9 @@ def contract_props(
         _set_state(suite, _Dialog.TABLES_RESULT, {**result, "token": str(uuid4())})
         if result["success"]:
             written(result["message"])
+        else:
+            st.cache_data.clear()
+            follow_editable_version(suite)
 
     @with_database_session
     def on_save_tables(payload: dict) -> None:

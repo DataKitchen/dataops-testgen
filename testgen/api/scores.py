@@ -124,8 +124,8 @@ def get_project_scores(
 
     The filter parameters narrow the data scored. Values repeated within one parameter match any of them; different
     parameters must all match. With `group_by`, the response adds a `breakdown` that lists the groups by `impact`, the
-    part of the score each group's affected data costs, largest first. `quality_dimension`, `impact_dimension` and
-    `table_group` can group the breakdown but have no filter parameter.
+    part of the score each group's affected data costs, largest first. `quality_dimension`, `impact_dimension`,
+    and `table_group` can group the breakdown but have no filter parameter.
     """
     filters = _build_filter_list(
         data_source=data_source,

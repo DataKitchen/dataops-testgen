@@ -545,9 +545,9 @@ What aspect of data quality the test or hygiene issue measures.
 ## Impact Dimensions
 
 What's at stake when the data has issues — the primary breakdown used by scorecards.
-- **Reliability** — Data is available and correct when needed.
+- **Reliability** — The pipeline is delivering: data arrives on time, at expected volume, with a stable schema. Failures usually call for a pipeline fix.
 - **Conformance** — Data meets contracts, formats, and reference standards.
-- **Regularity** — Data behaves normally, without unexpected statistical shifts from its historical baseline.
+- **Regularity** — Data behaves normally, without unexpected statistical shifts from its historical baseline. These are signals, not verdicts: investigate before acting.
 - **Usability** — Data is shaped so consumers can work with it efficiently.
 
 ## Test Scopes

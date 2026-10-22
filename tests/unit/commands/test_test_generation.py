@@ -665,30 +665,30 @@ def test_regenerating_only_tests_leaves_the_document_and_profiled_values_alone(c
     result = run_contract_generation("suite-1", groups=["tests"])
 
     contract_mocks["document"].refresh_identity.assert_not_called()
-    assert contract_mocks["document"].refresh_tables.call_args.kwargs == {"profiling": False, "governance": False}
+    assert contract_mocks["document"].refresh_tables.call_args.kwargs == {"profiling": False, "catalog_metadata": False}
     contract_mocks["document"].fill_profiled_values.assert_not_called()
     assert contract_mocks["events"] == ["commit", "generate", "conformance"]
     assert result.groups == [RegenerationGroup.TESTS]
 
 
-def test_regenerating_without_governance_keeps_the_identity_and_refreshes_profiling(contract_mocks):
+def test_regenerating_without_catalog_metadata_keeps_the_identity_and_refreshes_profiling(contract_mocks):
     result = run_contract_generation("suite-1", groups=["profiling", "tests"])
 
     contract_mocks["document"].refresh_identity.assert_not_called()
-    assert contract_mocks["document"].refresh_tables.call_args.kwargs == {"profiling": True, "governance": False}
+    assert contract_mocks["document"].refresh_tables.call_args.kwargs == {"profiling": True, "catalog_metadata": False}
     contract_mocks["document"].fill_profiled_values.assert_called_once()
     assert result.groups == [RegenerationGroup.TESTS, RegenerationGroup.PROFILING]
 
 
 def test_regenerating_without_tests_generates_no_terms_but_reconciles_conformance(contract_mocks):
-    result = run_contract_generation("suite-1", groups=["governance"])
+    result = run_contract_generation("suite-1", groups=["catalog"])
 
     contract_mocks["document"].refresh_identity.assert_called_once()
-    assert contract_mocks["document"].refresh_tables.call_args.kwargs == {"profiling": False, "governance": True}
+    assert contract_mocks["document"].refresh_tables.call_args.kwargs == {"profiling": False, "catalog_metadata": True}
     contract_mocks["generation"].return_value.run.assert_not_called()
     contract_mocks["generation"].return_value.conformance_run.assert_called_once_with()
     contract_mocks["document"].fill_profiled_values.assert_not_called()
-    assert result.groups == [RegenerationGroup.GOVERNANCE]
+    assert result.groups == [RegenerationGroup.CATALOG]
 
 
 def test_regenerating_tests_and_profiling_unprofiled_refreshes_the_catalog_and_reports_no_tests(contract_mocks):
@@ -696,7 +696,7 @@ def test_regenerating_tests_and_profiling_unprofiled_refreshes_the_catalog_and_r
 
     result = run_contract_generation("suite-1", groups=["tests", "profiling"])
 
-    assert contract_mocks["document"].refresh_tables.call_args.kwargs == {"profiling": True, "governance": False}
+    assert contract_mocks["document"].refresh_tables.call_args.kwargs == {"profiling": True, "catalog_metadata": False}
     contract_mocks["generation"].return_value.run.assert_not_called()
     assert result.groups == [RegenerationGroup.PROFILING]
     assert result.tables_not_profiled == ["orders", "customers"]
@@ -713,7 +713,7 @@ def test_regenerating_only_tests_unprofiled_is_refused_before_anything_is_writte
 
 
 @pytest.mark.parametrize(("values", "has_run", "expected"), [
-    (["governance", "tests"], True, [RegenerationGroup.TESTS, RegenerationGroup.GOVERNANCE]),
+    (["catalog", "tests"], True, [RegenerationGroup.TESTS, RegenerationGroup.CATALOG]),
     (["profiling", "profiling"], False, [RegenerationGroup.PROFILING]),
     (["tests", "profiling"], False, [RegenerationGroup.TESTS, RegenerationGroup.PROFILING]),
 ])
@@ -723,7 +723,7 @@ def test_regeneration_groups_parse_in_enum_order(values, has_run, expected):
 
 @pytest.mark.parametrize(("values", "has_run", "message"), [
     ([], True, "at least one"),
-    (["tests", "docs"], True, "Unknown regeneration group `docs`. Accepted values: `tests`, `profiling`, `governance`."),
+    (["tests", "docs"], True, "Unknown regeneration group `docs`. Accepted values: `tests`, `profiling`, `catalog`."),
     (["tests"], False, "has not been profiled"),
 ])
 def test_regeneration_groups_refuse_an_invalid_choice(values, has_run, message):

@@ -1,3 +1,4 @@
+from datetime import datetime
 from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
@@ -60,13 +61,13 @@ def mocked_collaborators(monkeypatch):
     }
 
 
-@pytest.mark.parametrize("is_active, expect_pointer_advanced", [(True, True), (False, False)])
-def test_the_pointer_advances_only_for_the_active_version(
-    monkeypatch, mocked_collaborators, is_active, expect_pointer_advanced
+@pytest.mark.parametrize("in_force, expect_pointer_advanced", [(True, True), (False, False)])
+def test_the_pointer_advances_only_for_a_run_of_the_version_in_force_when_it_started(
+    mocked_collaborators, in_force, expect_pointer_advanced
 ):
-    monkeypatch.setattr(run_test_execution.SuiteVersion, "is_active", MagicMock(return_value=is_active))
     test_suite = mocked_collaborators["test_suite"]
     test_run = mocked_collaborators["test_run"]
+    test_run.checked_version_in_force.return_value = in_force
 
     run_test_execution.run_test_execution(uuid4())
 
@@ -76,11 +77,35 @@ def test_the_pointer_advances_only_for_the_active_version(
         assert test_suite.last_complete_test_run_id is None
 
 
+
+@pytest.mark.parametrize(
+    "latest_start, expect_pointer_advanced",
+    [(datetime(2026, 10, 1, 10, 6), False), (datetime(2026, 10, 1, 9, 55), True)],
+    ids=["a-later-run-is-latest", "an-earlier-run-is-latest"],
+)
+def test_a_contract_run_that_finishes_last_does_not_displace_a_run_that_started_after_it(
+    monkeypatch, mocked_collaborators, latest_start, expect_pointer_advanced
+):
+    # A run of a superseded version can overlap the first run of the version frozen after it.
+    monkeypatch.setattr(run_test_execution, "select", MagicMock())
+    test_suite = mocked_collaborators["test_suite"]
+    test_suite.suite_type = "contract"
+    previous_run_id = uuid4()
+    test_suite.last_complete_test_run_id = previous_run_id
+    test_run = mocked_collaborators["test_run"]
+    test_run.checked_version_in_force.return_value = True
+    test_run.test_starttime = datetime(2026, 10, 1, 10, 0)
+    mocked_collaborators["session"].scalar.return_value = latest_start
+
+    run_test_execution.run_test_execution(uuid4(), version_id=uuid4())
+
+    expected = test_run.id if expect_pointer_advanced else previous_run_id
+    assert test_suite.last_complete_test_run_id is expected
+
 def test_a_run_with_no_version_id_is_stamped_through_for_run_not_resolved_for(monkeypatch, mocked_collaborators):
     """``for_run`` prefers the frozen version over the draft; ``resolved_for`` prefers the
     draft, and stamping through it would make every run of a contract a run of its draft.
     """
-    monkeypatch.setattr(run_test_execution.SuiteVersion, "is_active", MagicMock(return_value=True))
     for_run = MagicMock(wraps=run_test_execution.SuiteVersion.for_run)
     resolved_for = MagicMock(wraps=run_test_execution.SuiteVersion.resolved_for)
     monkeypatch.setattr(run_test_execution.SuiteVersion, "for_run", for_run)
@@ -99,7 +124,6 @@ def test_a_run_with_no_version_id_is_stamped_through_for_run_not_resolved_for(mo
 
 
 def test_a_given_version_id_is_stamped_as_is_without_resolving_the_active_version(monkeypatch, mocked_collaborators):
-    monkeypatch.setattr(run_test_execution.SuiteVersion, "is_active", MagicMock(return_value=True))
     for_run = MagicMock(wraps=run_test_execution.SuiteVersion.for_run)
     monkeypatch.setattr(run_test_execution.SuiteVersion, "for_run", for_run)
     given_version_id = uuid4()
@@ -157,7 +181,6 @@ def test_a_run_of_a_frozen_agreement_rewrites_none_of_its_terms(
     agreement. Rewriting tolerances or predictions there means the terms in force are no
     longer the terms that were frozen, and re-running the version stops being reproducible.
     """
-    monkeypatch.setattr(run_test_execution.SuiteVersion, "is_active", MagicMock(return_value=True))
     monkeypatch.setattr(
         run_test_execution.SuiteVersion,
         "is_frozen_agreement",
@@ -176,7 +199,6 @@ def test_a_run_of_a_frozen_agreement_rewrites_none_of_its_terms(
 def test_the_writeback_gate_asks_about_the_runs_own_version(monkeypatch, mocked_collaborators):
     # Asking about the suite instead would gate a draft preview the same way as the frozen
     # agreement, and a preview's terms are exactly the ones that should still be refreshed.
-    monkeypatch.setattr(run_test_execution.SuiteVersion, "is_active", MagicMock(return_value=True))
     is_frozen = MagicMock(return_value=False)
     monkeypatch.setattr(run_test_execution.SuiteVersion, "is_frozen_agreement", is_frozen)
     test_run = mocked_collaborators["test_run"]
@@ -191,7 +213,6 @@ def test_a_run_that_fails_early_still_attempts_its_prediction(monkeypatch, mocke
     writeback gate inside the ``try`` would leave the name unbound for exactly those runs, and
     the ``UnboundLocalError`` would be swallowed and logged as a prediction failure.
     """
-    monkeypatch.setattr(run_test_execution.SuiteVersion, "is_active", MagicMock(return_value=True))
     monkeypatch.setattr(
         run_test_execution, "run_data_chars_refresh", MagicMock(side_effect=RuntimeError("target is down"))
     )
@@ -202,3 +223,13 @@ def test_a_run_that_fails_early_still_attempts_its_prediction(monkeypatch, mocke
         run_test_execution.run_test_execution(uuid4())
 
     prediction.assert_called_once()
+
+
+def test_a_run_opens_its_own_database_session(monkeypatch, mocked_collaborators):
+    # Quick start calls the run outside any session
+    database_session = MagicMock()
+    monkeypatch.setattr("testgen.common.models.database_session", database_session)
+
+    run_test_execution.run_test_execution(uuid4())
+
+    database_session.return_value.__enter__.assert_called_once()

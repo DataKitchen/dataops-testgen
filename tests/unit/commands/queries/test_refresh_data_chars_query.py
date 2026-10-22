@@ -449,6 +449,75 @@ def test_mask_underscore_is_escaped_for_each_flavor(flavor, expected_clause, mas
 
 
 @pytest.mark.parametrize(
+    "flavor,expected_clause",
+    [
+        ("postgresql", r"(c.table_name LIKE 'tmp\\' )"),
+        ("redshift", r"(c.table_name LIKE 'tmp\\\\' )"),
+        ("redshift_spectrum", r"(c.tablename LIKE 'tmp\\\\' )"),
+        ("snowflake", r"(c.table_name LIKE 'tmp\\\\' ESCAPE '\\')"),
+        ("oracle", r"(c.table_name LIKE 'tmp\\' ESCAPE '\')"),
+        ("mssql", r"(c.table_name LIKE N'tmp\' )"),
+        ("duckdb", r"(c.table_name LIKE 'tmp\\' ESCAPE '\')"),
+        ("sap_hana", r"(c.table_name LIKE 'tmp\\' ESCAPE '\')"),
+        ("bigquery", r"(c.table_name LIKE 'tmp\\\\' )"),
+        ("databricks", r"(c.table_name LIKE 'tmp\\\\' )"),
+    ],
+)
+def test_mask_backslash_is_escaped_for_each_flavor(flavor, expected_clause):
+    table_group = TableGroup(table_group_schema="test_schema", profiling_include_mask="tmp\\")
+    sql_generator = RefreshDataCharsSQL(Connection(sql_flavor=flavor), table_group)
+
+    assert expected_clause in sql_generator._get_table_criteria()
+
+
+@pytest.mark.parametrize("flavor,expected_clause", [
+    ("mssql", "(c.table_name LIKE N'[[]x]%' )"),
+    ("postgresql", "(c.table_name LIKE '[x]%' )"),
+])
+def test_mask_left_bracket_is_literal_on_sql_server_only(flavor, expected_clause):
+    table_group = TableGroup(table_group_schema="test_schema", profiling_include_mask="[x]%")
+    sql_generator = RefreshDataCharsSQL(Connection(sql_flavor=flavor), table_group)
+
+    assert expected_clause in sql_generator._get_table_criteria()
+
+
+@pytest.mark.parametrize(
+    "include_mask,expected",
+    [
+        ("tmp\\", ["tmp\\"]),
+        (r"a\b%", [r"a\b", r"a\bc"]),
+        (r"a\%", [r"a\b", r"a\bc", "a\\"]),
+        (r"a\_b", ["a_b"]),
+    ],
+)
+def test_duckdb_mask_backslash_matches_only_a_literal_backslash(include_mask, expected):
+    table_group = TableGroup(table_group_schema="main", profiling_table_set="", profiling_include_mask=include_mask)
+    sql_generator = RefreshDataCharsSQL(Connection(sql_flavor="duckdb"), table_group)
+    column = sql_generator.flavor_service.ddf_table_ref
+    names = ["tmp\\", "tmp", r"a\b", r"a\bc", "ab", "a\\", "a_b", "a%b"]
+    values = ", ".join(f"('{name}')" for name in names)
+
+    rows = duckdb.connect().sql(
+        f"SELECT {column} FROM (VALUES {values}) AS c({column}) WHERE TRUE {sql_generator._get_table_criteria()}"
+        f" ORDER BY {column}"
+    ).fetchall()
+
+    assert [row[0] for row in rows] == sorted(expected)
+
+
+@pytest.mark.parametrize(
+    "include_mask,expected",
+    [("tmp\\", {"tmp\\"}), (r"a\b%", {r"a\b", r"a\bc"}), (r"a\%", {r"a\b", r"a\bc", "a\\"})],
+)
+def test_filter_schema_columns_backslash_is_literal(include_mask, expected):
+    table_group = TableGroup(table_group_schema="default", profiling_table_set="", profiling_include_mask=include_mask)
+    sql_generator = RefreshDataCharsSQL(Connection(sql_flavor="salesforce_data360"), table_group)
+    columns = _make_columns("tmp\\", "tmp", r"a\b", r"a\bc", "ab", "a\\")
+
+    assert {c.table_name for c in sql_generator.filter_schema_columns(columns)} == expected
+
+
+@pytest.mark.parametrize(
     "flavor,expected_name,expected_mask",
     [
         ("postgresql", "'o''brien'", "'o''brien%'"),
@@ -469,7 +538,7 @@ def test_single_quote_in_table_criteria_is_escaped(flavor, expected_name, expect
 
 @pytest.mark.parametrize(
     "flavor,expected_mask",
-    [("snowflake", r"LIKE 'x\\'' OR 1=1) --'"), ("bigquery", r"LIKE 'x\\\' OR 1=1) --'")],
+    [("snowflake", r"LIKE 'x\\\\'' OR 1=1) --'"), ("bigquery", r"LIKE 'x\\\\\' OR 1=1) --'")],
 )
 def test_trailing_backslash_cannot_end_the_literal(flavor, expected_mask):
     table_group = TableGroup(

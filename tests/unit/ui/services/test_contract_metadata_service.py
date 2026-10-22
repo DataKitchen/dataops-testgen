@@ -341,7 +341,7 @@ def _generation(term_count: int, tables: list[str], not_profiled: list[str] | No
     )
 
 
-def _save_tables(selected, declared, generations=(), removed_terms=0, side_effect=None):
+def _save_tables(selected, declared, generations=(), removed_terms=0, side_effect=None, with_session=False):
     suite = _suite()
     draft, active = _versions(_document(*declared))
     with (
@@ -352,8 +352,11 @@ def _save_tables(selected, declared, generations=(), removed_terms=0, side_effec
             side_effect=side_effect,
         ) as remove,
         patch.object(service.contract_service, "add_table", side_effect=list(generations)) as add,
+        patch.object(service, "get_current_session") as session,
     ):
         result = service.save_tables(suite, selected)
+    if with_session:
+        return result, remove, add, session.return_value
     return result, remove, add, suite
 
 
@@ -421,3 +424,29 @@ def test_a_refused_table_change_is_its_message():
     result, _, _, _ = _save_tables(["orders"], ["orders", "a"], side_effect=ValueError("Not a contract."))
 
     assert result == {"success": False, "message": "Not a contract."}
+
+
+def test_a_failed_table_keeps_the_tables_before_it_and_says_what_was_applied():
+    result, _, add, session = _save_tables(
+        ["orders", "a", "b"], ["orders", "gone"], [_generation(2, ["a"]), RuntimeError("connection lost")],
+        removed_terms=3, with_session=True,
+    )
+
+    assert add.call_count == 2
+    assert session.commit.call_count == 2
+    session.rollback.assert_called_once()
+    assert result == {
+        "success": False,
+        "message": "Removed gone and its 3 terms. a now holds 2 quality tests. Something went wrong while adding b.",
+    }
+
+
+def test_a_failed_removal_rolls_back_and_names_the_removal():
+    result, _, add, session = _save_tables(
+        ["orders"], ["orders", "a", "b"], side_effect=RuntimeError("connection lost"), with_session=True,
+    )
+
+    add.assert_not_called()
+    session.commit.assert_not_called()
+    session.rollback.assert_called_once()
+    assert result == {"success": False, "message": "Something went wrong while removing a and b."}

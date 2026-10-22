@@ -71,6 +71,16 @@ def retarget_match_schema(test_defs: list[TestExecutionDef], match_schema_name: 
             test_def.match_schema_name = match_schema_name
 
 
+def _a_later_contract_run_is_latest(test_suite: TestSuite, test_run: TestRun) -> bool:
+    """Whether the latest run of a contract started after ``test_run``."""
+    if test_suite.suite_type != SuiteType.CONTRACT or not test_suite.last_complete_test_run_id:
+        return False
+    latest_start = get_current_session().scalar(
+        select(TestRun.test_starttime).where(TestRun.id == test_suite.last_complete_test_run_id)
+    )
+    return latest_start is not None and latest_start > test_run.test_starttime
+
+
 @with_database_session
 def run_test_execution(
     test_suite_id: str | UUID,
@@ -199,7 +209,7 @@ def run_test_execution(
         raise
     else:
         end_time = datetime.now(UTC) + time_delta
-        if SuiteVersion.is_active(test_run.version_id, test_suite.id):
+        if test_run.checked_version_in_force() and not _a_later_contract_run_is_latest(test_suite, test_run):
             LOG.info("Updating latest run for test suite")
             test_suite.last_complete_test_run_id = test_run.id
             test_suite.save()

@@ -6,8 +6,8 @@ profiling results or the table group.
 Each generation declares the catalog's columns and refreshes their physical and logical types.
 The other fields the catalog or profiling supplies fall in two groups, each refreshed only when a
 generation asks for it: profiling (functional types, keys, granularity, formats and profiled
-values) and governance (descriptions, tags, classification and the critical, PII and excluded
-flags). A refreshed field takes the source's value, and is removed when the source has none. What
+values) and catalog metadata (descriptions, tags, classification and the critical, PII and
+excluded flags). A refreshed field takes the source's value, and is removed when the source has none. What
 profiling observed goes in a column's ``profiledValues`` custom property, never in
 ``logicalTypeOptions``: a bound there is a constraint every reader enforces, so it holds only what
 was agreed. Fields no source supplies are left as they are. A table or column the catalog no
@@ -37,7 +37,8 @@ _NATIVE_CONTRACT_TAGS = {"business_domain": "domain", "data_product": "dataProdu
 _FUNCTIONAL_TYPE_FORMATS = {"Email": "email", "Zip": "us-zip", "Zip3": "us-zip3", "State": "us-state", "Phone": "phone"}
 # Profiled functional data types that identify each row, in order of preference.
 _PRIMARY_KEY_TYPES = ("ID-Unique-SK", "ID-Unique")
-# The two halves of a profiled functional table type, such as ``cumulative-transaction``.
+# The two halves of a profiled functional table type, such as ``cumulative-transaction``. A table
+# profiling has seen only once has the grain alone, such as ``transaction``.
 _TABLE_GRAINS = {
     "transaction": "One row per transaction",
     "entity": "One row per entity, such as a customer or an organization",
@@ -49,6 +50,7 @@ _TABLE_PERIODS = {
     "window": "older rows roll off as new rows arrive",
 }
 EXCLUDED_MARKER = "excludedDataElement"
+PII_MARKER = "pii"
 PROFILED_VALUES = "profiledValues"
 # Column logicalType -> each profiled value it records, and the profiling result field it comes from.
 _PROFILED_VALUE_SOURCES: dict[str, tuple[tuple[str, str], ...]] = {
@@ -160,7 +162,7 @@ def _merge_properties(existing_properties: list[dict], columns: list[DataColumnC
     ]
 
 
-def _refresh_governance(
+def _refresh_catalog_metadata(
     node: dict,
     description: str | None,
     critical_data_element: bool,
@@ -185,17 +187,21 @@ def _refresh_governance(
         _set_custom_property(node, "criticalDataElement", _flag(critical_data_element))
 
 
-def _refresh_column_governance(prop: dict, column: DataColumnChars, table: DataTable | None) -> None:
-    """Refresh a column descriptor's governance from its catalog column: description, tags,
+def _refresh_column_catalog_metadata(prop: dict, column: DataColumnChars, table: DataTable | None) -> None:
+    """Refresh a column descriptor's catalog metadata from its catalog column: description, tags,
     classification and the critical, PII and excluded flags."""
-    _refresh_governance(
+    _refresh_catalog_metadata(
         prop,
         column.description,
-        bool(column.critical_data_element or (table and table.critical_data_element)),
+        bool(
+            column.critical_data_element
+            if column.critical_data_element is not None
+            else table and table.critical_data_element
+        ),
         {tag: getattr(column, tag, None) for tag in TAG_FIELDS},
         is_property=True,
     )
-    _set_custom_property(prop, "pii", _flag(column.pii_flag))
+    _set_custom_property(prop, PII_MARKER, _flag(column.pii_flag))
     _set_custom_property(prop, EXCLUDED_MARKER, _flag(column.excluded_data_element))
 
 
@@ -229,12 +235,27 @@ def _refresh_column_profiling(prop: dict, column: DataColumnChars) -> None:
         _set_custom_property(prop, PROFILED_VALUES, None)
 
 
-def is_excluded(prop: dict) -> bool:
-    """Whether a column descriptor carries the excluded-data-element marker."""
+def _has_marker(prop: dict, marker: str) -> bool:
     return any(
-        entry.get("property") == EXCLUDED_MARKER and entry.get("value") is True
+        entry.get("property") == marker and entry.get("value") is True
         for entry in prop.get("customProperties") or []
     )
+
+
+def is_excluded(prop: dict) -> bool:
+    """Whether a column descriptor carries the excluded-data-element marker."""
+    return _has_marker(prop, EXCLUDED_MARKER)
+
+
+def is_pii(prop: dict) -> bool:
+    """Whether a column descriptor carries the PII marker."""
+    return _has_marker(prop, PII_MARKER)
+
+
+def _withholds_profiled_values(column: DataColumnChars) -> bool:
+    """Whether a catalog column's profiled values stay out of the document: it is excluded from
+    testing or flagged PII."""
+    return bool(column.excluded_data_element) or column.pii_flag is not None
 
 
 def refresh_identity(document: dict, table_group: TableGroup) -> None:
@@ -260,7 +281,7 @@ def refresh_identity(document: dict, table_group: TableGroup) -> None:
 
 
 def _granularity(functional_table_type: str) -> str | None:
-    period, _, grain = functional_table_type.partition("-")
+    period, _, grain = functional_table_type.rpartition("-")
     parts = [part for part in (_TABLE_GRAINS.get(grain), _TABLE_PERIODS.get(period)) if part]
     if not parts:
         return None
@@ -301,7 +322,7 @@ def refresh_tables(
     table_names: list[str],
     *,
     profiling: bool = True,
-    governance: bool = True,
+    catalog_metadata: bool = True,
 ) -> dict[str, int]:
     """Declare each table on ``document`` and refresh the tables and their columns from the data
     catalog.
@@ -310,14 +331,15 @@ def refresh_tables(
     column's physical and logical types are refreshed. With ``profiling``, the functional types,
     granularity, primary key and string formats are refreshed: profiling's table type becomes the
     table's granularity, its identifying column the primary key, and its recognized formats string
-    formats. With ``governance``, each table's and column's description, tags, classification and
+    formats. With ``catalog_metadata``, each table's and column's description, tags, classification and
     flags are refreshed; each carries only the tags set at its own level, and a column is a
-    critical data element when it or its table is one.
+    critical data element by its own flag, or by its table's when it has none.
 
     A column the catalog excludes from testing stays declared, since the live table holds it. With
     ``profiling``, it gets no primary key, format or profiled values, whatever its own excluded
-    marker says; the marker itself is governance. A table the catalog does not hold is left as it
-    is, and so is a column, apart from its primary key when ``profiling`` is set.
+    marker says; the marker itself is catalog metadata. A column the catalog flags PII loses its profiled
+    values whichever groups are refreshed. A table the catalog does not hold is left as it is, and
+    so is a column, apart from its primary key when ``profiling`` is set.
 
     Updates ``document`` in place. Returns the number of catalog columns found for each table.
     """
@@ -338,8 +360,8 @@ def refresh_tables(
 
         table = _catalog_table(table_group.id, table_name)
         if table is not None:
-            if governance:
-                _refresh_governance(
+            if catalog_metadata:
+                _refresh_catalog_metadata(
                     descriptor,
                     table.description,
                     bool(table.critical_data_element),
@@ -353,10 +375,12 @@ def refresh_tables(
         for prop in properties:
             if (column := by_name.get(prop.get("name"))) is not None:
                 _refresh_column_types(prop, column)
+                if column.pii_flag is not None:
+                    _set_custom_property(prop, PROFILED_VALUES, None)
                 if profiling:
                     _refresh_column_profiling(prop, column)
-                if governance:
-                    _refresh_column_governance(prop, column, table)
+                if catalog_metadata:
+                    _refresh_column_catalog_metadata(prop, column, table)
 
         if profiling:
             _refresh_primary_key(properties, columns)
@@ -386,15 +410,21 @@ def fill_profiled_values(
 
     The values follow the column's ``logicalType``: the observed minimum and maximum for a number,
     integer, date or timestamp, and the observed shortest and longest length for a string. A column
-    the data catalog excludes gets none, whatever its excluded marker says; the marker decides only
-    for a column the catalog no longer holds. Values the run no longer supplies are removed; a column
-    the run has no results for is left as it is. The entry's description dates the run.
+    the data catalog excludes or flags PII gets none and loses any it holds, whatever its markers
+    say; the excluded and PII markers decide only for a column the catalog no longer holds. Values
+    the run no longer supplies are removed; a column the run has no results for is left as it is.
+    The entry's description dates the run.
     """
     session = get_current_session()
-    catalog_excluded = {
-        (row.table_name, row.column_name): bool(row.excluded_data_element)
+    catalog_withheld = {
+        (row.table_name, row.column_name): _withholds_profiled_values(row)
         for row in session.execute(
-            select(DataColumnChars.table_name, DataColumnChars.column_name, DataColumnChars.excluded_data_element)
+            select(
+                DataColumnChars.table_name,
+                DataColumnChars.column_name,
+                DataColumnChars.excluded_data_element,
+                DataColumnChars.pii_flag,
+            )
             .where(
                 DataColumnChars.table_groups_id == table_groups_id,
                 DataColumnChars.table_name.in_(table_names),
@@ -421,13 +451,16 @@ def fill_profiled_values(
             continue
         for prop in table.get("properties") or []:
             column_key = (table["name"], prop.get("name"))
+            withheld = catalog_withheld.get(column_key, is_excluded(prop) or is_pii(prop))
+            if withheld:
+                _set_custom_property(prop, PROFILED_VALUES, None)
+                continue
             profile = profiles.get(column_key)
             if profile is None:
                 continue
             logical_type = prop.get("logicalType")
             values = {}
-            if not catalog_excluded.get(column_key, is_excluded(prop)):
-                for key, field in _PROFILED_VALUE_SOURCES.get(logical_type, ()):
-                    if (value := _profiled_value(logical_type, getattr(profile, field, None))) is not None:
-                        values[key] = value
+            for key, field in _PROFILED_VALUE_SOURCES.get(logical_type, ()):
+                if (value := _profiled_value(logical_type, getattr(profile, field, None))) is not None:
+                    values[key] = value
             _set_custom_property(prop, PROFILED_VALUES, values or None, description)

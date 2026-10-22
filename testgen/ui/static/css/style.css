@@ -70,7 +70,7 @@ img.dk-logo-img {
 }
 
 /* hide while sidebar expanded */
-.stApp:has(.stSidebar[aria-expanded="true"]) .stAppHeader {
+.stApp:has(.stSidebar[data-collapsed="false"]) .stAppHeader {
     display: none;
 }
 
@@ -357,8 +357,8 @@ Use as testgen.text("text", "extra_styles") */
     transition: padding 0.3s;
 }
 
-[data-testid="stSidebar"][aria-expanded="false"] ~ div > [data-testid="stMain"] .tg-header,
-[data-testid="stSidebar"][aria-expanded="false"] ~ div > [data-testid="stMain"] .st-key-testgen-breadcrumbs {
+[data-testid="stSidebar"][data-collapsed="true"] ~ div > [data-testid="stMain"] .tg-header,
+[data-testid="stSidebar"][data-collapsed="true"] ~ div > [data-testid="stMain"] .st-key-testgen-breadcrumbs {
     padding-left: 85px;
 }
 

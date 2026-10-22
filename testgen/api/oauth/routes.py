@@ -273,10 +273,10 @@ def revoke(request: Request, body: dict = Depends(_form_body)):  # noqa: B008
 def register_client(body: dict = Depends(_json_body)):  # noqa: B008
     """Dynamic client registration, as defined by RFC 7591.
 
-    The JSON body takes `client_name`, `redirect_uris`, `grant_types`, `scope` and `token_endpoint_auth_method`,
-    all optional. `token_endpoint_auth_method` is `client_secret_basic` (the default), `client_secret_post`, or
-    `none` for a public client. The response carries the `client_id`, and a `client_secret` unless the method is
-    `none`.
+    The JSON body takes `client_name`, `redirect_uris`, `grant_types`, `scope`, and
+    `token_endpoint_auth_method`, all optional. `token_endpoint_auth_method` is `client_secret_basic` (the
+    default), `client_secret_post`, or `none` for a public client. The response carries the `client_id`, and a
+    `client_secret` unless the method is `none`.
     """
     requested_method = body.get("token_endpoint_auth_method", OAuth2ClientAuthMethod.CLIENT_SECRET_BASIC)
     try:

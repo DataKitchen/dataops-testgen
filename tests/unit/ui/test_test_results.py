@@ -4,12 +4,16 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
+from testgen.common.enums import SuiteType
 from testgen.common.models.test_definition import MISSING_TEST_DEFINITION_MESSAGE
+from testgen.ui.queries import test_result_queries
+from testgen.ui.services.test_definition_service import MANAGED_EDIT_MESSAGE
 from testgen.ui.views.test_results import (
     _build_edit_test_dialog_data,
     _build_test_definition_data,
     _load_notes_dialog_data,
 )
+from tests.unit.ui.test_test_results_contracts import _render
 
 pytestmark = pytest.mark.unit
 
@@ -25,6 +29,13 @@ def test_build_edit_test_dialog_data_reports_a_deleted_definition():
         data = _build_edit_test_dialog_data("cfa5ef26-0000-0000-0000-000000000000", MagicMock())
 
     assert data == {"open": True, "error": MISSING_TEST_DEFINITION_MESSAGE}
+
+
+def test_build_edit_test_dialog_data_refuses_a_managed_definition():
+    with patch(f"{MODULE}.select_test_definitions_where", return_value=[MagicMock(test_type="Schema_Conformance")]):
+        data = _build_edit_test_dialog_data("cfa5ef26-0000-0000-0000-000000000000", MagicMock())
+
+    assert data == {"open": True, "error": MANAGED_EDIT_MESSAGE}
 
 
 def test_load_notes_dialog_data_carries_the_error_and_draft():
@@ -94,3 +105,19 @@ def test_build_test_definition_data_shows_reference_schema_only_where_refs_quali
 
 def test_build_test_definition_data_sends_last_manual_update_as_utc_epoch():
     assert _definition_data(True)["last_manual_update"] == 1790185638
+
+
+@pytest.mark.parametrize("managed_only", [False, True])
+def test_results_count_narrows_to_managed_test_types_on_request(managed_only):
+    with patch.object(test_result_queries, "fetch_one_from_db", return_value={"cnt": 2}) as fetch:
+        count = test_result_queries.get_test_results_count.__wrapped__("run-1", managed_only=managed_only)
+
+    query, params = fetch.call_args.args
+    assert count == 2
+    assert ("AND r.test_type IN :managed_test_types" in query) is managed_only
+    assert params.get("managed_test_types") == (("Schema_Conformance",) if managed_only else None)
+
+
+def test_the_results_page_sends_the_managed_count_for_the_filter():
+    data = _render(SuiteType.REGULAR)["data"]
+    assert data["managed_count"] == 0

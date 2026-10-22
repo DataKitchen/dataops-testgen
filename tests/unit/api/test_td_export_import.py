@@ -785,6 +785,35 @@ class Test_import_validation:
         assert result.summary.skipped == 0
         assert result.items[0].tds[0].target_id == target_id
 
+    @pytest.mark.parametrize("on_match", [OnMatch.overwrite_unlocked, OnMatch.overwrite_all])
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_a_matched_managed_test_is_skipped_not_updated(self, mock_session_fn, mock_tg_cls, mock_dt_cls, on_match):
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+
+        target_id = uuid4()
+        existing = _make_existing_row(test_type="Schema_Conformance", table_name="t1", column_name=None, id_=target_id)
+        session.execute.return_value.all.return_value = [existing]
+
+        ts = _make_test_suite()
+        td = _make_import_td(test_type="Schema_Conformance", table_name="t1", column_name=None, severity="Fail")
+        config = _make_config(on_match=on_match)
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        test_types = {"Schema_Conformance": TestType(test_type="Schema_Conformance", test_scope="table")}
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=test_types):
+            result = import_definitions(ts, config, _make_payload(td))
+
+        assert result.summary.updated == 0
+        assert result.summary.skipped == 1
+        assert ImportReason.managed_test in _reasons(result, ImportAction.skip)
+        assert result.items[0].tds[0].target_id == target_id
+
     @patch(f"{SERVICE_MODULE}.DataTable")
     @patch(f"{SERVICE_MODULE}.TableGroup")
     @patch(f"{SERVICE_MODULE}.get_current_session")
@@ -1895,6 +1924,25 @@ class Test_version_scoping:
     @patch(f"{SERVICE_MODULE}.settings")
     @patch(f"{SERVICE_MODULE}.TableGroup")
     @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_export_leaves_out_tests_testgen_manages(self, mock_session_fn, mock_tg_cls, mock_settings):
+        # An import skips every managed test, so exporting one makes a strict re-import of the same file fail
+        mock_settings.VERSION = "5.12.0"
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        session.scalars.return_value.all.return_value = []
+
+        from testgen.common.test_definition_export_import_service import export_definitions
+
+        export_definitions(_make_test_suite(), Origin.both, None, None)
+
+        query = session.scalars.call_args[0][0]
+        assert "test_definitions.test_type NOT IN" in str(query)
+        assert "Schema_Conformance" in str(query.compile(compile_kwargs={"literal_binds": True}))
+
+    @patch(f"{SERVICE_MODULE}.settings")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
     def test_external_id_assignment_stamps_one_version(self, mock_session_fn, mock_tg_cls, mock_settings):
         mock_settings.VERSION = "5.12.0"
         session = MagicMock()
@@ -2226,6 +2274,7 @@ def test_a_contract_import_names_a_version_only_when_it_writes(
     with (
         patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")),
         patch(f"{SERVICE_MODULE}.contract_service.import_destination", return_value=(3, VersionState.DRAFT)),
+        patch(f"{SERVICE_MODULE}.writable_tables", return_value=["t1", "t9"]),
     ):
         result = import_definitions(suite, _make_config(mode=mode, on_new=on_new), _make_payload(td))
 
@@ -2255,11 +2304,38 @@ def test_a_refused_strict_contract_import_names_a_version_only_when_it_would_wri
     with (
         patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")),
         patch(f"{SERVICE_MODULE}.contract_service.import_destination", return_value=(3, VersionState.DRAFT)),
+        patch(f"{SERVICE_MODULE}.writable_tables", return_value=["t1", "t9"]),
         pytest.raises(ImportStrictViolation) as refused,
     ):
         import_definitions(suite, _make_config(mode=ImportMode.apply_strict), _make_payload(*tds))
 
     assert refused.value.result.version == expected
+
+
+@pytest.mark.parametrize(
+    ("table_name", "existing", "skipped"),
+    [("t1", [], True), (None, [], True), ("t1", [_make_existing_row(table_name="t1")], False)],
+    ids=["new-test", "new-test-naming-no-table", "matched-test-keeping-its-table"],
+)
+@patch(f"{SERVICE_MODULE}.DataTable")
+@patch(f"{SERVICE_MODULE}.TableGroup")
+@patch(f"{SERVICE_MODULE}.get_current_session")
+def test_a_contract_import_skips_a_new_test_on_a_table_the_contract_does_not_declare(
+    mock_session_fn, mock_tg_cls, mock_dt_cls, table_name, existing, skipped
+):
+    mock_session_fn.return_value.execute.return_value.all.return_value = existing
+    mock_tg_cls.get.return_value = _make_table_group()
+    mock_dt_cls.select_table_names.return_value = ["t1", "t2"]
+    td = _make_import_td(test_type="Alpha", table_name=table_name)
+
+    with (
+        patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")),
+        patch(f"{SERVICE_MODULE}.contract_service.import_destination", return_value=(3, VersionState.DRAFT)),
+        patch(f"{SERVICE_MODULE}.writable_tables", return_value=["t2"]),
+    ):
+        result = import_definitions(_contract_suite(), _make_config(mode=ImportMode.preview), _make_payload(td))
+
+    assert (ImportReason.undeclared_table in _reasons(result, ImportAction.skip)) is skipped
 
 
 def test_export_of_a_contract_version_reads_that_version():

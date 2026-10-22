@@ -35,7 +35,7 @@ SET functional_data_type =
 WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL;
 
--- 1A.  Assign ID's based on masks, plus columns named "id" in any case
+-- 1A.  Assign ID's based on masks, plus columns named "id" in any case while the ID mask is set
 UPDATE profile_results
 SET functional_data_type = 'ID-SK'
 WHERE profile_run_id = :PROFILE_RUN_ID
@@ -46,7 +46,8 @@ UPDATE profile_results
 SET functional_data_type = 'ID'
 WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
-  AND (column_name ILIKE :PROFILE_ID_COLUMN_MASK OR LOWER(column_name) = 'id');
+  AND (column_name ILIKE :PROFILE_ID_COLUMN_MASK
+       OR (LOWER(column_name) = 'id' AND COALESCE(:PROFILE_ID_COLUMN_MASK, '') <> ''));
 
 -- 2. Assign DATE
 /*
@@ -585,7 +586,9 @@ WHERE profile_results.profile_run_id = :PROFILE_RUN_ID
   and profile_results.column_name = ui.column_name
   and profile_results.table_groups_id = ui.table_groups_id
   and profile_results.table_name <> ui.table_name
-  and profile_results.functional_data_type NOT IN ('ID-Unique', 'ID-Unique-SK');
+  and profile_results.functional_data_type NOT IN ('ID-Unique', 'ID-Unique-SK')
+  -- A column named "id" is its own table's key, not a reference to another table's "id"
+  and LOWER(profile_results.column_name) <> 'id';
 
 -- Functional Data Type: 'Measurement Pct'
 

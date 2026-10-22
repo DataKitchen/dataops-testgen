@@ -1639,6 +1639,34 @@ def test_update_test_result_passed_row_is_noop(mock_resolve, mock_set, db_sessio
     assert "passed" in out and "No change" in out
 
 
+@patch("testgen.mcp.tools.test_results.set_test_results_disposition")
+@patch("testgen.mcp.tools.test_results.resolve_test_result")
+def test_update_test_result_refuses_to_mute_a_managed_result(mock_resolve, mock_set, db_session_mock, disposition_perms):
+    from testgen.mcp.tools.test_results import update_test_result
+
+    mock_resolve.return_value = MagicMock(id=uuid4(), test_type="Schema_Conformance")
+    with pytest.raises(MCPUserError, match="TestGen manages its test, so the test cannot be muted"):
+        update_test_result(test_result_id=str(uuid4()), disposition="Muted")
+
+    mock_set.assert_not_called()
+
+
+@pytest.mark.parametrize("disposition", ["Confirmed", "Dismissed", "No Decision"])
+@patch("testgen.mcp.tools.test_results.set_test_results_disposition")
+@patch("testgen.mcp.tools.test_results.resolve_test_result")
+def test_update_test_result_dispositions_a_managed_result_other_than_muting(
+    mock_resolve, mock_set, disposition, db_session_mock, disposition_perms
+):
+    from testgen.mcp.tools.test_results import update_test_result
+
+    mock_resolve.return_value = MagicMock(id=uuid4(), test_type="Schema_Conformance")
+    mock_set.return_value = DispositionUpdate(matched=1, passed_skipped=0)
+    out = update_test_result(test_result_id=str(uuid4()), disposition=disposition)
+
+    mock_set.assert_called_once()
+    assert disposition in out
+
+
 def test_update_test_result_uses_disposition_permission():
     import testgen.mcp.tools.test_results as mod
 
@@ -1704,6 +1732,28 @@ def test_bulk_update_reports_passed_exclusions(
 
     assert "2" in out  # matched
     assert "1" in out and "passed" in out  # exclusions surfaced
+
+
+@patch("testgen.mcp.tools.test_results.set_test_results_disposition")
+@patch("testgen.mcp.tools.test_results.get_current_session")
+@patch("testgen.mcp.tools.test_results.resolve_test_suite")
+def test_bulk_update_reports_managed_results_left_unmuted(
+    mock_resolve_suite, mock_session, mock_set, db_session_mock, disposition_perms
+):
+    from testgen.mcp.tools.test_results import bulk_update_test_results
+
+    run_id = uuid4()
+    suite = MagicMock(id=uuid4(), test_suite="suite_a", last_complete_test_run_id=run_id)
+    mock_resolve_suite.return_value = suite
+    mock_session.return_value.scalars.return_value.all.return_value = [uuid4(), uuid4()]
+    mock_set.return_value = DispositionUpdate(matched=0, passed_skipped=0, managed_skipped=2)
+
+    with patch("testgen.mcp.tools.test_results.TestRun.get",
+               return_value=MagicMock(id=run_id, job_execution_id=run_id, test_suite_id=suite.id)):
+        out = bulk_update_test_results(test_suite_id=str(uuid4()), disposition="Muted")
+
+    assert "Updated 0 test results" in out
+    assert "Left 2 results unmuted — TestGen manages their tests, so the tests cannot be muted." in out
 
 
 @patch("testgen.mcp.tools.test_results.set_test_results_disposition")

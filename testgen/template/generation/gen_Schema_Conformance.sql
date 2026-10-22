@@ -32,5 +32,5 @@ WHERE last_auto_gen_date IS NOT NULL
   AND table_name IS NOT NULL
   AND column_name IS NULL
 
--- The test takes no parameters, so an existing one has nothing to update
-DO NOTHING;
+-- The test takes no parameters; TestGen manages it, so an existing one is kept active and unlocked
+DO UPDATE SET test_active = 'Y', lock_refresh = 'N';

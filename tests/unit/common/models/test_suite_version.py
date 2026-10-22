@@ -14,7 +14,6 @@ from tests.unit.sql_assertions import (
     conjuncts,
     emitted_statements,
     equality_conjunct,
-    is_not_null_conjunct,
     is_null_conjunct,
 )
 
@@ -181,20 +180,6 @@ def test_the_published_sql_form_reads_the_outer_row():
     assert "run.test_suite_id" in sql
 
 
-def test_only_a_suite_owned_unfrozen_version_reads_as_a_draft():
-    session = MagicMock()
-    with patch("testgen.common.models.suite_version.get_current_session", return_value=session):
-        session.scalar.return_value = uuid4()
-        assert SuiteVersion.is_draft(uuid4()) is True
-
-        session.scalar.return_value = None
-        assert SuiteVersion.is_draft(uuid4()) is False
-
-
-def test_a_run_with_no_version_does_not_read_as_a_draft():
-    assert SuiteVersion.is_draft(None) is False
-
-
 def test_only_a_suite_owned_version_reads_as_suite_owned():
     session = MagicMock()
     with patch("testgen.common.models.suite_version.get_current_session", return_value=session):
@@ -207,28 +192,6 @@ def test_only_a_suite_owned_version_reads_as_suite_owned():
 
 def test_a_version_with_no_id_does_not_read_as_suite_owned():
     assert SuiteVersion.is_suite_owned(None) is False
-
-
-def _checks_suite_owned_and_unfrozen(statement) -> bool:
-    """Whether the statement ANDs a suite-owned check with an unfrozen check, as separate terms.
-
-    An OR-ed predicate, or one missing either half, does not qualify — each half must appear as
-    its own conjunct so neither can be satisfied by the other.
-    """
-    terms = conjuncts(statement.whereclause)
-    return any(is_not_null_conjunct(term, "test_suite_id", "suite_versions") for term in terms) and any(
-        is_null_conjunct(term, "frozen_at", "suite_versions") for term in terms
-    )
-
-
-def test_the_draft_check_requires_both_halves_of_the_predicate():
-    session = MagicMock()
-    session.scalar.return_value = None
-    with patch("testgen.common.models.suite_version.get_current_session", return_value=session):
-        SuiteVersion.is_draft(uuid4())
-
-    statement = session.scalar.call_args.args[0]
-    assert _checks_suite_owned_and_unfrozen(statement)
 
 
 def _lacks_draft_branch(statement) -> bool:

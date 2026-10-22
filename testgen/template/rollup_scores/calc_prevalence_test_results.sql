@@ -6,10 +6,11 @@
 -- |                                / SUM(record count)
 -- ==============================================================================
 
--- Initialize prevalence to zero for all tests
+-- Initialize prevalence to zero for all tests. A Log result, recorded without passing or failing,
+-- is left unscored (NULL), which keeps it out of the scoring views.
 UPDATE test_results
-   SET dq_record_ct = tc.record_ct,
-       dq_prevalence = 0
+   SET dq_record_ct = CASE WHEN r.result_status = 'Log' THEN NULL ELSE tc.record_ct END,
+       dq_prevalence = CASE WHEN r.result_status = 'Log' THEN NULL ELSE 0 END
   FROM test_results r
 -- The catalog is joined without schema_name: the catalog row's schema follows whichever
 -- schema was last refreshed, while these rows keep the one they were written against.
@@ -55,6 +56,7 @@ WITH result_calc
              AND r.table_name ILIKE tc.table_name)
          WHERE r.test_run_id = '{RUN_ID}'::UUID
            AND result_code = 0
+           AND r.result_status <> 'Log'
            AND (r.result_measure IS NOT NULL OR tt.dq_score_prevalence_formula NOT LIKE '%{RESULT_MEASURE}%')
            AND tt.test_scope = 'column'
            AND tt.dq_score_prevalence_formula IS NOT NULL
@@ -84,6 +86,7 @@ WITH result_calc
              AND r.table_name ILIKE tc.table_name)
          WHERE r.test_run_id = '{RUN_ID}'::UUID
            AND result_code = 0
+           AND r.result_status <> 'Log'
            AND (r.result_measure IS NOT NULL OR tt.dq_score_prevalence_formula NOT LIKE '%{RESULT_MEASURE}%')
            AND tt.test_scope <> 'column'
            AND tt.dq_score_prevalence_formula IS NOT NULL
