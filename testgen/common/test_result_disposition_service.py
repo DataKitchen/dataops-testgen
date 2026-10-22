@@ -4,7 +4,8 @@ Sets the disposition on test results and keeps the parent test definition's
 active/lock state coupled: a "Muted" (``Disposition.INACTIVE``) disposition
 deactivates the test definition and locks it against auto-regeneration; any
 other value — or clearing the disposition — reactivates and unlocks it. Passed
-test results are never dispositioned. Used by both the Streamlit UI
+test results are never dispositioned. A result of a managed test type is never
+muted, and its test definition is never written. Used by both the Streamlit UI
 (test_results page) and the MCP tools. Must not import Streamlit.
 """
 from collections import defaultdict
@@ -15,7 +16,7 @@ from uuid import UUID
 
 from sqlalchemy import func, select, update
 
-from testgen.common.enums import Disposition
+from testgen.common.enums import MANAGED_TEST_TYPES, Disposition
 from testgen.common.models import get_current_session
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_definition import TestDefinition
@@ -27,11 +28,13 @@ class DispositionUpdate:
     """Outcome of a disposition write.
 
     ``matched`` is the number of non-Passed results updated; ``passed_skipped`` is
-    the number of Passed results that matched but were left unchanged.
+    the number of Passed results that matched but were left unchanged; ``managed_skipped``
+    is the number of non-Passed results of a managed test type left unmuted.
     """
 
     matched: int
     passed_skipped: int
+    managed_skipped: int = 0
 
 
 def coupled_test_definition_state(disposition: Disposition | None) -> tuple[bool, bool]:
@@ -61,8 +64,10 @@ def set_test_results_disposition(
 ) -> DispositionUpdate:
     """Set ``disposition`` on the given results and couple their parent test definitions.
 
-    Passed results are excluded from the write. ``disposition=None`` clears it (NULL).
-    Returns the matched (non-Passed, updated) and passed-skipped counts.
+    Passed results are excluded from the write, and so are results of a managed test type when
+    ``disposition`` mutes. The definitions of managed test types are never coupled.
+    ``disposition=None`` clears it (NULL). Returns the matched (non-Passed, updated),
+    passed-skipped, and managed-skipped counts.
     """
     ids = [UUID(str(rid)) for rid in test_result_ids]
     if not ids:
@@ -79,10 +84,21 @@ def set_test_results_disposition(
     # NULL result_status rows (e.g. training-mode results) are excluded by `!= Passed`,
     # matching the prior UI behavior — disposition only applies to evaluated results.
     non_passed = (TestResult.id.in_(ids), TestResult.status != TestResultStatus.Passed)
+    unmanaged = TestResult.test_type.not_in(MANAGED_TEST_TYPES)
+
+    managed_skipped = 0
+    writable = non_passed
+    if disposition == Disposition.INACTIVE:
+        managed_skipped = session.scalar(
+            select(func.count())
+            .select_from(TestResult)
+            .where(*non_passed, TestResult.test_type.in_(MANAGED_TEST_TYPES))
+        ) or 0
+        writable = (*non_passed, unmanaged)
 
     tr_stmt = (
         update(TestResult)
-        .where(*non_passed)
+        .where(*writable)
         .values(disposition=disposition.value if disposition is not None else None)
     )
     matched = session.execute(tr_stmt).rowcount
@@ -98,7 +114,7 @@ def set_test_results_disposition(
             TestDefinition.lock_refresh,
         )
         .outerjoin(TestDefinition, TestDefinition.id == TestResult.test_definition_id)
-        .where(*non_passed)
+        .where(*non_passed, unmanaged)
         .distinct()
     ).all():
         if row.test_definition_id is not None:
@@ -128,4 +144,4 @@ def set_test_results_disposition(
             )
         )
 
-    return DispositionUpdate(matched=matched, passed_skipped=passed_skipped)
+    return DispositionUpdate(matched=matched, passed_skipped=passed_skipped, managed_skipped=managed_skipped)

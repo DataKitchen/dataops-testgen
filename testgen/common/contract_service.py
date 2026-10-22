@@ -81,15 +81,17 @@ class InvalidContractDocumentError(ValueError):
 def freeze_version(suite: TestSuite, *, label: str | None = None, username: str | None = None) -> SuiteVersion:
     """Freeze the suite's draft, making it the agreement in force, recorded as frozen by ``username``.
 
-    Renders the draft's terms into its stored document and validates the merge before
-    anything is written. Raises ``InvalidContractDocumentError``, leaving the draft a draft,
-    when the merged document does not validate; terms are not regenerated here, only what
-    the draft already holds is rendered.
+    Mints a contract identity for each of the draft's terms that has none, then renders the
+    draft's terms into its stored document and validates the merge before the freeze is
+    written. Raises ``InvalidContractDocumentError``, leaving the draft a draft, when the
+    merged document does not validate; terms are not regenerated here, only what the draft
+    already holds is rendered.
     """
     draft = SuiteVersion.draft_for(suite.id)
     if draft is None:
         raise ValueError("This contract has no draft to freeze.")
 
+    TestDefinition.assign_missing_term_ids(draft.id)
     document = render.render_document(draft, contract_name=suite.test_suite)
     problems = validate_document(document)
     if problems:
@@ -229,6 +231,13 @@ def run_target(suite: TestSuite, version: int | None = None) -> RunTarget | None
     if not active_tests:
         raise NoActiveTestsError(suite, target, state)
     return RunTarget(target, state)
+
+
+def generation_destination(suite: TestSuite) -> int:
+    """The number of the draft a test generation job on ``suite`` lands in: its draft, or the one the
+    job opens when there is none. Opens nothing, so a job that fails leaves no draft behind."""
+    draft = SuiteVersion.draft_for(suite.id)
+    return draft.version if draft else SuiteVersion.next_version_for(suite.id)
 
 
 def import_destination(suite: TestSuite, *, preview: bool) -> tuple[int, VersionState]:

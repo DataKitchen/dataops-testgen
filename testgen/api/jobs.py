@@ -43,9 +43,8 @@ from testgen.common.enums import (
 )
 from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models.job_execution import JobExecution
-from testgen.common.models.suite_version import SuiteVersion, VersionState, format_version
+from testgen.common.models.suite_version import VersionState, format_version
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.test_definition_export_import_service import ContractVersion
 
@@ -180,8 +179,7 @@ def submit_test_generation(
             raise api_error(400, "table_group_not_profiled", str(error)) from error
         if not profiled:
             note = unprofiled_regeneration_note(table_group.table_groups_name, groups)
-        draft_id, _ = TestDefinition.resolve_writable(test_suite.id)
-        version = ContractVersion(number=SuiteVersion.get(draft_id).version, state=VersionState.DRAFT)
+        version = ContractVersion(number=contract_service.generation_destination(test_suite), state=VersionState.DRAFT)
 
     job = JobExecution.submit(
         job_key=JobKey.run_test_generation,

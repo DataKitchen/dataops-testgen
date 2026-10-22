@@ -6,7 +6,7 @@ from uuid import UUID
 from pydantic import Field
 from sqlalchemy import select
 
-from testgen.common.enums import JobStatus
+from testgen.common.enums import MANAGED_TEST_TYPES, Disposition, JobStatus
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.test_definition import TestDefinition, TestType
@@ -754,13 +754,19 @@ def update_test_result(
         Field(
             description="New disposition. One of 'Confirmed', 'Dismissed', 'Muted', 'No Decision' (clears it). 'Muted' "
             "deactivates the parent test and locks it against auto-regeneration; any other value reactivates and "
-            "unlocks it.",
+            "unlocks it. A test TestGen manages, such as Schema Conformance, cannot be muted, and a disposition "
+            "leaves its state unchanged.",
         ),
     ],
 ) -> str:
     """Set the disposition on a single test result (confirm, dismiss, mute, or clear)."""
     result = resolve_test_result(test_result_id)
     db_disposition = parse_test_result_disposition(disposition)
+    if db_disposition == Disposition.INACTIVE and result.test_type in MANAGED_TEST_TYPES:
+        raise MCPUserError(
+            f"Test result {MdDoc.code(test_result_id)} was not muted. TestGen manages its test, so the test cannot "
+            "be muted. Confirm or dismiss the result instead. No change made."
+        )
 
     update: DispositionUpdate = set_test_results_disposition([result.id], db_disposition)
 
@@ -785,7 +791,8 @@ def bulk_update_test_results(
         Field(
             description="New disposition. One of 'Confirmed', 'Dismissed', 'Muted', 'No Decision' (clears it). 'Muted' "
             "deactivates the parent tests and locks them against auto-regeneration; any other value reactivates and "
-            "unlocks.",
+            "unlocks. 'Muted' leaves out the results of tests TestGen manages, such as Schema Conformance, and a "
+            "disposition leaves the state of those tests unchanged.",
         ),
     ],
     job_execution_id: Annotated[
@@ -847,7 +854,7 @@ def bulk_update_test_results(
     filter_str = ", ".join(filters) if filters else "no filter"
 
     doc = MdDoc()
-    if update.matched == 0 and update.passed_skipped == 0:
+    if update.matched == 0 and update.passed_skipped == 0 and update.managed_skipped == 0:
         doc.heading(1, "No test results matched")
         doc.text(
             f"No test results in suite `{suite.test_suite}` matched the filter ({filter_str}). Nothing changed."
@@ -862,5 +869,10 @@ def bulk_update_test_results(
         doc.text(
             f"Left {update.passed_skipped} passed results unchanged — disposition is not "
             f"applied to passed results."
+        )
+    if update.managed_skipped:
+        doc.text(
+            f"Left {update.managed_skipped} results unmuted — TestGen manages their tests, so the tests cannot be "
+            "muted."
         )
     return doc.render()

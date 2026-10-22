@@ -15,9 +15,8 @@ from testgen.common.enums import JOB_STATUS_LABEL, JobKey, JobSource, Regenerati
 from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import EXTERNAL_URL_MAX_LENGTH, JobExecution, validate_caller_metadata
-from testgen.common.models.suite_version import SuiteVersion, VersionState, format_version
+from testgen.common.models.suite_version import VersionState, format_version
 from testgen.common.models.table_group import TableGroup, validate_schema_name
-from testgen.common.models.test_definition import TestDefinition
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
@@ -151,9 +150,9 @@ def generate_tests(
         Field(description=(
             "Contracts only. What to regenerate; omit to refresh everything. `tests`: tests from the latest "
             "profiling, locked tests kept. `profiling`: functional types, keys, formats, and profiled values. "
-            "`governance`: descriptions, tags, classification, and the critical data element, PII, and excluded "
-            "data element flags, from the data catalog. Replaces edits made to these in the contract. Columns "
-            "and their types are always refreshed."
+            "`catalog`: catalog metadata (descriptions, tags, classification, and the critical data element, "
+            "PII, and excluded data element flags) from the data catalog. A regenerated group replaces "
+            "edits made to its fields in the contract. Columns and their types are always refreshed."
         )),
     ] = None,
 ) -> str:
@@ -200,9 +199,7 @@ def generate_tests(
 
     version_label = None
     if suite.suite_type == SuiteType.CONTRACT:
-        writable, _ = TestDefinition.resolve_writable(suite.id)
-        draft = SuiteVersion.get(writable)
-        version_label = format_version(draft.version, VersionState.DRAFT) if draft else None
+        version_label = format_version(contract_service.generation_destination(suite), VersionState.DRAFT)
 
     job = JobExecution.submit(
         job_key=JobKey.run_test_generation,

@@ -206,31 +206,31 @@ def test_generating_a_contract_sends_its_groups_and_no_generation_sets(session_s
 def test_a_contracts_dialog_stays_open_and_says_what_was_regenerated(session_state):
     session_state[view.GENERATE_TESTS_DIALOG_KEY] = "abc"
     result = ContractGenerationResult(
-        3, ["orders", "lines"], [], ["lines"], [RegenerationGroup.PROFILING, RegenerationGroup.GOVERNANCE],
+        3, ["orders", "lines"], [], ["lines"], [RegenerationGroup.PROFILING, RegenerationGroup.CATALOG],
     )
     with (
         patch.object(view.TestSuite, "get", return_value=SimpleNamespace(suite_type=SuiteType.CONTRACT)),
         patch.object(view, "run_test_generation", return_value=result),
     ):
         view.generate_tests_confirmed(
-            {"test_suite_id": "abc", "test_suite_name": "orders", "regenerate": ["profiling", "governance"]},
+            {"test_suite_id": "abc", "test_suite_name": "orders", "regenerate": ["profiling", "catalog"]},
         )
 
     assert session_state[view.GENERATE_TESTS_DIALOG_KEY] == "abc"
     assert session_state[view.GENERATE_TESTS_RESULT_KEY] == {
         "success": True,
         "message": (
-            "Regeneration completed for the contract 'orders': Profiling, Descriptions and governance. "
+            "The contract 'orders' was regenerated: profiling results and catalog metadata. "
             "The values profiling observed were not refreshed for tables that have not been profiled."
         ),
     }
 
 
 def test_a_contract_regeneration_without_profiling_says_nothing_about_profiled_values():
-    result = ContractGenerationResult(3, ["orders"], [], ["orders"], [RegenerationGroup.GOVERNANCE])
+    result = ContractGenerationResult(3, ["orders"], [], ["orders"], [RegenerationGroup.CATALOG])
 
-    assert view.contract_regeneration_message("orders", ["governance"], result) == (
-        "Regeneration completed for the contract 'orders': Descriptions and governance."
+    assert view.contract_regeneration_message("orders", ["catalog"], result) == (
+        "The contract 'orders' was regenerated: catalog metadata."
     )
 
 
@@ -248,7 +248,7 @@ def test_a_contract_regeneration_names_every_part_profiling_could_not_supply():
     )
 
     assert view.contract_regeneration_message("orders", ["tests", "profiling"], result) == (
-        "Regeneration completed for the contract 'orders': Tests, Profiling. "
+        "The contract 'orders' was regenerated: tests and profiling results. "
         "Tests and the values profiling observed were not refreshed for tables that have not been profiled."
     )
 
@@ -282,7 +282,7 @@ def test_a_contracts_dialog_offers_the_three_regeneration_groups(session_state):
     data = _generate_tests_data(SuiteType.CONTRACT)
 
     assert [(group["value"], group["label"]) for group in data["regeneration_groups"]] == [
-        ("tests", "Tests"), ("profiling", "Profiling"), ("governance", "Descriptions and governance"),
+        ("tests", "Tests"), ("profiling", "Profiling results"), ("catalog", "Catalog metadata"),
     ]
     assert data["regeneration_groups"][0]["help"] == (
         "Regenerates the contract's tests from the latest profiling. Locked tests are kept."
@@ -392,7 +392,9 @@ def _wizard(**overrides) -> dict:
 
 
 def _table_group(group_id=None):
-    return MagicMock(id=group_id or uuid4(), project_code="demo", connection_id=3, table_groups_name="sales")
+    return MagicMock(
+        id=group_id or uuid4(), project_code="demo", connection_id=3, table_groups_name="sales", profiling_delay_days=0
+    )
 
 
 def _data_url(text: bytes) -> str:
@@ -517,6 +519,9 @@ def test_a_contract_from_tables_is_created_with_those_tables(session_state, test
     assert suite.suite_type == "contract"
     assert (table_group, connection, tables) == (group, connection, ["orders", "lines"])
     assert _rows(session_state) == [("success", "Contract Orders created with 144 tests.")]
+    assert session_state[view.WIZARD_RESULT_KEY]["rows"][0]["link"] == {
+        **_definitions_link(suite.id), "label": "View it on the test definitions page",
+    }
 
 
 @pytest.mark.usefixtures("db_session_mock")
@@ -532,6 +537,30 @@ def test_a_contract_on_an_unprofiled_table_group_says_why_it_has_no_quality_test
     assert _rows(session_state) == [
         ("success", "Contract Orders created."),
         ("skipped", "No quality tests were generated because sales has not been profiled."),
+    ]
+
+
+@pytest.mark.usefixtures("db_session_mock")
+@pytest.mark.parametrize(("delay_days", "cause"), [
+    (1, "has no profiling run that has reached its minimum profiling age of 1 day"),
+    (3, "has no profiling run that has reached its minimum profiling age of 3 days"),
+])
+def test_a_contract_whose_profiling_runs_are_too_recent_says_so(session_state, delay_days, cause):
+    group = _table_group()
+    group.profiling_delay_days = delay_days
+    generated = _generated(term_count=0, not_profiled=["orders", "lines"])
+    with (
+        patch.object(view.TableGroup, "get", return_value=group),
+        patch.object(view.Connection, "get"),
+        patch.object(view, "create_contract", side_effect=_creation(generated)),
+        patch.object(view, "resolve_generation_profile_run", return_value=None),
+        patch.object(view.ProfilingRun, "latest_readable_id", return_value=uuid4()),
+    ):
+        view.add_test_suite_confirmed(_contract())
+
+    assert _rows(session_state) == [
+        ("success", "Contract Orders created."),
+        ("skipped", f"No quality tests were generated because sales {cause}."),
     ]
 
 
@@ -663,6 +692,9 @@ def test_a_contract_from_a_file_replans_the_stored_payload_and_keeps_the_step_on
     prepare.assert_called_once_with("<yaml>", group, connection, None)
     assert create.call_args.args[0].test_suite == "Orders"
     assert _rows(session_state) == [("success", "Contract Orders created with 57 tests. 2 rules cannot be verified.")]
+    assert session_state[view.WIZARD_RESULT_KEY]["rows"][0]["link"] == {
+        **_definitions_link(create.call_args.args[0].id), "label": "View it on the test definitions page",
+    }
 
 
 @pytest.mark.usefixtures("db_session_mock")
@@ -830,20 +862,41 @@ def test_selecting_a_table_group_loads_its_tables_and_profiling(session_state):
         view.wizard_table_group_selected({"table_group_id": str(group.id)})
 
     assert session_state[view.WIZARD_TABLE_GROUP_KEY] == {
-        "id": str(group.id), "name": "sales", "profiled_at": 1786699800, "tables": ["a", "b"],
+        "id": str(group.id),
+        "name": "sales",
+        "profiled_at": 1786699800,
+        "unreached_profiling_age": None,
+        "tables": ["a", "b"],
     }
 
 
 @pytest.mark.usefixtures("db_session_mock")
-def test_selecting_an_unprofiled_table_group_has_no_profiling_date(session_state):
+@pytest.mark.parametrize(
+    ("delay_days", "latest_run", "expected_age"),
+    [
+        (0, None, None),
+        (0, uuid4(), None),
+        (3, None, None),
+        (3, uuid4(), 3),
+    ],
+    ids=["never-profiled", "no-delay", "delay-never-profiled", "runs-younger-than-delay"],
+)
+def test_selecting_a_table_group_without_a_generation_run_says_whether_its_runs_are_too_recent(
+    session_state, delay_days, latest_run, expected_age
+):
+    group = _table_group()
+    group.profiling_delay_days = delay_days
     with (
-        patch.object(view.TableGroup, "get", return_value=_table_group()),
+        patch.object(view.TableGroup, "get", return_value=group),
         patch.object(view, "catalog_table_names", return_value=[]),
         patch.object(view, "resolve_generation_profile_run", return_value=None),
+        patch.object(view.ProfilingRun, "latest_readable_id", return_value=latest_run),
     ):
-        view.wizard_table_group_selected({"table_group_id": str(uuid4())})
+        view.wizard_table_group_selected({"table_group_id": str(group.id)})
 
-    assert session_state[view.WIZARD_TABLE_GROUP_KEY]["profiled_at"] is None
+    selected = session_state[view.WIZARD_TABLE_GROUP_KEY]
+    assert selected["profiled_at"] is None
+    assert selected["unreached_profiling_age"] == expected_age
 
 
 @pytest.mark.usefixtures("db_session_mock")

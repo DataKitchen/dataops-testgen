@@ -6,6 +6,7 @@
  * @property {string} id
  * @property {string} name
  * @property {number?} profiled_at
+ * @property {number?} unreached_profiling_age
  * @property {string[]} tables
  *
  * @typedef WizardLink
@@ -63,6 +64,8 @@ import { ContractImportPreview } from './contract_import_preview.js';
 const { div, span } = van.tags;
 
 const STEP_NAMES = ['testSuite', 'tests'];
+const days = (count) => `${count} ${count === 1 ? 'day' : 'days'}`;
+
 const METADATA_SENTENCE = 'Metadata is generated from the data catalog. Editing the contract does not change the data catalog.';
 const ROW_ICONS = { success: 'check_circle', skipped: 'do_not_disturb_on', warning: 'warning', info: 'info' };
 const ROW_COLORS = { success: '--green', skipped: '--grey', warning: '--orange', info: '--blue' };
@@ -191,6 +194,9 @@ const TestSuiteWizard = (/** @type Properties */ props) => {
                 return '';
             }
             if (!profiled.val) {
+                if (group.unreached_profiling_age) {
+                    return `No profiling run of ${group.name} has reached its minimum profiling age of ${days(group.unreached_profiling_age)}, so tests cannot be generated yet. Generate tests on the Test Suites page once one has.`;
+                }
                 return `${group.name} has not been profiled, so tests cannot be generated yet. Run profiling, then generate tests on the Test Suites page.`;
             }
             if (!generate.val) {
@@ -222,6 +228,9 @@ const TestSuiteWizard = (/** @type Properties */ props) => {
                 }
                 if (profiled.val) {
                     return `Tests are generated from the latest profiling run, ${formatTimestamp(group.profiled_at)}. ${METADATA_SENTENCE}`;
+                }
+                if (group.unreached_profiling_age) {
+                    return `No profiling run of ${group.name} has reached its minimum profiling age of ${days(group.unreached_profiling_age)}, so no quality tests will be generated. ${METADATA_SENTENCE} Generate tests on the Test Suites page once one has.`;
                 }
                 return `${group.name} has not been profiled, so no quality tests will be generated. ${METADATA_SENTENCE} Run profiling, then generate tests on the Test Suites page.`;
             }),

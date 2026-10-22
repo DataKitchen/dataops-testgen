@@ -436,7 +436,7 @@ def get_contract_metadata(
     """Read a contract's metadata document, whole or one section, table, or column.
 
     Returns the document as ODCS YAML: tables and columns with their types and descriptions,
-    governance attributes, team, support, and servers. The contract's tests are not in it:
+    catalog metadata such as tags and classification, team, support, and servers. The contract's tests are not in it:
     ``list_tests`` returns them, and, where source data is not protected, ``export_contract``
     returns the full document with them. Change this document with ``update_contract_metadata``.
 
@@ -988,8 +988,8 @@ def import_contract(
 
     The document is the whole agreement. Its quality rules, and column constraints such as a
     maximum or a required column, become the contract's tests; the rest becomes its metadata.
-    Tests the contract holds that the document does not state are deleted, and every test it states
-    is locked against test generation. Preview first, and check the deletions.
+    Active tests the contract holds that the document does not state are deleted, and muted tests are
+    kept. Every test the document states is locked against test generation. Preview first, and check the deletions.
 
     Supply exactly one of `test_suite_id` and `table_group_id`. An import never changes a frozen
     version. A document whose contract `id` differs from the contract's is refused, as is a new

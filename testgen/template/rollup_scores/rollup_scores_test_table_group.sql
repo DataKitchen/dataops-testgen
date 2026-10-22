@@ -6,9 +6,11 @@ SELECT pg_advisory_xact_lock(hashtextextended(CAST(:TABLE_GROUPS_ID AS VARCHAR),
 -- One run per suite via DISTINCT ON, tie-broken by id, then summed across the suites. A
 -- timestamp equality join back to test_runs would match every run of a suite sharing that
 -- timestamp and double-count their data points.
--- A run counts once the version it verified was in force when it ran, which leaves a
--- contract scored by its previous version until its newly frozen one has been run, and
--- excludes a draft preview for free: a draft has no freeze time, so the comparison is NULL.
+-- A run counts when the version it verified was the one in force when it started: frozen by
+-- then, and no later version frozen by then either. That leaves a contract scored by its
+-- previous version until its newly frozen one has been run, excludes a run of a superseded
+-- version, and excludes a draft preview: a draft has no freeze time, so the comparison
+-- is NULL.
 WITH latest_run_per_suite
    AS (SELECT DISTINCT ON (run.test_suite_id)
               run.test_suite_id, run.dq_affected_data_points, run.dq_total_data_points
@@ -18,7 +20,12 @@ WITH latest_run_per_suite
         WHERE je.status = 'completed'
           AND (run.version_id IS NULL OR EXISTS (SELECT 1 FROM suite_versions sv
                      WHERE sv.id = run.version_id
-                       AND (sv.test_suite_id IS NULL OR run.test_starttime >= sv.frozen_at)))
+                       AND (sv.test_suite_id IS NULL
+                            OR (run.test_starttime >= sv.frozen_at
+                                AND NOT EXISTS (SELECT 1 FROM suite_versions nv
+                                                 WHERE nv.test_suite_id = sv.test_suite_id
+                                                   AND nv.version > sv.version
+                                                   AND run.test_starttime >= nv.frozen_at)))))
         ORDER BY run.test_suite_id, run.test_starttime DESC, run.id DESC),
 score_calc
   AS (SELECT ts.table_groups_id,
@@ -74,6 +81,7 @@ WITH score_calc
        WHERE dcc.table_groups_id = :TABLE_GROUPS_ID
          AND COALESCE(ts.dq_score_exclude, FALSE) = FALSE
          AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'
+         AND r.result_status IS DISTINCT FROM 'Log'
       GROUP BY dcc.column_id )
 UPDATE data_column_chars
    SET valid_test_issue_ct = COALESCE(issue_ct, 0),
@@ -117,6 +125,7 @@ WITH score_detail
        WHERE dtc.table_groups_id = :TABLE_GROUPS_ID
          AND COALESCE(ts.dq_score_exclude, FALSE) = FALSE
          AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'
+         AND r.result_status IS DISTINCT FROM 'Log'
       GROUP BY dtc.table_id, r.column_names),
 score_calc
   AS (SELECT table_id,

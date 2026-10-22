@@ -21,6 +21,7 @@ from testgen.common.odcs.quality_rules import (
     ResolvedTerm,
     RuleScope,
     _groupby_columns,
+    is_declaration_marker,
     lov_values,
     resolve_declarations,
     resolve_rule,
@@ -82,6 +83,8 @@ _TERMS: list[tuple[str, str | None, str | None, dict]] = [
     ("Row_Ct", None, None, {"threshold_value": "100"}),
     ("Dupe_Rows", "c_dupe", "string", {"groupby_names": '"c_dupe"', "skip_errors": 2}),
     ("LOV_Match", "c_lov", "string", {"baseline_value": "('Y','N','it''s')", "threshold_value": "0"}),
+    ("LOV_Match", "c_lov_numbers", "integer", {"baseline_value": "(1,2,3)", "threshold_value": "0"}),
+    ("LOV_Match", "c_lov_spaced", "string", {"baseline_value": "('Y', 'N')", "threshold_value": "0"}),
     ("Pattern_Match", "c_pattern", "string", {"baseline_value": "[A-Z]{3}", "threshold_value": "1"}),
     ("Required_No_Placeholder", "c_rnp", "string", {"baseline_value": '"",N/A,"a,b"', "threshold_value": "0"}),
     ("Email_Format", "c_email", "string", {"threshold_value": "2"}),
@@ -110,6 +113,11 @@ _TERMS: list[tuple[str, str | None, str | None, dict]] = [
     ("Unique", "c_unique", "integer", {"threshold_value": "0"}),
     ("Avg_Shift", "c_avg", "number", {"baseline_value_ct": "10", "baseline_avg": "4.2", "baseline_sd": "1.1",
                                       "threshold_value": "2", "custom_metadata": _METADATA}),
+    ("Avg_Shift", "c_avg_described", "number", {"baseline_value_ct": "10", "baseline_avg": "4.2", "baseline_sd": "1.1",
+                                                "threshold_value": "2", "test_description": "Average order value"}),
+    ("Min_Val", "c_min_described", "number",
+     {"baseline_value": "0", "threshold_value": "0", "test_description": "No negative refunds"}),
+    ("Required", "c_required_described", "string", {"threshold_value": "3", "test_description": "Few missing names"}),
 ]
 # Table-scoped terms, which share the table's quality list.
 _TABLE_TERMS: list[tuple[str, dict]] = [
@@ -261,6 +269,7 @@ def test_importing_the_export_into_its_own_draft_plans_no_changes(round_trip):
             contract_term_id=term.contract_term_id,
             values={name: getattr(term, name, None) for name in parameter_columns},
             custom_metadata=term.custom_metadata,
+            test_description=term.test_description,
         )
         for term in terms
     ]
@@ -413,3 +422,15 @@ def test_a_stored_declaration_goes_with_its_marker():
         prop = next(p for p in document["schema"][0]["properties"] if p["name"] == "c_max")
         assert "logicalTypeOptions" not in prop
         assert resolve_declarations(prop, frozenset(_CATALOGUE)) == []
+
+
+def test_a_described_term_carries_its_description_as_its_name(round_trip):
+    _, document, _ = round_trip
+    exported = yaml.safe_load(serialize_document(document))
+    properties = {prop["name"]: prop for prop in exported["schema"][0]["properties"]}
+
+    declared = next(
+        entry["value"] for entry in properties["c_min_described"]["customProperties"] if is_declaration_marker(entry)
+    )
+    assert declared["name"] == "No negative refunds"
+    assert [rule["name"] for rule in properties["c_required_described"]["quality"]] == ["Few missing names"]

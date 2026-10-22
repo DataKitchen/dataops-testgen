@@ -14,6 +14,7 @@ from sqlalchemy.engine import Row
 
 from testgen import settings
 from testgen.common import contract_service
+from testgen.common.contract_rules import writable_tables
 from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
     table_group_qualifies_table_refs,
@@ -82,7 +83,9 @@ class ImportReason(StrEnum):
     locked = "locked"
     invalid_test_type = "invalid_test_type"
     managed_test_type = "managed_test_type"
+    managed_test = "managed_test"
     invalid_table = "invalid_table"
+    undeclared_table = "undeclared_table"
     invalid_column = "invalid_column"
     missing_external_id = "missing_external_id"
     missing_required_field = "missing_required_field"
@@ -104,7 +107,9 @@ IMPORT_REASON_LABELS: dict[ImportReason, str] = {
     ImportReason.locked: "Existing test is locked",
     ImportReason.invalid_test_type: "Unknown test type",
     ImportReason.managed_test_type: "Test type cannot be imported",
+    ImportReason.managed_test: "Managed by TestGen",
     ImportReason.invalid_table: "Table not in the data catalog",
+    ImportReason.undeclared_table: "Table not declared by the contract",
     ImportReason.invalid_column: "Column not in the data catalog",
     ImportReason.missing_external_id: "Missing external ID (required to match a manual test)",
     ImportReason.missing_required_field: "Missing a required field",
@@ -141,7 +146,8 @@ class TestDefinitionExport(BaseModel):
         description="The test type, given as its code, e.g. `Alpha_Trunc`. An auto-generated test is matched on "
         "import by its `test_type`, `table_name` and `column_name`. A matched test keeps its stored test type. A new "
         "test cannot use a test type TestGen creates and removes itself, such as schema conformance; the import skips "
-        "it with `managed_test_type`."
+        "it with `managed_test_type`. A matched test of such a type is not updated either; the import skips it with "
+        "`managed_test`."
     )
     external_id: UUID | None = Field(
         default=None,
@@ -255,15 +261,16 @@ class TestDefinitionExport(BaseModel):
     )
     lower_tolerance: str | None = Field(
         default=None,
-        description="The lower bound of an acceptable range, depending on the test type: the tolerance below the "
+        description="The lower bound of an acceptable range, depending on the test type: an offset added to the "
         "reference measure for `Aggregate_Balance_Percent` (a percent) and `Aggregate_Balance_Range` (a constant), "
+        "negative for a bound below the reference (e.g. `-5`), "
         "the minimum result for `SQL_Metric`, or the minimum length for `Text_Length_Range`. Leave blank for no "
         "minimum where the test type allows it. When `history_calculation` is set, the test sets this bound from its "
         "recent results, replacing the value given here.",
     )
     upper_tolerance: str | None = Field(
         default=None,
-        description="The upper bound of an acceptable range, depending on the test type: the tolerance above the "
+        description="The upper bound of an acceptable range, depending on the test type: an offset added to the "
         "reference measure for `Aggregate_Balance_Percent` (a percent) and `Aggregate_Balance_Range` (a constant), "
         "the maximum result for `SQL_Metric`, the maximum length for `Text_Length_Range`, or the allowed difference "
         "as a fraction of the baseline for `Match_Sum` and `Match_Stdev` (e.g. `0.001` allows 0.1 percent). When "
@@ -471,7 +478,7 @@ class ImportItem(BaseModel):
         description="Why the action applies: `matched` (matches an existing test), `no_match` (matches none), "
         "`policy` (`on_match` is `skip`), `locked` (the matched test is locked and `on_match` is "
         "`overwrite_unlocked`), `invalid_test_type` (no such test type), `managed_test_type` (a test type TestGen "
-        "creates itself), `invalid_table` (the table is not in the table group's data catalog), `invalid_column` "
+        "creates itself), `managed_test` (the matched test is one TestGen manages), `invalid_table` (the table is not in the table group's data catalog), `invalid_column` "
         "(the column is not in its table in the data catalog), `missing_external_id` (a manual test without "
         "`external_id`), `missing_required_field` (a field the test type requires is blank), `invalid_field` (a "
         "field the test type does not use, or a value it does not accept), or `absent` (an existing test the file "
@@ -602,7 +609,11 @@ def export_definitions(
         )
 
     # Build filter clauses
-    clauses = [TestDefinition.test_suite_id == test_suite.id, version_predicate]
+    clauses = [
+        TestDefinition.test_suite_id == test_suite.id,
+        version_predicate,
+        TestDefinition.test_type.not_in(MANAGED_TEST_TYPES),
+    ]
     if origin == Origin.auto:
         clauses.append(TestDefinition.last_auto_gen_date.isnot(None))
     elif origin == Origin.manual:
@@ -647,6 +658,7 @@ def import_definitions(
     table_group = TableGroup.get(test_suite.table_groups_id)
     profiled_tables = set(DataTable.select_table_names(test_suite.table_groups_id, limit=None))
     profiled_columns = DataColumnChars.select_column_names(test_suite.table_groups_id)
+    contract_tables = writable_tables(test_suite)
 
     # --- Phase 1: Upfront validation ---
     if payload.version != EXPORT_FORMAT_VERSION:
@@ -695,12 +707,16 @@ def import_definitions(
             actions.append(_PlannedAction(ImportAction.skip, ImportReason.missing_external_id, idx, td_import, target))
             continue
 
+        if target is not None and target.test_type in MANAGED_TEST_TYPES:
+            actions.append(_PlannedAction(ImportAction.skip, ImportReason.managed_test, idx, td_import, target))
+            continue
+
         if td_import.test_type not in test_types:
             actions.append(_PlannedAction(ImportAction.skip, ImportReason.invalid_test_type, idx, td_import, target))
             continue
 
         # A non-public type is a real row in ``test_types``, so it clears the check above. Only a new
-        # definition is refused: an update keeps the stored type, so a matched one stays importable.
+        # definition is refused here: an update keeps the stored type, so a matched monitor stays importable.
         if target is None and td_import.test_type in NON_PUBLIC_TEST_TYPES:
             actions.append(
                 _PlannedAction(ImportAction.skip, ImportReason.managed_test_type, idx, td_import, target)
@@ -711,6 +727,14 @@ def import_definitions(
         column_name = _value_as_saved(td_import, target, "column_name")
         if table_name is not None and table_name not in profiled_tables:
             actions.append(_PlannedAction(ImportAction.skip, ImportReason.invalid_table, idx, td_import, target))
+            continue
+
+        if (
+            contract_tables is not None
+            and table_name not in contract_tables
+            and (target is None or table_name != target.table_name)
+        ):
+            actions.append(_PlannedAction(ImportAction.skip, ImportReason.undeclared_table, idx, td_import, target))
             continue
 
         if not _is_column_profiled(table_name, column_name, test_types[td_import.test_type], profiled_columns):

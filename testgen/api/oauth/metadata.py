@@ -11,8 +11,8 @@ router = APIRouter(tags=["OAuth"])
 
 @router.get("/.well-known/oauth-authorization-server", summary="Read the authorization server metadata")
 def authorization_server_metadata():
-    """The authorization server metadata defined by RFC 8414: the endpoints, grant types and client authentication
-    methods an OAuth client discovers before it authorizes.
+    """The authorization server metadata defined by RFC 8414: the endpoints, grant types, and client
+    authentication methods an OAuth client discovers before it authorizes.
     """
     base_url = settings.BASE_URL.rstrip("/")
 

@@ -234,3 +234,31 @@ class Test_set_test_results_disposition:
         sql = _compiled(reads[0])
         assert "test_definitions.test_active" in sql
         assert "test_definitions.lock_refresh" in sql
+
+    def test_muting_leaves_out_and_counts_the_results_of_managed_tests(self):
+        session = _session([], rowcount=2)
+        session.scalar.side_effect = [0, 3]
+        with patch(f"{MODULE}.get_current_session", return_value=session):
+            result = set_test_results_disposition([uuid4()], Disposition.INACTIVE)
+
+        assert result == DispositionUpdate(matched=2, passed_skipped=0, managed_skipped=3)
+        tr_update = session.execute.call_args_list[0].args[0]
+        assert "test_results.test_type NOT IN ('Schema_Conformance')" in _compiled(tr_update)
+
+    @pytest.mark.parametrize("disposition", [Disposition.CONFIRMED, Disposition.DISMISSED, None])
+    def test_other_dispositions_apply_to_the_results_of_managed_tests(self, disposition):
+        session = _session([])
+        with patch(f"{MODULE}.get_current_session", return_value=session):
+            result = set_test_results_disposition([uuid4()], disposition)
+
+        assert result.managed_skipped == 0
+        tr_update = session.execute.call_args_list[0].args[0]
+        assert "Schema_Conformance" not in _compiled(tr_update)
+
+    @pytest.mark.parametrize("disposition", [Disposition.CONFIRMED, Disposition.INACTIVE, None])
+    def test_the_definitions_of_managed_tests_are_never_coupled(self, disposition):
+        session = _session([])
+        with patch(f"{MODULE}.get_current_session", return_value=session):
+            set_test_results_disposition([uuid4()], disposition)
+        reads = [call.args[0] for call in session.execute.call_args_list if not isinstance(call.args[0], Update)]
+        assert "test_results.test_type NOT IN ('Schema_Conformance')" in _compiled(reads[0])

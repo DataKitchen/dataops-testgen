@@ -164,7 +164,7 @@ def test_get_test_run_completed(mock_tr_cls, mock_result_cls, mock_session):
         passed=90, failed=5, warning=3, error=2, log=0, dismissed=12,
     )
     mock_session.return_value.scalar.return_value = TABLE_GROUP_ID
-    mock_tr_cls.select_summary.return_value = ([MagicMock(run_version=None)], 1)
+    mock_tr_cls.select_summary.return_value = ([MagicMock(run_version=None, version_discarded=False)], 1)
 
     result = get_test_run(job)
 
@@ -186,14 +186,14 @@ FROZEN = datetime(2026, 9, 12, tzinfo=UTC)
 @pytest.mark.parametrize(
     ("run_version", "expected"),
     [
-        (RunVersion(3, FROZEN, 3, datetime(2026, 9, 13, 9, 0), 3, JobStatus.COMPLETED), (3, VersionState.ACTIVE, True)),
-        (RunVersion(3, FROZEN, 4, datetime(2026, 9, 13, 9, 0), 3, JobStatus.COMPLETED), (3, VersionState.SUPERSEDED, True)),
-        (RunVersion(3, FROZEN, 4, datetime(2026, 9, 20, 9, 0), 4, JobStatus.COMPLETED), (3, VersionState.SUPERSEDED, False)),
-        (RunVersion(4, None, 3, datetime(2026, 9, 13, 9, 0), 3, JobStatus.COMPLETED), (4, VersionState.DRAFT, False)),
-        (RunVersion(3, FROZEN, 3, datetime(2026, 9, 10, 9, 0), None, JobStatus.COMPLETED), (3, VersionState.ACTIVE, False)),
+        (RunVersion(3, FROZEN, 3, datetime(2026, 9, 13, 9, 0), 3, JobStatus.COMPLETED), (3, VersionState.ACTIVE, True, False)),
+        (RunVersion(3, FROZEN, 4, datetime(2026, 9, 13, 9, 0), 3, JobStatus.COMPLETED), (3, VersionState.SUPERSEDED, True, False)),
+        (RunVersion(3, FROZEN, 4, datetime(2026, 9, 20, 9, 0), 4, JobStatus.COMPLETED), (3, VersionState.SUPERSEDED, False, False)),
+        (RunVersion(4, None, 3, datetime(2026, 9, 13, 9, 0), 3, JobStatus.COMPLETED), (4, VersionState.DRAFT, False, True)),
+        (RunVersion(3, FROZEN, 3, datetime(2026, 9, 10, 9, 0), None, JobStatus.COMPLETED), (3, VersionState.ACTIVE, False, True)),
         (
             RunVersion(3, FROZEN, 3, datetime(2026, 9, 13, 9, 0), 3, JobStatus.CANCELED),
-            (3, VersionState.ACTIVE, False),
+            (3, VersionState.ACTIVE, False, False),
         ),
     ],
     ids=[
@@ -212,13 +212,42 @@ def test_get_test_run_names_a_contract_runs_version(
     mock_result_cls.count_by_status.return_value = ResultStatusCounts(
         passed=1, failed=0, warning=0, error=0, log=0, dismissed=0,
     )
-    mock_tr_cls.select_summary.return_value = ([MagicMock(run_version=run_version)], 1)
+    mock_tr_cls.select_summary.return_value = (
+        [MagicMock(run_version=run_version, version_discarded=False, is_preview=run_version.is_preview)], 1
+    )
     job = _mock_job()
 
     result = get_test_run(job)
 
     mock_tr_cls.select_summary.assert_called_once_with(job_execution_id=job.id, suite_types=TEST_SUITE_TYPES)
-    assert (result.version.number, result.version.state, result.version.counts_as_status) == expected
+    version = result.version
+    assert (version.number, version.state, version.counts_as_status, version.preview) == expected
+    assert version.discarded is False
+
+
+@patch(f"{MODULE}.get_current_session")
+@patch(f"{MODULE}.TestResult")
+@patch(f"{MODULE}.TestRun")
+def test_get_test_run_reports_a_discarded_draft_run_as_a_preview(mock_tr_cls, mock_result_cls, mock_session):
+    mock_session.return_value.scalar.return_value = TABLE_GROUP_ID
+    mock_tr_cls.get.return_value = _mock_test_run()
+    mock_result_cls.count_by_status.return_value = ResultStatusCounts(
+        passed=1, failed=0, warning=0, error=0, log=0, dismissed=0,
+    )
+    mock_tr_cls.select_summary.return_value = (
+        [MagicMock(run_version=None, version_discarded=True, is_preview=True)], 1
+    )
+
+    result = get_test_run(_mock_job())
+
+    assert result.version.model_dump() == {
+        "number": None,
+        "state": VersionState.DRAFT,
+        "counts_as_status": False,
+        "preview": True,
+        "discarded": True,
+    }
+
 
 
 @patch(f"{MODULE}.get_current_session")

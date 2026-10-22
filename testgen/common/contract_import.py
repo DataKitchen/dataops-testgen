@@ -3,7 +3,7 @@
 A document is the whole agreement. Its quality rules and column declarations that resolve to a
 test type become the draft's terms, and everything else becomes the draft's metadata document,
 with each rule no test type checks kept and marked unverifiable. Reconciling the incoming terms
-against the contract's terms deletes those the document omits, so the delta is always computed
+against the contract's terms deletes the active terms the document omits, so the delta is always computed
 first (``prepare_import``, which writes nothing) and applied only on request (``apply_import``).
 """
 
@@ -56,6 +56,7 @@ from testgen.common.odcs.quality_rules import (
     drop_generated_metadata,
     is_declaration_marker,
     is_synthesized_property,
+    lov_values,
     mark_unverifiable,
     names_one_column,
     resolve_declarations,
@@ -118,7 +119,8 @@ class ContractIdentityError(ValueError):
 
 @dataclass(frozen=True)
 class IncomingTerm:
-    """One term the document states: a quality rule or a column declaration that resolved."""
+    """One term the document states: a quality rule or a column declaration that resolved.
+    ``custom_rule`` is set for a rule of type ``custom``."""
 
     test_type: str
     table_name: str
@@ -126,6 +128,7 @@ class IncomingTerm:
     parameters: dict[str, Any]
     contract_term_id: str | None
     metadata: dict[str, Any]
+    custom_rule: bool = False
 
 
 @dataclass(frozen=True)
@@ -205,13 +208,14 @@ def split_document(
     becomes a term and leaves the document, along with a column's ``enum`` when an ``LOV_Match``
     term resolves on it; one no test type checks stays and is reported. A property TestGen
     synthesized for a rule's subject leaves the document, its rules resolving against that
-    subject. A managed or monitor test type never comes from a document. The document's
+    subject. A managed, monitor, or inactive test type never comes from a document. The document's
     ``testgenTerm`` entries, which name terms rather than describe the agreement, are dropped. Raises
     ``InvalidContractDocumentError`` when two rules share an id, or an id is longer than a term
     id can be.
     """
     metadata = copy.deepcopy(document)
-    resolver = RuleResolver(test_types=test_types, flavor=flavor, qualify_tables=qualify_tables)
+    active_types = {code: test_type for code, test_type in test_types.items() if test_type.active != "N"}
+    resolver = RuleResolver(test_types=active_types, flavor=flavor, qualify_tables=qualify_tables)
     known = resolver.known_test_types
     terms: list[IncomingTerm] = []
     unverifiable: list[str] = []
@@ -229,9 +233,8 @@ def split_document(
                 unverifiable.append(f"{label} ({describe_rule(rule)})")
                 continue
             test_type = test_types[resolved.test_type]
-            rule_metadata = drop_generated_metadata(
-                resolved.metadata, test_type, resolved.parameters, custom=rule.get("type") == RuleShape.CUSTOM.value
-            )
+            custom_rule = rule.get("type") == RuleShape.CUSTOM.value
+            rule_metadata = drop_generated_metadata(resolved.metadata, test_type, resolved.parameters, custom=custom_rule)
             terms.append(IncomingTerm(
                 test_type=resolved.test_type,
                 table_name=table_name,
@@ -240,6 +243,7 @@ def split_document(
                 parameters=resolved.parameters,
                 contract_term_id=resolved.contract_term_id,
                 metadata=rule_metadata,
+                custom_rule=custom_rule,
             ))
         return kept
 
@@ -405,6 +409,8 @@ class _BaselineTerm:
     contract_term_id: str | None
     values: dict[str, Any]
     custom_metadata: dict[str, Any] | None = None
+    active: bool = True
+    test_description: str | None = None
 
 
 def plan_changes(
@@ -418,7 +424,9 @@ def plan_changes(
 
     Every incoming term carrying the id of a baseline term matches it first. Each remaining
     incoming term then matches an unmatched baseline term of the same test type, schema, table
-    and column, and is otherwise new. A baseline term nothing matches is deleted.
+    and column, preferring an active term to a muted one, and is otherwise new. An active baseline
+    term nothing matches is deleted. A muted term is left as it is, because the document a contract
+    exports states only its active terms.
     """
     by_id = {term.contract_term_id: term for term in baseline if term.contract_term_id}
     targets: dict[int, tuple[_BaselineTerm, ContractTermReason]] = {}
@@ -434,7 +442,8 @@ def plan_changes(
             key = _natural_key(term.test_type, term.schema_name, term.table_name, term.column_name)
             unmatched_by_key.setdefault(key, []).append(term)
     # Terms sharing a key pair by equal parameters first, so their order on either side is irrelevant.
-    for same_parameters in (True, False):
+    # Active terms are tried before muted ones: a muted match stays muted while its active twin is deleted.
+    for active_only, same_parameters in ((True, True), (True, False), (False, True), (False, False)):
         for index, term in enumerate(incoming):
             if index in targets:
                 continue
@@ -444,8 +453,12 @@ def plan_changes(
             target = next(
                 (
                     candidate for candidate in candidates
-                    if not same_parameters
-                    or _parameter_values(candidate.test_type, candidate.values, declared_parameters) == incoming_values
+                    if (candidate.active or not active_only)
+                    and (
+                        not same_parameters
+                        or _parameter_values(candidate.test_type, candidate.values, declared_parameters)
+                        == incoming_values
+                    )
                 ),
                 None,
             )
@@ -464,7 +477,7 @@ def plan_changes(
             ))
             continue
         target, reason = targets[index]
-        custom_metadata = _custom_metadata(term.metadata, target.custom_metadata)
+        custom_metadata = _custom_metadata(_rule_metadata(term, target), target.custom_metadata)
         unchanged = _is_unchanged(term, target, custom_metadata, schema_name, declared_parameters)
         changes.append(TermChange(
             action=ImportAction.skip if unchanged else ImportAction.update,
@@ -485,7 +498,7 @@ def plan_changes(
             target_id=term.id,
         )
         for term in baseline
-        if term.id not in matched
+        if term.id not in matched and term.active
     ]
     return changes
 
@@ -497,27 +510,44 @@ def _natural_key(test_type: str, schema_name: str | None, table_name: str | None
 def _parameter_values(test_type: str, parameters: dict[str, Any], declared_parameters: dict[str, list[str]]) -> dict:
     """The comparable value of each parameter ``test_type`` declares. A blank threshold compares as
     the 0 test execution runs it with, which is how the document states it."""
-    values = {name: _comparable(parameters.get(name)) for name in declared_parameters.get(test_type, [])}
+    values: dict[str, Any] = {
+        name: _comparable(parameters.get(name), numeric=(test_type, name) not in _TEXT_PARAMETERS)
+        for name in declared_parameters.get(test_type, [])
+    }
     if "threshold_value" in values and values["threshold_value"] is None:
         values["threshold_value"] = "0"
+    if test_type == "LOV_Match" and values.get("baseline_value"):
+        # A list of values compares by the values it holds, so ``(1,2,3)`` and ``('Y', 'N')`` equal
+        # the quoted, comma-only literal the document's values read back as.
+        values["baseline_value"] = lov_values(values["baseline_value"]) or values["baseline_value"]
     return values
 
 
 _MIDNIGHT = re.compile(r"^(\d{4}-\d{2}-\d{2})[ T]00:00:00(\.0+)?$")
 _DECIMAL = re.compile(r"^-?(0|[1-9]\d*)\.\d+$")
+# Parameters whose value is text even when it reads as a decimal number.
+_TEXT_PARAMETERS = frozenset({("Pattern_Match", "baseline_value"), ("Required_No_Placeholder", "baseline_value")})
 
 
-def _comparable(value: Any) -> str | None:
+def _comparable(value: Any, numeric: bool = True) -> str | None:
     """``value`` as text to compare a parameter by. A timestamp at midnight compares as its date,
-    which is how a date bound renders in the document, and a decimal number compares without the
-    trailing zeros of its fraction, so a whole number compares as an integer."""
+    which is how a date bound renders in the document. When ``numeric``, a decimal number compares
+    without the trailing zeros of its fraction, so a whole number compares as an integer."""
     if value is None or value == "":
         return None
     text = str(value).strip()
-    if _DECIMAL.match(text):
+    if numeric and _DECIMAL.match(text):
         return text.rstrip("0").rstrip(".")
     midnight = _MIDNIGHT.match(text)
     return midnight.group(1) if midnight else text
+
+
+def _rule_metadata(term: IncomingTerm, target: _BaselineTerm) -> dict[str, Any]:
+    """``term``'s rule metadata, without a ``name`` equal to ``target``'s ``test_description``. The export
+    renders that description as the rule's name, so it is not a change."""
+    if target.test_description and term.metadata.get("name") == target.test_description:
+        return {key: value for key, value in term.metadata.items() if key != "name"}
+    return term.metadata
 
 
 def _custom_metadata(metadata: dict[str, Any], existing: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -583,6 +613,8 @@ def _baseline_terms(suite: TestSuite, test_types: dict[str, TestType]) -> list[_
             contract_term_id=row.contract_term_id,
             values={name: getattr(row, name, None) for name in parameter_columns},
             custom_metadata=row.custom_metadata,
+            active=bool(row.test_active),
+            test_description=row.test_description,
         )
         for row in rows
     ]
