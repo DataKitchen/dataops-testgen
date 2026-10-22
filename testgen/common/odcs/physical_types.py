@@ -24,9 +24,10 @@ _DIALECTS: dict[str, str] = {
     "snowflake": "snowflake",
 }
 
-# Types a dialect treats as one that sqlglot names apart.
+# Types a dialect treats as one that sqlglot names apart. Snowflake's REAL and FLOAT4 are its one
+# 64-bit float, and a bare TIMESTAMP is TIMESTAMP_NTZ under the default TIMESTAMP_TYPE_MAPPING.
 _SAME_TYPE: dict[str, dict[str, str]] = {
-    "snowflake": {"DATETIME": "TIMESTAMPNTZ"},
+    "snowflake": {"DATETIME": "TIMESTAMPNTZ", "TIMESTAMP": "TIMESTAMPNTZ", "FLOAT": "DOUBLE"},
 }
 
 # Dialects whose integer types are all NUMBER(38,0), and the integer types sqlglot reads.
@@ -97,7 +98,16 @@ def _canonical(type_text: str, dialect: str) -> tuple[str, tuple[str, ...]] | No
     name = bare.sql(dialect).upper()
     name = _SAME_TYPE.get(dialect, {}).get(name, name)
 
-    if dialect == "tsql" and data_type.this is exp.DataType.Type.FLOAT and not params:
-        # SQL Server's REAL is FLOAT(24) and a bare FLOAT is FLOAT(53); sqlglot reads both as FLOAT.
-        params = ("24",) if type_text.strip().casefold() == "real" else ("53",)
+    if data_type.this in (exp.DataType.Type.FLOAT, exp.DataType.Type.DOUBLE):
+        sized = len(params) == 1 and params[0].isdigit()
+        if dialect == "tsql":
+            # SQL Server's REAL is FLOAT(24), and a bare FLOAT and DOUBLE PRECISION are FLOAT(53); sqlglot
+            # names all three FLOAT. It stores FLOAT(1..24) as REAL and FLOAT(25..53) as FLOAT.
+            if not params:
+                params = ("24",) if type_text.strip().casefold() == "real" else ("53",)
+            elif sized:
+                params = ("24",) if int(params[0]) <= 24 else ("53",)
+        elif dialect in ("postgres", "redshift") and sized:
+            # FLOAT(1..24) is REAL and FLOAT(25..53) is DOUBLE PRECISION; sqlglot names both DOUBLE PRECISION.
+            name, params = ("REAL" if int(params[0]) <= 24 else "DOUBLE PRECISION"), ()
     return name, params

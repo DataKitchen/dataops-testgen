@@ -20,6 +20,7 @@ from testgen.ui.services import contract_import_service as service
 pytestmark = pytest.mark.unit
 
 MIB = 1024 * 1024
+MB = 1_000_000
 TARGET_ID = "2a91b0d4-0000-0000-0000-000000000001"
 INCOMING_ID = "77d0c1e2-0000-0000-0000-000000000002"
 
@@ -51,21 +52,21 @@ def short_names():
 
 
 @pytest.mark.parametrize(
-    ("configured", "message_mb", "expected"),
+    ("configured", "state_mb", "expected"),
     [
-        (10 * MIB, 200, 10 * MIB),
-        (500 * MIB, 200, 200 * MIB * 3 // 4 - 64 * 1024),
-        (10 * MIB, 8, 8 * MIB * 3 // 4 - 64 * 1024),
+        (10 * MIB, 25, 10 * MIB),
+        (20 * MIB, 25, 25 * MB * 3 // 4 - 64 * 1024),
+        (10 * MIB, 8, 8 * MB * 3 // 4 - 64 * 1024),
     ],
 )
-def test_the_contract_file_limit_is_capped_by_streamlits_message_size(configured, message_mb, expected):
+def test_the_contract_file_limit_is_capped_by_streamlits_widget_state_size(configured, state_mb, expected):
     with (
         patch.object(service.settings, "CONTRACT_IMPORT_MAX_BYTES", configured),
-        patch.object(service.st.config, "get_option", return_value=message_mb) as get_option,
+        patch.object(service.st.config, "get_option", return_value=state_mb) as get_option,
     ):
         assert service.contract_file_max_bytes() == expected
 
-    get_option.assert_called_once_with("server.maxMessageSize")
+    get_option.assert_called_once_with("server.maxWidgetStateSize")
 
 
 def test_a_file_is_read_as_text():

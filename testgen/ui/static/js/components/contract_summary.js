@@ -102,28 +102,36 @@ const ContractSummary = (/** @type Properties */ props) => {
                     : span({ class: 'text-secondary', 'data-testid': 'contract-verification-message' }, summary.verification_message),
             ),
             div(
-                { class: 'flex-row fx-gap-2 fx-align-flex-end fx-flex-wrap fx-justify-flex-end', style: 'align-self: flex-end; margin-left: auto;' },
-                actions.history
-                    ? Button({ type: 'stroked', icon: 'history', label: 'History', width: 'auto', style: ACTION_STYLE, onclick: props.onHistory })
-                    : '',
-                actions.export
-                    ? Button({ type: 'stroked', icon: 'download', label: 'Export Contract', width: 'auto', style: ACTION_STYLE, onclick: props.onExport })
-                    : '',
-                actions.import
-                    ? Button({ type: 'stroked', icon: 'upload', label: 'Import Contract', width: 'auto', style: ACTION_STYLE, onclick: props.onImport })
-                    : '',
-                actions.discard
-                    ? Button({ type: 'stroked', color: 'warn', icon: 'close', label: 'Discard Draft', width: 'auto', onclick: props.onDiscard })
-                    : '',
-                actions.freeze
-                    ? Button({
-                        type: 'stroked',
-                        color: 'primary',
-                        icon: 'ac_unit',
-                        label: `Freeze Version ${summary.draft_version}`,
-                        width: 'auto',
-                        onclick: props.onFreeze,
-                    })
+                { class: 'flex-column fx-gap-2 fx-align-flex-end', style: 'margin-left: auto;' },
+                div(
+                    { class: 'flex-row fx-gap-2 fx-justify-flex-end fx-flex-wrap' },
+                    actions.history
+                        ? Button({ type: 'stroked', icon: 'history', label: 'History', width: 'auto', style: ACTION_STYLE, onclick: props.onHistory })
+                        : '',
+                    actions.export
+                        ? Button({ type: 'stroked', icon: 'download', label: 'Export Contract', width: 'auto', style: ACTION_STYLE, onclick: props.onExport })
+                        : '',
+                    actions.import
+                        ? Button({ type: 'stroked', icon: 'upload', label: 'Import Contract', width: 'auto', style: ACTION_STYLE, onclick: props.onImport })
+                        : '',
+                ),
+                actions.discard || actions.freeze
+                    ? div(
+                        { class: 'flex-row fx-gap-2 fx-justify-flex-end fx-flex-wrap' },
+                        actions.discard
+                            ? Button({ type: 'stroked', color: 'warn', icon: 'close', label: 'Discard Draft', width: 'auto', onclick: props.onDiscard })
+                            : '',
+                        actions.freeze
+                            ? Button({
+                                type: 'stroked',
+                                color: 'primary',
+                                icon: 'ac_unit',
+                                label: `Freeze Version ${summary.draft_version}`,
+                                width: 'auto',
+                                onclick: props.onFreeze,
+                            })
+                            : '',
+                    )
                     : '',
             ),
         );

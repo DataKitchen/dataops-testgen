@@ -324,6 +324,25 @@ def test_a_rule_naming_a_managed_test_type_is_kept_unverifiable():
     assert "orders: rule 3 (custom for engine testgen)" in split.unverifiable_rules
 
 
+def test_a_rule_naming_an_inactive_test_type_is_kept_unverifiable():
+    document = _document()
+    document["schema"][0]["quality"].append({
+        "type": "custom", "engine": "testgen",
+        "implementation": {"column_name": "Shipped within order", "custom_query": "qty_shipped > qty"},
+        "customProperties": [{"property": "testType", "value": "Condition_Flag", "vendor": "testgen"}],
+    })
+    inactive = TestType(
+        test_type="Condition_Flag", default_parm_columns=_PARAMETERS["Condition_Flag"], test_scope="custom", active="N",
+    )
+
+    split = split_document(
+        document, {**_TEST_TYPES, "Condition_Flag": inactive}, flavor=SqlFlavorCode.POSTGRESQL, qualify_tables=True
+    )
+
+    assert "Condition_Flag" not in {term.test_type for term in split.terms}
+    assert "orders: rule 3 (custom for engine testgen)" in split.unverifiable_rules
+
+
 def test_a_custom_rule_takes_its_column_name_from_its_implementation():
     document = _document()
     document["schema"][0]["quality"].append({
@@ -499,6 +518,35 @@ def test_a_decimal_compares_without_trailing_zeros(stored, incoming, same):
     assert (contract_import._comparable(stored) == contract_import._comparable(incoming)) is same
 
 
+@pytest.mark.parametrize(
+    ("test_type", "parameter", "same"),
+    [
+        ("Pattern_Match", "baseline_value", False),
+        ("Required_No_Placeholder", "baseline_value", False),
+        ("Max_Val", "baseline_value", True),
+        ("Pattern_Match", "threshold_value", True),
+    ],
+)
+def test_a_text_parameter_that_reads_as_a_decimal_compares_as_written(test_type, parameter, same):
+    declared = {"Pattern_Match": ["baseline_value", "threshold_value"], "Required_No_Placeholder": ["baseline_value"]}
+
+    stored = contract_import._parameter_values(test_type, {parameter: "1.50"}, {**_DECLARED, **declared})
+    incoming = contract_import._parameter_values(test_type, {parameter: "1.5"}, {**_DECLARED, **declared})
+
+    assert (stored[parameter] == incoming[parameter]) is same
+
+
+@pytest.mark.parametrize(("stored", "incoming", "same"), [("'1.50'", "'1.5'", False), ("1.50", "1.5", True)])
+def test_a_constant_compares_as_written_when_text_and_as_a_number_otherwise(stored, incoming, same):
+    # A text constant is stored as a quoted literal; a bare literal is a number the export writes as one
+    declared = {**_DECLARED, "Constant": ["baseline_value"]}
+
+    stored_values = contract_import._parameter_values("Constant", {"baseline_value": stored}, declared)
+    incoming_values = contract_import._parameter_values("Constant", {"baseline_value": incoming}, declared)
+
+    assert (stored_values == incoming_values) is same
+
+
 @pytest.mark.parametrize("stored", [None, ""])
 def test_a_blank_threshold_compares_as_the_0_it_runs_as(stored):
     changes = _plan(
@@ -517,6 +565,51 @@ def test_a_term_the_document_omits_is_deleted():
     assert [(change.action, change.reason, change.target_id) for change in changes][-1] == (
         ImportAction.delete, ContractTermReason.ABSENT, absent.id,
     )
+
+
+def test_a_muted_term_the_document_omits_is_left_alone():
+    muted = _BaselineTerm(**{**_baseline(test_type="Unique", term_id="email-unique").__dict__, "active": False})
+
+    changes = _plan([_incoming(term_id="email-nulls")], [_baseline(term_id="email-nulls"), muted])
+
+    assert [(change.action, change.contract_term_id) for change in changes] == [(ImportAction.skip, "email-nulls")]
+
+
+def test_a_muted_term_the_document_states_is_matched_not_duplicated():
+    muted = _BaselineTerm(**{**_baseline(term_id="email-nulls").__dict__, "active": False})
+
+    changes = _plan([_incoming(term_id="email-nulls")], [muted])
+
+    assert [(change.action, change.target_id) for change in changes] == [(ImportAction.skip, muted.id)]
+
+
+@pytest.mark.parametrize("muted_threshold", ["0", "5"], ids=["same-parameters", "other-parameters"])
+def test_a_key_match_prefers_the_active_term_to_its_muted_twin(muted_threshold):
+    muted = _BaselineTerm(**{**_baseline(threshold_value=muted_threshold).__dict__, "active": False})
+    active = _baseline(threshold_value="1")
+
+    changes = _plan([_incoming(threshold_value="0")], [muted, active])
+
+    assert [(change.action, change.target_id) for change in changes] == [(ImportAction.update, active.id)]
+
+
+@pytest.mark.parametrize(
+    ("stored", "incoming", "same"),
+    [
+        ("(1,2,3)", "('1','2','3')", True),
+        ("('Y', 'N')", "('Y','N')", True),
+        ("( 'Y' ,'N' )", "('Y','N')", True),
+        ("('Y','N')", "('N','Y')", False),
+        ("('Y','N')", "('Y','N','U')", False),
+    ],
+)
+def test_a_list_of_values_compares_by_its_values(stored, incoming, same):
+    changes = _plan(
+        [_incoming("LOV_Match", term_id="flag-lov", baseline_value=incoming, threshold_value="0")],
+        [_baseline("LOV_Match", term_id="flag-lov", baseline_value=stored, threshold_value="0")],
+    )
+
+    assert (changes[0].action is ImportAction.skip) is same
 
 
 def test_an_id_match_wins_over_another_terms_key_match():

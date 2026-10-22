@@ -182,3 +182,23 @@ def test_send_score_drop_notifications(
         ]
     )
     assert send_mock.call_count == len(triggers)
+
+
+def test_send_score_drop_notifications_names_each_scorecards_own_project(db_session_mock, send_mock):
+    with patch.object(ScoreDefinition, "results", new=property(lambda _: [])):
+        definitions = [
+            ScoreDefinition(id=f"sd-{n}", project_code=f"proj-{n}", name=f"Score {n}", cde_score=False, total_score=True)
+            for n in (1, 2)
+        ]
+        settings = [
+            create_ns(recipients=[f"owner_{n}@example.com"], score_definition_id=f"sd-{n}", total_score_threshold=99)
+            for n in (1, 2)
+        ]
+        db_session_mock.execute().fetchall.return_value = [
+            (settings[0], "Project One"), (settings[1], "Project Two"),
+        ]
+
+        send_score_drop_notifications([(definition, "score", 1.0, 0.9) for definition in definitions])
+
+    names = {call_args.args[1]["definition"].id: call_args.args[1]["project_name"] for call_args in send_mock.call_args_list}
+    assert names == {"sd-1": "Project One", "sd-2": "Project Two"}

@@ -86,8 +86,8 @@ def list_table_monitors(
 ):
     """The monitored tables of a table group, each with its monitors' state, and totals for the whole group.
 
-    Each item carries `freshness`, `volume` and `schema` (one monitor each) and `metrics` (one per metric
-    monitor). The `monitor_id` on each reads that monitor's series from `GET /monitors/{monitor_id}/series`.
+    Each item carries `freshness`, `volume`, and `schema` (one monitor each), and `metrics` (one per
+    metric monitor). The `monitor_id` on each reads that monitor's series from `GET /monitors/{monitor_id}/series`.
     """
     rows, total = TableGroup.list_monitor_table_summaries(
         table_group.id,
@@ -122,7 +122,7 @@ def list_table_monitors(
     summary="Read a monitor's time series",
 )
 def get_monitor_series(monitor: Monitor = resolve_monitor("view")):  # noqa: B008
-    """A monitor's results over its lookback window, with the table, column and thresholds it applies to.
+    """A monitor's results over its lookback window, with the table, column, and thresholds it applies to.
 
     The fields of each item in `points` depend on `type`:
 

@@ -31,7 +31,6 @@ from testgen.common.enums import JobKey, JobSource, JobStatus
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun
-from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_run import TestRun
 from testgen.common.notifications.monitor_run import send_monitor_notifications
 from testgen.common.notifications.profiling_run import send_profiling_run_notifications
@@ -104,8 +103,8 @@ def _notify_test_run(job_exec: JobExecution) -> None:
         if not test_run:
             LOG.warning("No test_run found for job %s; skipping notification", job_exec.id)
             return
-        if SuiteVersion.is_draft(test_run.version_id):
-            LOG.info("Run %s verified a draft; no notification sent", job_exec.id)
+        if not test_run.checked_version_in_force():
+            LOG.info("Run %s did not check the contract version in force; no notification sent", job_exec.id)
             return
         send_test_run_notifications(test_run)
 
@@ -122,9 +121,9 @@ def _notify_monitor_run(job_exec: JobExecution) -> None:
 def _rollup_scores(job_exec: JobExecution) -> None:
     """Roll up the just-completed run's scores and request a refresh of its project's scores.
 
-    A run that verified a draft is skipped: the refresh writes a score-history entry per
-    definition per category timestamped at that run and drives the score-drop notifications,
-    neither of which a preview of an agreement not yet in force should cause.
+    A run that did not check the contract version in force when it started is skipped: the refresh
+    writes a score-history entry per definition per category timestamped at that run and drives the
+    score-drop notifications, neither of which a run of an agreement not in force should cause.
     """
     if job_exec.status != JobStatus.COMPLETED:
         return
@@ -132,8 +131,8 @@ def _rollup_scores(job_exec: JobExecution) -> None:
     if job_exec.job_key == JobKey.run_tests:
         with database_session() as session:
             test_run = session.scalars(select(TestRun).where(TestRun.id == job_exec.id)).first()
-            if test_run and SuiteVersion.is_draft(test_run.version_id):
-                LOG.info("Run %s verified a draft; no score rollup", job_exec.id)
+            if test_run and not test_run.checked_version_in_force():
+                LOG.info("Run %s did not check the contract version in force; no score rollup", job_exec.id)
                 return
 
     rollup_run_and_request_refresh(parent_job_id=str(job_exec.id), parent_job_key=job_exec.job_key)

@@ -37,6 +37,9 @@ const FreezeVersionDialog = (/** @type Properties */ props) => {
         const raw = getValue(props.data) ?? null;
         data.val = raw;
         open.val = !!raw;
+        if (!raw) {
+            label.val = '';
+        }
     });
 
     const title = van.derive(() => data.val?.title ?? '');

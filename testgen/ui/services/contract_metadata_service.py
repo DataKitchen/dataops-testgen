@@ -1,5 +1,6 @@
 """What the Contract Metadata tab shows for a contract version, and how it saves the document and the tables."""
 
+import logging
 import re
 from typing import Any
 
@@ -9,12 +10,15 @@ from testgen.common import contract_service
 from testgen.common.contract_document import catalog_table_names, declared_tables
 from testgen.common.contract_rules import document_rules
 from testgen.common.contract_service import CheckableRuleError, InvalidContractDocumentError, OwnedFieldError
+from testgen.common.models import get_current_session
 from testgen.common.models.suite_version import SuiteVersion, VersionState, format_version
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.odcs.quality_rules import is_unverifiable_marker
 from testgen.common.odcs.serialize import serialize_document
+
+LOG = logging.getLogger("testgen")
 
 DOCUMENT_INFO = (
     "Quality rules TestGen can check are on the Quality Rules tab. Rules it cannot check are kept here, "
@@ -182,8 +186,11 @@ def save_tables(suite: TestSuite, selected: list[str]) -> dict[str, Any]:
     """Make ``selected`` the contract's declared tables, in its draft: remove each table it drops with its
     terms, and declare and generate each table it adds.
 
-    :return: ``success``, the ``message`` to show, and the draft ``version`` the change landed on, None
-        when nothing changed
+    Each table added is its own unit of work. When one fails, the tables before it stay saved and the
+    message names them before the failure.
+
+    :return: ``success``, the ``message`` to show, and on success the draft ``version`` the change landed
+        on, None when nothing changed
     """
     declared = declared_tables(_editable_version(suite).metadata_document)
     removed = [name for name in declared if name not in selected]
@@ -191,7 +198,11 @@ def save_tables(suite: TestSuite, selected: list[str]) -> dict[str, Any]:
     if not removed and not added:
         return {"success": True, "message": "No tables changed.", "version": None}
 
+    session = get_current_session()
     sentences = []
+    generated, not_profiled, tests = [], [], 0
+    failure = None
+    step = f"removing {_series(removed)}"
     try:
         if removed:
             terms = sum(contract_service.remove_table(suite, name)["terms_removed"] for name in removed)
@@ -199,8 +210,10 @@ def save_tables(suite: TestSuite, selected: list[str]) -> dict[str, Any]:
             if terms:
                 removed_text += f" and its {_terms(terms)}" if len(removed) == 1 else f", and their {_terms(terms)}"
             sentences.append(f"{removed_text}.")
-        generated, not_profiled, tests = [], [], 0
         for name in added:
+            # add_table commits partway through, so a rollback after its failure must not reach the steps before it.
+            session.commit()
+            step = f"adding {name}"
             generation = contract_service.add_table(suite, name)
             if name in generation.tables_not_profiled:
                 not_profiled.append(name)
@@ -208,7 +221,12 @@ def save_tables(suite: TestSuite, selected: list[str]) -> dict[str, Any]:
                 generated.append(name)
                 tests += generation.term_count
     except ValueError as e:
-        return {"success": False, "message": str(e)}
+        session.rollback()
+        failure = str(e)
+    except Exception:
+        LOG.exception("Could not save a contract's declared tables")
+        session.rollback()
+        failure = f"Something went wrong while {step}."
 
     if generated:
         holds = "holds" if len(generated) == 1 else "hold"
@@ -216,6 +234,8 @@ def save_tables(suite: TestSuite, selected: list[str]) -> dict[str, Any]:
     if not_profiled:
         has = "has" if len(not_profiled) == 1 else "have"
         sentences.append(f"No quality tests were generated for {_series(not_profiled)}, which {has} not been profiled.")
+    if failure:
+        return {"success": False, "message": " ".join([*sentences, failure])}
     draft = SuiteVersion.draft_for(suite.id)
     return {"success": True, "message": " ".join(sentences), "version": draft.version if draft else None}
 

@@ -19,7 +19,7 @@ def contract_export(suite: TestSuite, version: int | None) -> dict[str, Any]:
     target = contract_service.version_for_export(suite, version)
     label = format_version(target.version, version_state(target.frozen_at, SuiteVersion.is_active(target.id, suite.id)))
     try:
-        exported = contract_service.export_version(target)
+        exported = contract_service.export_version(target, contract_name=suite.test_suite)
     except ValueError as e:
         return {
             "contract": suite.test_suite,

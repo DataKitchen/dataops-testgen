@@ -1,5 +1,6 @@
 -- Classifies each table profiled by this run, using the table's profiling history to decide
--- whether its record count is cumulative or windowed.
+-- whether its record count is cumulative or windowed. A table profiled for the first time gets
+-- no period, and its functional table type is the table type alone.
 --
 -- The current run's tables come from profile_run_id, not from run_date: run_date is a label a
 -- run stamps on its rows. The history scan is scoped by table_groups_id rather than
@@ -34,8 +35,13 @@ WITH tablesrank AS
          (SELECT project_code,
                  schema_name,
                  table_name,
+                 -- A table's record count is cumulative when it has never dropped between runs, and
+                 -- window when it has. A table with no earlier run has no period. LAG also pairs
+                 -- rows of one run, which share a run_date and a record count, so only a pair
+                 -- spanning two run dates is evidence of history.
                  CASE
-                 -- table period is cumulative is the current record count is always greater than the previous record count
+                     WHEN COUNT(CASE WHEN prev_run_date < run_date AND prev_record_ct IS NOT NULL THEN 1 END) = 0
+                         THEN NULL
                      WHEN SUM(CASE WHEN record_ct - prev_record_ct < 0 THEN 1 ELSE 0 END) = 0 THEN 'cumulative'
                      ELSE 'window' END AS table_period,
                  CASE

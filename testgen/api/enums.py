@@ -107,7 +107,7 @@ class ScoresGroupBy(StrEnum):
     """Attribute the ``scores`` endpoint breaks the score down by.
 
     ``impact_dimension`` is the recommended primary breakdown. ``quality_dimension``,
-    ``impact_dimension`` and ``table_group`` are groupable only; every other value is
+    ``impact_dimension``, and ``table_group`` are groupable only; every other value is
     also accepted as a filter query param."""
 
     quality_dimension = "quality_dimension"

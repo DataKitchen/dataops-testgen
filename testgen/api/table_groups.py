@@ -145,7 +145,7 @@ def create_table_group(
 ) -> TableGroupCreateResponse:
     """Create a table group on a connection. It belongs to the connection's project.
 
-    The response carries the new `table_group_id`, which profiling, test generation
+    The response carries the new `table_group_id`, which profiling, test generation,
     and test runs take as input.
 
     The request names the table group's tables the way its connection holds them: by
@@ -278,7 +278,7 @@ def update_table_group(
 ) -> TableGroupUpdateResponse:
     """Omitted fields are left as they are, and nothing is saved when any field is refused.
 
-    `table_set`, the masks and `file_declarations` replace the stored list. Catalog tags are merged:
+    `table_set`, the masks, and `file_declarations` replace the stored list. Catalog tags are merged:
     a tag the request does not name is left as it is.
 
     Changing `profile_flag_pii` requires permission to view PII. Without it, the 400 carries a
@@ -388,7 +388,8 @@ def update_table_group(
 def delete_table_group(table_group: TableGroup = resolve_table_group("edit")) -> None:  # noqa: B008
     """Delete a table group together with everything recorded against it: its test suites with their
     test definitions, test runs, results, and schedules; its monitors; its profiling runs and results,
-    hygiene issues, and data catalog; and the notification rules scoped to it or to its test suites.
+    hygiene issues, data catalog, and schema change history; the jobs that name it or its test suites,
+    which leave the job listing; and the notification rules scoped to it or to its test suites.
     Scorecards are kept.
 
     The delete is refused while a job for the table group or its test suites is queued or running:

@@ -101,9 +101,19 @@ def test_update_profiling_results_excludes_cde_query_when_flag_unset():
 
 @pytest.mark.parametrize(
     "mask,expected",
-    [("%_id", r"%\_id"), ("%_sk", r"%\_sk"), ("%id", "%id"), (r"%\_id", r"%\_id"), (None, None), ("", "")],
+    [
+        ("%_id", r"%\_id"),
+        ("%_sk", r"%\_sk"),
+        ("%id", "%id"),
+        (r"%\_id", r"%\_id"),
+        ("%id\\", r"%id\\"),
+        (r"a\b%", r"a\\b%"),
+        (r"%\%", r"%\\%"),
+        (None, None),
+        ("", ""),
+    ],
 )
-def test_id_and_sk_masks_match_underscore_literally(mask, expected):
+def test_id_and_sk_masks_match_underscore_and_backslash_literally(mask, expected):
     sql_generator = _make_profiling_sql()
     sql_generator.table_group.profile_id_column_mask = mask
     sql_generator.table_group.profile_sk_column_mask = mask

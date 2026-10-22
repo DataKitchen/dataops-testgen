@@ -237,9 +237,19 @@ class TestRunResult(BaseModel):
 class TestRunVersion(BaseModel):
     """The contract version a run checked."""
 
-    number: int = Field(description=VERSION_NUMBER)
+    number: int | None = Field(
+        description=f"{VERSION_NUMBER} `null` when the version is a draft that was discarded after the run."
+    )
     state: VersionState = Field(
-        description="The version's state as of this request: `draft`, `active` (the agreement in force), or `superseded`."
+        description="The version's state as of this request: `draft`, `active` (the agreement in force), or "
+        "`superseded`. `draft` for a discarded draft."
+    )
+    preview: bool = Field(
+        description="Whether the run checked the version before it was frozen, including a draft since discarded."
+    )
+    discarded: bool = Field(
+        description="Whether the version is a draft that was discarded after the run. Its tests and number are gone; "
+        "the run and its results remain."
     )
     counts_as_status: bool = Field(
         description="Whether the run completed a verification of the agreement in force when it started: its version "
@@ -536,7 +546,8 @@ class ProfilingColumnItem(BaseModel):
     )
     critical_data_element: bool = Field(
         default=False,
-        description="Whether the column, or its table, is flagged as a critical data element (CDE).",
+        description="Whether the column is a critical data element (CDE): its own flag, or its table's when the "
+        "column has none.",
     )
     record_ct: int | None = Field(default=None, description="Rows in the table at this run.")
     null_value_ct: int | None = Field(default=None, description="Rows where the column is null.")
@@ -618,8 +629,8 @@ class ImportStrictError(BaseModel):
 
 _REGENERATION_GROUPS = (
     "`tests` (tests from the latest profiling, locked tests kept), `profiling` (functional types, keys, formats, and "
-    "profiled values), or `governance` (descriptions, tags, classification, and the critical data element, PII, and "
-    "excluded data element flags, from the data catalog)."
+    "profiled values), or `catalog` (catalog metadata: descriptions, tags, classification, and the critical data "
+    "element, PII, and excluded data element flags, from the data catalog)."
 )
 
 

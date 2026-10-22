@@ -14,7 +14,7 @@ from testgen.common.database.table_group_service import (
     schema_label_for_table_group,
     table_group_qualifies_table_refs,
 )
-from testgen.common.enums import TEST_SUITE_TYPES, JobKey, JobSource, SuiteType
+from testgen.common.enums import MANAGED_TEST_TYPES, TEST_SUITE_TYPES, JobKey, JobSource, SuiteType
 from testgen.common.flavors import table_group_schema_label
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
@@ -62,7 +62,7 @@ from testgen.ui.services.query_cache import (
     select_test_definitions_where,
 )
 from testgen.ui.services.string_service import snake_case_to_title_case
-from testgen.ui.services.test_definition_service import save_from_dialog
+from testgen.ui.services.test_definition_service import MANAGED_EDIT_MESSAGE, dialog_table_columns, save_from_dialog
 from testgen.ui.session import session
 from testgen.utils import dataframe_to_json_records, friendly_score, make_json_safe
 
@@ -242,6 +242,16 @@ class TestResultsPage(Page):
                 column_name=column_name,
                 action=action_mapped,
                 flagged=flagged_bool,
+            )
+            managed_count = test_result_queries.get_test_results_count(
+                run_id,
+                test_statuses=test_statuses,
+                test_type_id=test_type,
+                table_name=table_name,
+                column_name=column_name,
+                action=action_mapped,
+                flagged=flagged_bool,
+                managed_only=True,
             )
 
             filter_options = test_result_queries.get_filter_options(run_id)
@@ -461,7 +471,7 @@ class TestResultsPage(Page):
                     qualifies_table_refs=table_group_qualifies_table_refs(table_group.id),
                 )
             try:
-                error = save_from_dialog(definition)
+                error = save_from_dialog(definition, test_suite)
             except CONTRACT_VERSION_ERRORS:
                 st.toast(CONTRACT_VERSION_MESSAGE, icon=":material/error:")
                 return
@@ -586,6 +596,7 @@ class TestResultsPage(Page):
                 "notes_dialog": notes_dialog,
                 "page": current_page,
                 "total_count": total_count,
+                "managed_count": managed_count,
                 "page_size": current_page_size,
                 "sort_state": sort_state,
                 "filter_options": filter_options,
@@ -629,6 +640,8 @@ def _build_edit_test_dialog_data(test_definition_id: str | None, test_suite_mini
     test_def = select_test_definitions_where(TestDefinition.id == test_definition_id)
     if not test_def:
         return {"open": True, "error": MISSING_TEST_DEFINITION_MESSAGE}
+    if test_def[0].test_type in MANAGED_TEST_TYPES:
+        return {"open": True, "error": MANAGED_EDIT_MESSAGE}
 
     full_test_suite = get_test_suite(test_suite_minimal.id)
     table_group = get_table_group_minimal(test_suite_minimal.table_groups_id)
@@ -656,7 +669,7 @@ def _build_edit_test_dialog_data(test_definition_id: str | None, test_suite_mini
         "open": True,
         "test_definition": make_json_safe(test_def_dict),
         "test_types": make_json_safe(test_types),
-        "table_columns": table_columns,
+        "table_columns": dialog_table_columns(full_test_suite, table_columns, test_def_row.table_name),
         "table_group_schema": table_group.table_group_schema,
         "test_suite": test_suite_info,
         "qualifies_table_refs_with_schema": (

@@ -269,6 +269,7 @@ LEFT JOIN data_column_chars dcc
  AND  r.table_name = dcc.table_name
  AND  r.column_names = dcc.column_name)
  WHERE r.dq_prevalence IS NOT NULL
+   AND r.result_status IS DISTINCT FROM 'Log'
    AND s.dq_score_exclude = FALSE
    AND (r.disposition IS NULL OR r.disposition = 'Confirmed')
    AND dcc.drop_date IS NULL
@@ -304,6 +305,7 @@ WITH dimension_rollup
          INNER JOIN test_suites s
             ON (r.test_run_id = s.last_complete_test_run_id)
          WHERE r.dq_prevalence IS NOT NULL
+           AND r.result_status IS DISTINCT FROM 'Log'
            AND s.dq_score_exclude = FALSE
            AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'
          GROUP BY r.test_run_id, r.test_suite_id, r.table_groups_id,
@@ -445,6 +447,7 @@ WITH impact_dimension_rollup
          INNER JOIN test_suites s
             ON (r.test_run_id = s.last_complete_test_run_id)
          WHERE r.dq_prevalence IS NOT NULL
+           AND r.result_status IS DISTINCT FROM 'Log'
            AND s.dq_score_exclude = FALSE
            AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'
          GROUP BY r.test_run_id, r.test_suite_id, r.table_groups_id,
@@ -628,6 +631,7 @@ LEFT JOIN data_column_chars dcc
  AND  r.table_name = dcc.table_name
  AND  r.column_names = dcc.column_name)
  WHERE r.dq_prevalence IS NOT NULL
+   AND r.result_status IS DISTINCT FROM 'Log'
    AND s.dq_score_exclude = FALSE
    AND (r.disposition IS NULL OR r.disposition = 'Confirmed')
 GROUP BY sr.definition_id,

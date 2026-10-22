@@ -28,7 +28,7 @@ def _export(version: SuiteVersion, exported: ExportedDocument | Exception, is_ac
     ):
         result = contract_export(suite, requested)
     for_export.assert_called_once_with(suite, requested)
-    export_version.assert_called_once_with(version)
+    export_version.assert_called_once_with(version, contract_name="orders_contract")
     return result
 
 

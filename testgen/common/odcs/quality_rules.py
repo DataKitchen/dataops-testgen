@@ -539,6 +539,8 @@ def declaration_marker(term: "TestDefinition", test_type: "TestType", declaratio
             "so its declaration has no id to carry."
         )
     metadata: dict[str, Any] = {"dimension": odcs_dimension(QualityDimension(test_type.dq_dimension))}
+    if term.test_description:
+        metadata["name"] = term.test_description
     custom_properties = [
         *_apply_reserved_subtree(metadata, term.custom_metadata),
         *_user_custom_properties(term.custom_metadata),
@@ -1278,6 +1280,8 @@ def project_rule(
         mapping.dimension if mapping is not None
         else odcs_dimension(QualityDimension(test_type.dq_dimension))
     )
+    if term.test_description and "name" not in rule:
+        rule["name"] = term.test_description
 
     reserved_properties = _apply_reserved_subtree(rule, term.custom_metadata)
     user_properties = _user_custom_properties(term.custom_metadata)
