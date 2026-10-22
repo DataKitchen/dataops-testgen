@@ -7,11 +7,15 @@ conftest, preserving their ``autouse`` flag for that subtree::
     from testgen.testing.fixtures import db_session_mock, mcp_user  # noqa: F401
 """
 
+import json
+import os
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
+from testgen import settings
+from testgen.common.audit.sinks import AUDIT_LOG_FILE_NAME, get_sink
 from testgen.mcp.permissions import set_mcp_username
 
 # Fictional role matrix for tests. role_a has full access (but NOT view_pii — several
@@ -35,6 +39,32 @@ def _test_roles_with_permission(permission):
 def patched_settings():
     with patch("testgen.settings.UI_BASE_URL", "http://tg-base-url"):
         yield
+
+
+class AuditLog:
+    """The audit records written during a test."""
+
+    def __init__(self, folder: str) -> None:
+        self.path = os.path.join(folder, AUDIT_LOG_FILE_NAME)
+
+    def records(self) -> list[dict]:
+        if not os.path.exists(self.path):
+            return []
+        with open(self.path) as file:
+            return [json.loads(line) for line in file]
+
+
+@pytest.fixture(autouse=True)
+def audit_log(tmp_path, monkeypatch):
+    """Write audit records under ``tmp_path`` rather than the configured log folder."""
+    folder = str(tmp_path / "log")
+    monkeypatch.setattr(settings, "LOG_FILE_PATH", folder)
+    monkeypatch.setattr(settings, "AUDIT_LOG_ENABLED", True)
+    get_sink.cache_clear()
+    yield AuditLog(folder)
+    if get_sink.cache_info().currsize and (close := getattr(get_sink(), "close", None)):
+        close()
+    get_sink.cache_clear()
 
 
 @pytest.fixture
