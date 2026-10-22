@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, Query, status
 
 from testgen.api.deps import (
     CONTRACT_VERSION_ERRORS,
+    LimitQuery,
+    PageQuery,
     api_error,
     contract_version_error,
     db_session,
@@ -13,6 +15,7 @@ from testgen.api.deps import (
     resolve_test_suite,
 )
 from testgen.api.schemas import (
+    JOB_KEY_VALUES,
     ErrorResponse,
     JobListResponse,
     JobResponse,
@@ -60,7 +63,7 @@ router = APIRouter(tags=["Jobs"], dependencies=[Depends(db_session, scope="funct
     status_code=status.HTTP_202_ACCEPTED,
 )
 def submit_profiling(table_group: TableGroup = resolve_table_group("edit")):  # noqa: B008
-    """Submit a profiling job for a table group."""
+    """Profiles the table group's tables, as its table filters or file declarations select them."""
     job = JobExecution.submit(
         job_key=JobKey.run_profile,
         kwargs={"table_group_id": str(table_group.id)},
@@ -72,7 +75,7 @@ def submit_profiling(table_group: TableGroup = resolve_table_group("edit")):  # 
 
 @router.post(
     "/test-suites/{test_suite_id}/test-runs",
-    summary="Submit a test run",
+    summary="Submit a test run job",
     response_model=TestRunSubmittedResponse,
     status_code=status.HTTP_202_ACCEPTED,
     responses={
@@ -87,13 +90,11 @@ def submit_test_run(
     test_suite: TestSuite = resolve_test_suite("edit", TEST_SUITE_TYPES),  # noqa: B008
     body: TestRunRequest | None = None,
 ):
-    """Submit a test execution job for a test suite or a contract.
-
-    Runs against the table group's schema. A referential test's comparison schema can be
-    overridden for this run.
+    """Runs against the table group's schema; a contract runs one of its versions. A referential
+    test's comparison schema can be overridden for this run.
 
     A contract runs its active version, or its draft when no version has been frozen, unless
-    ``version`` names another. Only a run of the active version counts as the contract's
+    `version` names another. Only a run of the active version counts as the contract's
     status; a run of the draft or of a superseded version does not.
     """
     try:
@@ -142,9 +143,7 @@ def submit_test_generation(
     test_suite: TestSuite = resolve_test_suite("edit", TEST_SUITE_TYPES),  # noqa: B008
     body: TestGenerationRequest | None = None,
 ):
-    """Submit a test generation job for a test suite or a contract.
-
-    Generates from the test suite's stored generation sets when none are given,
+    """Generates from the test suite's stored generation sets when none are given,
     falling back to Standard. A contract always generates its own fixed set of test types into
     its draft version and generates the draft's metadata. Before its table group has been
     profiled, the metadata is generated from the data catalog alone and only schema conformance tests are
@@ -152,10 +151,10 @@ def submit_test_generation(
 
     The value hash test types (Match Text, Numeric and Date Hash, their Keyed variants, and Match
     Epoch Sum, in the Table Comparison set) are generated only from a profiling run that computed
-    value hashes. That needs ``profile_table_comparison`` on the table group and a profiling run
+    value hashes. That needs `profile_table_comparison` on the table group and a profiling run
     since it was turned on; otherwise they are not generated.
 
-    For a contract, ``regenerate`` chooses what is refreshed; omit it to refresh everything. Tests
+    For a contract, `regenerate` chooses what is refreshed; omit it to refresh everything. Tests
     alone cannot be regenerated before the table group has been profiled.
     """
     regenerate = body.regenerate if body else None
@@ -201,11 +200,14 @@ def submit_test_generation(
 
 @router.get(
     "/jobs/{job_id}",
-    summary="Poll a job's status",
+    summary="Read a job",
     response_model=JobResponse,
 )
 def get_job_status(job: JobExecution = resolve_job("view")):  # noqa: B008
-    """Poll the status of a job execution."""
+    """A job's status and timestamps, and its error message when it failed.
+
+    Poll it after submitting a job until `status` is `completed`, `error`, or `canceled`.
+    """
     return JobResponse.model_validate(job, from_attributes=True)
 
 
@@ -213,10 +215,13 @@ def get_job_status(job: JobExecution = resolve_job("view")):  # noqa: B008
     "/jobs/{job_id}/cancel",
     summary="Cancel a job",
     response_model=JobResponse,
-    responses={409: {"model": ErrorResponse, "description": "Invalid status transition"}},
+    responses={409: {"model": ErrorResponse, "description": "The job has already finished"}},
 )
 def cancel_job(job: JobExecution = resolve_job("edit")):  # noqa: B008
-    """Request cancellation of a job execution."""
+    """Asks a job that has not finished to stop. Repeating the request changes nothing.
+
+    The returned `status` is `cancel_requested` until the job stops, then `canceled`.
+    """
     if not job.request_cancel():
         raise api_error(409, "invalid_status_transition", f"Cannot cancel job in '{job.status}' status")
     return JobResponse.model_validate(job, from_attributes=True)
@@ -229,12 +234,16 @@ def cancel_job(job: JobExecution = resolve_job("edit")):  # noqa: B008
 )
 def list_jobs(
     project_code: str = resolve_project_code("view"),
-    job_key: PublicJobKey | None = Query(default=None),  # noqa: B008
-    status: JobStatus | None = Query(default=None),  # noqa: B008
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=20, ge=1, le=100),
+    job_key: PublicJobKey | None = Query(  # noqa: B008
+        default=None, description=f"Only jobs of this kind: {JOB_KEY_VALUES}."
+    ),
+    status: JobStatus | None = Query(  # noqa: B008
+        default=None, description="Only jobs in this status, e.g. `completed`. Values as in the job's `status`."
+    ),
+    page: int = PageQuery,
+    limit: int = LimitQuery,
 ):
-    """List job executions for a project, with optional filters and pagination."""
+    """Profiling, test run, and test generation jobs in a project, newest first."""
     items, total = JobExecution.list_for_project(
         project_code,
         JobExecution.job_key.in_(list(PublicJobKey)),

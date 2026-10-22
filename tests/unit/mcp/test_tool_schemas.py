@@ -9,7 +9,13 @@ The server is built once for the whole module, so whichever plugins are installe
 running environment have their tools checked alongside the core ones.
 """
 
+import asyncio
+from unittest.mock import patch
+from uuid import uuid4
+
 import pytest
+from mcp.server.fastmcp.exceptions import ToolError
+from pydantic import ValidationError
 
 from testgen.mcp.server import build_mcp_server
 
@@ -45,6 +51,105 @@ def prompts(mcp_server):
 def test_tools_are_registered(tools):
     """Guard the fixture itself: an empty registry would make every other test vacuous."""
     assert len(tools) > 50
+
+
+def test_every_tool_schema_refuses_undeclared_arguments(tools):
+    permissive = [tool.name for tool in tools if tool.parameters.get("additionalProperties") is not False]
+    assert not permissive, f"Input schemas that do not declare additionalProperties: false: {permissive}"
+
+
+def test_every_tool_rejects_an_undeclared_argument(tools):
+    accepting = []
+    for tool in tools:
+        try:
+            tool.fn_metadata.arg_model.model_validate({"not_an_argument": "x"})
+        except ValidationError as error:
+            if any(e["type"] == "extra_forbidden" and e["loc"] == ("not_an_argument",) for e in error.errors()):
+                continue
+        accepting.append(tool.name)
+    assert not accepting, f"Tools that drop an undeclared argument without an error: {accepting}"
+
+
+def test_a_misplaced_argument_fails_the_call_and_names_it(mcp_server):
+    # A field that belongs inside ``fields``, passed at the top level, would otherwise be dropped and create a test
+    # with no column.
+    with patch("testgen.mcp.tools.test_definitions.TestDefinition") as test_definition_mock:
+        with pytest.raises(ToolError, match="column_name"):
+            asyncio.run(mcp_server.call_tool(
+                "create_test",
+                {
+                    "test_suite_id": str(uuid4()),
+                    "test_type": "Alpha Truncation",
+                    "table_name": "customers",
+                    "column_name": "email",
+                },
+            ))
+    test_definition_mock.assert_not_called()
+
+
+def _argument_error(mcp_server, tool_name: str, arguments: dict) -> str:
+    with pytest.raises(ToolError) as raised:
+        asyncio.run(mcp_server.call_tool(tool_name, arguments))
+    return str(raised.value)
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arguments", "expected"),
+    [
+        (
+            "get_project",
+            {"project_code": "DEFAULT", "bogus": 1},
+            "- `bogus`: not an argument of `get_project`. Its arguments are `project_code`.",
+        ),
+        ("get_test_suite", {}, "- `test_suite_id`: required."),
+        ("get_test_suite", {"test_suite_id": 123}, "- `test_suite_id`: Input should be a valid string."),
+        (
+            "create_table_group",
+            {
+                "connection_id": 1,
+                "table_group_name": "files",
+                "file_declarations": [{"name": "orders", "uri": "orders.xml", "format": "xml"}],
+            },
+            "- `file_declarations[0].format`: Input should be 'csv', 'parquet' or 'json'.",
+        ),
+    ],
+)
+def test_an_argument_error_is_described_in_plain_words(mcp_server, tool_name, arguments, expected):
+    message = _argument_error(mcp_server, tool_name, arguments)
+
+    assert message.startswith(f"Invalid arguments for `{tool_name}`.")
+    assert expected in message.splitlines()
+    assert "pydantic" not in message.lower()
+    assert "validation error" not in message
+
+
+def test_every_argument_error_of_a_call_is_listed(mcp_server):
+    message = _argument_error(mcp_server, "get_test_suite", {"test_suite_id": 123, "bogus": 1, "other": 2})
+
+    assert [line for line in message.splitlines() if line.startswith("- ")] == [
+        "- `test_suite_id`: Input should be a valid string.",
+        "- `bogus`: not an argument of `get_test_suite`. Its arguments are `test_suite_id`.",
+        "- `other`: not an argument of `get_test_suite`. Its arguments are `test_suite_id`.",
+    ]
+
+
+def _parse_arguments(tools, tool_name: str, arguments: dict):
+    tool = next(tool for tool in tools if tool.name == tool_name)
+    return tool.fn_metadata.arg_model.model_validate(arguments)
+
+
+def test_the_failure_trend_bucket_is_read_in_any_case(tools):
+    assert _parse_arguments(tools, "get_failure_trend", {"bucket": "Week"}).bucket == "week"
+
+
+def test_a_file_declaration_format_is_read_in_any_case(tools):
+    parsed = _parse_arguments(tools, "create_table_group", {
+        "connection_id": 1,
+        "table_group_name": "files",
+        "file_declarations": [{"name": "orders", "uri": "orders/*.parquet", "format": " Parquet"}],
+    })
+
+    assert parsed.file_declarations[0].format == "parquet"
 
 
 def test_every_parameter_has_a_schema_description(tools):

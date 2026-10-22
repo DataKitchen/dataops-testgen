@@ -503,6 +503,14 @@ def test_generating_a_contract_passes_the_chosen_groups_in_order(db_session_mock
     assert "not been profiled" not in out
 
 
+def test_generating_a_contract_reads_the_groups_in_any_case(db_session_mock):
+    _, _, submit, _ = _generate(
+        _contract_suite(), draft=SuiteVersion(id=uuid4(), version=2), regenerate=["Governance", " TESTS "]
+    )
+
+    assert submit.call_args.kwargs["kwargs"]["regenerate"] == ["tests", "governance"]
+
+
 def test_generating_profiling_for_an_unprofiled_contract_says_profiled_values_are_not_refreshed(db_session_mock):
     out, _, submit, _ = _generate(
         _contract_suite(), draft=SuiteVersion(id=uuid4(), version=2), regenerate=["profiling"], run_id=None

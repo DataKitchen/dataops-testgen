@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from testgen.api.deps import db_session, get_authorized_user
 from testgen.api.schemas import CatalogTags, TableGroupCreate
 from testgen.api.table_groups import get_table_group, list_table_groups, router
-from testgen.common.database.table_group_service import SchemaMove, SchemaMoveRefused
+from testgen.common.database.table_group_service import DeleteBlocker, SchemaMove, SchemaMoveRefused
 from testgen.common.models.table_group import TableGroup
 
 pytestmark = pytest.mark.unit
@@ -144,7 +144,7 @@ def test_list_table_groups_reports_counts_and_scores(mock_cls):
     item = list_table_groups(project_code="demo", page=1, limit=20).items[0]
 
     assert (item.table_count, item.column_count, item.row_count) == (12, 140, 98000)
-    assert (item.profiling_score, item.testing_score, item.quality_score) == (0.95, 0.9, 0.855)
+    assert (item.profiling_score, item.testing_score, item.quality_score) == pytest.approx((95.0, 90.0, 85.5))
 
 
 @patch(f"{MODULE}.TableGroup")
@@ -708,7 +708,6 @@ def test_create_table_group_rejects_values_wider_than_their_columns():
 
     assert resp.status_code == 400
     assert [entry["detail"] for entry in _error_entries(resp)] == [
-        "`table_set` must be at most 2000 characters in total, counting a comma between entries.",
         "`business_domain` must be at most 40 characters.",
         f"`profiling_delay_days` must be at most {2**31 - 1}.",
     ]
@@ -1303,7 +1302,7 @@ def test_update_table_group_refuses_a_pii_change_without_view_pii():
         {
             "code": "pii_permission_required",
             "detail": "Changing PII detection requires permission to view PII. "
-            "Leave this setting unchanged or contact your administrator.",
+            "Leave this setting unchanged, or ask an administrator for the permission.",
         }
     ]
     result.table_group.save.assert_not_called()
@@ -1537,3 +1536,70 @@ def test_update_request_shares_each_create_field_description():
         shared = create[name].get("description", "").removeprefix("Database connections only, and required there. ")
         shared = shared.removeprefix("File connections only, and required there. ").split(" Omit ")[0]
         assert shared in prop.get("description", ""), name
+
+
+# ---------------------------------------------------------------------------
+# delete
+# ---------------------------------------------------------------------------
+
+
+@patch(f"{MODULE}.cascade_delete_table_group", return_value=None)
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch("testgen.api.deps.TableGroup")
+def test_delete_table_group_returns_204_with_no_body(mock_cls, _perm, mock_delete):
+    mock_cls.get.return_value = _table_group()
+
+    resp = _client().delete(f"/api/v1/table-groups/{TG_ID}")
+
+    assert resp.status_code == 204
+    assert resp.content == b""
+    assert mock_delete.call_args.args[0].id == TG_ID
+
+
+@pytest.mark.parametrize("blocker", list(DeleteBlocker))
+@patch(f"{MODULE}.cascade_delete_table_group")
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch("testgen.api.deps.TableGroup")
+def test_delete_table_group_is_refused_while_a_job_runs(mock_cls, _perm, mock_delete, blocker):
+    """A running catalog refresh is reported the same way as a running profiling or test run: the
+    caller's remedy is the same."""
+    mock_cls.get.return_value = _table_group()
+    mock_delete.return_value = blocker
+
+    resp = _client().delete(f"/api/v1/table-groups/{TG_ID}")
+
+    assert resp.status_code == 409
+    assert _error_entries(resp) == [
+        {
+            "code": "job_in_flight",
+            "detail": "A job for this table group is still running. Wait for it to finish, then try again.",
+        }
+    ]
+
+
+@patch(f"{MODULE}.cascade_delete_table_group")
+@patch("testgen.api.deps.has_project_permission")
+@patch("testgen.api.deps.TableGroup")
+def test_delete_table_group_404_with_view_but_not_edit_permission(mock_cls, mock_perm, mock_delete):
+    mock_cls.get.return_value = _table_group()
+    mock_perm.side_effect = lambda _user, _project, permission: permission == "view"
+
+    resp = _client().delete(f"/api/v1/table-groups/{TG_ID}")
+
+    assert resp.status_code == 404
+    assert mock_perm.call_args.args[2] == "edit"
+    mock_delete.assert_not_called()
+
+
+@patch(f"{MODULE}.cascade_delete_table_group")
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch("testgen.api.deps.TableGroup")
+def test_delete_table_group_404_when_it_does_not_exist(mock_cls, _perm, mock_delete):
+    mock_cls.get.return_value = None
+
+    assert _client().delete(f"/api/v1/table-groups/{TG_ID}").status_code == 404
+    mock_delete.assert_not_called()
+
+
+def test_delete_table_group_rejects_a_malformed_uuid():
+    assert _client().delete("/api/v1/table-groups/not-a-uuid").status_code == 422

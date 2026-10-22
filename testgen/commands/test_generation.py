@@ -16,7 +16,7 @@ from testgen.common.database.database_service import (
     get_flavor_service,
     replace_params,
 )
-from testgen.common.enums import RegenerationGroup, SuiteType
+from testgen.common.enums import MANAGED_TEST_TYPES, RegenerationGroup, SuiteType
 from testgen.common.generation_set_service import (
     CONTRACT_GENERATION_SET,
     MONITOR_GENERATION_SET,
@@ -30,7 +30,7 @@ from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import MANAGED_TEST_TYPES, TestDefinition
+from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.read_file import read_template_sql_file
 from testgen.utils import to_sql_timestamp

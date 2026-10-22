@@ -266,14 +266,14 @@ def test_column_profile_fields_resource_lists_all_pii_redacted_fields():
 
     # Friendly labels mirroring PROFILING_PII_FIELDS from testgen.common.pii_masking.
     expected_labels = (
-        "Frequent Values",
-        "Minimum Text",
-        "Maximum Text",
-        "Minimum Value",
-        "Minimum Value > 0",
-        "Maximum Value",
-        "Minimum Date",
-        "Maximum Date",
+        "Frequent values",
+        "Minimum text",
+        "Maximum text",
+        "Minimum value",
+        "Minimum value > 0",
+        "Maximum value",
+        "Minimum date",
+        "Maximum date",
     )
     for label in expected_labels:
         assert label in result, f"Expected `{label}` to be named in the redaction note"
@@ -296,20 +296,36 @@ def test_column_profile_fields_resource_describes_per_type_fields():
     result = column_profile_fields_resource()
 
     # All-types section
-    assert "Row Count" in result
-    assert "Hygiene Issues" in result
+    assert "**Row count**" in result
+    assert "**Hygiene issues (confirmed)**" in result
     # Alpha
-    assert "Minimum Length" in result
-    assert "Frequent Values" in result
-    assert "Standard Pattern Match" in result
+    assert "**Minimum length**" in result
+    assert "**Frequent values**" in result
+    assert "**Standard pattern match**" in result
     # Numeric
-    assert "Minimum Value" in result
-    assert "Median Value" in result
+    assert "**Minimum value**" in result
+    assert "**Median value**" in result
     # Datetime
-    assert "Minimum Date" in result
-    assert "Before 1 Year" in result
+    assert "**Minimum date**" in result
+    assert "**Before 1 year**" in result
     # Boolean
     assert "## Boolean Columns" in result
+
+
+def test_column_profile_fields_resource_matches_the_get_column_sections():
+    from testgen.mcp.tools.reference import column_profile_fields_resource
+
+    result = column_profile_fields_resource()
+
+    for heading in ("### Top fields", "### Catalog metadata", "### Profile"):
+        assert heading in result
+    for label in ("Description", "Critical data element", "Excluded data element", "Catalog tags"):
+        assert f"**{label}**" in result
+    assert "the Profile section holds a single line saying so" in result
+    assert "`get_column`" in result
+    assert "`list_columns`" in result
+    assert "get_column_profile_detail" not in result
+    assert "list_column_profiles" not in result
 
 
 # --- server instructions reference the new resource ---

@@ -3,8 +3,10 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from testgen.common.enums import JOB_STATUS_LABEL, JobStatus, SuiteType
+from testgen.common.models.data_table import DataTable, TableCatalogSummary
 from testgen.common.models.suite_version import ContractState
 from testgen.common.models.test_suite import TestSuite as RealTestSuite
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
@@ -150,6 +152,25 @@ def test_list_test_suites_returns_stats(mock_suite, db_session_mock):
     assert "3 failed" in result
     # latest_run_id is already the job execution id — surfaced directly.
     assert str(run_id) in result
+    assert f"`{run_id}` (2024-01-15 10:00 UTC)" in result
+
+
+@patch("testgen.mcp.tools.discovery.SuiteVersion")
+@patch("testgen.mcp.tools.discovery.TestSuite")
+def test_list_test_suites_contract_without_status_run_mentions_previews(mock_suite, mock_version, db_session_mock):
+    summary = MagicMock(
+        id=uuid4(), test_suite="Orders Contract", suite_type=SuiteType.CONTRACT,
+        test_suite_description=None, generation_sets=None, latest_run_id=None,
+    )
+    mock_suite.select_summary.return_value = [summary]
+    mock_version.states_for.return_value = {}
+
+    from testgen.mcp.tools.discovery import list_test_suites
+
+    result = list_test_suites("demo")
+
+    assert "No completed run counts as contract status. Preview runs are excluded." in result
+    assert "No completed runs." not in result
 
 
 @patch("testgen.mcp.tools.discovery.TestSuite")
@@ -215,23 +236,163 @@ def test_list_tables_rejects_inaccessible_group(mock_tg_cls, db_session_mock):
         list_tables(str(uuid4()))
 
 
-@patch("testgen.mcp.tools.discovery.DataTable")
-@patch("testgen.mcp.tools.common.TableGroup")
-def test_list_tables_scopes_data_lookup_to_resolved_tg_project(mock_tg_cls, mock_dt, db_session_mock):
-    """After resolution, data lookup is scoped to just the TG's project, not all allowed projects."""
-    tg = MagicMock()
-    tg.id = uuid4()
-    tg.project_code = "proj_a"
-    mock_tg_cls.get.return_value = tg
-    mock_dt.select_table_names.return_value = ["customers"]
-    mock_dt.count_tables.return_value = 1
+def _table_summary(**overrides) -> TableCatalogSummary:
+    base = {
+        "table_name": "orders",
+        "functional_table_type": "cumulative-transaction",
+        "record_ct": 1200,
+        "critical_data_element": False,
+        "catalog_tags": None,
+    }
+    base.update(overrides)
+    return TableCatalogSummary(**base)
+
+
+@pytest.fixture
+def table_group_mock():
+    with patch("testgen.mcp.tools.common.TableGroup") as mock_tg_cls:
+        tg = MagicMock()
+        tg.id = uuid4()
+        tg.project_code = "proj_a"
+        mock_tg_cls.get.return_value = tg
+        yield tg
+
+
+@pytest.fixture
+def list_tables_mock():
+    with patch.object(DataTable, "list_for_table_group", return_value=([_table_summary()], 1)) as mock_method:
+        yield mock_method
+
+
+def _list_tables_sql(mock_method) -> list[str]:
+    return [
+        str(clause.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+        for clause in mock_method.call_args.args
+    ]
+
+
+def test_list_tables_renders_a_table_per_table(table_group_mock, list_tables_mock, db_session_mock):
+    list_tables_mock.return_value = (
+        [
+            _table_summary(
+                critical_data_element=True,
+                catalog_tags={"business_domain": ["Finance", "table group"], "transform_level": ["Gold", None]},
+            ),
+            _table_summary(table_name="customers", functional_table_type=None, record_ct=None),
+        ],
+        2,
+    )
 
     from testgen.mcp.tools.discovery import list_tables
 
-    list_tables(str(uuid4()))
+    result = list_tables(str(table_group_mock.id))
 
-    call_kwargs = mock_dt.select_table_names.call_args
-    assert call_kwargs.kwargs["project_codes"] == ["proj_a"]
+    assert "| Table | Semantic Table Type | Records | CDE | Catalog Tags |" in result
+    assert "| `orders` | Cumulative Transaction | 1200 | Y | Business domain: Finance (table group); Transform level: Gold |" in result
+    assert "| `customers` | \u2014 | \u2014 |  |  |" in result
+    assert "_A tag value marked (table group) is inherited from the table group._" in result
+    assert list_tables_mock.call_args.args == ()
+    assert list_tables_mock.call_args.kwargs == {"table_groups_id": table_group_mock.id, "page": 1, "limit": 200}
+
+
+def test_list_tables_omits_the_legend_without_inherited_tags(table_group_mock, list_tables_mock, db_session_mock):
+    list_tables_mock.return_value = ([_table_summary(catalog_tags={"transform_level": ["Gold", None]})], 1)
+
+    from testgen.mcp.tools.discovery import list_tables
+
+    result = list_tables(str(table_group_mock.id))
+
+    assert "inherited" not in result
+
+
+def test_list_tables_semantic_table_type_matches_the_displayed_value(
+    table_group_mock, list_tables_mock, db_session_mock,
+):
+    from testgen.mcp.tools.discovery import list_tables
+
+    list_tables(str(table_group_mock.id), semantic_table_type="Window Transaction")
+
+    (clause,) = list_tables_mock.call_args.args
+    compiled = clause.compile(dialect=postgresql.dialect())
+    assert str(compiled).startswith("replace(data_table_chars.functional_table_type, ")
+    assert " ILIKE " in str(compiled)
+    assert sorted(compiled.params.values()) == [" ", "%Window Transaction%", "-"]
+
+
+@pytest.mark.parametrize(
+    ("value", "pattern"),
+    [
+        ("Summary", "%Summary%"),
+        ("cum%sum", "%cum%sum%"),
+        ("window-transaction", "%window transaction%"),
+        ("window_txn", "%window\\_txn%"),
+    ],
+)
+def test_list_tables_semantic_table_type_contains_the_text_with_percent_as_a_wildcard(
+    value, pattern, table_group_mock, list_tables_mock, db_session_mock,
+):
+    from testgen.mcp.tools.discovery import list_tables
+
+    list_tables(str(table_group_mock.id), semantic_table_type=value)
+
+    (clause,) = list_tables_mock.call_args.args
+    assert pattern in clause.compile(dialect=postgresql.dialect()).params.values()
+
+
+@pytest.mark.parametrize(("cde", "expected"), [(True, "true"), (False, "false")])
+def test_list_tables_cde_reads_no_value_as_false(cde, expected, table_group_mock, list_tables_mock, db_session_mock):
+    from testgen.mcp.tools.discovery import list_tables
+
+    list_tables(str(table_group_mock.id), cde=cde)
+
+    assert _list_tables_sql(list_tables_mock) == [
+        f"coalesce(data_table_chars.critical_data_element, false) IS {expected}"
+    ]
+
+
+def test_list_tables_tag_filters_match_the_effective_value_ignoring_case(
+    table_group_mock, list_tables_mock, db_session_mock,
+):
+    from testgen.mcp.tools.discovery import list_tables
+
+    list_tables(str(table_group_mock.id), business_domain=" Finance ", aggregation_level="Daily")
+
+    assert _list_tables_sql(list_tables_mock) == [
+        "lower(coalesce(data_table_chars.business_domain, table_groups.business_domain)) = 'finance'",
+        "lower(coalesce(data_table_chars.aggregation_level)) = 'daily'",
+    ]
+
+
+@pytest.mark.parametrize("argument", ["semantic_table_type", "business_domain", "data_classification"])
+def test_list_tables_rejects_blank_filters(argument, table_group_mock, list_tables_mock, db_session_mock):
+    from testgen.mcp.tools.discovery import list_tables
+
+    with pytest.raises(MCPUserError, match=f"`{argument}` cannot be empty."):
+        list_tables(str(table_group_mock.id), **{argument: "  "})
+
+
+def test_list_tables_empty_states(table_group_mock, list_tables_mock, db_session_mock):
+    from testgen.mcp.tools.discovery import list_tables
+
+    list_tables_mock.return_value = ([], 0)
+    assert list_tables(str(table_group_mock.id)) == (
+        f"No tables found for table group `{table_group_mock.id}`."
+    )
+    assert list_tables(str(table_group_mock.id), cde=True) == "No tables match the supplied filters."
+
+    list_tables_mock.return_value = ([], 3)
+    assert list_tables(str(table_group_mock.id), page=2) == "No tables on page 2 (total: 3)."
+
+
+def test_list_tables_paginates_with_the_shared_page_text(table_group_mock, list_tables_mock, db_session_mock):
+    list_tables_mock.return_value = ([_table_summary()], 5)
+
+    from testgen.mcp.tools.discovery import list_tables
+
+    result = list_tables(str(table_group_mock.id), limit=1, page=2)
+
+    assert "Showing 2" in result
+    assert "_Page 2 of 5. Use `page=3` for more._" in result
 
 
 # ---------------------------------------------------------------------------
@@ -255,11 +416,22 @@ def _mock_project_summary(**overrides):
     summary.connection_count = overrides.get("connection_count", 3)
     summary.table_group_count = overrides.get("table_group_count", 5)
     summary.test_suite_count = overrides.get("test_suite_count", 7)
+    summary.contract_count = overrides.get("contract_count", 2)
     summary.test_definition_count = overrides.get("test_definition_count", 142)
     summary.profiling_run_count = overrides.get("profiling_run_count", 12)
     summary.test_run_count = overrides.get("test_run_count", 38)
     summary.can_export_to_observability = overrides.get("can_export_to_observability", False)
     return summary
+
+
+@patch("testgen.mcp.tools.discovery.Project")
+def test_get_project_without_contracts_counts_only_test_suites(mock_project_cls, db_session_mock):
+    mock_project_cls.get.return_value = _mock_project()
+    mock_project_cls.get_summary.return_value = _mock_project_summary(contract_count=0)
+
+    from testgen.mcp.tools.discovery import get_project
+
+    assert "- **Test suites:** 7\n" in get_project("demo")
 
 
 @patch("testgen.mcp.tools.discovery.Project")
@@ -275,7 +447,7 @@ def test_get_project_returns_counts_and_config(mock_project_cls, db_session_mock
     assert "Demo Project" in out
     assert "**Connections:** 3" in out
     assert "**Table groups:** 5" in out
-    assert "**Test suites:** 7" in out
+    assert "**Test suites:** 9 (2 contracts)" in out
     assert "**Test definitions:** 142" in out
     assert "**Profiling runs:** 12" in out
     assert "**Test runs:** 38" in out
@@ -734,6 +906,11 @@ def test_the_block_names_active_draft_and_counted_version(db_session_mock):
     assert '- **Active version:** v3 active — "Q3 agreement" (frozen 2026-09-12 14:03 UTC)' in out
     assert "**Draft:** v4 draft" in out
     assert "**Tests counted from:** v4 draft" in out
+
+
+def test_a_contract_lists_no_available_generation_sets(db_session_mock):
+    out = _get(_contract_suite(), ContractState(active=None, draft=MagicMock(version=1, frozen_at=None)))
+    assert "Available generation sets" not in out
 
 
 def test_the_verification_is_the_latest_run_of_the_active_version(db_session_mock):

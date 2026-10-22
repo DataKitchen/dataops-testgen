@@ -4,6 +4,8 @@ from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.exc import IntegrityError
 
 from testgen.api.deps import (
+    LimitQuery,
+    PageQuery,
     api_error,
     api_error_entries,
     api_errors,
@@ -14,6 +16,7 @@ from testgen.api.deps import (
     resolve_connection,
     resolve_project_code,
     resolve_table_group,
+    score_percent,
 )
 from testgen.api.schemas import (
     CatalogTags,
@@ -31,6 +34,7 @@ from testgen.api.schemas import (
 from testgen.common.database.table_group_service import (
     SchemaMoveRefused,
     apply_table_group_flavor_rules,
+    cascade_delete_table_group,
     catalog_membership,
     is_duplicate_name_error,
     move_table_group_schema,
@@ -67,12 +71,12 @@ def list_table_groups(
     connection_id: int | None = Query(default=None, description="Only table groups on this connection."),
     schema_name: str | None = Query(default=None, description="Only table groups on this schema."),
     table_group_name: str | None = Query(default=None, description="Only the table group with this name."),
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=20, ge=1, le=100),
+    page: int = PageQuery,
+    limit: int = LimitQuery,
 ):
     """Table groups in a project, each with its table count and latest profiling and test activity.
 
-    The filters match exactly and combine, so ``schema_name`` and ``table_group_name``
+    The filters match exactly and combine, so `schema_name` and `table_group_name`
     together answer "is this dataset already set up?" in one call, without paging
     through the project.
     """
@@ -98,9 +102,9 @@ def list_table_groups(
                 row_count=row.row_count,
                 last_profiled_at=row.last_profiled_date,
                 last_tested_at=row.last_tested_date,
-                profiling_score=row.profiling_score,
-                testing_score=row.testing_score,
-                quality_score=row.quality_score,
+                profiling_score=score_percent(row.profiling_score),
+                testing_score=score_percent(row.testing_score),
+                quality_score=score_percent(row.quality_score),
             )
             for row in rows
         ],
@@ -141,15 +145,15 @@ def create_table_group(
 ) -> TableGroupCreateResponse:
     """Create a table group on a connection. It belongs to the connection's project.
 
-    The response carries the new ``table_group_id``, which profiling, test generation
+    The response carries the new `table_group_id`, which profiling, test generation
     and test runs take as input.
 
     The request names the table group's tables the way its connection holds them: by
-    ``schema_name`` on a database connection, optionally narrowed by ``table_set`` and the
-    masks, or by ``file_declarations`` on a file connection.
+    `schema_name` on a database connection, optionally narrowed by `table_set` and the
+    masks, or by `file_declarations` on a file connection.
 
     The table group's data catalog is read from the target before the response returns, so tests
-    can be imported into it right away. ``catalog_error`` says why when the target could not be read.
+    can be imported into it right away. `catalog_error` says why when the target could not be read.
     """
     if errors := validate_table_naming(
         connection,
@@ -236,7 +240,7 @@ def _to_response(table_group: TableGroup, connection: Connection | None = None) 
 
 _PII_FLAG_DENIED = (
     "Changing PII detection requires permission to view PII. "
-    "Leave this setting unchanged or contact your administrator."
+    "Leave this setting unchanged, or ask an administrator for the permission."
 )
 
 _REFUSAL_STATUS = {
@@ -272,8 +276,7 @@ def update_table_group(
     body: TableGroupUpdateRequest = Body(...),  # noqa: B008
     user: User = Depends(get_authorized_user),  # noqa: B008
 ) -> TableGroupUpdateResponse:
-    """Change a table group's configuration. Omitted fields are left as they are, and nothing is saved
-    when any field is refused.
+    """Omitted fields are left as they are, and nothing is saved when any field is refused.
 
     `table_set`, the masks and `file_declarations` replace the stored list. Catalog tags are merged:
     a tag the request does not name is left as it is.
@@ -374,3 +377,27 @@ def update_table_group(
         else None,
         catalog_error=catalog_error,
     )
+
+
+@router.delete(
+    "/table-groups/{table_group_id}",
+    status_code=204,
+    summary="Delete a table group",
+    responses={409: {"model": ErrorResponse, "description": "A job for this table group is still running"}},
+)
+def delete_table_group(table_group: TableGroup = resolve_table_group("edit")) -> None:  # noqa: B008
+    """Delete a table group together with everything recorded against it: its test suites with their
+    test definitions, test runs, results, and schedules; its monitors; its profiling runs and results,
+    hygiene issues, and data catalog; and the notification rules scoped to it or to its test suites.
+    Scorecards are kept.
+
+    The delete is refused while a job for the table group or its test suites is queued or running:
+    profiling, test generation, a test run, or monitor generation or a monitor run. Queued data
+    catalog refreshes are canceled, and a refresh that has already started refuses the delete too.
+    """
+    if cascade_delete_table_group(table_group):
+        raise api_error(
+            409,
+            "job_in_flight",
+            "A job for this table group is still running. Wait for it to finish, then try again.",
+        )

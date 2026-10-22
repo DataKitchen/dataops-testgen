@@ -248,7 +248,8 @@ def test_get_project_permissions_returns_set_value():
 # These rely on conftest's mocks (User, ProjectMembership, PluginHook).
 
 
-def test_mcp_permission_sets_contextvar():
+@patch("testgen.mcp.permissions.set_acting_username")
+def test_mcp_permission_sets_contextvar(mock_set_acting):
     set_mcp_username("test")
 
     captured = {}
@@ -260,6 +261,8 @@ def test_mcp_permission_sets_contextvar():
         return "ok"
 
     result = tool_fn()
+
+    mock_set_acting.assert_called_once()
 
     assert result == "ok"
     assert "demo" in captured["perms"].allowed_codes

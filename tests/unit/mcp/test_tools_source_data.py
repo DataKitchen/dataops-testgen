@@ -8,6 +8,7 @@ from testgen.common.data_catalog_service import TableSampleResult
 from testgen.common.source_data_service import SourceDataResult
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
+from testgen.mcp.tools.common import MCP_SUITE_TYPES
 
 
 def _make_context(**overrides):
@@ -302,6 +303,7 @@ def test_get_source_data_passes_project_codes(mock_compute, mock_td, mock_fetch,
 
     call_kwargs = mock_td.get_source_data_context.call_args.kwargs
     assert call_kwargs["project_codes"] == ["proj_a"]
+    assert call_kwargs["suite_types"] == MCP_SUITE_TYPES
 
 
 # --- argument mutual-exclusion + reference_date rule ---

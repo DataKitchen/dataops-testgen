@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, Query
 
-from testgen.api.deps import db_session, resolve_monitor, resolve_table_group
+from testgen.api.deps import LimitQuery, PageQuery, db_session, resolve_monitor, resolve_table_group
 from testgen.api.enums import (
     MONITOR_TYPE_FROM_DB,
     MonitorSortField,
@@ -68,18 +68,26 @@ def _to_row(s: MonitorTableSummary) -> MonitorTableRow:
 )
 def list_table_monitors(
     table_group: TableGroup = resolve_table_group("view"),  # noqa: B008
-    table_name: str | None = Query(default=None),
-    anomalies_only: bool = Query(default=False),
-    sort: MonitorSortField = Query(default=MonitorSortField.table_name),  # noqa: B008
-    order: SortOrder = Query(default=SortOrder.asc),  # noqa: B008
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=20, ge=1, le=100),
+    table_name: str | None = Query(
+        default=None, description="Only tables whose name contains this text, ignoring case."
+    ),
+    anomalies_only: bool = Query(
+        default=False, description="Only tables with at least one anomaly of any monitor type in the lookback window."
+    ),
+    sort: MonitorSortField = Query(  # noqa: B008
+        default=MonitorSortField.table_name,
+        description="`table_name` (the default, ignoring case), `freshness_anomalies`, `volume_anomalies`, "
+        "`schema_anomalies`, `metric_anomalies`, `latest_update`, or `row_count`. The anomaly counts cover the "
+        "lookback window.",
+    ),
+    order: SortOrder = Query(default=SortOrder.asc, description="`asc` (the default) or `desc`."),  # noqa: B008
+    page: int = PageQuery,
+    limit: int = LimitQuery,
 ):
-    """Per-table monitoring summary for a table group, with group totals.
+    """The monitored tables of a table group, each with its monitors' state, and totals for the whole group.
 
-    Each row nests per-type state: ``freshness`` / ``volume`` / ``schema`` (one monitor each)
-    and ``metrics`` (one per metric). ``anomalies_only`` restricts to tables with at least one
-    anomaly of any type. ``monitor_id`` on a per-type object addresses that monitor's series.
+    Each item carries `freshness`, `volume` and `schema` (one monitor each) and `metrics` (one per metric
+    monitor). The `monitor_id` on each reads that monitor's series from `GET /monitors/{monitor_id}/series`.
     """
     rows, total = TableGroup.list_monitor_table_summaries(
         table_group.id,
@@ -114,15 +122,16 @@ def list_table_monitors(
     summary="Read a monitor's time series",
 )
 def get_monitor_series(monitor: Monitor = resolve_monitor("view")):  # noqa: B008
-    """A monitor's lookback time-series, type-discriminated, with a self-contained header.
+    """A monitor's results over its lookback window, with the table, column and thresholds it applies to.
 
-    ``points`` shape depends on ``type``:
-    - volume / metric: ``{time, value, lower_bound, upper_bound, threshold_value, is_anomaly, is_training, is_error, is_pending}``
-    - freshness: ``{time, minutes_since_update, staleness_threshold, lower_bound, upper_bound, update_detected, is_anomaly, is_training, is_error, is_pending}``
-    - schema: ``{time, table_change, additions, deletions, modifications, window_start, is_error}``
+    The fields of each item in `points` depend on `type`:
 
-    ``current_bands`` carries the latest thresholds (null while training); its shape also
-    depends on ``type``. The latest point is the monitor's current state.
+    - volume / metric: `{time, value, lower_bound, upper_bound, threshold_value, is_anomaly, is_training, is_error, is_pending}`
+    - freshness: `{time, minutes_since_update, staleness_threshold, lower_bound, upper_bound, update_detected, is_anomaly, is_training, is_error, is_pending}`
+    - schema: `{time, table_change, additions, deletions, modifications, window_start, is_error}`
+
+    `current_bands` carries the latest thresholds, `null` while the monitor is training; its fields also
+    depend on `type`. The latest point is the monitor's current state.
     """
     series = monitor.series()
     return MonitorSeriesResponse(

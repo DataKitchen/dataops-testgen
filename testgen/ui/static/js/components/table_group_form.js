@@ -187,7 +187,7 @@ const declarationPayload = (row) => {
 
 const { div, span } = van.tags;
 
-const normalizeTableSet = (value) => {
+const normalizeTableList = (value) => {
     return value?.split(/[,\n]/)
         .map(part => part.trim())
         .filter(part => part)
@@ -205,9 +205,9 @@ const TableGroupForm = (props) => {
     const tableGroup = getValue(props.tableGroup);
     const tableGroupConnectionId = van.state(tableGroup.connection_id);
     const tableGroupsName = van.state(tableGroup.table_groups_name);
-    const profilingIncludeMask = van.state(tableGroup.profiling_include_mask ?? '');
-    const profilingExcludeMask = van.state(tableGroup.profiling_exclude_mask ?? '');
-    const profilingTableSet = van.state(normalizeTableSet(tableGroup.profiling_table_set));
+    const profilingIncludeMask = van.state(normalizeTableList(tableGroup.profiling_include_mask) ?? '');
+    const profilingExcludeMask = van.state(normalizeTableList(tableGroup.profiling_exclude_mask) ?? '');
+    const profilingTableSet = van.state(normalizeTableList(tableGroup.profiling_table_set));
     const declarationRows = van.state((tableGroup.file_declarations ?? []).map(declarationRow));
     const tableGroupSchema = van.state(tableGroup.table_group_schema);
     const profileIdColumnMask = van.state(tableGroup.profile_id_column_mask ?? '');
@@ -280,9 +280,9 @@ const TableGroupForm = (props) => {
             id: tableGroup.id,
             connection_id: tableGroupConnectionId.val,
             table_groups_name: tableGroupsName.val,
-            profiling_include_mask: profilingIncludeMask.val,
-            profiling_exclude_mask: profilingExcludeMask.val,
-            profiling_table_set: normalizeTableSet(profilingTableSet.val),
+            profiling_include_mask: normalizeTableList(profilingIncludeMask.val),
+            profiling_exclude_mask: normalizeTableList(profilingExcludeMask.val),
+            profiling_table_set: normalizeTableList(profilingTableSet.val),
             file_declarations: declarationRows.val.length ? declarationRows.val.map(declarationPayload) : null,
             table_group_schema: tableGroupSchema.val,
             profile_id_column_mask: profileIdColumnMask.val,
@@ -596,36 +596,31 @@ const CriteriaForm = (
         Caption({content: 'Criteria', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
         div(
             { class: 'flex-row fx-gap-3 fx-flex-wrap fx-align-flex-start' },
-            div(
-                { class: 'tg-column-flex flex-column fx-gap-3', },
-                Input({
-                    name: 'profiling_include_mask',
-                    label: 'Tables to Include Mask',
-                    value: profilingIncludeMask,
-                    help: 'SQL filter supported by your database\'s LIKE operator for table names to include',
-                    onChange: (value, state) => {
-                        profilingIncludeMask.val = value;
-                        options.setValidity?.('profiling_include_mask', state.valid);
-                    },
-                }),
-                Input({
-                    name: 'profiling_exclude_mask',
-                    label: 'Tables to Exclude Mask',
-                    value: profilingExcludeMask,
-                    help: 'SQL filter supported by your database\'s LIKE operator for table names to exclude',
-                    onChange: (value, state) => {
-                        profilingExcludeMask.val = value;
-                        options.setValidity?.('profiling_exclude_mask', state.valid);
-                    },
-                }),
-            ),
+            Textarea({
+                name: 'profiling_include_mask',
+                label: 'Tables to Include Mask',
+                value: profilingIncludeMask,
+                height: 54,
+                class: 'tg-column-flex',
+                help: 'Table names or patterns to include, separated by commas or newlines. % matches any characters. Case-sensitive on most databases.',
+                onChange: (value) => profilingIncludeMask.val = value,
+            }),
+            Textarea({
+                name: 'profiling_exclude_mask',
+                label: 'Tables to Exclude Mask',
+                value: profilingExcludeMask,
+                height: 54,
+                class: 'tg-column-flex',
+                help: 'Table names or patterns to exclude, separated by commas or newlines. % matches any characters. Excludes a table even when it is in the Explicit Table List. Case-sensitive on most databases.',
+                onChange: (value) => profilingExcludeMask.val = value,
+            }),
             Textarea({
                 name: 'profiling_table_set',
                 label: 'Explicit Table List',
                 value: profilingTableSet,
-                height: 108,
+                height: 54,
                 class: 'tg-column-flex',
-                help: 'List of specific table names to include, separated by commas or newlines',
+                help: 'List of specific table names to include, separated by commas or newlines. Case-sensitive on most databases.',
                 onChange: (value) => profilingTableSet.val = value,
             }),
         ),
@@ -636,7 +631,7 @@ const CriteriaForm = (
                 label: 'Profiling ID Column Mask',
                 value: profileIdColumnMask,
                 class: 'tg-column-flex',
-                help: 'SQL filter supported by your database\'s LIKE operator representing ID columns',
+                help: 'Pattern for the names of ID columns. % matches any characters. Matching is not case-sensitive.',
                 onChange: (value, state) => {
                     profileIdColumnMask.val = value;
                     options.setValidity?.('profile_id_column_mask', state.valid);
@@ -647,7 +642,7 @@ const CriteriaForm = (
                 label: 'Profiling Surrogate Key Column Mask',
                 value: profileSkColumnMask,
                 class: 'tg-column-flex',
-                help: 'SQL filter supported by your database\'s LIKE operator representing surrogate key columns',
+                help: 'Pattern for the names of surrogate key columns. % matches any characters. Matching is not case-sensitive.',
                 onChange: (value, state) => {
                     profileSkColumnMask.val = value
                     options.setValidity?.('profile_sk_column_mask', state.valid);

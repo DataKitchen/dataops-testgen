@@ -8,8 +8,8 @@ from testgen.common import execute_db_queries, fetch_dict_from_db
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import write_to_app_db
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
+from testgen.common.enums import MANAGED_TEST_TYPES
 from testgen.common.models.data_column import GENERAL_TYPE_CODE_TO_LABEL
-from testgen.common.models.test_definition import MANAGED_TEST_TYPES
 
 LOG = logging.getLogger("testgen")
 

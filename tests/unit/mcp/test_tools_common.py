@@ -1808,6 +1808,17 @@ def test_an_unknown_version_number_names_the_versions_that_exist():
         resolve_contract_version(_suite(SuiteType.CONTRACT), 7)
 
 
+def test_an_unknown_version_number_on_a_one_version_contract_names_its_only_version():
+    session = MagicMock()
+    session.scalar.return_value = 1
+    with (
+        patch.object(SuiteVersion, "for_number", return_value=None),
+        patch("testgen.common.contract_service.get_current_session", return_value=session),
+        pytest.raises(MCPUserError, match=r"Contract `Orders` has no version 2\. Its only version is v1\.$"),
+    ):
+        resolve_contract_version(_suite(SuiteType.CONTRACT), 2)
+
+
 # --- report_no_change ---
 
 

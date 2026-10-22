@@ -53,6 +53,8 @@ def _run_summary(sql_flavor_code):
         anomalies_possible_ct=0,
         anomalies_dismissed_ct=0,
         dq_score_profiling=None,
+        sampled_column_ct=0,
+        approximate_percentile_column_ct=0,
         total_count=1,
     )
 

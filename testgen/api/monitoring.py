@@ -44,8 +44,8 @@ router = APIRouter(tags=["Monitors"], dependencies=[Depends(db_session, scope="f
     summary="Read a table group's monitoring",
 )
 def get_monitoring(table_group: TableGroup = resolve_table_group("view")):  # noqa: B008
-    """The table group's monitor settings and schedule, and how many monitors it has.
-    Returns 404 when monitoring is not enabled.
+    """The table group's monitor settings and schedule, and how many monitors it has. Returns 404 when
+    monitoring is not enabled.
     """
     monitor_suite, schedule = _require_monitoring(table_group)
     return _to_response(table_group, monitor_suite, schedule)
@@ -62,10 +62,8 @@ def put_monitoring(
     table_group: TableGroup = resolve_table_group("edit"),  # noqa: B008
     body: MonitoringConfig = Body(...),  # noqa: B008
 ) -> MonitoringResponse:
-    """Enable monitoring for a table group, or replace its configuration when it is already enabled.
-
-    Enabling returns 201: it creates the table group's initial Volume and Schema monitors and the
-    schedule they run on. Freshness monitors follow once the table group has profiling data.
+    """Enabling creates the table group's initial Volume and Schema monitors and the schedule they run on, and
+    returns 201. Freshness monitors follow once the table group has profiling data.
     When monitoring is already enabled, the settings and schedule are replaced, settings left out of
     the body return to their defaults, and the existing monitors and their history are kept (200).
     A paused schedule stays paused; resume it with PATCH.
@@ -103,9 +101,10 @@ def patch_monitoring(
     table_group: TableGroup = resolve_table_group("edit"),  # noqa: B008
     body: MonitoringUpdate = Body(...),  # noqa: B008
 ) -> MonitoringResponse:
-    """Change some of a table group's monitor settings or its schedule, leaving the rest as they are.
+    """Settings and schedule fields left out of the body keep their values. Returns 404 when monitoring is not
+    enabled.
 
-    Send `active` to pause or resume the monitor schedule. Returns 404 when monitoring is not enabled.
+    Send `active` to pause or resume the monitor schedule.
     """
     fields_to_change(body)
     monitor_suite, schedule = _require_monitoring(table_group)

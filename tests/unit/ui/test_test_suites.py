@@ -14,7 +14,6 @@ import testgen
 from testgen.commands.test_generation import ContractGenerationResult
 from testgen.common.contract_creation import ContractCreation, ContractImportCreation
 from testgen.common.contract_import import ContractTermReason, TermChange
-from testgen.common.contract_service import InvalidContractDocumentError
 from testgen.common.enums import RegenerationGroup, SuiteType
 from testgen.common.models.project import Project
 from testgen.common.models.suite_version import ContractState
@@ -373,24 +372,6 @@ def test_locking_edited_tests_of_a_contract_lands_on_its_draft(suite_type, opens
 MIB = 1024 * 1024
 
 
-@pytest.mark.parametrize(
-    ("configured", "message_mb", "expected"),
-    [
-        (10 * MIB, 200, 10 * MIB),
-        (500 * MIB, 200, 200 * MIB * 3 // 4 - 64 * 1024),
-        (10 * MIB, 8, 8 * MIB * 3 // 4 - 64 * 1024),
-    ],
-)
-def test_the_contract_file_limit_is_capped_by_streamlits_message_size(configured, message_mb, expected):
-    with (
-        patch.object(view.settings, "CONTRACT_IMPORT_MAX_BYTES", configured),
-        patch.object(view.st.config, "get_option", return_value=message_mb) as get_option,
-    ):
-        assert view._contract_file_max_bytes() == expected
-
-    get_option.assert_called_once_with("server.maxMessageSize")
-
-
 def _wizard(**overrides) -> dict:
     payload = {
         "suite_type": "regular",
@@ -550,6 +531,23 @@ def test_a_contract_on_an_unprofiled_table_group_says_why_it_has_no_quality_test
 
     assert _rows(session_state) == [
         ("success", "Contract Orders created."),
+        ("skipped", "No quality tests were generated because sales has not been profiled."),
+    ]
+
+
+@pytest.mark.usefixtures("db_session_mock")
+def test_a_contract_with_no_quality_tests_counts_its_schema_tests(session_state, test_count):
+    test_count.return_value = SimpleNamespace(total=2)
+    generated = _generated(term_count=0, not_profiled=["orders", "lines"])
+    with (
+        patch.object(view.TableGroup, "get", return_value=_table_group()),
+        patch.object(view.Connection, "get"),
+        patch.object(view, "create_contract", side_effect=_creation(generated)),
+    ):
+        view.add_test_suite_confirmed(_contract())
+
+    assert _rows(session_state) == [
+        ("success", "Contract Orders created with 2 schema tests."),
         ("skipped", "No quality tests were generated because sales has not been profiled."),
     ]
 
@@ -862,85 +860,44 @@ def _upload(content: bytes, group_id=None) -> dict:
     return {"table_group_id": group_id or str(uuid4()), "file": {"content": _data_url(content)}}
 
 
-def test_an_oversize_file_is_refused_before_it_is_read(session_state):
-    with (
-        patch.object(view.settings, "CONTRACT_IMPORT_MAX_BYTES", 10),
-        patch.object(view, "prepare_import") as prepare,
-    ):
-        view.contract_file_uploaded(_upload(b"x" * 11))
-
-    assert session_state[view.WIZARD_PREVIEW_KEY] == {
-        "error": "The file is larger than the 10 bytes limit.", "problems": [],
-    }
-    prepare.assert_not_called()
-
-
-def test_an_empty_file_is_refused(session_state):
-    with patch.object(view, "prepare_import") as prepare:
+def test_an_unreadable_file_is_reported_without_planning(session_state):
+    with patch.object(view, "import_preview") as preview:
         view.contract_file_uploaded(_upload(b""))
 
-    assert session_state[view.WIZARD_PREVIEW_KEY]["error"] == "The file is empty."
-    prepare.assert_not_called()
-
-
-def test_a_file_that_is_not_utf8_is_refused(session_state):
-    view.contract_file_uploaded(_upload(b"\xff\xfe\x00"))
-
-    assert session_state[view.WIZARD_PREVIEW_KEY]["error"] == "The file is not a text file."
+    assert session_state[view.WIZARD_PREVIEW_KEY] == {"error": "The file is empty.", "problems": []}
+    assert view.WIZARD_FILE_KEY not in session_state
+    preview.assert_not_called()
 
 
 @pytest.mark.usefixtures("db_session_mock")
-def test_an_invalid_document_lists_its_problems(session_state):
+def test_a_file_that_cannot_be_imported_keeps_no_payload(session_state):
+    refusal = {"error": "This file cannot be imported.", "problems": ["a", "b"]}
     with (
         patch.object(view.TableGroup, "get", return_value=_table_group()),
         patch.object(view.Connection, "get"),
-        patch.object(view, "prepare_import", side_effect=InvalidContractDocumentError(["a", "b"])),
+        patch.object(view, "import_preview", return_value=refusal),
     ):
         view.contract_file_uploaded(_upload(b"x: 1"))
 
-    assert session_state[view.WIZARD_PREVIEW_KEY] == {"error": "This file cannot be imported.", "problems": ["a", "b"]}
+    assert session_state[view.WIZARD_PREVIEW_KEY] == refusal
     assert view.WIZARD_FILE_KEY not in session_state
 
 
 @pytest.mark.usefixtures("db_session_mock")
-def test_a_valid_file_stores_its_payload_and_preview_with_deletions_first(session_state):
-    changes = [
-        _change(ImportAction.create, "orders", "id"),
-        _change(ImportAction.delete, "orders", "ship", "Required", ContractTermReason.ABSENT),
-        _change(ImportAction.create, "lines", "qty", "Value Range"),
-    ]
+def test_a_valid_file_stores_its_payload_and_a_creation_preview(session_state):
     group_id = str(uuid4())
+    table_group = _table_group()
+    preview = {"creating": True, "rows": []}
     with (
-        patch.object(view.TableGroup, "get", return_value=_table_group()),
-        patch.object(view.Connection, "get"),
-        patch.object(view, "prepare_import", return_value=_plan(changes)),
-        patch.object(view.TestType, "select_where", return_value=[SimpleNamespace(test_type="Unique", test_name_short="Unique Values")]),
+        patch.object(view.TableGroup, "get", return_value=table_group),
+        patch.object(view.Connection, "get") as connection,
+        patch.object(view, "import_preview", return_value=preview) as build,
     ):
         view.contract_file_uploaded(_upload(b"text", group_id))
 
     assert session_state[view.WIZARD_FILE_KEY] == {"table_group_id": group_id, "content": "text"}
-    preview = session_state[view.WIZARD_PREVIEW_KEY]
-    assert [row["action_code"] for row in preview["rows"]] == ["delete", "create", "create"]
-    assert preview["rows"][2]["test_name"] == "Unique Values"
-    assert preview["summary"] == {"create": 2, "update": 0, "delete": 1, "skip": 0}
-    assert preview["creating"] is True
-
-
-@pytest.mark.usefixtures("db_session_mock")
-def test_a_long_preview_is_truncated_at_500_rows(session_state):
-    changes = [_change(ImportAction.create, "t", f"c{i:03}") for i in range(501)]
-    with (
-        patch.object(view.TableGroup, "get", return_value=_table_group()),
-        patch.object(view.Connection, "get"),
-        patch.object(view, "prepare_import", return_value=_plan(changes)),
-        patch.object(view.TestType, "select_where", return_value=[]),
-    ):
-        view.contract_file_uploaded(_upload(b"text"))
-
-    preview = session_state[view.WIZARD_PREVIEW_KEY]
-    assert len(preview["rows"]) == 500
-    assert preview["truncated"] is True
-    assert preview["total_rows"] == 501
+    assert session_state[view.WIZARD_PREVIEW_KEY] == preview
+    build.assert_called_once_with("text", table_group, connection.return_value, None)
 
 
 def test_clearing_the_file_drops_its_payload_and_preview(session_state):
@@ -1039,24 +996,19 @@ def test_a_malformed_data_url_is_not_reported_as_empty(session_state):
     assert session_state[view.WIZARD_PREVIEW_KEY]["error"] == "The file could not be read."
 
 
-def test_an_oversize_encoded_file_is_refused_by_its_length(session_state):
-    with patch.object(view.settings, "CONTRACT_IMPORT_MAX_BYTES", 10), patch.object(view.base64, "b64decode") as decode:
-        view.contract_file_uploaded({"table_group_id": "x", "file": {"content": "a," + "A" * 2000}})
-
-    assert session_state[view.WIZARD_PREVIEW_KEY]["error"] == "The file is larger than the 10 bytes limit."
-    decode.assert_not_called()
-
-
 @pytest.mark.usefixtures("db_session_mock")
-def test_a_failure_while_serializing_the_preview_falls_back_to_the_generic_error(session_state):
+@pytest.mark.parametrize(
+    ("suite_type", "message"),
+    [(SuiteType.CONTRACT, "Contract Orders has been deleted."), (SuiteType.REGULAR, "Test Suite Orders has been deleted.")],
+)
+def test_the_delete_message_names_the_suite_by_its_type(session_state, suite_type, message):
+    session_state["ts_delete_dialog"] = {"test_suite_name": "Orders", "suite_type": suite_type}
     with (
-        patch.object(view.TableGroup, "get", return_value=_table_group()),
-        patch.object(view.Connection, "get"),
-        patch.object(view, "prepare_import", return_value=_plan()),
-        patch.object(view.TestType, "select_where", return_value=[]),
-        patch.object(view, "_serialize_plan", side_effect=KeyError("x")),
+        patch.object(view.TestRun, "has_active_job_for", return_value=False),
+        patch.object(view.TestSuite, "cascade_delete"),
+        patch.object(view, "get_project_summary"),
+        patch.object(view.st, "toast") as toast,
     ):
-        view.contract_file_uploaded(_upload(b"text"))
+        view.execute_ts_delete(str(uuid4()))
 
-    assert session_state[view.WIZARD_PREVIEW_KEY]["error"] == "Something went wrong while reading this file."
-    assert view.WIZARD_FILE_KEY not in session_state
+    assert toast.call_args.args[0] == message

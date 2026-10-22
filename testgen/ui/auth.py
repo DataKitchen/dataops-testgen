@@ -24,6 +24,12 @@ LOG = logging.getLogger("testgen")
 Permission = Literal["catalog", "view", "disposition", "view_pii", "edit", "administer", "global_admin"]
 
 
+def logged_in_username() -> str | None:
+    """The username of the user logged in to this Streamlit session, or None."""
+    auth = session.auth
+    return auth.user.username if auth and auth.user else None
+
+
 class Authentication:
 
     jwt_cookie_name = "dk_cookie_name"

@@ -1,9 +1,12 @@
+import hashlib
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, NoReturn
 from uuid import UUID
 
+from mcp.server.fastmcp import Context
 from pydantic import Field, ValidationError
 from sqlalchemy import select, update
 
@@ -28,6 +31,7 @@ from testgen.common.models.suite_version import (
 )
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import (
+    MANAGED_TEST_TYPES,
     NON_PUBLIC_TEST_TYPES,
     InvalidTestDefinitionFields,
     ManagedTestDefinitionError,
@@ -57,6 +61,7 @@ from testgen.common.test_definition_export_import_service import (
     import_definitions,
     import_reason_label,
 )
+from testgen.mcp.confirmation import confirm_destructive_action
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_authorized_mcp_user, get_project_permissions, mcp_permission
 from testgen.mcp.services.source_data_protection import (
@@ -74,6 +79,7 @@ from testgen.mcp.tools.common import (
     parse_quality_dimension,
     parse_uuid,
     raise_validation_error,
+    report_no_change,
     resolve_contract_version,
     resolve_test_definition,
     resolve_test_note,
@@ -83,6 +89,7 @@ from testgen.mcp.tools.common import (
     validate_page,
 )
 from testgen.mcp.tools.markdown import MdDoc
+from testgen.mcp.workers import run_on_worker_thread
 
 _DOC_GROUP = DocGroup.INVESTIGATE
 
@@ -367,7 +374,7 @@ def _append_td_summary(doc: MdDoc, td: TestDefinitionSummary) -> None:
     if td.custom_metadata:
         doc.heading(2, "Custom Metadata")
         for key, value in td.custom_metadata.items():
-            doc.field(MdDoc.escape(key), value)
+            doc.field(MdDoc.escape(key), json.dumps(value, default=str) if isinstance(value, dict | list) else value)
 
     # Parameters (editable fields from test type metadata)
     _append_parameters_section(doc, td, qualifies)
@@ -409,7 +416,7 @@ def list_test_notes(
     else:
         doc.heading(1, f"Notes for {test_name} on `{td.table_name}`")
 
-    doc.text(f"{len(notes)} note(s).")
+    doc.text(f"Notes: {len(notes)}.")
     doc.table(
         headers=["Test note ID", "Date", "Author", "Note", "Updated"],
         rows=[
@@ -643,7 +650,7 @@ def list_test_types(
 
     doc = MdDoc()
     doc.heading(1, "Test Types")
-    doc.text(f"Showing {len(test_types)} test type(s){filter_suffix}.")
+    doc.text(f"Test types shown: {len(test_types)}{filter_suffix}.")
     doc.table(
         headers=["Test Type", "Impact Dimension", "Quality Dimension", "Scope", "Description"],
         rows=[
@@ -799,6 +806,19 @@ def update_test(
         if writable_id is not None and writable_id != td.id:
             td = resolve_test_definition(str(writable_id))
 
+    hidden = CALIBRATION_SHAPED_PARAM_COLUMNS if mcp_source_data_protected() else frozenset()
+    # Compared on the row the write lands on; report_no_change's rollback discards a draft routing opened.
+    # A hidden field is never compared: "no change" would confirm a guess at its value.
+    fields = {
+        key: value
+        for key, value in fields.items()
+        if key in hidden or _format_diff(getattr(td, key, None)) != _format_diff(value)
+    }
+    if not fields:
+        doc = MdDoc()
+        doc.heading(1, f"Test definition `{old_id}` updated")
+        return report_no_change(doc)
+
     before: dict = {key: getattr(td, key, None) for key in fields}
     # An edit to a row of a frozen version must not reach the database before save() moves it
     # to the draft's copy, so the queries below must not autoflush it.
@@ -837,7 +857,6 @@ def update_test(
     # parameters section omits — writing one field would otherwise disclose its prior
     # value. Blanked per field rather than dropping the column, so the caller can still
     # see what changed for everything else.
-    hidden = CALIBRATION_SHAPED_PARAM_COLUMNS if mcp_source_data_protected() else frozenset()
     rows = [
         [
             key,
@@ -847,7 +866,7 @@ def update_test(
         for key in fields
     ]
     doc.table(["Field", "Before", "After"], rows, code=[0])
-    doc.text(f"{len(fields)} field(s) changed.")
+    doc.text(f"Fields changed: {len(fields)}.")
     return doc.render()
 
 
@@ -910,7 +929,7 @@ def validate_custom_test(
         return doc.render()
 
     doc.text(
-        f"**Would fail:** ✗ — query returned {result.row_count} row(s) matching the failure criteria."
+        f"**Would fail:** ✗ — query returned {result.row_count} rows matching the failure criteria."
     )
     if result.preview_rows:
         doc.heading(2, "Source data preview (first row)")
@@ -935,15 +954,45 @@ def validate_custom_test(
 @with_database_session
 @mcp_permission("edit")
 def bulk_update_tests(
-    test_suite_id: Annotated[str, Field(description="UUID of the test suite.")],
     action: Annotated[str, Field(description="``enable`` or ``disable``.")],
-    table_name: Annotated[str | None, Field(description="Optional table-name filter. Case-sensitive.")] = None,
-    test_type: Annotated[str | None, Field(description="Optional test type name (e.g. ``Alpha Truncation``).")] = None,
+    test_definition_ids: Annotated[
+        list[str] | None,
+        Field(
+            description="UUIDs of the tests to enable or disable, e.g. from ``list_tests``. Supply this or "
+            "``test_suite_id``, not both.",
+        ),
+    ] = None,
+    test_suite_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of the suite whose tests to enable or disable, e.g. from ``list_test_suites``. "
+            "Narrow with ``table_name`` and ``test_type``, or omit both to act on every test in it.",
+        ),
+    ] = None,
+    table_name: Annotated[
+        str | None,
+        Field(description="Optional table-name filter on ``test_suite_id``. Case-sensitive."),
+    ] = None,
+    test_type: Annotated[
+        str | None,
+        Field(description="Optional test type filter on ``test_suite_id`` (e.g. ``Alpha Truncation``)."),
+    ] = None,
 ) -> str:
-    """Enable or disable tests in a suite in bulk."""
+    """Enable or disable tests in bulk, either by ID or by suite filter.
+
+    Nothing is changed unless every named test can be.
+    """
     bulk_action = parse_enum(action, BulkAction, "action")
-    suite = resolve_test_suite(test_suite_id)
-    tt_code = resolve_test_type(test_type) if test_type else None
+    if test_definition_ids is not None and test_suite_id is not None:
+        raise MCPUserError(
+            "Supply `test_definition_ids` or `test_suite_id`, not both. Naming tests and "
+            "filtering a suite are two ways to select the same thing."
+        )
+    if test_definition_ids is None and test_suite_id is None:
+        raise MCPUserError(
+            "Supply either `test_definition_ids` (the tests to enable or disable) or `test_suite_id` "
+            "(the suite to act on)."
+        )
 
     target = bulk_action is BulkAction.ENABLE
     values: dict = {"test_active": target}
@@ -951,23 +1000,50 @@ def bulk_update_tests(
         # Mirrors set_status_attribute: clearing the status when re-enabling so failed
         # tests don't carry forward a stale "disabled because of X" marker.
         values["test_definition_status"] = None
+    verb = "Enabled" if target else "Disabled"
 
+    if test_definition_ids is not None:
+        if table_name or test_type:
+            raise MCPUserError(
+                "`table_name` and `test_type` narrow `test_suite_id` and cannot be combined "
+                "with `test_definition_ids`."
+            )
+        selected = _resolve_named_tests(test_definition_ids, nothing_done="Nothing was changed.")
+        ids_by_suite: dict[UUID, list[UUID]] = {}
+        for td in selected:
+            ids_by_suite.setdefault(td.test_suite_id, []).append(td.id)
+        # Every suite's rows are mapped onto its writable version before anything is written,
+        # so a refusal for any of them changes nothing.
+        writes: list[tuple[TestSuite, UUID]] = []
+        # A row of the version in force and its draft copy route to the same draft row.
+        updated_ids: dict[UUID, None] = {}
+        for suite_id, row_ids in ids_by_suite.items():
+            suite = TestSuite.get(suite_id)
+            version_id, mapping = _resolve_writable(suite, row_ids)
+            writes.append((suite, version_id))
+            updated_ids.update(dict.fromkeys(mapping.values()))
+        _set_test_values(list(updated_ids), values)
+
+        doc = MdDoc()
+        doc.heading(1, f"{verb} {len(updated_ids)} tests")
+        doc.field("Scope", "the tests named in the request")
+        if len(writes) == 1:
+            suite, version_id = writes[0]
+            doc.field("Test suite", suite.test_suite)
+            if suite.suite_type == SuiteType.CONTRACT:
+                _version_field(doc, suite, SuiteVersion.get(version_id))
+        return doc.render()
+
+    suite = resolve_test_suite(test_suite_id)
+    tt_code = resolve_test_type(test_type) if test_type else None
     where_clauses = [TestDefinition.test_suite_id == suite.id, TestDefinition.version_clause()]
     if table_name:
         where_clauses.append(TestDefinition.table_name == table_name)
     if tt_code:
         where_clauses.append(TestDefinition.test_type == tt_code)
+    filter_str = _describe_filters(table_name, test_type)
 
-    verb = "Enabled" if target else "Disabled"
-    filters = []
-    if table_name:
-        filters.append(f"table_name=`{table_name}`")
-    if test_type:
-        filters.append(f"test_type=`{test_type}`")
-    filter_str = ", ".join(filters) if filters else "no filter"
-
-    session = get_current_session()
-    matched = session.scalars(select(TestDefinition.id).where(*where_clauses)).all()
+    matched = get_current_session().scalars(select(TestDefinition.id).where(*where_clauses)).all()
     doc = MdDoc()
     if not matched:
         doc.heading(1, "No tests matched")
@@ -977,17 +1053,21 @@ def bulk_update_tests(
         return doc.render()
 
     version_id, mapping = _resolve_writable(suite, matched)
-    session.execute(
-        update(TestDefinition)
-        .where(TestDefinition.id.in_(list(mapping.values())), TestDefinition.version_clause())
-        .values(**values)
-    )
+    _set_test_values(list(mapping.values()), values)
 
     doc.heading(1, f"{verb} {len(mapping)} tests in suite `{suite.test_suite}`")
     if suite.suite_type == SuiteType.CONTRACT:
         _version_field(doc, suite, SuiteVersion.get(version_id))
     doc.field("Filter", filter_str)
     return doc.render()
+
+
+def _set_test_values(test_definition_ids: list[UUID], values: dict) -> None:
+    get_current_session().execute(
+        update(TestDefinition)
+        .where(TestDefinition.id.in_(test_definition_ids), TestDefinition.version_clause())
+        .values(**values)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -999,11 +1079,14 @@ def bulk_update_tests(
 _DELETED_LISTING_LIMIT = 50
 
 
-def _resolve_named_tests(test_definition_ids: list[str]) -> list[TestDefinitionMinimal]:
+def _resolve_named_tests(
+    test_definition_ids: list[str], nothing_done: str = "Nothing was deleted."
+) -> list[TestDefinitionMinimal]:
     """Resolve every supplied ID, reporting all unusable entries in one error.
 
     Raises ``MCPUserError`` naming every entry that is not a valid UUID and every one that
-    is missing or inaccessible, so a caller fixes the whole list in one round-trip.
+    is missing or inaccessible, so a caller fixes the whole list in one round-trip. The
+    error opens with ``nothing_done``.
     """
     if not test_definition_ids:
         raise MCPUserError("`test_definition_ids` must name at least one test definition.")
@@ -1034,7 +1117,7 @@ def _resolve_named_tests(test_definition_ids: list[str]) -> list[TestDefinitionM
             problems.append(
                 "not found or not accessible: " + ", ".join(f"`{value}`" for value in unresolved)
             )
-        raise MCPUserError(f"Nothing was deleted. Test definitions {'; '.join(problems)}.")
+        raise MCPUserError(f"{nothing_done} Test definitions {'; '.join(problems)}.")
 
     return resolved
 
@@ -1062,6 +1145,7 @@ def _render_deleted(
     note_count: int,
     suite: TestSuite | None,
     version: SuiteVersion | None,
+    kept: int,
 ) -> str:
     """Render the scope acted on, the count, the version written, and the deleted tests by the IDs removed."""
     doc = MdDoc()
@@ -1071,6 +1155,8 @@ def _render_deleted(
         _version_field(doc, suite, version)
     if note_count:
         doc.field("Notes deleted", note_count)
+    if kept:
+        doc.field("Kept, managed by TestGen", kept)
 
     listed = deleted[:_DELETED_LISTING_LIMIT]
     rows = [
@@ -1083,13 +1169,13 @@ def _render_deleted(
     return doc.render()
 
 
-def _delete_resolved_tests(scope: str, selected: list[TestDefinitionMinimal]) -> str:
-    """Delete the already-resolved tests from the version each suite writes to, and render what went.
+def _route_for_delete(
+    selected: list[TestDefinitionMinimal],
+) -> tuple[list[tuple[TestDefinitionMinimal, UUID]], list[tuple[TestSuite, UUID]]]:
+    """Map the selected tests onto the version each suite writes to.
 
-    Every suite's rows are mapped onto its writable version before anything is deleted, so a
-    refusal for any of them deletes nothing. Deleting by ID rather than by the selecting filter
-    keeps the response exact: a row inserted after the selection is not swept up in the delete
-    unreported.
+    Returns each test with the ID of the row a delete removes, and each suite with its
+    writable version. Raises the user-facing refusal for any test that cannot be written.
     """
     ids_by_suite: dict[UUID, list[UUID]] = {}
     for td in selected:
@@ -1106,7 +1192,18 @@ def _delete_resolved_tests(scope: str, selected: list[TestDefinitionMinimal]) ->
     for td in selected:
         if td.id in routed:
             deleted_by_id.setdefault(routed[td.id], td)
-    deleted = [(td, deleted_id) for deleted_id, td in deleted_by_id.items()]
+    return [(td, deleted_id) for deleted_id, td in deleted_by_id.items()], writes
+
+
+def _delete_resolved_tests(scope: str, selected: list[TestDefinitionMinimal], kept: int) -> str:
+    """Delete the already-resolved tests from the version each suite writes to, and render what went.
+
+    Every suite's rows are mapped onto its writable version before anything is deleted, so a
+    refusal for any of them deletes nothing. Deleting by ID rather than by the selecting filter
+    keeps the response exact: a row inserted after the selection is not swept up in the delete
+    unreported.
+    """
+    deleted, writes = _route_for_delete(selected)
     ids = [deleted_id for _, deleted_id in deleted]
     note_count = TestDefinitionNote.count_stored_on(ids)
     try:
@@ -1116,12 +1213,160 @@ def _delete_resolved_tests(scope: str, selected: list[TestDefinitionMinimal]) ->
 
     suite, version_id = writes[0] if len(writes) == 1 else (None, None)
     version = SuiteVersion.get(version_id) if suite is not None and suite.suite_type == SuiteType.CONTRACT else None
-    return _render_deleted(scope, deleted, note_count, suite, version)
+    return _render_deleted(scope, deleted, note_count, suite, version, kept)
+
+
+@dataclass(frozen=True, slots=True)
+class _DeleteSelection:
+    scope: str
+    tests: list[TestDefinitionMinimal]
+    no_match: str | None = None
+    kept: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class _DeletePlan:
+    scope: str
+    selected_ids: frozenset[UUID]
+    test_count: int
+    note_count: int
+    kept: int
+
+    @property
+    def operation_id(self) -> str:
+        digest = hashlib.sha256(",".join(sorted(str(td_id) for td_id in self.selected_ids)).encode()).hexdigest()
+        return f"delete_tests:{digest}"
+
+
+def _describe_named_scope(tests: list[TestDefinitionMinimal]) -> str:
+    """Name the suites the named tests belong to, so a confirmation shown outside the conversation says what goes."""
+    suite_names = [TestSuite.get(suite_id).test_suite for suite_id in dict.fromkeys(td.test_suite_id for td in tests)]
+    if len(suite_names) == 1:
+        return f"the named tests in suite `{suite_names[0]}`"
+    return f"the named tests across {len(suite_names)} suites: " + ", ".join(f"`{name}`" for name in suite_names)
+
+
+def _select_tests_to_delete(
+    test_definition_ids: list[str] | None,
+    test_suite_id: str | None,
+    table_name: str | None,
+    test_type: str | None,
+) -> _DeleteSelection:
+    """Validate a ``delete_tests`` request and resolve the tests it selects.
+
+    A suite filter leaves out the tests TestGen manages and counts them as kept. A filter that
+    matches nothing else yields an empty selection carrying the response for it.
+    """
+    if test_definition_ids is not None and test_suite_id is not None:
+        raise MCPUserError(
+            "Supply `test_definition_ids` or `test_suite_id`, not both. Naming tests and "
+            "filtering a suite are two ways to select the same thing."
+        )
+    if test_definition_ids is None and test_suite_id is None:
+        raise MCPUserError(
+            "Supply either `test_definition_ids` (the tests to delete) or `test_suite_id` "
+            "(the suite to delete them from)."
+        )
+
+    if test_definition_ids is not None:
+        if table_name or test_type:
+            raise MCPUserError(
+                "`table_name` and `test_type` narrow `test_suite_id` and cannot be combined "
+                "with `test_definition_ids`."
+            )
+        named = _resolve_named_tests(test_definition_ids)
+        return _DeleteSelection(_describe_named_scope(named), named)
+
+    suite = resolve_test_suite(test_suite_id)
+    tt_code = resolve_test_type(test_type) if test_type else None
+    clauses = [TestDefinition.test_suite_id == suite.id]
+    if table_name:
+        clauses.append(TestDefinition.table_name == table_name)
+    if tt_code:
+        clauses.append(TestDefinition.test_type == tt_code)
+
+    selected = list(TestDefinition.select_minimal_where(*clauses))
+    scope = _describe_filter_scope(suite.test_suite, table_name, test_type)
+    if not selected:
+        doc = MdDoc()
+        doc.heading(1, "No tests matched")
+        doc.text(
+            f"No tests in suite `{suite.test_suite}` matched the filter "
+            f"({_describe_filters(table_name, test_type)}). Nothing was deleted."
+        )
+        return _DeleteSelection(scope, [], doc.render())
+
+    deletable = [td for td in selected if td.test_type not in MANAGED_TEST_TYPES]
+    kept = len(selected) - len(deletable)
+    if not deletable:
+        doc = MdDoc()
+        doc.heading(1, "No tests to delete")
+        doc.text(
+            f"TestGen manages the {kept} tests that matched the filter ({_describe_filters(table_name, test_type)}) "
+            "and removes them when what they check goes away. Nothing was deleted."
+        )
+        return _DeleteSelection(scope, [], doc.render(), kept)
+    return _DeleteSelection(scope, deletable, kept=kept)
 
 
 @with_database_session
 @mcp_permission("edit")
-def delete_tests(
+def _plan_test_deletion(
+    test_definition_ids: list[str] | None,
+    test_suite_id: str | None,
+    table_name: str | None,
+    test_type: str | None,
+) -> _DeletePlan | str:
+    """Validate a ``delete_tests`` request and count what it removes, writing nothing.
+
+    Returns the response itself when the request selects nothing.
+    """
+    selection = _select_tests_to_delete(test_definition_ids, test_suite_id, table_name, test_type)
+    if selection.no_match is not None:
+        return selection.no_match
+    if managed := [td for td in selection.tests if td.test_type in MANAGED_TEST_TYPES]:
+        # The delete itself refuses these; refusing here keeps the user from confirming a delete that cannot happen.
+        raise_validation_error(
+            [f"{td.test_name_short or td.test_type} on `{td.table_name}` (`{td.id}`)" for td in managed],
+            "Nothing was deleted. TestGen manages these tests and removes them when what they check goes away, so "
+            "they cannot be deleted on their own. Leave them out of `test_definition_ids`:",
+        )
+    try:
+        deleted, _ = _route_for_delete(selection.tests)
+        note_count = TestDefinitionNote.count_stored_on([deleted_id for _, deleted_id in deleted])
+    finally:
+        # Routing a contract's tests can open a draft, and nothing may persist before the user confirms.
+        get_current_session().rollback()
+    return _DeletePlan(
+        scope=selection.scope,
+        selected_ids=frozenset(td.id for td in selection.tests),
+        test_count=len(deleted),
+        note_count=note_count,
+        kept=selection.kept,
+    )
+
+
+@with_database_session
+@mcp_permission("edit")
+def _delete_planned_tests(
+    plan: _DeletePlan,
+    test_definition_ids: list[str] | None,
+    test_suite_id: str | None,
+    table_name: str | None,
+    test_type: str | None,
+) -> str:
+    """Delete the tests the request selects, provided they are still the ones ``plan`` counted."""
+    selection = _select_tests_to_delete(test_definition_ids, test_suite_id, table_name, test_type)
+    if frozenset(td.id for td in selection.tests) != plan.selected_ids:
+        raise MCPUserError(
+            "The tests this request selects changed while it waited for confirmation. Nothing was deleted. "
+            "Call `delete_tests` again to confirm the tests it selects now."
+        )
+    return _delete_resolved_tests(selection.scope, selection.tests, selection.kept)
+
+
+async def delete_tests(
+    ctx: Context,
     test_definition_ids: Annotated[
         list[str] | None,
         Field(
@@ -1144,56 +1389,38 @@ def delete_tests(
         str | None,
         Field(description="Optional test type filter on ``test_suite_id`` (e.g. ``Alpha Truncation``)."),
     ] = None,
+    confirmation_token: Annotated[
+        str | None,
+        Field(
+            description="Token from an earlier ``delete_tests`` call that asked for confirmation. Show the user "
+            "what that call said it would delete, and pass the token, with the same other arguments, only "
+            "after the user has explicitly agreed. Never pass it on your own judgment.",
+        ),
+    ] = None,
 ) -> str:
-    """Delete tests, either by ID or by suite filter.
+    """Delete tests, either by ID or by suite filter, once the user confirms.
 
-    Nothing is deleted unless every named test can be. Notes on a deleted test go with
-    it; past test results stay, though their source-data drill-down stops resolving. A
-    refresh lock does not block a delete. To stop a test running but keep it, disable it
-    with ``bulk_update_tests`` instead.
+    The user is shown what the request deletes and must confirm before anything is
+    removed. Nothing is deleted unless every named test can be; a suite filter leaves out
+    the tests TestGen manages, such as Schema Conformance. Notes on a deleted test
+    go with it; past test results stay, though their source-data drill-down stops
+    resolving. A refresh lock does not block a delete. To stop a test running but keep
+    it, disable it with ``bulk_update_tests`` instead.
     """
-    if test_definition_ids is not None and test_suite_id is not None:
-        raise MCPUserError(
-            "Supply `test_definition_ids` or `test_suite_id`, not both. Naming tests and "
-            "filtering a suite are two ways to select the same thing."
-        )
-    if test_definition_ids is None and test_suite_id is None:
-        raise MCPUserError(
-            "Supply either `test_definition_ids` (the tests to delete) or `test_suite_id` "
-            "(the suite to delete them from)."
-        )
+    selection_args = (test_definition_ids, test_suite_id, table_name, test_type)
+    plan = await run_on_worker_thread(_plan_test_deletion, *selection_args)
+    if isinstance(plan, str):
+        return plan
 
-    if test_definition_ids is not None:
-        if table_name or test_type:
-            raise MCPUserError(
-                "`table_name` and `test_type` narrow `test_suite_id` and cannot be combined "
-                "with `test_definition_ids`."
-            )
-        return _delete_resolved_tests(
-            "the tests named in the request", _resolve_named_tests(test_definition_ids)
-        )
-
-    suite = resolve_test_suite(test_suite_id)
-    tt_code = resolve_test_type(test_type) if test_type else None
-    clauses = [TestDefinition.test_suite_id == suite.id]
-    if table_name:
-        clauses.append(TestDefinition.table_name == table_name)
-    if tt_code:
-        clauses.append(TestDefinition.test_type == tt_code)
-
-    selected = list(TestDefinition.select_minimal_where(*clauses))
-    if not selected:
-        doc = MdDoc()
-        doc.heading(1, "No tests matched")
-        doc.text(
-            f"No tests in suite `{suite.test_suite}` matched the filter "
-            f"({_describe_filters(table_name, test_type)}). Nothing was deleted."
-        )
-        return doc.render()
-
-    return _delete_resolved_tests(
-        _describe_filter_scope(suite.test_suite, table_name, test_type), selected
+    await confirm_destructive_action(
+        ctx,
+        operation_id=plan.operation_id,
+        prompt=f"Delete {plan.scope}?"
+        + (f" Keeps {plan.kept} tests that TestGen manages, such as Schema Conformance." if plan.kept else ""),
+        counts={"Tests": plan.test_count, "Notes": plan.note_count},
+        confirmation_token=confirmation_token,
     )
+    return await run_on_worker_thread(_delete_planned_tests, plan, *selection_args)
 
 
 # ---------------------------------------------------------------------------

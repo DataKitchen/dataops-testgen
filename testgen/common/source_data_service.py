@@ -236,6 +236,7 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         "TEST_DATE": to_sql_timestamp(parsed_test_date)
         if (parsed_test_date := parse_fuzzy_date(issue_data["test_date"]))
         else None,
+        "VARCHAR_TYPE": flavor_service.varchar_type,
         "CUSTOM_QUERY": strip_trailing_semicolons(test_definition.custom_query),
         # BASELINE_VALUE varies (quoted literal / number / IN-list) by test type — templated as-is.
         # The numeric baselines render empty as NULL to avoid invalid SQL like CAST( AS FLOAT).

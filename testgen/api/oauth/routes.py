@@ -131,18 +131,24 @@ def _security_headers() -> dict[str, str]:
     }
 
 
-@router.get("/authorize")
+@router.get("/authorize", summary="Start authorization")
 def authorize_get(
     request: Request,
-    response_type: str = Query(...),
-    client_id: str = Query(...),
-    redirect_uri: str = Query(None),
-    scope: str = Query(""),
-    state: str = Query(None),
-    code_challenge: str = Query(None),
-    code_challenge_method: str = Query("S256"),
+    response_type: str = Query(..., description="`code`, the only response type supported."),
+    client_id: str = Query(..., description="The ID the client received when it registered."),
+    redirect_uri: str = Query(
+        None, description="Where to send the authorization code. One of the client's registered redirect URIs."
+    ),
+    scope: str = Query("", description="Space-separated scopes the client requests."),
+    state: str = Query(None, description="A value returned unchanged with the authorization code."),
+    code_challenge: str = Query(
+        None, description="Required. The PKCE code challenge derived from the client's code verifier."
+    ),
+    code_challenge_method: str = Query("S256", description="`S256`, the only method supported."),
 ):
-    """Show login form for authorization code flow, or skip if already logged in."""
+    """Shows the TestGen sign-in page, then redirects to `redirect_uri` with an authorization code. A browser already
+    signed in to TestGen is redirected right away.
+    """
     body = {
         "response_type": response_type,
         "client_id": client_id,
@@ -174,7 +180,7 @@ def authorize_get(
     )
 
 
-@router.post("/authorize")
+@router.post("/authorize", summary="Sign in and authorize")
 def authorize_post(
     request: Request,
     username: str = Form(...),
@@ -226,7 +232,7 @@ def authorize_post(
     return _issue_auth_code(request, user, body)
 
 
-@router.get("/logout")
+@router.get("/logout", summary="Sign out")
 def logout(
     request: Request,
     redirect_uri: str = Query(
@@ -247,29 +253,30 @@ def logout(
     return response
 
 
-@router.post("/token")
+@router.post("/token", summary="Issue a token")
 def token(request: Request, body: dict = Depends(_form_body)):  # noqa: B008
-    """Exchange credentials or authorization code for an access token."""
+    """Exchanges an authorization code or a refresh token for an access token."""
     oauth2_request = _build_oauth2_request(request, body)
     status, payload, headers = _server.create_token_response(oauth2_request)
     return JSONResponse(content=payload, status_code=status, headers=dict(headers))
 
 
-@router.post("/revoke")
+@router.post("/revoke", summary="Revoke a token")
 def revoke(request: Request, body: dict = Depends(_form_body)):  # noqa: B008
-    """Revoke an access or refresh token."""
+    """Takes an access token or a refresh token, as defined by RFC 7009."""
     oauth2_request = _build_oauth2_request(request, body)
     status, payload, headers = _server.create_endpoint_response("revocation", oauth2_request)
     return JSONResponse(content=payload or {}, status_code=status, headers=dict(headers))
 
 
-@router.post("/register")
+@router.post("/register", summary="Register a client")
 def register_client(body: dict = Depends(_json_body)):  # noqa: B008
-    """Dynamic client registration (RFC 7591).
+    """Dynamic client registration, as defined by RFC 7591.
 
-    Accepts JSON body with optional client_name, redirect_uris, grant_types, scope and
-    token_endpoint_auth_method (client_secret_basic, client_secret_post or none; defaults to
-    client_secret_basic). Returns the client_id, plus a client_secret unless the method is none.
+    The JSON body takes `client_name`, `redirect_uris`, `grant_types`, `scope` and `token_endpoint_auth_method`,
+    all optional. `token_endpoint_auth_method` is `client_secret_basic` (the default), `client_secret_post`, or
+    `none` for a public client. The response carries the `client_id`, and a `client_secret` unless the method is
+    `none`.
     """
     requested_method = body.get("token_endpoint_auth_method", OAuth2ClientAuthMethod.CLIENT_SECRET_BASIC)
     try:

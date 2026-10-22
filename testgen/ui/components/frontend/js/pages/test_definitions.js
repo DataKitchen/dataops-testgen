@@ -10,6 +10,14 @@ import { Toggle } from '/app/static/js/components/toggle.js';
 import { Attribute } from '/app/static/js/components/attribute.js';
 import { TestDefinitionForm, buildParamFieldConfigs, renderParamField } from '/app/static/js/components/test_definition_form.js';
 import { RunTestsDialog } from '/app/static/js/components/run_tests_dialog.js';
+import { ContractSummary } from '/app/static/js/components/contract_summary.js';
+import { ContractMetadata } from '/app/static/js/components/contract_metadata.js';
+import { DiscardDraftDialog } from '/app/static/js/components/discard_draft_dialog.js';
+import { ExportContractDialog } from '/app/static/js/components/export_contract_dialog.js';
+import { FreezeVersionDialog } from '/app/static/js/components/freeze_version_dialog.js';
+import { ImportContractDialog } from '/app/static/js/components/import_contract_dialog.js';
+import { RemoveTablesDialog } from '/app/static/js/components/remove_tables_dialog.js';
+import { VersionHistoryDialog } from '/app/static/js/components/version_history_dialog.js';
 import { Textarea } from '/app/static/js/components/textarea.js';
 import { Tabs, Tab } from '/app/static/js/components/tabs.js';
 import { Checkbox } from '/app/static/js/components/checkbox.js';
@@ -147,6 +155,9 @@ const TestDefinitions = (/** @type object */ props) => {
     );
     const canEdit = van.derive(() => getValue(permissions).can_edit ?? false);
     const canDisposition = van.derive(() => getValue(permissions).can_disposition ?? false);
+    const canRun = van.derive(() => getValue(permissions).can_run ?? getValue(permissions).can_edit ?? false);
+    const canNote = van.derive(() => getValue(permissions).can_note ?? getValue(permissions).can_edit ?? false);
+    const runTestsDisabledReason = van.derive(() => getValue(props.run_tests_disabled_reason) ?? null);
 
     const filterOptions = van.derive(() => getValue(props.filter_options) ?? { tables: [], columns: [], test_types: [] });
     const currentFilters = van.derive(() => getValue(props.current_filters) ?? {});
@@ -629,6 +640,7 @@ const TestDefinitions = (/** @type object */ props) => {
                         ? span('Are you sure you want to delete ', strong({}, `${info.count}`), ' selected test definitions?')
                         : span('Are you sure you want to delete the selected test definition?')
                     ),
+                    info.managed_note ? span({ class: 'text-secondary' }, info.managed_note) : '',
                     div(
                         { class: 'flex-row fx-justify-flex-end fx-gap-2' },
                         Button({
@@ -775,6 +787,9 @@ const TestDefinitions = (/** @type object */ props) => {
             },
         ),
 
+        ContractSection(props, emit, div(
+            { class: 'flex-column fx-gap-3' },
+
         // --- Top bar: filters + Add + Run Tests ---
         div(
             { class: 'flex-row fx-align-flex-end fx-gap-3 fx-flex-wrap' },
@@ -841,7 +856,7 @@ const TestDefinitions = (/** @type object */ props) => {
                     onclick: () => emit('AddDialogOpened', {}),
                 })
                 : '',
-            () => canEdit.val
+            () => canRun.val
                 ? Button({
                     type: 'stroked',
                     color: 'basic',
@@ -849,6 +864,9 @@ const TestDefinitions = (/** @type object */ props) => {
                     label: 'Run Tests',
                     width: 'auto',
                     style: 'background: var(--button-generic-background-color);',
+                    disabled: !!runTestsDisabledReason.val,
+                    tooltip: runTestsDisabledReason.val,
+                    tooltipPosition: 'left',
                     onclick: () => emit('RunTestsClicked', {}),
                 })
                 : '',
@@ -872,7 +890,7 @@ const TestDefinitions = (/** @type object */ props) => {
                             style: 'background: var(--button-generic-background-color);',
                             onclick: () => emit('EditDialogOpened', { payload: { id: row.id } }),
                         }) : '',
-                        canEdit.val ? Button({
+                        canNote.val ? Button({
                             type: 'stroked', icon: 'sticky_note_2', label: 'Notes', width: 'auto',
                             style: 'background: var(--button-generic-background-color);',
                             onclick: () => emit('NotesClicked', { payload: { id: row.id, table_name: row.table_name, column_name: row.column_name, test_name_short: row.test_name_short } }),
@@ -887,7 +905,94 @@ const TestDefinitions = (/** @type object */ props) => {
                 );
             },
         ),
+        )),
     );
+};
+
+const CONTRACT_TABS = ['rules', 'metadata'];
+
+// A contract's summary row, its dialogs, and the Quality Rules and Contract Metadata tabs around `rules`
+const ContractSection = (props, emit, rules) => {
+    const contract = van.derive(() => getValue(props.contract) ?? null);
+    const isContract = van.derive(() => !!contract.val);
+    const field = (key) => van.derive(() => contract.val?.[key] ?? null);
+    const activeTab = van.state(Math.max(0, CONTRACT_TABS.indexOf(contract.rawVal?.tab)));
+
+    van.derive(() => {
+        const index = CONTRACT_TABS.indexOf(contract.val?.tab);
+        if (index >= 0 && index !== activeTab.rawVal) {
+            activeTab.val = index;
+        }
+    });
+    van.derive(() => {
+        const tab = CONTRACT_TABS[activeTab.val];
+        if (contract.rawVal && tab !== contract.rawVal.tab) {
+            emit('ContractTabChanged', { payload: { tab } });
+        }
+    });
+
+    return () => isContract.val
+        ? div(
+            { class: 'flex-column fx-gap-3', 'data-testid': 'contract-section' },
+            VersionHistoryDialog({
+                data: field('history'),
+                emit,
+                onCompare: (source, target) => emit('ContractCompare', { payload: { source, target } }),
+                onClose: () => emit('ContractHistoryClosed', {}),
+            }),
+            DiscardDraftDialog({
+                data: field('discard'),
+                onDiscard: () => emit('ContractDiscardConfirmed', {}),
+                onCompare: (comparison) => emit('ContractHistoryOpened', {
+                    payload: { comparison: { source: comparison.source, target: comparison.target } },
+                }),
+                onClose: () => emit('ContractDiscardClosed', {}),
+            }),
+            FreezeVersionDialog({
+                data: field('freeze'),
+                onFreeze: (label) => emit('ContractFreezeConfirmed', { payload: { label } }),
+                onClose: () => emit('ContractFreezeClosed', {}),
+            }),
+            ImportContractDialog({
+                data: field('import'),
+                onFileUploaded: (file) => emit('ContractImportFile', { payload: file }),
+                onFileCleared: () => emit('ContractImportCleared', {}),
+                onImport: (deleteConfirmed) => emit('ContractImportConfirmed', {
+                    payload: { delete_confirmed: deleteConfirmed },
+                }),
+                onClose: () => emit('ContractImportClosed', {}),
+            }),
+            ExportContractDialog({ data: field('export'), onClose: () => emit('ContractExportClosed', {}) }),
+            RemoveTablesDialog({
+                data: field('remove_tables'),
+                onRemove: () => emit('ContractRemoveTablesConfirmed', {}),
+                onClose: () => emit('ContractRemoveTablesClosed', {}),
+            }),
+            ContractSummary({
+                summary: field('summary'),
+                project_code: () => getValue(props.test_suite)?.project_code,
+                emit,
+                onVersionChange: (version) => emit('ContractVersionChanged', { payload: { version } }),
+                onHistory: () => emit('ContractHistoryOpened', { payload: {} }),
+                onExport: () => emit('ContractExportOpened', {}),
+                onImport: () => emit('ContractImportOpened', {}),
+                onDiscard: () => emit('ContractDiscardOpened', {}),
+                onFreeze: () => emit('ContractFreezeOpened', {}),
+            }),
+            Tabs(
+                { activeTab },
+                Tab({ label: 'Quality Rules' }, rules),
+                Tab(
+                    { label: 'Contract Metadata' },
+                    ContractMetadata({
+                        data: field('metadata'),
+                        onSaveDocument: (text) => emit('ContractSaveDocument', { payload: { text } }),
+                        onSaveTables: (tables) => emit('ContractSaveTables', { payload: { tables } }),
+                    }),
+                ),
+            ),
+        )
+        : rules;
 };
 
 // Export popover menu
@@ -2052,6 +2157,7 @@ const CopyMoveDialogComponent = ({ open, info, onClose }, emit) => {
         div(
             { class: 'flex-column fx-gap-4 td-form-dialog' },
             () => div({ class: 'text-caption' }, `Selected tests: ${(dialogInfo.val?.selected ?? []).length}`),
+            () => dialogInfo.val?.managed_note ? div({ class: 'text-caption' }, dialogInfo.val.managed_note) : '',
 
             () => Select({
                 label: 'Target Project',

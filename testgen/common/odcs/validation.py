@@ -44,7 +44,10 @@ def _validator_for(api_version: str) -> Draft201909Validator:
     try:
         filename = _SCHEMA_FILES[api_version]
     except KeyError:
-        raise UnknownApiVersionError(f"No bundled schema for ODCS API version {api_version!r}.") from None
+        supported = ", ".join(sorted(_SCHEMA_FILES))
+        raise UnknownApiVersionError(
+            f"No bundled schema for ODCS API version {api_version!r}. Supported versions: {supported}."
+        ) from None
     schema = json.loads(resources.files("testgen.common.odcs.schemas").joinpath(filename).read_text())
     return Draft201909Validator(schema, format_checker=Draft201909Validator.FORMAT_CHECKER)
 

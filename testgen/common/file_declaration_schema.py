@@ -22,14 +22,14 @@ _Quote = Annotated[
     str | None,
     Field(
         description="CSV only. Character wrapping a field that contains the delimiter or a line break, e.g. "
-        '``"``. Autodetected when omitted.',
+        '`"`. Autodetected when omitted.',
     ),
 ]
 _Escape = Annotated[
     str | None,
     Field(
-        description="CSV only. Character that escapes a quote inside a quoted field, e.g. ``\\`` or a second "
-        '``"``. Autodetected when omitted.',
+        description="CSV only. Character that escapes a quote inside a quoted field, e.g. `\\` or a second "
+        '`"`. Autodetected when omitted.',
     ),
 ]
 
@@ -51,14 +51,14 @@ class FileDeclarationShape(BaseModel):
         str,
         Field(
             description="Path to the data, relative to the connection's base path, base URI or container. Name one "
-            "file (``sales/orders.csv``) or a glob pattern (``sales/*.csv``, or ``sales/**/*.csv`` to include "
+            "file (`sales/orders.csv`) or a glob pattern (`sales/*.csv`, or `sales/**/*.csv` to include "
             "subfolders). A pattern is one table whose rows span every file it matches. A bare folder is rejected.",
         ),
     ]
     format: Annotated[FileFormat, Field(description="Format TestGen reads the files as.")]
     delimiter: Annotated[
         str | None,
-        Field(description="CSV only. Character between fields, e.g. ``,`` or ``|``. Autodetected when omitted."),
+        Field(description="CSV only. Character between fields, e.g. `,` or `|`. Autodetected when omitted."),
     ] = None
     header: Annotated[bool | None, Field(description=HEADER_DESCRIPTION)] = None
     quote: _Quote = None

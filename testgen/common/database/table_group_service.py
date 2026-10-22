@@ -9,6 +9,8 @@ any future caller:
 * ``preview_table_group`` — schema-introspection preview. Returns
   ``(preview, data_chars, sql_generator)``; the ``save_data_chars`` callback
   is built by callers via ``make_save_data_chars``.
+* ``cascade_delete_table_group`` — deletes a table group and everything recorded
+  against it, unless a job for it is still running.
 
 None of these belong on the ``TableGroup`` model: preview opens an external
 DB connection (I/O against an arbitrary target system), and the field-required
@@ -21,6 +23,7 @@ import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import TypedDict
 from uuid import UUID
 
@@ -39,7 +42,7 @@ from testgen.common.database.file_declarations import (
 )
 from testgen.common.database.flavor.duckdb_flavor_service import base_location
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
-from testgen.common.enums import JobStatus
+from testgen.common.enums import JobKey, JobStatus
 from testgen.common.flavors import declares_files, fixed_table_group_schema, table_group_schema_label
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
@@ -66,9 +69,6 @@ _BIGINT_MAX = 2**63 - 1
 
 # Widths of the ``table_groups`` VARCHAR columns (030_initialize_new_schema_structure.sql).
 _MAX_LENGTHS: dict[str, int] = {
-    "profiling_table_set": 2000,
-    "profiling_include_mask": 2000,
-    "profiling_exclude_mask": 2000,
     "profile_id_column_mask": 2000,
     "profile_sk_column_mask": 150,
     "description": 1000,
@@ -82,7 +82,6 @@ _MAX_LENGTHS: dict[str, int] = {
     "data_product": 40,
     "data_classification": 40,
 }
-_LIST_COLUMNS = frozenset({"profiling_table_set", "profiling_include_mask", "profiling_exclude_mask"})
 
 _PUBLIC_FIELD_NAMES: dict[str, str] = {
     "table_groups_name": "table_group_name",
@@ -147,13 +146,7 @@ def validate_table_group_fields(
     for attr, max_length in _MAX_LENGTHS.items():
         value = getattr(table_group, attr)
         if isinstance(value, str) and len(value) > max_length:
-            if attr in _LIST_COLUMNS:
-                errors.append(
-                    f"{field(attr)} must be at most {max_length} characters in total,"
-                    " counting a comma between entries."
-                )
-            else:
-                errors.append(f"{field(attr)} must be at most {max_length} characters.")
+            errors.append(f"{field(attr)} must be at most {max_length} characters.")
 
     delay = table_group.profiling_delay_days
     if not _is_int(delay) or delay < 0:
@@ -629,8 +622,12 @@ def _tables_in_use(table_group_id: UUID) -> set[str]:
     return {row[0] for row in rows}
 
 
-def _has_job_in_flight(table_group: TableGroup) -> bool:
-    """Whether any non-terminal job would read this table group's schema while it changes."""
+def _has_job_in_flight(table_group: TableGroup, *clauses) -> bool:
+    """Whether any non-terminal job names this table group or one of its test suites, queued jobs
+    included.
+
+    :param clauses: Further conditions on ``JobExecution`` that a job must meet to count.
+    """
     session = get_current_session()
     suite_ids = session.scalars(
         select(TestSuite.id).where(TestSuite.table_groups_id == table_group.id)
@@ -648,6 +645,7 @@ def _has_job_in_flight(table_group: TableGroup) -> bool:
                 # as a follow-up, so this is the job most likely to be in flight during a move.
                 JobExecution.kwargs["monitor_suite_id"].astext.in_(named),
             ),
+            *clauses,
         )
     ).first()
     return active is not None
@@ -843,4 +841,33 @@ def apply_schema_move(move: SchemaMove, table_group_id: UUID) -> str | None:
     except Exception as error:
         LOG.exception("Catalog refresh after the schema move encountered errors")
         return get_exception_message(error)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Deleting a table group
+# ---------------------------------------------------------------------------
+
+class DeleteBlocker(StrEnum):
+    """What keeps a table group from being deleted."""
+
+    JOB = "job"
+    CATALOG_REFRESH = "catalog_refresh"
+
+
+def cascade_delete_table_group(table_group: TableGroup) -> DeleteBlocker | None:
+    """Delete a table group with its test suites, runs, results, schedules, hygiene issues, and
+    data catalog, unless a job for it is queued or running.
+
+    Catalog refreshes for the table group that have not started are canceled rather than counted.
+
+    :returns: Why nothing was deleted -- a job other than a catalog refresh names the table group
+        or one of its test suites, or a refresh of its catalog has started -- or ``None`` once it
+        is deleted.
+    """
+    if _has_job_in_flight(table_group, JobExecution.job_key != JobKey.refresh_data_catalog):
+        return DeleteBlocker.JOB
+    if not JobExecution.cancel_queued_catalog_refreshes(TableGroup, table_group.id):
+        return DeleteBlocker.CATALOG_REFRESH
+    TableGroup.cascade_delete([str(table_group.id)])
     return None

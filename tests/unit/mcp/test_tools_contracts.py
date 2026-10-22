@@ -538,7 +538,8 @@ def test_metadata_without_protection_returns_every_field(db_session_mock):
 def _item(version, frozen_at=None, **kw):
     return SuiteVersionListItem(
         id=uuid4(), version=version, label=kw.get("label"), created_by=kw.get("created_by", "alice"),
-        frozen_at=frozen_at, term_count=kw.get("term_count", 40), run_count=kw.get("run_count", 0),
+        frozen_at=frozen_at, frozen_by=kw.get("frozen_by"), term_count=kw.get("term_count", 40),
+        run_count=kw.get("run_count", 0),
         latest_run_id=kw.get("latest_run_id"), latest_run_status=kw.get("latest_run_status"),
         latest_run_started_at=kw.get("latest_run_started_at"),
     )
@@ -612,6 +613,13 @@ def test_freezing_reports_what_now_runs_and_that_it_is_final(db_session_mock):
     assert "cannot be changed or unfrozen" in out
 
 
+def test_freezing_records_the_mcp_user_as_who_froze_it(db_session_mock):
+    frozen = SuiteVersion(id=uuid4(), version=4, frozen_at=datetime(2026, 10, 8, tzinfo=UTC))
+    with patch(f"{MODULE}.get_mcp_username", return_value="alice"):
+        _, freeze = _freeze(_contract(), frozen=frozen)
+    assert freeze.call_args.kwargs["username"] == "alice"
+
+
 def test_freezing_with_no_draft_says_so_rather_than_succeeding(db_session_mock):
     previous = SuiteVersion(id=uuid4(), version=3)
     with pytest.raises(MCPUserError, match="has no draft to freeze. v3 active is already frozen"):
@@ -644,7 +652,7 @@ def _discard(suite, *, count=0, now_at=None, error=None):
 def test_discarding_reports_tests_removed_and_the_version_returned_to(db_session_mock):
     out = _discard(_contract(), count=41, now_at=SuiteVersion(id=uuid4(), version=3))
     assert "Discarded v4 draft of contract `Orders`" in out
-    assert "**Tests removed:** 41" in out
+    assert "**Tests removed besides schema conformance:** 41" in out
     assert "**Contract is now at:** v3 active" in out
 
 
@@ -743,6 +751,13 @@ def test_a_merge_patch_changes_one_field_and_keeps_every_other_section(db_sessio
     document = save.call_args.args[1]
     assert document == {**_WIDE_DOCUMENT, "description": {"purpose": "Orders"}}
     assert "**Version:** v5 draft" in out
+
+
+def test_a_merge_patch_after_a_rename_applies_to_the_contracts_name(db_session_mock):
+    stored = {"name": "Old name", "status": "draft"}
+    _, save = _update(_contract("Orders"), _draft(document=stored), patch={"status": "active"})
+
+    assert save.call_args.args[1] == {"name": "Orders", "status": "active"}
 
 
 def test_a_merge_patch_replaces_a_list_whole(db_session_mock):

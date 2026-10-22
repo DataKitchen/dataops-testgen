@@ -71,6 +71,7 @@ def _suite():
     suite = MagicMock()
     suite.id = uuid4()
     suite.suite_type = SuiteType.CONTRACT
+    suite.test_suite = "Orders"
     return suite
 
 
@@ -96,6 +97,19 @@ def test_freezing_sets_the_freeze_time():
 
     assert frozen.frozen_at is not None
     assert frozen.label == "first"
+
+
+def test_freezing_records_who_froze_the_version():
+    suite = _suite()
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+    ):
+        frozen = contract_service.freeze_version(suite, username="alice")
+
+    assert frozen.frozen_by == "alice"
 
 
 def test_freezing_stores_the_rendered_bytes():
@@ -267,6 +281,33 @@ def test_discarding_returns_the_number_of_terms_removed():
     assert term_count == 3
 
 
+def test_a_versions_term_count_leaves_out_the_tests_testgen_manages():
+    version = SuiteVersion(id=uuid4(), version=2)
+    session = MagicMock()
+    session.scalar.return_value = 5
+    with patch("testgen.common.contract_service.get_current_session", return_value=session):
+        assert contract_service.term_count(version.id) == 5
+
+    conjuncts = _conjuncts(session.scalar.call_args.args[0].whereclause)
+    assert any(equality_conjunct(term, "version_id", "test_definitions", version.id) for term in conjuncts)
+    assert any(
+        getattr(term.left, "key", None) == "test_type" and term.operator is operators.not_in_op
+        for term in conjuncts
+    )
+
+
+def test_a_versions_term_count_narrows_by_the_clauses_given():
+    version_id = uuid4()
+    session = MagicMock()
+    session.scalar.return_value = 2
+    with patch("testgen.common.contract_service.get_current_session", return_value=session):
+        assert contract_service.term_count(version_id, TestDefinition.table_name == "orders") == 2
+
+    conjuncts = _conjuncts(session.scalar.call_args.args[0].whereclause)
+    assert any(equality_conjunct(term, "version_id", "test_definitions", version_id) for term in conjuncts)
+    assert any(equality_conjunct(term, "table_name", "test_definitions", "orders") for term in conjuncts)
+
+
 def test_discarding_the_contracts_only_version_is_refused():
     """With no frozen version behind it, discarding the draft would leave the contract with
     zero suite_versions rows, and both resolvers fall through to the shared placeholder."""
@@ -354,17 +395,33 @@ def test_saving_a_document_marks_it_modified_even_when_it_is_the_drafts_own_obje
         _save_stubs(stored) as (suite, draft, _),
         patch("testgen.common.contract_service.flag_modified") as flagged,
     ):
-        stored["name"] = "Orders v2"
+        stored["status"] = "active"
         contract_service.save_metadata_document(suite, stored)
 
     flagged.assert_called_once_with(draft, "metadata_document")
+
+
+def test_a_name_other_than_the_contracts_is_refused():
+    with _save_stubs(_metadata()) as (suite, _, _), pytest.raises(contract_service.OwnedFieldError) as excinfo:
+        contract_service.save_metadata_document(suite, _metadata(name="Orders v2"))
+
+    assert excinfo.value.problems == [
+        "$.name: `name` is the contract's name, `Orders`. Rename the contract to change it."
+    ]
+
+
+def test_a_saved_document_takes_the_contracts_name():
+    with _save_stubs(_metadata(name="Old name")) as (suite, draft, _):
+        contract_service.save_metadata_document(suite, _metadata(name="Old name", status="active"))
+
+    assert draft.metadata_document["name"] == "Orders"
 
 
 def test_saving_a_document_reconciles_conformance_tests_after_committing_it():
     """Conformance generation reads the declared tables on its own connection, so the document
     has to be committed before it runs or the reconciliation sees the previous declaration."""
     with _save_stubs(_metadata()) as (suite, _, calls):
-        contract_service.save_metadata_document(suite, _metadata(name="Orders v2"))
+        contract_service.save_metadata_document(suite, _metadata(status="active"))
 
     assert calls == ["commit", "reconcile"]
 
@@ -384,6 +441,20 @@ def test_a_rule_a_test_type_checks_is_refused_with_its_path_and_nothing_is_store
     assert calls == []
 
 
+def test_a_checkable_rule_replacing_a_stored_rule_is_refused_saying_to_leave_it_out():
+    stored = _metadata()
+    stored["schema"][0]["quality"].append({"type": "text", "id": "orders-rows", "description": "Plenty of rows."})
+    document = _metadata()
+    document["schema"][0]["quality"].append(_rows_rule())
+    with _save_stubs(stored) as (suite, _, _), pytest.raises(contract_service.CheckableRuleError) as raised:
+        contract_service.save_metadata_document(suite, document)
+
+    assert raised.value.problems == [
+        "$.schema[0].quality[1]: orders: orders-rows is checked by the Row Ct test type. It replaces a rule the "
+        "document holds: leave the rule out of the change, which removes the stored one, and add it as a test."
+    ]
+
+
 def test_a_rule_no_test_type_checks_is_stored_marked_unverifiable():
     document = _metadata()
     document["schema"][0]["properties"][0]["quality"] = [
@@ -401,9 +472,9 @@ def test_a_rule_already_stored_at_the_same_place_is_kept():
     stored = _metadata()
     stored["schema"][0]["quality"].append(_rows_rule())
     with _save_stubs(stored) as (suite, draft, _):
-        saved = contract_service.save_metadata_document(suite, {**copy.deepcopy(stored), "name": "Orders v2"})
+        saved = contract_service.save_metadata_document(suite, {**copy.deepcopy(stored), "status": "active"})
 
-    assert draft.metadata_document["name"] == "Orders v2"
+    assert draft.metadata_document["status"] == "active"
     assert saved.unverifiable_rules == []
 
 
@@ -437,7 +508,9 @@ def test_a_document_the_save_makes_invalid_is_refused_naming_the_path():
 def test_problems_the_stored_document_already_had_are_returned_rather_than_refused():
     stored = _metadata(status=42)
     with _save_stubs(stored) as (suite, _, _calls):
-        saved = contract_service.save_metadata_document(suite, {**copy.deepcopy(stored), "name": "Orders v2"})
+        saved = contract_service.save_metadata_document(
+            suite, {**copy.deepcopy(stored), "description": {"purpose": "Order reporting"}}
+        )
 
     assert [problem.split(":")[0] for problem in saved.problems] == ["$.status"]
 
@@ -591,11 +664,11 @@ def test_saving_onto_a_frozen_only_contract_lands_in_its_new_draft():
         patch.object(render, "_terms_for_version", return_value=[]),
         patch("testgen.common.contract_service.reconcile_contract_conformance"),
     ):
-        saved = contract_service.save_metadata_document(suite, _metadata(version="3.0.0", name="Orders v4"))
+        saved = contract_service.save_metadata_document(suite, _metadata(version="3.0.0", status="active"))
 
     route.assert_called_once_with(suite.id)
     assert saved.version_id == draft.id
-    assert draft.metadata_document["name"] == "Orders v4"
+    assert draft.metadata_document["status"] == "active"
     assert draft.metadata_document["version"] == "4.0.0"
     assert frozen.metadata_document["name"] == "Orders"
 
@@ -663,17 +736,16 @@ def test_initializing_a_contract_passes_the_connection_and_table_group_to_the_se
     build.assert_called_once_with(connection, table_group)
 
 
-def test_initializing_a_contract_stamps_the_supplied_username():
+def test_initializing_a_contract_stamps_the_acting_user():
     suite = _suite()
     suite.test_suite = "Orders contract"
     with (
         patch.object(SuiteVersion, "next_version_for", return_value=1),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()) as get_session,
         patch("testgen.common.contract_service.build_server_block", return_value=ServerBlock({})),
+        patch("testgen.common.contract_service.acting_username", return_value="tester"),
     ):
-        contract_service.initialize_contract(
-            suite, table_group=MagicMock(), connection=MagicMock(), username="tester"
-        )
+        contract_service.initialize_contract(suite, table_group=MagicMock(), connection=MagicMock())
 
     draft = get_session.return_value.add.call_args.args[0]
     assert draft.created_by == "tester"
@@ -1280,7 +1352,7 @@ def test_exporting_a_draft_renders_it_fresh():
     with patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT) as render_mock:
         exported = contract_service.export_version(draft)
 
-    render_mock.assert_called_once_with(draft)
+    render_mock.assert_called_once_with(draft, contract_name=None)
     assert yaml.safe_load(exported.text)["kind"] == ODCS_KIND
     assert exported.problems == []
 

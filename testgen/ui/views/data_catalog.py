@@ -54,6 +54,7 @@ from testgen.ui.queries.data_catalog_queries import (
 from testgen.ui.queries.profiling_queries import (
     COLUMN_PROFILING_FIELDS,
     TAG_FIELDS,
+    add_provenance_columns,
     get_column_by_id,
     get_columns_by_id,
     get_columns_by_table_group,
@@ -61,6 +62,7 @@ from testgen.ui.queries.profiling_queries import (
     get_table_by_id,
     get_tables_by_id,
     get_tables_by_table_group,
+    with_provenance,
 )
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db
 from testgen.ui.services.query_cache import (
@@ -570,6 +572,8 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
         "within_1mo_date_ct": {"header": "Within 1 month"},
         "future_date_ct": {"header": "Future dates"},
         "boolean_true_ct": {"header": "Boolean true values"},
+        "sampling": {},
+        "percentiles": {},
         "description": {"wrap": True},
         "data_source": {},
         "source_system": {},
@@ -593,6 +597,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
         pii_columns = get_pii_columns(str(table_group.id))
         mask_profiling_pii(data, pii_columns)
 
+    add_provenance_columns(data)
     data = data.sort_values(by=["table_name", "ordinal_position"], na_position="first", key=lambda x: x.str.lower() if x.dtype == "object" else x)
 
     for key in ["datatype_suggestion"]:
@@ -824,7 +829,7 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
             test_results.test_type = test_types.test_type
         )
     WHERE test_suites.table_groups_id = :table_group_id
-        AND test_suites.suite_type = 'regular'
+        AND test_suites.suite_type IN ('regular', 'contract')
         AND table_name = :table_name
         {"AND column_names = :column_name" if column_name else ""}
         AND result_status NOT IN ('Passed', 'Log')
@@ -859,7 +864,7 @@ def get_related_test_suites(table_group_id: str, table_name: str, column_name: s
             test_definitions.test_suite_id = test_suites.id
         )
     WHERE test_suites.table_groups_id = :table_group_id
-        AND test_suites.suite_type = 'regular'
+        AND test_suites.suite_type IN ('regular', 'contract')
         AND test_definitions.version_id = {SuiteVersion.resolved_for_sql("test_definitions.test_suite_id")}
         AND table_name = :table_name
         {"AND column_name = :column_name" if column_name else ""}
@@ -935,7 +940,7 @@ def _get_history_run_column(run_id: str, table_name: str, column_name: str) -> d
     }
     from testgen.ui.services.database_service import fetch_one_from_db
     result = fetch_one_from_db(query, params)
-    return make_json_safe(dict(result)) if result else None
+    return make_json_safe(with_provenance(dict(result))) if result else None
 
 
 def get_preview_data(

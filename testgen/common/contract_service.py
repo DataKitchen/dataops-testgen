@@ -15,7 +15,7 @@ from typing import Any, NamedTuple
 from uuid import UUID, uuid4
 
 import yaml
-from sqlalchemy import delete, func, select
+from sqlalchemy import ColumnElement, delete, func, select
 from sqlalchemy.orm.attributes import flag_modified
 
 from testgen.commands.test_generation import (
@@ -23,15 +23,16 @@ from testgen.commands.test_generation import (
     reconcile_contract_conformance,
     run_contract_generation,
 )
+from testgen.common.acting_user import acting_username
 from testgen.common.contract_rules import RuleResolver, document_rules, rule_label
-from testgen.common.enums import JobStatus, SuiteType
+from testgen.common.enums import MANAGED_TEST_TYPES, JobStatus, SuiteType
 from testgen.common.generation_set_service import CONTRACT_GENERATION_SET
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.suite_version import ContractState, SuiteVersion, VersionState, version_state
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import MANAGED_TEST_TYPES, TestDefinition
+from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_run import TestRun, TestRunSummary
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.odcs import render, serialize
@@ -77,8 +78,8 @@ class InvalidContractDocumentError(ValueError):
         self.problems = problems
 
 
-def freeze_version(suite: TestSuite, *, label: str | None = None) -> SuiteVersion:
-    """Freeze the suite's draft, making it the agreement in force.
+def freeze_version(suite: TestSuite, *, label: str | None = None, username: str | None = None) -> SuiteVersion:
+    """Freeze the suite's draft, making it the agreement in force, recorded as frozen by ``username``.
 
     Renders the draft's terms into its stored document and validates the merge before
     anything is written. Raises ``InvalidContractDocumentError``, leaving the draft a draft,
@@ -89,14 +90,17 @@ def freeze_version(suite: TestSuite, *, label: str | None = None) -> SuiteVersio
     if draft is None:
         raise ValueError("This contract has no draft to freeze.")
 
-    document = render.render_document(draft)
+    document = render.render_document(draft, contract_name=suite.test_suite)
     problems = validate_document(document)
     if problems:
         raise InvalidContractDocumentError(problems)
 
     draft.odcs_api_version = document["apiVersion"]
+    if draft.metadata_document and "name" in document:
+        draft.metadata_document = {**draft.metadata_document, "name": document["name"]}
     draft.frozen_document = serialize.serialize_document(document)
     draft.frozen_at = datetime.now(UTC)
+    draft.frozen_by = username
     if label is not None:
         draft.label = label
     get_current_session().flush()
@@ -148,6 +152,13 @@ class UnknownVersionError(ValueError):
         self.suite = suite
         self.version = version
         self.highest = highest
+
+    @property
+    def versions_held(self) -> str:
+        """A sentence naming the versions the contract holds."""
+        if self.highest == 1:
+            return "Its only version is v1."
+        return f"Its versions are v1\u2013v{self.highest}."
 
 
 def version_by_number(suite: TestSuite, version: int) -> SuiteVersion:
@@ -285,16 +296,18 @@ def _run_summary(run: TestRun | None) -> TestRunSummary | None:
     return summaries[0] if summaries else None
 
 
-def export_version(version: SuiteVersion) -> ExportedDocument:
+def export_version(version: SuiteVersion, contract_name: str | None = None) -> ExportedDocument:
     """The version's document as YAML text, with a fresh check of whether it validates.
 
     Returns a frozen version's stored bytes unchanged, reading no terms and rendering
     nothing; a draft, which has no stored bytes yet, is rendered and serialized fresh.
     Either way ``problems`` is computed against the returned text rather than assumed, so a
     frozen document that no longer validates -- for instance after a schema pin change --
-    is reported rather than presumed clean.
+    is reported rather than presumed clean. A draft's ``name`` is ``contract_name`` when given.
     """
-    text = version.frozen_document or serialize.serialize_document(render.render_document(version))
+    text = version.frozen_document or serialize.serialize_document(
+        render.render_document(version, contract_name=contract_name)
+    )
     problems = validate_document(yaml.safe_load(text))
     return ExportedDocument(text, problems)
 
@@ -310,16 +323,23 @@ def discard_draft(suite: TestSuite) -> int:
             "the contract with no version at all. Freeze a version first, or keep this draft."
         )
 
+    removed = term_count(draft.id)
     session = get_current_session()
-    term_count = session.scalar(
-        select(func.count()).select_from(TestDefinition).where(
-            TestDefinition.version_id == draft.id,
-            TestDefinition.test_type.not_in(MANAGED_TEST_TYPES),
-        )
-    ) or 0
     session.delete(draft)
     session.flush()
-    return term_count
+    return removed
+
+
+def term_count(version_id: UUID, *clauses: ColumnElement[bool]) -> int:
+    """The number of terms on the version ``version_id`` that match ``clauses``, leaving out the tests
+    TestGen manages itself."""
+    return get_current_session().scalar(
+        select(func.count()).select_from(TestDefinition).where(
+            TestDefinition.version_id == version_id,
+            TestDefinition.test_type.not_in(MANAGED_TEST_TYPES),
+            *clauses,
+        )
+    ) or 0
 
 
 class CheckableRuleError(InvalidContractDocumentError):
@@ -358,6 +378,7 @@ def save_metadata_document(suite: TestSuite, document: dict[str, Any]) -> SavedM
       already stores the same rule at the same place; every other rule is stored marked unverifiable;
     - a root field TestGen sets (``apiVersion``, ``kind``, ``id``, ``version``) that differs from
       the version's is refused, and one left out is kept;
+    - ``name`` is the suite's name: a ``name`` that is neither the suite's nor the stored one is refused;
     - the document merged with the version's terms is validated, and a problem it did not have
       before is refused (``InvalidContractDocumentError``). Problems it already had are returned.
 
@@ -377,11 +398,12 @@ def save_metadata_document(suite: TestSuite, document: dict[str, Any]) -> SavedM
     get_current_session().refresh(current, ["metadata_document"])
     stored = current.metadata_document or {}
 
-    if problems := _owned_field_changes(document, stored):
+    if problems := [*_owned_field_changes(document, stored), *_name_changes(document, stored, suite)]:
         raise OwnedFieldError(problems)
     for key in _OWNED_FIELDS:
         if key not in document and key in stored:
             document[key] = stored[key]
+    document["name"] = suite.test_suite
 
     table_group = TableGroup.get(suite.table_groups_id)
     resolver = RuleResolver.for_table_group(table_group, Connection.get(table_group.connection_id))
@@ -410,12 +432,36 @@ def save_metadata_document(suite: TestSuite, document: dict[str, Any]) -> SavedM
     )
 
 
+def _name_changes(document: dict[str, Any], stored: dict[str, Any], suite: TestSuite) -> list[str]:
+    if "name" not in document or document["name"] in (stored.get("name"), suite.test_suite):
+        return []
+    return [f"$.name: `name` is the contract's name, `{suite.test_suite}`. Rename the contract to change it."]
+
+
+def document_with_contract_name(version: SuiteVersion, suite: TestSuite) -> dict[str, Any]:
+    """``version``'s stored metadata document. A draft's document that declares a ``name`` gets ``suite``'s
+    name in its place."""
+    document = version.metadata_document or {}
+    if version.frozen_at is None and "name" in document:
+        return {**document, "name": suite.test_suite}
+    return document
+
+
 def _owned_field_changes(document: dict[str, Any], stored: dict[str, Any]) -> list[str]:
     return [
         f"$.{key}: `{key}` cannot be changed. It is `{stored[key]}`."
         for key in _OWNED_FIELDS
         if key in document and key in stored and document[key] != stored[key]
     ]
+
+
+def _rule_identity(rule: Any, index: int) -> str:
+    """A rule's ``id`` or ``name``, or its position when it has neither."""
+    if isinstance(rule, dict):
+        for key in ("id", "name"):
+            if isinstance(rule.get(key), str) and rule[key]:
+                return rule[key]
+    return f"#{index}"
 
 
 def _mark_unverifiable_rules(document: dict[str, Any], stored: dict[str, Any], resolver: RuleResolver) -> list[str]:
@@ -427,17 +473,30 @@ def _mark_unverifiable_rules(document: dict[str, Any], stored: dict[str, Any], r
     stored_rules = {
         (rules.label, _comparable_rule(rule)) for rules in document_rules(stored) for rule in rules.rules
     }
+    stored_by_place = {
+        (rules.label, _rule_identity(rule, index)): _comparable_rule(rule)
+        for rules in document_rules(stored)
+        for index, rule in enumerate(rules.rules)
+    }
     checkable: list[str] = []
     added: list[str] = []
     for rules in document_rules(document):
+        kept = {_comparable_rule(rule) for rule in rules.rules}
         for index, rule in enumerate(rules.rules):
             is_stored = (rules.label, _comparable_rule(rule)) in stored_rules
             resolved = None if rules.nested else resolver.resolve(rule, rules.scope, rules.table_name, rules.column_name)
             if resolved is not None and not is_stored:
                 test_type = resolver.test_types[resolved.test_type]
+                replaced = stored_by_place.get((rules.label, _rule_identity(rule, index)))
+                edit_note = (
+                    " It replaces a rule the document holds: leave the rule out of the change, which removes the"
+                    " stored one, and add it as a test."
+                    if replaced is not None and replaced not in kept
+                    else ""
+                )
                 checkable.append(
                     f"{rules.path}[{index}]: {rule_label(rule, index, rules.label)} is checked by the "
-                    f"{test_type.test_name_short or test_type.test_type} test type."
+                    f"{test_type.test_name_short or test_type.test_type} test type.{edit_note}"
                 )
                 continue
             if isinstance(rule, dict):
@@ -624,10 +683,9 @@ class InitializedContract:
     custom_server_reason: CustomServerReason | None
 
 
-def initialize_contract(
-    suite: TestSuite, table_group: TableGroup, connection: Connection, username: str | None = None
-) -> InitializedContract:
-    """Give a newly created contract its first draft, generation set and prefilled document."""
+def initialize_contract(suite: TestSuite, table_group: TableGroup, connection: Connection) -> InitializedContract:
+    """Give a newly created contract its first draft, authored by the acting user, its generation set and
+    prefilled document."""
     _assert_contract(suite)
     session = get_current_session()
     server = build_server_block(connection, table_group)
@@ -646,7 +704,7 @@ def initialize_contract(
             "schema": [],
         },
         odcs_api_version=ODCS_API_VERSION,
-        created_by=username,
+        created_by=acting_username(),
     )
     session.add(draft)
     suite.generation_sets = [CONTRACT_GENERATION_SET]

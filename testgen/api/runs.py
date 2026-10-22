@@ -6,12 +6,15 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, select
 
 from testgen.api.deps import (
+    LimitQuery,
+    PageQuery,
     api_error,
     db_session,
     get_authorized_user,
     has_project_permission,
     resolve_job,
     resolve_table_group,
+    score_percent,
 )
 from testgen.api.enums import (
     DISPOSITION_FROM_DB,
@@ -35,6 +38,11 @@ from testgen.api.enums import (
     pii_flag_from_db,
 )
 from testgen.api.schemas import (
+    HYGIENE_DISPOSITION_FILTER,
+    LIKELIHOOD_VALUES,
+    PII_RISK_HIGH,
+    PII_RISK_MODERATE,
+    RESULT_STATUS_VALUES,
     ErrorResponse,
     HygieneIssueCounts,
     HygieneIssueItem,
@@ -111,7 +119,7 @@ def _profiling_run_schema_is_reported(job_id: UUID) -> bool:
     response_model=TestRunResponse,
 )
 def get_test_run(job: JobExecution = resolve_job("view", JobExecution.job_key == JobKey.run_tests)):  # noqa: B008
-    """Get a test run by the job execution ID that created it.
+    """A test run, addressed by the ID of the job that started it, with its result counts once it completes.
 
     A contract's run names the version it checked, and whether it counts as the contract's status.
     """
@@ -121,11 +129,12 @@ def get_test_run(job: JobExecution = resolve_job("view", JobExecution.job_key ==
     if test_run:
         counts = TestResult.count_by_status(test_run.id)
         result = TestRunResult(
-            score=test_run.dq_score_test_run,
+            score=score_percent(test_run.dq_score_test_run),
             result_counts=ResultCounts.model_validate(counts, from_attributes=True),
         )
 
-    test_suite_id = test_run.test_suite_id if test_run else None
+    # A run that has not started has no run record; its job names the suite it was submitted for.
+    test_suite_id = test_run.test_suite_id if test_run else job.kwargs.get("test_suite_id")
     table_group_id = None
     if test_suite_id:
         table_group_id = get_current_session().scalar(
@@ -221,25 +230,32 @@ def _to_item(row: TestRunResultRow, schema_is_reported: bool) -> TestResultItem:
 )
 def list_test_run_results(
     job: JobExecution = resolve_job("view", JobExecution.job_key == JobKey.run_tests),  # noqa: B008
-    status: ResultStatus | None = Query(default=None),  # noqa: B008
-    table_name: str | None = Query(default=None),
-    column_name: str | None = Query(default=None),
+    status: ResultStatus | None = Query(  # noqa: B008
+        default=None, description=f"Only results with this status: {RESULT_STATUS_VALUES}."
+    ),
+    table_name: str | None = Query(
+        default=None, description="Only results on this table, matched exactly, including case."
+    ),
+    column_name: str | None = Query(
+        default=None,
+        description="Only results on this column, matched exactly against `column_names`, including case.",
+    ),
     test_type: str | None = Query(
         default=None,
         description=(
-            "Filter to one test type, given as its code — the value returned in each result's "
+            "Only results of this test type, given as its code — the value returned in each result's "
             "`test_type`, e.g. `Dupe_Rows`."
         ),
     ),
-    disposition: Disposition | None = Query(default=None),  # noqa: B008
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=20, ge=1, le=100),
+    disposition: Disposition | None = Query(  # noqa: B008
+        default=None,
+        description="Only results with this disposition: `confirmed`, `dismissed`, `muted`, or `no_decision` (not "
+        "triaged yet). Omit to list `confirmed` and `no_decision` results together.",
+    ),
+    page: int = PageQuery,
+    limit: int = LimitQuery,
 ):
-    """List individual results for a test run.
-
-    Omitting ``disposition`` returns active results — confirmed and no_decision
-    (excludes dismissed and muted); pass an explicit value to filter to one state.
-    """
+    """The results of a test run's individual tests, with each test's measure, threshold and status."""
     clauses = []
     if status:
         clauses.append(TestResult.status == RESULT_STATUS_TO_DB[status])
@@ -274,14 +290,16 @@ def list_test_run_results(
     response_model=ProfilingRunResponse,
 )
 def get_profiling_run(job: JobExecution = resolve_job("view", JobExecution.job_key == JobKey.run_profile)):  # noqa: B008
-    """Get a profiling run by the job execution ID that created it."""
+    """A profiling run, addressed by the ID of the job that started it, with its counts and Profiling Score once it
+    completes.
+    """
     profiling_run = ProfilingRun.get(job.id)
 
     result = None
     if profiling_run:
         counts = HygieneIssue.count_for_run(profiling_run.id)
         result = ProfilingRunResult(
-            score=profiling_run.dq_score_profiling,
+            score=score_percent(profiling_run.dq_score_profiling),
             table_ct=profiling_run.table_ct,
             column_ct=profiling_run.column_ct,
             record_ct=profiling_run.record_ct,
@@ -291,7 +309,7 @@ def get_profiling_run(job: JobExecution = resolve_job("view", JobExecution.job_k
     return ProfilingRunResponse(
         id=job.id,
         status=job.status,
-        table_group_id=profiling_run.table_groups_id if profiling_run else None,
+        table_group_id=profiling_run.table_groups_id if profiling_run else job.kwargs.get("table_group_id"),
         started_at=job.started_at,
         completed_at=job.completed_at,
         result=result,
@@ -305,7 +323,7 @@ def _profiling_history_item(row: ProfilingRunHistoryRow, counts) -> ProfilingRun
         status=row.status,
         started_at=row.started_at,
         completed_at=row.completed_at,
-        profiling_score=row.profiling_score,
+        profiling_score=score_percent(row.profiling_score),
         table_ct=row.table_ct,
         column_ct=row.column_ct,
         record_ct=row.record_ct,
@@ -322,14 +340,15 @@ def _profiling_history_item(row: ProfilingRunHistoryRow, counts) -> ProfilingRun
 )
 def list_profiling_runs(
     table_group: TableGroup = resolve_table_group("view"),  # noqa: B008
-    status: JobStatus | None = Query(default=None),  # noqa: B008
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=20, ge=1, le=100),
+    status: JobStatus | None = Query(  # noqa: B008
+        default=None,
+        description="Only runs whose job has this status. With `limit=1`, `completed` returns the latest completed "
+        "run.",
+    ),
+    page: int = PageQuery,
+    limit: int = LimitQuery,
 ):
-    """List profiling runs for a table group, newest first.
-
-    Combine ``?status=completed&limit=1`` to fetch the latest completed run.
-    """
+    """A table group's profiling runs, newest first, each with its counts and Profiling Score."""
     clauses = []
     if status is not None:
         clauses.append(JobExecution.status == status)
@@ -449,22 +468,24 @@ def list_profiling_run_hygiene_issues(
     issue_type: str | None = Query(
         default=None,
         description=(
-            "Filter to one issue type, given as its id — the value returned in each issue's "
+            "Only issues of this type, given as its ID — the value returned in each issue's "
             "`issue_type`, e.g. `1002`."
         ),
     ),
-    likelihood: IssueLikelihood | None = Query(default=None),  # noqa: B008
-    disposition: HygieneDisposition | None = Query(default=None),  # noqa: B008
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=20, ge=1, le=100),
+    likelihood: IssueLikelihood | None = Query(  # noqa: B008
+        default=None, description=f"Only issues of this likelihood: {LIKELIHOOD_VALUES}."
+    ),
+    disposition: HygieneDisposition | None = Query(  # noqa: B008
+        default=None,
+        description=HYGIENE_DISPOSITION_FILTER,
+    ),
+    page: int = PageQuery,
+    limit: int = LimitQuery,
 ):
-    """List data-quality hygiene issues for a profiling run.
+    """The hygiene issues a profiling run found, other than Potential PII findings.
 
-    Excludes Potential PII findings, which are listed by
-    ``/profiling-runs/{job_id}/potential-pii``. Omitting ``disposition``
-    returns confirmed issues; pass ``dismissed`` or ``muted`` to filter to
-    those states. Callers without ``view_pii`` on the run's project see
-    ``[PII Redacted]`` in ``detail`` for PII-flagged rows.
+    A caller without permission to view personally identifiable information (PII) in the run's project sees
+    `[PII Redacted]` in `detail` for columns flagged as PII.
     """
     clauses = [HygieneIssueType.likelihood != DbIssueLikelihood.POTENTIAL_PII.value]
     if issue_type:
@@ -493,17 +514,19 @@ def list_profiling_run_hygiene_issues(
 def list_profiling_run_potential_pii(
     job: JobExecution = resolve_job("view", JobExecution.job_key == JobKey.run_profile),  # noqa: B008
     user: User = Depends(get_authorized_user),  # noqa: B008
-    pii_risk: PiiRisk | None = Query(default=None),  # noqa: B008
-    disposition: HygieneDisposition | None = Query(default=None),  # noqa: B008
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=20, ge=1, le=100),
+    pii_risk: PiiRisk | None = Query(  # noqa: B008
+        default=None, description=f"Only findings of this risk level: {PII_RISK_HIGH} or {PII_RISK_MODERATE}."
+    ),
+    disposition: HygieneDisposition | None = Query(  # noqa: B008
+        default=None,
+        description=HYGIENE_DISPOSITION_FILTER,
+    ),
+    page: int = PageQuery,
+    limit: int = LimitQuery,
 ):
-    """List Potential PII findings for a profiling run.
+    """The columns a profiling run flagged as possibly holding personally identifiable information (PII).
 
-    Companion to ``/profiling-runs/{job_id}/hygiene-issues``. Omitting
-    ``disposition`` returns confirmed findings; pass ``dismissed`` or
-    ``muted`` to filter to those states. Callers without ``view_pii`` on
-    the run's project see ``[PII Redacted]`` in ``detail``.
+    A caller without permission to view PII in the run's project sees `[PII Redacted]` in `detail`.
     """
     clauses = [HygieneIssueType.likelihood == DbIssueLikelihood.POTENTIAL_PII.value]
     if pii_risk:
@@ -536,8 +559,8 @@ def _to_column_item(row: ColumnProfileRow, schema_is_reported: bool) -> Profilin
         null_value_ct=row.null_value_ct,
         distinct_value_ct=row.distinct_value_ct,
         filled_value_ct=row.filled_value_ct,
-        profiling_score=row.profiling_score,
-        testing_score=row.testing_score,
+        profiling_score=score_percent(row.profiling_score),
+        testing_score=score_percent(row.testing_score),
         issue_counts=IssueCounts(
             hygiene_issues=HygieneIssueCounts(
                 definite=row.definite,
@@ -565,23 +588,22 @@ def _to_column_item(row: ColumnProfileRow, schema_is_reported: bool) -> Profilin
 )
 def list_profiling_run_columns(
     job: JobExecution = resolve_job("view", JobExecution.job_key == JobKey.run_profile),  # noqa: B008
-    table_name: str | None = Query(default=None),
-    sort: ColumnSort = Query(default=ColumnSort.hygiene_severity),  # noqa: B008
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=20, ge=1, le=100),
+    table_name: str | None = Query(
+        default=None, description="Only columns of this table, matched exactly, including case."
+    ),
+    sort: ColumnSort = Query(  # noqa: B008
+        default=ColumnSort.hygiene_severity,
+        description="`hygiene_severity` (the default) puts columns with the most severe hygiene issues first: any "
+        "Definite issue outranks any number of Likely ones, and so on down to moderate Potential PII risk. `table` "
+        "lists columns by schema, table, and column position.",
+    ),
+    page: int = PageQuery,
+    limit: int = LimitQuery,
 ):
-    """List per-column profiles for a profiling run.
+    """The profile of each column a profiling run covered: its types, counts, and hygiene issue counts.
 
-    The default ``hygiene_severity`` sort orders columns worst-first by the tuple
-    ``(definite, likely, possible, high, moderate)`` — a column with any Definite hygiene
-    issue outranks any column with none regardless of lower-severity counts. Use
-    ``sort=table`` for a stable per-table listing (schema, table, column position).
-
-    ``table_name`` is a case-sensitive exact match: source-system casing is preserved.
-
-    ``profiling_score``, ``testing_score``, and ``pii_flag`` on each returned item reflect
-    the column's current values from the catalog — a column that has been re-profiled
-    since the pinned run still reports the latest scores and classification.
+    `profiling_score`, `testing_score`, and `pii_flag` are the column's latest values in the data catalog, so a
+    column profiled again after this run reports its latest scores and classification.
     """
     clauses = []
     if table_name is not None:

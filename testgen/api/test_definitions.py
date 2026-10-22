@@ -58,13 +58,27 @@ router = APIRouter(
     summary="Export test definitions",
     response_model=ExportDocument,
     response_model_exclude_defaults=True,
-    responses={400: {"model": ErrorResponse, "description": "Version on a suite that is not a contract, or unknown"}},
+    responses={
+        400: {
+            "model": ErrorResponse,
+            "description": "`version` given for a suite that is not a contract, or for a version the contract does "
+            "not hold",
+        },
+    },
 )
 def export_test_definitions(
     test_suite: TestSuite = resolve_test_suite("view", TEST_SUITE_TYPES),  # noqa: B008
-    origin: Origin = Query(default=Origin.both),  # noqa: B008
-    table_name: str | None = Query(default=None),
-    test_type: str | None = Query(default=None),
+    origin: Origin = Query(  # noqa: B008
+        default=Origin.both,
+        description="Only definitions of this origin: `auto` (created by test generation), `manual` (created by "
+        "hand), or `both` (the default).",
+    ),
+    table_name: str | None = Query(
+        default=None, description="Only definitions for this table, matched exactly, including case."
+    ),
+    test_type: str | None = Query(
+        default=None, description="Only definitions of this test type, given as its code, e.g. `Dupe_Rows`."
+    ),
     version: int | None = Query(
         default=None,
         ge=1,
@@ -72,9 +86,9 @@ def export_test_definitions(
         "one exists, otherwise the active version.",
     ),
 ) -> ExportDocument:
-    """Export test definitions from a test suite or a contract as a portable JSON document.
+    """A portable JSON document of a test suite's test definitions; for a contract, those of one version.
 
-    A contract's export names the exported version in ``source.contract_version``.
+    A contract's export names the exported version in `source.contract_version`.
     """
     version_id = None
     if version is not None:
@@ -92,7 +106,8 @@ def export_test_definitions(
     responses={
         400: {
             "model": ImportStrictError | ErrorResponse,
-            "description": "Strict validation failed (includes the projected import result) or invalid payload",
+            "description": "`apply_strict` would skip entries, and the body carries the import as it would have "
+            "applied; or the document is invalid",
         },
         409: {
             "model": ErrorResponse,
@@ -105,10 +120,9 @@ def import_test_definitions(
     body: ImportRequest,
     test_suite: TestSuite = resolve_test_suite("edit", TEST_SUITE_TYPES),  # noqa: B008
 ) -> ImportResponse:
-    """Import test definitions into a test suite or a contract from a portable JSON document.
-
-    A contract's import writes to its draft, opening one from the active version when there is
-    none. The response names that version. A refusal applies nothing.
+    """Writes a portable JSON document's test definitions into a test suite. A contract's import
+    writes to its draft, opening one from the active version when there is none. The response names
+    that version. A refusal applies nothing.
     """
     try:
         return import_definitions(test_suite, body.config, body.payload)

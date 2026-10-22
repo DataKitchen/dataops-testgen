@@ -1,27 +1,28 @@
 import functools
+import inspect
 import logging
 import time
+from collections.abc import Sequence
 from enum import StrEnum
+from typing import Any
 from urllib.parse import urlparse
 
 import anyio
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.fastmcp.tools import Tool
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import ContentBlock
+from pydantic import ValidationError
 from starlette.applications import Starlette
 
 from testgen import settings
 from testgen.common.auth import AuthError, authorize_token, decode_jwt_token
 from testgen.common.mixpanel_service import MixpanelService
-from testgen.common.models import (
-    POOL_MAX_OVERFLOW,
-    POOL_SIZE,
-    get_current_session,
-    session_limiter,
-    with_database_session,
-)
+from testgen.common.models import get_current_session, session_limiter, with_database_session
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPUserError
 from testgen.mcp.permissions import get_mcp_username, set_mcp_username
 from testgen.mcp.services.source_data_protection import (
@@ -29,6 +30,7 @@ from testgen.mcp.services.source_data_protection import (
     mcp_source_data_env_mode,
     mcp_source_data_protected,
 )
+from testgen.mcp.workers import run_on_worker_thread
 
 LOG = logging.getLogger("testgen")
 
@@ -38,6 +40,7 @@ class MCPCallStatus(StrEnum):
     ERROR = "error"
     PERMISSION_DENIED = "permission_denied"
     USER_ERROR = "user_error"
+    CANCELLED = "cancelled"
 
 
 class HandlerKind(StrEnum):
@@ -54,6 +57,8 @@ DATA MODEL
 Projects contain Connections (to data sources: databases or file storage) and Table Groups (sets of tables to profile
 and test together).
 Table Groups contains Test Suites — collections of Test Definitions with configured thresholds.
+A Contract is a kind of Test Suite whose tests and metadata are versioned: its latest frozen version is the
+agreement in force, and it exports as an ODCS document.
 Every test parameter, including baseline values (baseline_*), thresholds, and tolerances, can be set directly when
 creating a test. Test generation fills them from profiling, but no test type requires profiling.
 Test Runs execute a Test Suite and produce Test Results (one per Test Definition).
@@ -198,13 +203,79 @@ def _build_transport_security() -> TransportSecuritySettings:
     )
 
 
+class _TestGenMCP(FastMCP):
+    """FastMCP whose tool calls describe invalid arguments in plain words."""
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Sequence[ContentBlock] | dict[str, Any]:
+        try:
+            return await super().call_tool(name, arguments)
+        except ToolError as error:
+            tool = self._tool_manager.get_tool(name)
+            if tool is None or not isinstance(error.__cause__, ValidationError):
+                raise
+            raise ToolError(_describe_argument_errors(tool, error.__cause__)) from None
+
+
+def _describe_argument_errors(tool: Tool, error: ValidationError) -> str:
+    """List a tool call's argument errors, one bullet per argument, with no validator internals."""
+    arguments = ", ".join(f"`{name}`" for name in tool.parameters.get("properties", {}))
+    bullets = []
+    for problem in error.errors(include_url=False):
+        location = "".join(
+            f"[{part}]" if isinstance(part, int) else f".{part}" if index else str(part)
+            for index, part in enumerate(problem["loc"])
+        )
+        if problem["type"] == "extra_forbidden" and len(problem["loc"]) == 1:
+            detail = f"not an argument of `{tool.name}`. Its arguments are {arguments}."
+        elif problem["type"] == "missing":
+            detail = "required."
+        else:
+            detail = f"{problem['msg'].removeprefix('Value error, ').rstrip('.')}."
+        bullets.append(f"- `{location}`: {detail}")
+    return f"Invalid arguments for `{tool.name}`.\n\n" + "\n".join(bullets)
+
+
 def _instrument(fn, kind: HandlerKind):
     """Wrap an MCP handler to emit one ``mcp-call`` event per invocation.
 
     Sits inside ``mcp_error_handler`` so it observes the raised exception type
     before it is converted to a text response. ``kind`` distinguishes tools,
-    resources, and prompts in the emitted event.
+    resources, and prompts in the emitted event. A coroutine function is wrapped
+    in a coroutine function, which sends the event from a worker thread.
     """
+
+    def send_event(latency_ms: int, status: MCPCallStatus) -> None:
+        MixpanelService().send_event(
+            "mcp-call",
+            kind=kind,
+            handler_name=fn.__name__,
+            username=get_mcp_username(),
+            latency_ms=latency_ms,
+            status=status,
+        )
+
+    if inspect.iscoroutinefunction(fn):
+
+        @functools.wraps(fn)
+        async def async_wrapper(*args, **kwargs):
+            start = time.monotonic()
+            status = MCPCallStatus.SUCCESS
+            try:
+                return await fn(*args, **kwargs)
+            except anyio.get_cancelled_exc_class():
+                status = MCPCallStatus.CANCELLED
+                raise
+            except Exception as error:
+                status = _call_status(error)
+                raise
+            finally:
+                latency_ms = int((time.monotonic() - start) * 1000)
+                # The first event in a process reads the instance ID from the database, which must not
+                # block the event loop. The read is one-off, so it does not wait for a session slot.
+                with anyio.CancelScope(shield=True):
+                    await anyio.to_thread.run_sync(functools.partial(send_event, latency_ms, status))
+
+        return async_wrapper
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
@@ -212,32 +283,21 @@ def _instrument(fn, kind: HandlerKind):
         status = MCPCallStatus.SUCCESS
         try:
             return fn(*args, **kwargs)
-        except MCPPermissionDenied:
-            status = MCPCallStatus.PERMISSION_DENIED
-            raise
-        except MCPUserError:
-            status = MCPCallStatus.USER_ERROR
-            raise
-        except Exception:
-            status = MCPCallStatus.ERROR
+        except Exception as error:
+            status = _call_status(error)
             raise
         finally:
-            MixpanelService().send_event(
-                "mcp-call",
-                kind=kind,
-                handler_name=fn.__name__,
-                username=get_mcp_username(),
-                latency_ms=int((time.monotonic() - start) * 1000),
-                status=status,
-            )
+            send_event(int((time.monotonic() - start) * 1000), status)
 
     return wrapper
 
 
-@functools.cache
-def _mcp_limiter() -> anyio.CapacityLimiter:
-    """Limit on concurrent MCP handlers: two fewer than the shared session limit, which REST requests also use."""
-    return anyio.CapacityLimiter(POOL_SIZE + POOL_MAX_OVERFLOW - 2)
+def _call_status(error: Exception) -> MCPCallStatus:
+    if isinstance(error, MCPPermissionDenied):
+        return MCPCallStatus.PERMISSION_DENIED
+    if isinstance(error, MCPUserError):
+        return MCPCallStatus.USER_ERROR
+    return MCPCallStatus.ERROR
 
 
 def _run_on_worker_thread(fn):
@@ -248,8 +308,7 @@ def _run_on_worker_thread(fn):
 
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
-        async with _mcp_limiter(), session_limiter():
-            return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
+        return await run_on_worker_thread(fn, *args, **kwargs)
 
     return wrapper
 
@@ -351,12 +410,12 @@ def build_mcp_server(
     )
     from testgen.mcp.tools.profiling import (
         generate_create_table_script,
+        get_column,
         get_column_frequent_values,
         get_column_patterns,
-        get_column_profile_detail,
         get_profiling_run,
         get_table,
-        list_column_profiles,
+        list_columns,
         list_profiling_runs,
         list_profiling_summaries,
         search_columns,
@@ -437,12 +496,14 @@ def build_mcp_server(
     #   so a connecting client can attribute the absence.
     env_hides_source_only_tools = mcp_source_data_env_mode() is not SourceDataProtectionMode.OFF
 
-    mcp = FastMCP(
+    mcp = _TestGenMCP(
         "TestGen",
         instructions=_build_server_instructions(mcp_source_data_protected()),
         auth=AuthSettings(
             issuer_url=api_base_url,
             resource_server_url=server_url,
+            # TestGen JWTs are shared with the REST API and carry no RFC 8707 resource indicator
+            validate_token_resource=False,
         ),
         token_verifier=JWTTokenVerifier(),
         transport_security=_build_transport_security(),
@@ -450,7 +511,11 @@ def build_mcp_server(
     _configure_mcp_logging()
 
     def tool_wrapper(fn):
-        mcp.tool()(_run_on_worker_thread(mcp_error_handler(_instrument(fn, HandlerKind.TOOL))))
+        handler = mcp_error_handler(_instrument(fn, HandlerKind.TOOL))
+        # A coroutine tool stays on the event loop and hands its database work to worker threads itself.
+        if not inspect.iscoroutinefunction(fn):
+            handler = _run_on_worker_thread(handler)
+        mcp.tool()(handler)
 
     def safe_resource(uri, fn):
         mcp.resource(uri)(_run_on_worker_thread(mcp_error_handler(_instrument(fn, HandlerKind.RESOURCE))))
@@ -487,11 +552,11 @@ def build_mcp_server(
     tool_wrapper(generate_create_table_script)
     if not env_hides_source_only_tools:
         tool_wrapper(get_table_sample)
-    tool_wrapper(list_column_profiles)
+    tool_wrapper(list_columns)
     tool_wrapper(list_profiling_summaries)
     tool_wrapper(list_profiling_runs)
     tool_wrapper(get_profiling_run)
-    tool_wrapper(get_column_profile_detail)
+    tool_wrapper(get_column)
     if not env_hides_source_only_tools:
         tool_wrapper(get_column_frequent_values)
         tool_wrapper(get_column_patterns)
@@ -609,7 +674,21 @@ def build_mcp_server(
         except Exception:
             LOG.warning("Plugin %s failed to load; skipping its MCP tools", plugin.package)
 
+    for tool in mcp._tool_manager.list_tools():
+        _reject_undeclared_arguments(tool)
+
     return mcp
+
+
+def _reject_undeclared_arguments(tool: Tool) -> None:
+    """Make a tool refuse arguments it does not declare, and state that in its input schema.
+
+    The SDK's argument model ignores undeclared fields, so a misplaced or misspelled argument
+    would be dropped silently and the call would run without it.
+    """
+    tool.fn_metadata.arg_model.model_config["extra"] = "forbid"
+    tool.fn_metadata.arg_model.model_rebuild(force=True)
+    tool.parameters["additionalProperties"] = False
 
 
 def build_mcp_app(

@@ -1,9 +1,12 @@
+import asyncio
+import re
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
+from mcp.types import ElicitationCapability
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.custom_test_validation import CustomQueryResult
@@ -17,6 +20,7 @@ from testgen.common.models.suite_version import (
     VersionState,
 )
 from testgen.common.models.test_definition import ManagedTestDefinitionError, TestDefinition, TestDefinitionNote
+from testgen.mcp import confirmation
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.tools.test_definitions import (
     _DELETED_LISTING_LIMIT,
@@ -645,7 +649,7 @@ def test_list_test_notes_basic(mock_td, mock_notes, db_session_mock):
     assert "Alpha Truncation" in result
     assert "`name`" in result
     assert "`orders`" in result
-    assert "2 note(s)" in result
+    assert "Notes: 2." in result
     assert "Threshold looks wrong" in result
     assert "alice" in result
     assert "2026-04-01 10:00" in result
@@ -1311,8 +1315,88 @@ def test_update_test_multi_field(mock_resolve_td, mock_tt_model, db_session_mock
         str(td.id),
         fields={"threshold_value": "80", "severity": "Fail", "test_active": False},
     )
-    assert "3 field" in result
+    assert "Fields changed: 3." in result
     td.save.assert_called_once()
+
+
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_reports_only_the_fields_that_change(mock_resolve_td, mock_tt_model, db_session_mock):
+    td = _make_td_orm(threshold_value="64", severity="Warning")
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    from testgen.mcp.tools.test_definitions import update_test
+
+    result = update_test(str(td.id), fields={"threshold_value": "64", "severity": "Fail"})
+
+    assert "| `severity` | Warning | Fail |" in result
+    assert "`threshold_value`" not in result
+    assert "Fields changed: 1." in result
+    td.save.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("stored", "sent"),
+    [("Warning", "Warning"), (None, ""), ("", None), (None, None)],
+)
+def test_update_test_that_changes_nothing_saves_nothing(db_session_mock, stored, sent):
+    """A no-op edit saves nothing and rolls back the draft that routing a frozen row may have opened."""
+    td = _orm_td(id=uuid4(), version_id=uuid4(), severity=stored)
+    td.last_manual_update = "unchanged"
+    with (
+        _update_context(td, suite=_contract_suite(), old_version=3),
+        patch.object(TestDefinition, "resolve_writable", return_value=(td.version_id, {td.id: td.id})),
+        patch("testgen.mcp.tools.common.get_current_session") as session,
+    ):
+        result = update_test(str(td.id), fields={"severity": sent})
+
+    assert "No fields changed — supplied values matched the current state." in result
+    assert "Fields changed" not in result
+    td.save.assert_not_called()
+    session.return_value.rollback.assert_called_once()
+    assert td.last_manual_update == "unchanged"
+
+
+@patch("testgen.mcp.tools.test_definitions.mcp_source_data_protected", return_value=True)
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_under_protection_never_says_a_hidden_value_matched(
+    mock_resolve_td, mock_tt_model, _protected, db_session_mock
+):
+    """A "no change" answer would confirm a guess at a value reads hide, so a hidden field always counts as written."""
+    td = _make_td_orm(threshold_value="64")
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    from testgen.mcp.tools.test_definitions import update_test
+
+    result = update_test(str(td.id), fields={"threshold_value": "64"})
+
+    assert "No fields changed" not in result
+    assert "| `threshold_value` | — | 64 |" in result
+    assert "Fields changed: 1." in result
+    td.save.assert_called_once()
+
+
+def test_update_by_an_active_id_compares_against_the_drafts_copy(db_session_mock):
+    """The active row already holds the value, but the draft's copy does not, so the edit is real."""
+    active_version, draft = uuid4(), SuiteVersion(id=uuid4(), version=4)
+    active = _orm_td(id=uuid4(), version_id=active_version, severity="Warning")
+    copy = _orm_td(id=uuid4(), version_id=draft.id, severity="Fail")
+    rows = {active.id: active, copy.id: copy}
+    with (
+        _update_context(active, suite=_contract_suite(), versions={draft.id: draft}, old_version=3),
+        patch(
+            "testgen.mcp.tools.test_definitions.resolve_test_definition",
+            side_effect=lambda row_id: rows[UUID(row_id)],
+        ),
+        patch.object(TestDefinition, "resolve_writable", return_value=(draft.id, {active.id: copy.id})),
+    ):
+        out = update_test(str(active.id), fields={"severity": "Warning"})
+
+    assert "| `severity` | Fail | Warning |" in out
+    copy.save.assert_called_once()
 
 
 @patch("testgen.mcp.tools.test_definitions.TestType")
@@ -1409,7 +1493,7 @@ def test_validate_custom_test_would_fail_shows_preview_with_view_pii(
     result = validate_custom_test(str(uuid4()), "SELECT * FROM orders WHERE amount < 0")
 
     assert "would fail" in result.lower()
-    assert "3 row(s) matching the failure criteria" in result
+    assert "3 rows matching the failure criteria" in result
     assert "order_id" in result
     assert "ORD-123" in result
     assert "[redacted]" not in result
@@ -1976,14 +2060,100 @@ def test_bulk_update_tests_scopes_to_a_version(mock_resolve_suite, mock_session,
     )
 
 
+@pytest.mark.usefixtures("routes_in_place")
+@patch("testgen.mcp.tools.test_definitions._set_test_values")
+@patch.object(TestDefinition, "list_for_ids")
+def test_bulk_update_tests_by_ids_changes_only_the_named_tests(mock_list, mock_set, db_session_mock):
+    suite_id = uuid4()
+    named = [_make_td_minimal(test_id=uuid4()), _make_td_minimal(test_id=uuid4())]
+    for td in named:
+        td.test_suite_id = suite_id
+    mock_list.return_value = named
+
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    result = bulk_update_tests(action="disable", test_definition_ids=[str(td.id) for td in named])
+
+    assert "Disabled 2 tests" in result
+    assert "named in the request" in result
+    assert "- **Test suite:** demo_suite" in result
+    ids, values = mock_set.call_args.args
+    assert sorted(ids, key=str) == sorted([td.id for td in named], key=str)
+    assert values == {"test_active": False}
+
+
+@pytest.mark.usefixtures("routes_in_place")
+@patch("testgen.mcp.tools.test_definitions._set_test_values")
+@patch.object(TestDefinition, "list_for_ids")
+def test_bulk_update_tests_by_ids_across_suites_names_no_single_suite(mock_list, mock_set, db_session_mock):
+    named = [_make_td_minimal(test_id=uuid4()), _make_td_minimal(test_id=uuid4())]
+    for td in named:
+        td.test_suite_id = uuid4()
+    mock_list.return_value = named
+
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    result = bulk_update_tests(action="enable", test_definition_ids=[str(td.id) for td in named])
+
+    assert "Enabled 2 tests" in result
+    assert "Test suite" not in result
+    assert mock_set.call_args.args[1] == {"test_active": True, "test_definition_status": None}
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"test_definition_ids": [str(uuid4())], "test_suite_id": str(uuid4())}, "not both"),
+        ({}, "Supply either `test_definition_ids`"),
+        ({"test_definition_ids": [str(uuid4())], "table_name": "orders"}, "cannot be combined"),
+    ],
+)
+@patch("testgen.mcp.tools.test_definitions._set_test_values")
+def test_bulk_update_tests_rejects_an_ambiguous_selection(mock_set, kwargs, message, db_session_mock):
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    with pytest.raises(MCPUserError, match=message):
+        bulk_update_tests(action="disable", **kwargs)
+    mock_set.assert_not_called()
+
+
+@patch("testgen.mcp.tools.test_definitions._set_test_values")
+@patch.object(TestDefinition, "list_for_ids", return_value=[])
+def test_bulk_update_tests_by_ids_changes_nothing_when_one_is_unusable(_mock_list, mock_set, db_session_mock):
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    with pytest.raises(MCPUserError, match="Nothing was changed. Test definitions not found or not accessible"):
+        bulk_update_tests(action="disable", test_definition_ids=[str(uuid4())])
+    mock_set.assert_not_called()
+
+
 # -- delete_tests -------------------------------------------------------------
 
 
-def _make_td_minimal(table_name="orders", column_name="email", test_id=None):
+def _confirming_ctx() -> MagicMock:
+    """An MCP context whose client supports elicitation and whose user confirms."""
+    ctx = MagicMock()
+    ctx.session.client_params.capabilities.elicitation = ElicitationCapability()
+    ctx.elicit = AsyncMock(return_value=MagicMock(action="accept", data=MagicMock(confirm=True)))
+    return ctx
+
+
+def _delete(**kwargs) -> str:
+    """Call ``delete_tests`` as a user who confirms the delete."""
+    return asyncio.run(delete_tests(_confirming_ctx(), **kwargs))
+
+
+_DELETE_SUITE_ID = uuid4()
+
+
+def _make_td_minimal(
+    table_name="orders", column_name="email", test_id=None, test_type="Alpha_Trunc", test_suite_id=_DELETE_SUITE_ID
+):
     """Mock TestDefinitionMinimal as returned by TestDefinition.list_for_ids / select_minimal_where."""
     td = MagicMock()
     td.id = test_id or uuid4()
-    td.test_type = "Alpha_Trunc"
+    td.test_suite_id = test_suite_id
+    td.test_type = test_type
     td.test_name_short = "Alpha Truncation"
     td.table_name = table_name
     td.column_name = column_name
@@ -2007,12 +2177,10 @@ def test_delete_tests_by_ids_reports_what_went(mock_list, _mock_notes, mock_dele
         _make_td_minimal(table_name="customers", column_name=None, test_id=second),
     ]
 
-    from testgen.mcp.tools.test_definitions import delete_tests
-
-    result = delete_tests(test_definition_ids=[str(first), str(second)])
+    result = _delete(test_definition_ids=[str(first), str(second)])
 
     assert "Deleted 2 tests" in result
-    assert "named in the request" in result
+    assert "the named tests in suite `demo_suite`" in result
     assert "orders" in result and "customers" in result
     assert str(first) in result and str(second) in result
     assert sorted(_deleted_ids(mock_delete), key=str) == sorted([first, second], key=str)
@@ -2028,10 +2196,8 @@ def test_delete_tests_refuses_a_managed_test_as_a_user_error(
     test_id = uuid4()
     mock_list.return_value = [_make_td_minimal(table_name="orders", column_name=None, test_id=test_id)]
 
-    from testgen.mcp.tools.test_definitions import delete_tests
-
     with pytest.raises(MCPUserError, match="TestGen manages this test"):
-        delete_tests(test_definition_ids=[str(test_id)])
+        _delete(test_definition_ids=[str(test_id)])
 
 
 @pytest.mark.usefixtures("routes_in_place")
@@ -2039,16 +2205,15 @@ def test_delete_tests_refuses_a_managed_test_as_a_user_error(
 @patch.object(TestDefinitionNote, "count_stored_on", return_value=0)
 @patch.object(TestDefinition, "list_for_ids")
 def test_delete_tests_by_ids_resolves_in_one_query(mock_list, _mock_notes, _mock_delete, db_session_mock):
-    """A named set of any size costs one statement, not one per ID."""
+    """A named set of any size costs one statement per pass, not one per ID: one to plan the delete, one to make it."""
     ids = [uuid4() for _ in range(25)]
     mock_list.return_value = [_make_td_minimal(test_id=td_id) for td_id in ids]
 
-    from testgen.mcp.tools.test_definitions import delete_tests
+    _delete(test_definition_ids=[str(td_id) for td_id in ids])
 
-    delete_tests(test_definition_ids=[str(td_id) for td_id in ids])
-
-    assert mock_list.call_count == 1
-    assert sorted(mock_list.call_args.args[0], key=str) == sorted(ids, key=str)
+    assert mock_list.call_count == 2
+    for lookup in mock_list.call_args_list:
+        assert sorted(lookup.args[0], key=str) == sorted(ids, key=str)
 
 
 @pytest.mark.usefixtures("routes_in_place")
@@ -2063,9 +2228,7 @@ def test_delete_tests_reports_the_notes_that_went_with_them(
     mock_list.return_value = [_make_td_minimal(test_id=td_id)]
     mock_notes.return_value = 3
 
-    from testgen.mcp.tools.test_definitions import delete_tests
-
-    result = delete_tests(test_definition_ids=[str(td_id)])
+    result = _delete(test_definition_ids=[str(td_id)])
 
     assert "Notes deleted:** 3" in result
 
@@ -2080,9 +2243,7 @@ def test_delete_tests_omits_the_note_count_when_there_were_none(
     td_id = uuid4()
     mock_list.return_value = [_make_td_minimal(test_id=td_id)]
 
-    from testgen.mcp.tools.test_definitions import delete_tests
-
-    assert "Notes deleted" not in delete_tests(test_definition_ids=[str(td_id)])
+    assert "Notes deleted" not in _delete(test_definition_ids=[str(td_id)])
 
 
 @patch.object(TestDefinition, "delete_where")
@@ -2094,10 +2255,8 @@ def test_delete_tests_by_ids_reports_every_unusable_entry_at_once(
     present, missing = uuid4(), uuid4()
     mock_list.return_value = [_make_td_minimal(test_id=present)]
 
-    from testgen.mcp.tools.test_definitions import delete_tests
-
     with pytest.raises(MCPUserError) as err:
-        delete_tests(test_definition_ids=[str(present), "garbage", str(missing)])
+        _delete(test_definition_ids=[str(present), "garbage", str(missing)])
 
     message = str(err.value)
     assert "Nothing was deleted" in message
@@ -2114,20 +2273,17 @@ def test_delete_tests_by_ids_hides_whether_an_inaccessible_test_exists(
 ):
     td_id = uuid4()
 
-    from testgen.mcp.tools.test_definitions import delete_tests
-
     with pytest.raises(MCPUserError, match="not found or not accessible"):
-        delete_tests(test_definition_ids=[str(td_id)])
+        _delete(test_definition_ids=[str(td_id)])
 
     mock_delete.assert_not_called()
 
 
 @patch.object(TestDefinition, "list_for_ids", return_value=[])
 def test_delete_tests_by_ids_scopes_the_lookup_to_allowed_projects(mock_list, db_session_mock):
-    from testgen.mcp.tools.test_definitions import delete_tests
 
     with pytest.raises(MCPUserError):
-        delete_tests(test_definition_ids=[str(uuid4())])
+        _delete(test_definition_ids=[str(uuid4())])
 
     assert mock_list.call_args.args[1] == ["demo"]
 
@@ -2142,9 +2298,7 @@ def test_delete_tests_by_ids_counts_a_repeated_id_once(
     td_id = uuid4()
     mock_list.return_value = [_make_td_minimal(test_id=td_id)]
 
-    from testgen.mcp.tools.test_definitions import delete_tests
-
-    result = delete_tests(test_definition_ids=[str(td_id), str(td_id)])
+    result = _delete(test_definition_ids=[str(td_id), str(td_id)])
 
     assert "Deleted 1 tests" in result
     assert _deleted_ids(mock_delete) == [td_id]
@@ -2152,33 +2306,29 @@ def test_delete_tests_by_ids_counts_a_repeated_id_once(
 
 
 def test_delete_tests_by_ids_rejects_an_empty_list(db_session_mock):
-    from testgen.mcp.tools.test_definitions import delete_tests
 
     with pytest.raises(MCPUserError, match="must name at least one test definition"):
-        delete_tests(test_definition_ids=[])
+        _delete(test_definition_ids=[])
 
 
 def test_delete_tests_rejects_filters_alongside_named_ids(db_session_mock):
     """Silently ignoring them would delete a wider set than the caller described."""
-    from testgen.mcp.tools.test_definitions import delete_tests
 
     with pytest.raises(MCPUserError, match="cannot be combined with `test_definition_ids`"):
-        delete_tests(test_definition_ids=[str(uuid4())], table_name="orders")
+        _delete(test_definition_ids=[str(uuid4())], table_name="orders")
 
 
 def test_delete_tests_requires_a_selection(db_session_mock):
-    from testgen.mcp.tools.test_definitions import delete_tests
 
     with pytest.raises(MCPUserError, match="Supply either"):
-        delete_tests()
+        _delete()
 
 
 def test_delete_tests_rejects_both_selections(db_session_mock):
     """The two shapes select the same thing, so honouring both would be a guess."""
-    from testgen.mcp.tools.test_definitions import delete_tests
 
     with pytest.raises(MCPUserError, match="not both"):
-        delete_tests(test_definition_ids=[str(uuid4())], test_suite_id=str(uuid4()))
+        _delete(test_definition_ids=[str(uuid4())], test_suite_id=str(uuid4()))
 
 
 @pytest.mark.usefixtures("routes_in_place")
@@ -2194,9 +2344,7 @@ def test_delete_tests_by_suite_names_the_whole_suite_as_its_scope(
     selected = [_make_td_minimal(table_name="orders"), _make_td_minimal(table_name="customers")]
     mock_select.return_value = selected
 
-    from testgen.mcp.tools.test_definitions import delete_tests
-
-    result = delete_tests(test_suite_id=str(uuid4()))
+    result = _delete(test_suite_id=str(uuid4()))
 
     assert "Deleted 2 tests" in result
     assert "every test in suite `demo_suite`" in result
@@ -2215,9 +2363,7 @@ def test_delete_tests_by_suite_names_the_filters_it_applied(
     mock_resolve_suite.return_value = _make_suite()
     mock_select.return_value = [_make_td_minimal()]
 
-    from testgen.mcp.tools.test_definitions import delete_tests
-
-    result = delete_tests(
+    result = _delete(
         test_suite_id=str(uuid4()), table_name="orders", test_type="Alpha Truncation"
     )
 
@@ -2235,9 +2381,7 @@ def test_delete_tests_by_suite_deletes_nothing_when_nothing_matched(
     """The empty-result wording reads as a sentence, unlike the scope phrase."""
     mock_resolve_suite.return_value = _make_suite()
 
-    from testgen.mcp.tools.test_definitions import delete_tests
-
-    result = delete_tests(test_suite_id=str(uuid4()), table_name="absent")
+    result = _delete(test_suite_id=str(uuid4()), table_name="absent")
 
     assert "No tests in suite `demo_suite` matched the filter (table_name=`absent`)" in result
     mock_delete.assert_not_called()
@@ -2251,9 +2395,7 @@ def test_delete_tests_by_suite_names_an_unfiltered_empty_result_as_no_filter(
 ):
     mock_resolve_suite.return_value = _make_suite()
 
-    from testgen.mcp.tools.test_definitions import delete_tests
-
-    result = delete_tests(test_suite_id=str(uuid4()))
+    result = _delete(test_suite_id=str(uuid4()))
 
     assert "matched the filter (no filter)" in result
 
@@ -2269,12 +2411,264 @@ def test_delete_tests_by_suite_accounts_for_a_listing_it_truncates(
     mock_resolve_suite.return_value = _make_suite()
     mock_select.return_value = [_make_td_minimal() for _ in range(_DELETED_LISTING_LIMIT + 5)]
 
-    from testgen.mcp.tools.test_definitions import delete_tests
-
-    result = delete_tests(test_suite_id=str(uuid4()))
+    result = _delete(test_suite_id=str(uuid4()))
 
     assert f"Deleted {_DELETED_LISTING_LIMIT + 5} tests" in result
     assert f"Listing {_DELETED_LISTING_LIMIT} of the {_DELETED_LISTING_LIMIT + 5} tests deleted" in result
+
+
+# -- delete_tests: confirmation -----------------------------------------------
+
+
+@pytest.fixture
+def no_pending_tokens():
+    confirmation._pending.clear()
+    yield
+    confirmation._pending.clear()
+
+
+@pytest.mark.usefixtures("routes_in_place")
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
+@patch.object(TestDefinitionNote, "count_stored_on", return_value=2)
+@patch.object(TestDefinition, "select_minimal_where")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_delete_tests_asks_with_the_scope_and_counts_it_deletes(
+    mock_resolve_suite, mock_select, _mock_stored_notes, mock_all_version_notes, _mock_delete, db_session_mock
+):
+    """The prompt counts the notes the delete removes, the ones stored on the rows, not every version's notes."""
+    mock_resolve_suite.return_value = _make_suite()
+    tests = [_make_td_minimal() for _ in range(3)]
+    mock_select.return_value = tests
+    mock_all_version_notes.return_value = {str(tests[0].id): 5}
+    ctx = _confirming_ctx()
+
+    result = asyncio.run(delete_tests(ctx, test_suite_id=str(uuid4())))
+
+    message = ctx.elicit.await_args.args[0]
+    assert message.startswith("Delete every test in suite `demo_suite`?")
+    assert "- Tests: 3" in message
+    assert "- Notes: 2" in message
+    assert "Notes deleted:** 2" in result
+
+
+@pytest.mark.usefixtures("routes_in_place")
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinitionNote, "count_stored_on", return_value=0)
+@patch.object(TestDefinition, "list_for_ids")
+def test_delete_tests_deletes_nothing_when_the_user_declines(mock_list, _mock_notes, mock_delete, db_session_mock):
+    mock_list.return_value = [_make_td_minimal()]
+    ctx = _confirming_ctx()
+    ctx.elicit.return_value = MagicMock(action="decline")
+
+    with pytest.raises(MCPUserError, match="did not confirm"):
+        asyncio.run(delete_tests(ctx, test_definition_ids=[str(mock_list.return_value[0].id)]))
+
+    mock_delete.assert_not_called()
+
+
+@patch.object(TestDefinition, "list_for_ids", return_value=[])
+def test_delete_tests_does_not_ask_about_a_request_that_fails(_mock_list, db_session_mock):
+    ctx = _confirming_ctx()
+
+    with pytest.raises(MCPUserError, match="not found or not accessible"):
+        asyncio.run(delete_tests(ctx, test_definition_ids=[str(uuid4())]))
+
+    ctx.elicit.assert_not_awaited()
+
+
+@patch.object(TestDefinition, "select_minimal_where", return_value=[])
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_delete_tests_does_not_ask_when_nothing_matched(mock_resolve_suite, _mock_select, db_session_mock):
+    mock_resolve_suite.return_value = _make_suite()
+    ctx = _confirming_ctx()
+
+    result = asyncio.run(delete_tests(ctx, test_suite_id=str(uuid4()), table_name="absent"))
+
+    assert "No tests matched" in result
+    ctx.elicit.assert_not_awaited()
+
+
+def test_delete_tests_rolls_back_the_planning_pass_before_asking(db_session_mock):
+    """Routing a contract's tests can open a draft, which must not outlive a declined confirmation."""
+    events = []
+    td = _make_td_minimal()
+    ctx = _confirming_ctx()
+    ctx.elicit.side_effect = lambda *_: events.append("ask") or MagicMock(action="decline")
+    db_session_mock.rollback.side_effect = lambda: events.append("rollback")
+    with (
+        patch.object(TestDefinition, "list_for_ids", return_value=[td]),
+        patch("testgen.mcp.tools.test_definitions.TestSuite.get", return_value=_make_suite()),
+        patch.object(
+            TestDefinition,
+            "resolve_writable",
+            side_effect=lambda *_: events.append("route") or (uuid4(), {td.id: td.id}),
+        ),
+        patch.object(TestDefinitionNote, "count_stored_on", return_value=0),
+        pytest.raises(MCPUserError),
+    ):
+        asyncio.run(delete_tests(ctx, test_definition_ids=[str(td.id)]))
+
+    assert events == ["route", "rollback", "ask"]
+
+
+@pytest.mark.usefixtures("routes_in_place")
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinitionNote, "count_stored_on", return_value=0)
+@patch.object(TestDefinition, "select_minimal_where")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_delete_tests_deletes_nothing_when_the_selection_changed_while_asking(
+    mock_resolve_suite, mock_select, _mock_notes, mock_delete, db_session_mock
+):
+    mock_resolve_suite.return_value = _make_suite()
+    confirmed = _make_td_minimal()
+    mock_select.side_effect = [[confirmed], [confirmed, _make_td_minimal()]]
+
+    with pytest.raises(MCPUserError, match="changed while it waited for confirmation"):
+        _delete(test_suite_id=str(uuid4()))
+
+    mock_delete.assert_not_called()
+
+
+@pytest.mark.usefixtures("routes_in_place", "no_pending_tokens")
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinitionNote, "count_stored_on", return_value=0)
+@patch.object(TestDefinition, "list_for_ids")
+def test_delete_tests_without_elicitation_deletes_on_the_second_call_with_the_token(
+    mock_list, _mock_notes, mock_delete, db_session_mock
+):
+    td = _make_td_minimal()
+    mock_list.return_value = [td]
+    no_elicitation = MagicMock()
+    no_elicitation.session.client_params.capabilities.elicitation = None
+
+    with pytest.raises(MCPUserError, match="Confirmation required") as raised:
+        asyncio.run(delete_tests(no_elicitation, test_definition_ids=[str(td.id)]))
+    mock_delete.assert_not_called()
+
+    token = re.search(r"`confirmation_token` set to `([^`]+)`", str(raised.value)).group(1)
+    result = asyncio.run(delete_tests(no_elicitation, test_definition_ids=[str(td.id)], confirmation_token=token))
+
+    assert "Deleted 1 tests" in result
+    assert _deleted_ids(mock_delete) == [td.id]
+
+
+@pytest.mark.usefixtures("routes_in_place", "no_pending_tokens")
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinitionNote, "count_stored_on", return_value=0)
+@patch.object(TestDefinition, "list_for_ids")
+def test_delete_tests_token_does_not_confirm_a_different_selection(
+    mock_list, _mock_notes, mock_delete, db_session_mock
+):
+    first, second = _make_td_minimal(), _make_td_minimal()
+    no_elicitation = MagicMock()
+    no_elicitation.session.client_params.capabilities.elicitation = None
+
+    mock_list.return_value = [first]
+    with pytest.raises(MCPUserError) as raised:
+        asyncio.run(delete_tests(no_elicitation, test_definition_ids=[str(first.id)]))
+    token = re.search(r"`confirmation_token` set to `([^`]+)`", str(raised.value)).group(1)
+
+    mock_list.return_value = [second]
+    with pytest.raises(MCPUserError, match="issued for a different request"):
+        asyncio.run(delete_tests(no_elicitation, test_definition_ids=[str(second.id)], confirmation_token=token))
+
+    mock_delete.assert_not_called()
+
+
+@pytest.mark.usefixtures("no_pending_tokens")
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinition, "list_for_ids")
+def test_delete_tests_refuses_a_managed_test_before_asking(mock_list, mock_delete, db_session_mock):
+    """The delete would refuse it after the user confirmed; refusing first spares them a prompt that cannot succeed."""
+    managed = _make_schema_conformance(table_name="orders")
+    mock_list.return_value = [_make_td_minimal(), managed]
+    ctx = _confirming_ctx()
+
+    with pytest.raises(MCPUserError) as raised:
+        asyncio.run(delete_tests(ctx, test_definition_ids=[str(td.id) for td in mock_list.return_value]))
+
+    message = str(raised.value)
+    assert message.startswith("Nothing was deleted. TestGen manages these tests")
+    assert f"- Schema Conformance on `orders` (`{managed.id}`)" in message.splitlines()
+    ctx.elicit.assert_not_awaited()
+    assert not confirmation._pending, "a token was issued for a delete that cannot happen"
+    mock_delete.assert_not_called()
+
+
+def _make_schema_conformance(table_name="orders"):
+    td = _make_td_minimal(table_name=table_name, column_name=None, test_type="Schema_Conformance")
+    td.test_name_short = "Schema Conformance"
+    return td
+
+
+@pytest.mark.usefixtures("routes_in_place", "no_pending_tokens")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinitionNote, "count_stored_on", return_value=0)
+@patch.object(TestDefinition, "select_minimal_where")
+def test_delete_tests_by_filter_keeps_the_tests_testgen_manages(
+    mock_select, _mock_notes, mock_delete, mock_resolve_suite, db_session_mock
+):
+    mock_resolve_suite.return_value = _make_suite()
+    kept = _make_schema_conformance()
+    deleted = _make_td_minimal()
+    mock_select.return_value = [deleted, kept]
+    ctx = _confirming_ctx()
+
+    result = asyncio.run(delete_tests(ctx, test_suite_id=str(uuid4()), table_name="orders"))
+
+    assert _deleted_ids(mock_delete) == [deleted.id]
+    assert "Deleted 1 tests" in result
+    assert "**Kept, managed by TestGen:** 1" in result
+    prompt = ctx.elicit.await_args.args[0]
+    assert "Tests: 1" in prompt
+    assert "Keeps 1 tests that TestGen manages, such as Schema Conformance." in prompt
+
+
+@pytest.mark.usefixtures("no_pending_tokens")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinition, "select_minimal_where")
+def test_delete_tests_by_filter_matching_only_managed_tests_deletes_nothing(
+    mock_select, mock_delete, mock_resolve_suite, db_session_mock
+):
+    mock_resolve_suite.return_value = _make_suite()
+    mock_select.return_value = [_make_schema_conformance()]
+    ctx = _confirming_ctx()
+
+    result = asyncio.run(delete_tests(ctx, test_suite_id=str(uuid4()), table_name="orders"))
+
+    assert "# No tests to delete" in result
+    assert "TestGen manages the 1 tests that matched" in result
+    ctx.elicit.assert_not_awaited()
+    mock_delete.assert_not_called()
+
+
+@pytest.mark.usefixtures("routes_in_place")
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinitionNote, "count_stored_on", return_value=0)
+@patch.object(TestDefinition, "list_for_ids")
+def test_delete_tests_by_ids_names_every_suite_the_tests_belong_to(mock_list, _mock_notes, _mock_delete, db_session_mock):
+    """The user reads the prompt in their own client, outside the conversation, so it names what goes."""
+    orders, customers = _make_suite(), _make_suite()
+    orders.test_suite, customers.test_suite = "orders_suite", "customers_suite"
+    mock_list.return_value = [
+        _make_td_minimal(test_suite_id=orders.id),
+        _make_td_minimal(test_suite_id=customers.id),
+        _make_td_minimal(test_suite_id=orders.id),
+    ]
+    ctx = _confirming_ctx()
+
+    with patch(
+        "testgen.mcp.tools.test_definitions.TestSuite.get",
+        side_effect={orders.id: orders, customers.id: customers}.get,
+    ):
+        asyncio.run(delete_tests(ctx, test_definition_ids=[str(td.id) for td in mock_list.return_value]))
+
+    message = ctx.elicit.await_args.args[0]
+    assert message.startswith("Delete the named tests across 2 suites: `orders_suite`, `customers_suite`?")
+    assert "- Tests: 3" in message
 
 
 # -- delete_tests: version scoping ---------------------------------------------
@@ -2296,9 +2690,7 @@ def test_delete_tests_by_suite_selects_only_the_resolved_version(
     mock_td_session.return_value = session
     mock_entity_session.return_value = session
 
-    from testgen.mcp.tools.test_definitions import delete_tests
-
-    delete_tests(test_suite_id=str(uuid4()))
+    _delete(test_suite_id=str(uuid4()))
 
     selects = [s for s in emitted_statements(session) if str(s).lstrip().lower().startswith("select")]
     assert selects, "the filter path issued no select"
@@ -2309,11 +2701,12 @@ def test_delete_tests_by_suite_selects_only_the_resolved_version(
 
 @pytest.mark.usefixtures("routes_in_place")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+@patch("testgen.mcp.tools.test_definitions.get_current_session")
 @patch("testgen.common.models.get_current_session")
 @patch("testgen.common.models.entity.get_current_session")
 @patch("testgen.common.models.test_definition.get_current_session")
 def test_delete_tests_deletes_only_within_the_resolved_version(
-    mock_td_session, mock_entity_session, mock_base_session, mock_resolve_suite, db_session_mock
+    mock_td_session, mock_entity_session, mock_base_session, mock_tool_session, mock_resolve_suite, db_session_mock
 ):
     """The delete carries the predicate itself, so it stays correct if its ids ever
     start arriving from somewhere unscoped."""
@@ -2333,16 +2726,14 @@ def test_delete_tests_deletes_only_within_the_resolved_version(
             "test_name_short": "Alpha Truncation",
         }
     ]
-    for mock_session in (mock_td_session, mock_entity_session, mock_base_session):
+    for mock_session in (mock_td_session, mock_entity_session, mock_base_session, mock_tool_session):
         mock_session.return_value = session
-
-    from testgen.mcp.tools.test_definitions import delete_tests
 
     with (
         patch.object(TestDefinitionNote, "count_stored_on", return_value=0),
         patch.object(TestDefinition, "_assert_no_managed_definitions"),
     ):
-        delete_tests(test_suite_id=str(uuid4()))
+        _delete(test_suite_id=str(uuid4()))
 
     deletes = [s for s in emitted_statements(session) if str(s).lstrip().lower().startswith("delete")]
     assert deletes, "no delete was issued"
@@ -2498,7 +2889,7 @@ def test_update_routed_to_the_draft_returns_the_new_id_and_names_the_draft(db_se
 
     td.save.side_effect = _route
     with _update_context(td, suite=_contract_suite(), versions={draft.id: draft}, old_version=3):
-        out = update_test(str(old_id), fields={"severity": "Warning"})
+        out = update_test(str(old_id), fields={"severity": "Fail"})
     assert f"`{new_id}`" in out
     assert f"was `{old_id}`, in v3 active" in out
     assert "use the new ID from now on" in out
@@ -2534,7 +2925,7 @@ def test_update_of_a_draft_row_names_the_draft_without_a_new_id(db_session_mock)
     draft = SuiteVersion(id=uuid4(), version=4)
     td = _orm_td(id=uuid4(), version_id=draft.id)
     with _update_context(td, suite=_contract_suite(), versions={draft.id: draft}):
-        out = update_test(str(td.id), fields={"severity": "Warning"})
+        out = update_test(str(td.id), fields={"severity": "Fail"})
     assert "**Version:** v4 draft" in out
     assert "was `" not in out
 
@@ -2547,7 +2938,7 @@ def test_update_of_a_test_the_draft_removed_names_the_draft(db_session_mock):
         _update_context(td, suite=_contract_suite(), versions={draft.id: draft}, old_version=3),
         pytest.raises(MCPUserError, match=rf"Test `{td.id}` was removed in v4 draft of contract `Orders`"),
     ):
-        update_test(str(td.id), fields={"severity": "Warning"})
+        update_test(str(td.id), fields={"severity": "Fail"})
 
 
 def test_update_with_an_id_the_model_refuses_names_the_version(db_session_mock):
@@ -2560,7 +2951,7 @@ def test_update_with_an_id_the_model_refuses_names_the_version(db_session_mock):
             match=rf"Test `{td.id}` belongs to v2 superseded of contract `Orders`, which can no longer be edited",
         ),
     ):
-        update_test(str(td.id), fields={"severity": "Warning"})
+        update_test(str(td.id), fields={"severity": "Fail"})
 
 
 def test_update_of_an_active_test_the_draft_cannot_match_says_so(db_session_mock):
@@ -2574,7 +2965,7 @@ def test_update_of_an_active_test_the_draft_cannot_match_says_so(db_session_mock
             match=rf"Test `{td.id}` in v3 active of contract `Orders` cannot be matched to its copy in v4 draft",
         ),
     ):
-        update_test(str(td.id), fields={"severity": "Warning"})
+        update_test(str(td.id), fields={"severity": "Fail"})
 
 
 def test_delete_of_active_tests_the_draft_cannot_match_names_only_those(db_session_mock):
@@ -2598,7 +2989,7 @@ def test_delete_of_active_tests_the_draft_cannot_match_names_only_those(db_sessi
             r"v4 draft, so it cannot be edited\. Use `list_tests` to find the draft's tests\.$",
         ),
     ):
-        delete_tests(test_definition_ids=[str(matched_id), str(unmatched_id)])
+        _delete(test_definition_ids=[str(matched_id), str(unmatched_id)])
     delete_where.assert_not_called()
 
 
@@ -2673,8 +3064,8 @@ def test_delete_by_an_active_version_id_deletes_the_drafts_copy(db_session_mock)
         patch("testgen.mcp.tools.test_definitions.TestDefinitionNote.count_stored_on", return_value=0),
         patch("testgen.mcp.tools.test_definitions.TestDefinition.delete_where") as delete_where,
     ):
-        out = delete_tests(test_definition_ids=[str(active_id)])
-    route.assert_called_once_with(suite.id, [active_id])
+        out = _delete(test_definition_ids=[str(active_id)])
+    route.assert_called_with(suite.id, [active_id])
     sql = str(delete_where.call_args.args[0].compile(
         dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
     ))
@@ -2702,7 +3093,7 @@ def test_delete_naming_an_active_id_and_its_drafts_copy_deletes_and_counts_the_c
         ) as notes,
         patch("testgen.mcp.tools.test_definitions.TestDefinition.delete_where"),
     ):
-        out = delete_tests(test_definition_ids=[str(active_id), str(copy_id)])
+        out = _delete(test_definition_ids=[str(active_id), str(copy_id)])
     assert "# Deleted 1 tests" in out
     assert out.count(f"`{copy_id}`") == 1
     assert notes.call_args.args[0] == [copy_id]
@@ -2721,7 +3112,7 @@ def test_delete_of_a_test_the_draft_removed_deletes_nothing(db_session_mock):
         patch("testgen.mcp.tools.test_definitions.TestDefinition.delete_where") as delete_where,
         pytest.raises(MCPUserError, match=rf"Test `{active_id}` was removed in v4 draft of contract `Orders`"),
     ):
-        delete_tests(test_definition_ids=[str(active_id)])
+        _delete(test_definition_ids=[str(active_id)])
     delete_where.assert_not_called()
 
 
@@ -2743,7 +3134,7 @@ def test_delete_by_a_superseded_version_id_names_the_version(db_session_mock):
             match=rf"Test `{old_id}` belongs to v2 superseded of contract `Orders`, which can no longer be edited",
         ),
     ):
-        delete_tests(test_definition_ids=[str(old_id)])
+        _delete(test_definition_ids=[str(old_id)])
     delete_where.assert_not_called()
 
 
@@ -2766,7 +3157,7 @@ def test_delete_spanning_suites_routes_every_suite_before_deleting_any(db_sessio
         patch("testgen.mcp.tools.test_definitions.TestDefinition.delete_where") as delete_where,
         pytest.raises(MCPUserError, match=rf"Test `{contract_id}` was removed in v4 draft"),
     ):
-        delete_tests(test_definition_ids=[str(regular_id), str(contract_id)])
+        _delete(test_definition_ids=[str(regular_id), str(contract_id)])
     assert [call.args for call in route.call_args_list] == [(regular.id, [regular_id]), (contract.id, [contract_id])]
     delete_where.assert_not_called()
 
@@ -2786,8 +3177,8 @@ def test_delete_by_suite_filter_routes_the_selection_to_the_draft(db_session_moc
         patch("testgen.mcp.tools.test_definitions.TestDefinitionNote.count_stored_on", return_value=0),
         patch("testgen.mcp.tools.test_definitions.TestDefinition.delete_where") as delete_where,
     ):
-        out = delete_tests(test_suite_id=str(suite.id))
-    route.assert_called_once_with(suite.id, [active_id])
+        out = _delete(test_suite_id=str(suite.id))
+    route.assert_called_with(suite.id, [active_id])
     assert _deleted_ids(delete_where) == [copy_id]
     assert f"`{copy_id}`" in out
     assert "**Version:** v4 draft" in out
@@ -2800,7 +3191,7 @@ def test_delete_by_suite_filter_matching_nothing_opens_no_draft(db_session_mock)
         patch("testgen.mcp.tools.test_definitions.TestDefinition.select_minimal_where", return_value=[]),
         patch("testgen.mcp.tools.test_definitions.TestDefinition.resolve_writable") as route,
     ):
-        out = delete_tests(test_suite_id=str(suite.id))
+        out = _delete(test_suite_id=str(suite.id))
     route.assert_not_called()
     assert "No tests matched" in out
 
@@ -2816,13 +3207,36 @@ def test_bulk_update_routes_the_matched_tests_to_the_draft(db_session_mock):
               return_value=(draft.id, {matched: copy_id})) as route,
         patch("testgen.mcp.tools.test_definitions.SuiteVersion.get", return_value=draft),
     ):
-        out = bulk_update_tests(str(suite.id), "disable")
+        out = bulk_update_tests(test_suite_id=str(suite.id), action="disable")
     route.assert_called_once_with(suite.id, [matched])
     sql = str(db_session_mock.execute.call_args.args[0].compile(
         dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
     ))
     assert str(copy_id) in sql and str(matched) not in sql
     assert "Disabled 1 tests in suite `Orders`" in out
+    assert "**Version:** v4 draft" in out
+
+
+@patch("testgen.mcp.tools.test_definitions._set_test_values")
+@patch.object(TestDefinition, "list_for_ids")
+def test_bulk_update_tests_by_ids_routes_to_the_draft_and_counts_each_row_once(mock_list, mock_set, db_session_mock):
+    suite = _contract_suite()
+    in_force, draft_copy, draft = uuid4(), uuid4(), SuiteVersion(id=uuid4(), version=4)
+    named = [_make_td_minimal(test_id=in_force), _make_td_minimal(test_id=draft_copy)]
+    for td in named:
+        td.test_suite_id = suite.id
+    mock_list.return_value = named
+    with (
+        patch("testgen.mcp.tools.test_definitions.TestSuite.get", return_value=suite),
+        patch.object(
+            TestDefinition, "resolve_writable", return_value=(draft.id, {in_force: draft_copy, draft_copy: draft_copy})
+        ),
+        patch("testgen.mcp.tools.test_definitions.SuiteVersion.get", return_value=draft),
+    ):
+        out = bulk_update_tests(action="disable", test_definition_ids=[str(in_force), str(draft_copy)])
+
+    assert mock_set.call_args.args[0] == [draft_copy]
+    assert "Disabled 1 tests" in out
     assert "**Version:** v4 draft" in out
 
 
@@ -2833,7 +3247,7 @@ def test_bulk_update_matching_nothing_opens_no_draft(db_session_mock):
         patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
         patch("testgen.mcp.tools.test_definitions.TestDefinition.resolve_writable") as route,
     ):
-        out = bulk_update_tests(str(suite.id), "disable")
+        out = bulk_update_tests(test_suite_id=str(suite.id), action="disable")
     route.assert_not_called()
     assert "No tests matched" in out
 
@@ -2952,7 +3366,7 @@ def test_delete_naming_several_tests_lists_only_those_of_the_refused_version(db_
         patch.object(SuiteVersion, "is_active", return_value=False),
         pytest.raises(MCPUserError) as refusal,
     ):
-        delete_tests(test_definition_ids=[str(old_id), str(current_id)])
+        _delete(test_definition_ids=[str(old_id), str(current_id)])
     assert f"Test `{old_id}` belongs to v2 superseded" in str(refusal.value)
     assert str(current_id) not in str(refusal.value)
     lookup = db_session_mock.scalars.call_args.args[0]

@@ -24,13 +24,15 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import postgresql
 
+from testgen.common.acting_user import acting_username
+from testgen.common.enums import MANAGED_TEST_TYPES
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString
 from testgen.common.models.entity import Entity
 
 _QUALIFIED_COLUMN = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\.[A-Za-z_][A-Za-z0-9_]*\Z")
 
-_test_definitions = table("test_definitions", column("id"), column("version_id"))
+_test_definitions = table("test_definitions", column("id"), column("version_id"), column("test_type"))
 _test_runs = table("test_runs", column("id"), column("test_suite_id"), column("version_id"), column("test_starttime"))
 _job_executions = table("job_executions", column("id"), column("status"))
 
@@ -48,6 +50,7 @@ class SuiteVersionListItem:
     label: str | None
     created_by: str | None
     frozen_at: datetime | None
+    frozen_by: str | None
     term_count: int
     run_count: int
     latest_run_id: UUID | None
@@ -66,6 +69,7 @@ class SuiteVersion(Entity):
     metadata_document: dict[str, Any] | None = Column(postgresql.JSONB(none_as_null=True))
     frozen_document: str | None = Column(String)
     frozen_at: datetime | None = Column(postgresql.TIMESTAMP(timezone=True))
+    frozen_by: str | None = Column(String)
     odcs_api_version: str | None = Column(String)
     label: str | None = Column(NullIfEmptyString)
     created_by: str | None = Column(String)
@@ -247,7 +251,7 @@ class SuiteVersion(Entity):
 
     @classmethod
     def open_draft(cls, suite_id) -> tuple[Self, Self | None]:
-        """Open a draft on the suite, carrying the version in force forward.
+        """Open a draft on the suite, carrying the version in force forward, authored by the acting user.
 
         Returns the new draft and the version its document was copied from, which is None
         when the suite had no frozen version to carry forward.
@@ -263,6 +267,7 @@ class SuiteVersion(Entity):
             version=version,
             metadata_document=document,
             odcs_api_version=source.odcs_api_version if source else None,
+            created_by=acting_username(),
         )
         session = get_current_session()
         session.add(draft)
@@ -303,7 +308,11 @@ class SuiteVersion(Entity):
         """A suite's versions, newest first, each with its term count, run count and latest run."""
         term_count = (
             select(func.count()).select_from(_test_definitions)
-            .where(_test_definitions.c.version_id == cls.id).scalar_subquery()
+            .where(
+                _test_definitions.c.version_id == cls.id,
+                _test_definitions.c.test_type.not_in(MANAGED_TEST_TYPES),
+            )
+            .scalar_subquery()
         )
         run_count = (
             select(func.count()).select_from(_test_runs)
@@ -319,7 +328,7 @@ class SuiteVersion(Entity):
         )
         query = (
             select(
-                cls.id, cls.version, cls.label, cls.created_by, cls.frozen_at,
+                cls.id, cls.version, cls.label, cls.created_by, cls.frozen_at, cls.frozen_by,
                 term_count.label("term_count"), run_count.label("run_count"),
                 latest.c.id.label("latest_run_id"), latest.c.status.label("latest_run_status"),
                 latest.c.test_starttime.label("latest_run_started_at"),

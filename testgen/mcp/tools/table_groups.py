@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from sqlalchemy.exc import IntegrityError
 
 from testgen.common.database.table_group_service import (
@@ -26,10 +26,12 @@ from testgen.common.database.table_group_service import (
 from testgen.common.database.table_group_service import (
     preview_table_group as preview_table_group_service,
 )
+from testgen.common.enums import FileFormat
 from testgen.common.file_declaration_schema import FileDeclarationSpec
 from testgen.common.flavors import declares_files, table_group_schema_label
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.data_table import CATALOG_TAG_LABELS
 from testgen.common.models.table_group import TableGroup, table_group_defaults
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
@@ -38,6 +40,7 @@ from testgen.mcp.tools.common import (
     format_flavor_label,
     format_page_footer,
     format_page_info,
+    match_enum,
     render_diff_table,
     report_no_change,
     resolve_connection,
@@ -59,7 +62,7 @@ _FIELD_NAMES = {
 }
 _PII_FLAG_DENIED_MESSAGE = (
     "Changing PII detection requires permission to view PII. "
-    "Leave this setting unchanged or contact your administrator."
+    "Leave this setting unchanged, or ask an administrator for the permission."
 )
 _TABLE_COMPARISON_DESCRIPTION = (
     "Whether profiling collects value hashes, which Table Comparison test generation needs for tests that "
@@ -70,6 +73,11 @@ _TABLE_COMPARISON_DESCRIPTION = (
 
 class FileDeclaration(FileDeclarationSpec):
     """One table on a file connection, named by the path its rows come from."""
+
+    @field_validator("format", mode="before")
+    @classmethod
+    def _read_format_in_any_case(cls, value: object) -> object:
+        return match_enum(value, FileFormat) or value
 
 
 def _verify_table_naming(
@@ -267,24 +275,31 @@ def create_table_group(
     include_mask: Annotated[
         str | None,
         Field(
-            description="Comma-separated SQL LIKE patterns to include (e.g. ``fact_%,dim_%``)."
-            " Omit for the default include mask."
+            description="Comma-separated table names or patterns to include (e.g. ``fact_%,dim_%``). `%` matches any"
+            " characters; every other character, `_` included, matches itself. Omit for the default include mask."
         ),
     ] = None,
     exclude_mask: Annotated[
         str | None,
         Field(
-            description="Comma-separated SQL LIKE patterns to exclude. Omit for the default exclude mask;"
-            " pass an empty string to exclude nothing."
+            description="Comma-separated table names or patterns to exclude. `%` matches any characters; every other"
+            " character, `_` included, matches itself. Omit for the default exclude mask; pass an empty string to"
+            " exclude nothing."
         ),
     ] = None,
     profile_id_column_mask: Annotated[
         str | None,
-        Field(description="SQL LIKE pattern marking ID columns. Omit for the default ID column mask."),
+        Field(
+            description="Column name pattern marking ID columns, not case-sensitive. `%` matches any characters;"
+            " every other character, `_` included, matches itself. Omit for the default ID column mask."
+        ),
     ] = None,
     profile_sk_column_mask: Annotated[
         str | None,
-        Field(description="SQL LIKE pattern marking surrogate-key columns. Omit for the default SK column mask."),
+        Field(
+            description="Column name pattern marking surrogate-key columns, not case-sensitive. `%` matches any"
+            " characters; every other character, `_` included, matches itself. Omit for the default SK column mask."
+        ),
     ] = None,
     profile_use_sampling: Annotated[
         bool | None,
@@ -368,8 +383,8 @@ def create_table_group(
     """Create a table group on an existing connection, by schema or by file path.
 
     The table group inherits its project from the connection. ``include_mask``
-    and ``exclude_mask`` are SQL ``LIKE`` patterns (e.g. ``fact_%,dim_%``);
-    ``table_set`` is an explicit list. All filters compose with ``AND``. A file connection takes
+    and ``exclude_mask`` are table names or patterns in which ``%`` matches any
+    characters (e.g. ``fact_%,dim_%``); ``table_set`` is an explicit list. All filters compose with ``AND``. A file connection takes
     ``file_declarations`` instead of any of those, and no ``schema``.
     """
     connection = resolve_connection(connection_id)
@@ -461,12 +476,33 @@ def update_table_group(
         list[str] | None,
         Field(description="Replacement explicit table list (full replacement of the current list)."),
     ] = None,
-    include_mask: Annotated[str | None, Field(description="Comma-separated SQL LIKE patterns to include.")] = None,
-    exclude_mask: Annotated[str | None, Field(description="Comma-separated SQL LIKE patterns to exclude.")] = None,
-    profile_id_column_mask: Annotated[str | None, Field(description="SQL LIKE pattern marking ID columns.")] = None,
+    include_mask: Annotated[
+        str | None,
+        Field(
+            description="Comma-separated table names or patterns to include. `%` matches any characters; every other"
+            " character, `_` included, matches itself."
+        ),
+    ] = None,
+    exclude_mask: Annotated[
+        str | None,
+        Field(
+            description="Comma-separated table names or patterns to exclude. `%` matches any characters; every other"
+            " character, `_` included, matches itself."
+        ),
+    ] = None,
+    profile_id_column_mask: Annotated[
+        str | None,
+        Field(
+            description="Column name pattern marking ID columns, not case-sensitive. `%` matches any characters;"
+            " every other character, `_` included, matches itself."
+        ),
+    ] = None,
     profile_sk_column_mask: Annotated[
         str | None,
-        Field(description="SQL LIKE pattern marking surrogate-key columns."),
+        Field(
+            description="Column name pattern marking surrogate-key columns, not case-sensitive. `%` matches any"
+            " characters; every other character, `_` included, matches itself."
+        ),
     ] = None,
     profile_use_sampling: Annotated[
         bool | None,
@@ -806,15 +842,8 @@ _DIFF_LABELS: dict[str, str] = {
     "profile_table_comparison": "Profile for table comparison",
     "include_in_dashboard": "Include in dashboard",
     "description": "Description",
-    "data_source": "Data source",
-    "source_system": "Source system",
-    "source_process": "Source process",
     "data_location": "Data location",
-    "business_domain": "Business domain",
-    "stakeholder_group": "Stakeholder group",
-    "transform_level": "Transform level",
-    "data_product": "Data product",
-    "data_classification": "Data classification",
+    **CATALOG_TAG_LABELS,
 }
 
 

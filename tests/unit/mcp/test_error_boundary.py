@@ -1,5 +1,11 @@
 """Tests for the mcp_error_boundary decorator."""
 
+# The stub handlers are coroutine functions so the coroutine wrappers are exercised; they need not
+# await anything. RUF029 is a false positive for that pattern.
+# ruff: noqa: RUF029
+
+import asyncio
+import inspect
 import logging
 
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPUserError, mcp_error_handler
@@ -59,3 +65,28 @@ def test_preserves_function_metadata():
 
     assert my_tool.__name__ == "my_tool"
     assert my_tool.__doc__ == "Tool docstring."
+
+
+def test_wraps_a_coroutine_function_as_one():
+    @mcp_error_handler
+    async def my_tool() -> str:
+        return "ok"
+
+    assert inspect.iscoroutinefunction(my_tool)
+    assert asyncio.run(my_tool()) == "ok"
+
+
+def test_converts_a_coroutine_functions_user_error_to_string():
+    @mcp_error_handler
+    async def failing_tool():
+        raise MCPUserError("Nothing was deleted.")
+
+    assert asyncio.run(failing_tool()) == "Nothing was deleted."
+
+
+def test_catches_a_coroutine_functions_unexpected_error():
+    @mcp_error_handler
+    async def broken_tool():
+        raise RuntimeError("secret internal detail")
+
+    assert asyncio.run(broken_tool()) == "An unexpected error occurred."

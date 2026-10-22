@@ -27,7 +27,6 @@ import { Select } from '/app/static/js/components/select.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Card } from '/app/static/js/components/card.js';
 import { Link } from '/app/static/js/components/link.js';
-import { withTooltip } from '/app/static/js/components/tooltip.js';
 import { Caption } from '/app/static/js/components/caption.js';
 import { SummaryBar } from '/app/static/js/components/summary_bar.js';
 import { EMPTY_STATE_MESSAGE, EmptyState } from '/app/static/js/components/empty_state.js';
@@ -213,7 +212,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                         tooltip: !projectSummary.can_export_to_observability
                                             ? 'Observability export not configured in Project Settings'
                                             : !testSuite.export_to_observability
-                                            ? 'Observability export not configured for test suite'
+                                            ? `Observability export not configured for ${testSuite.suite_type === 'contract' ? 'contract' : 'test suite'}`
                                             : 'Export results to Observability',
                                         tooltipPosition: 'left',
                                         disabled: !projectSummary.can_export_to_observability || !testSuite.export_to_observability,
@@ -225,13 +224,13 @@ const TestSuites = (/** @type Properties */ props) => {
                                     Button({
                                         type: 'icon',
                                         icon: 'edit',
-                                        tooltip: 'Edit test suite',
+                                        tooltip: testSuite.suite_type === 'contract' ? 'Edit contract' : 'Edit test suite',
                                         onclick: () => emit('EditActionClicked', {payload: testSuite.id}),
                                     }),
                                     Button({
                                         type: 'icon',
                                         icon: 'delete',
-                                        tooltip: 'Delete test suite',
+                                        tooltip: testSuite.suite_type === 'contract' ? 'Delete contract' : 'Delete test suite',
                                         tooltipPosition: 'left',
                                         onclick: () => emit('DeleteActionClicked', {payload: testSuite.id}),
                                     }),
@@ -242,19 +241,14 @@ const TestSuites = (/** @type Properties */ props) => {
                             { class: 'flex-row fx-justify-space-between fx-flex-align-content' },
                             div(
                                 { class: 'flex-column' },
-                                testSuite.suite_type === 'contract'
-                                    ? withTooltip(
-                                        span({ class: 'mb-4 text-secondary' }, `View ${testSuite.test_ct ?? 0} test definitions`),
-                                        { text: "Viewing a contract's tests is coming soon.", position: 'bottom' },
-                                    )
-                                    : Link({ emit,
-                                        href: 'test-suites:definitions',
-                                        params: { test_suite_id: testSuite.id, project_code: projectSummary.project_code },
-                                        label: `View ${testSuite.test_ct ?? 0} test definitions`,
-                                        right_icon: 'chevron_right',
-                                        right_icon_size: 20,
-                                        class: 'mb-4',
-                                    }),
+                                Link({ emit,
+                                    href: 'test-suites:definitions',
+                                    params: { test_suite_id: testSuite.id, project_code: projectSummary.project_code },
+                                    label: `View ${testSuite.test_ct ?? 0} test definitions`,
+                                    right_icon: 'chevron_right',
+                                    right_icon_size: 20,
+                                    class: 'mb-4',
+                                }),
                                 Caption({ content: 'Description', style: 'margin-bottom: 2px;' }),
                                 span({'data-testid': 'test-suite-description'}, testSuite.test_suite_description ?? '--'),
                             ),
@@ -322,23 +316,28 @@ const TestSuites = (/** @type Properties */ props) => {
             const info = deleteDialogInfo.val;
             if (!info) return div();
             const isInUse = info.is_in_use;
+            const noun = info.suite_type === 'contract' ? 'contract' : 'test suite';
             const deleteDisabled = van.derive(() => isInUse && !confirmCascadeDelete.val);
             return Dialog(
-                { title: 'Delete Test Suite', open: deleteDialogOpen, onClose: closeDeleteDialog, width: '36rem' },
+                { title: info.suite_type === 'contract' ? 'Delete Contract' : 'Delete Test Suite', open: deleteDialogOpen, onClose: closeDeleteDialog, width: '36rem' },
                 div(
                     { class: 'flex-column fx-gap-4' },
-                    div('Are you sure you want to delete the test suite ', b(info.test_suite_name), '?'),
+                    div(`Are you sure you want to delete the ${noun} `, b(info.test_suite_name), '?'),
                     isInUse
                         ? div(
                             { class: 'flex-column fx-gap-4' },
                             Alert(
                                 { type: 'warn' },
-                                div('This Test Suite has related data, which may include test definitions and test results.'),
+                                div(
+                                    info.suite_type === 'contract'
+                                        ? 'This contract has related data, which may include its versions, tests, and test results.'
+                                        : 'This Test Suite has related data, which may include test definitions and test results.',
+                                ),
                                 div({ class: 'mt-2' }, 'If you proceed, all related data will be permanently deleted.'),
                             ),
                             Toggle({
                                 name: 'confirm-cascade-delete',
-                                label: span('Yes, delete the test suite ', b(info.test_suite_name), ' and related TestGen data.'),
+                                label: span(`Yes, delete the ${noun} `, b(info.test_suite_name), ' and related TestGen data.'),
                                 checked: confirmCascadeDelete,
                                 onChange: (value) => confirmCascadeDelete.val = value,
                             }),
@@ -429,7 +428,7 @@ const TestSuites = (/** @type Properties */ props) => {
                 },
                 div(
                     { class: 'flex-column fx-gap-4' },
-                    div('Execute the test export for test suite ', b(ts.test_suite), '?'),
+                    div(`Execute the test export for ${ts.suite_type === 'contract' ? 'contract' : 'test suite'} `, b(ts.test_suite), '?'),
                     div(
                         { class: 'flex-column fx-gap-2' },
                         Caption({ content: 'CLI command' }),

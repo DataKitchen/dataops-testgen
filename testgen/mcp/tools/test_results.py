@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
@@ -23,6 +24,7 @@ from testgen.mcp.tools.common import (
     MCP_SUITE_TYPES,
     DocGroup,
     FailureGroupBy,
+    any_case,
     format_page_footer,
     format_page_info,
     parse_enum,
@@ -153,7 +155,7 @@ def list_test_results(
     doc.heading(1, f"Test Results for run `{run_id_label}`")
     if resolved_via_suite:
         doc.text(f"_Latest completed run of test suite `{test_suite_id}`._")
-    doc.text(f"Showing {len(results)} result(s) (page {page}).")
+    doc.text(f"Results on this page: {len(results)} (page {page}).")
 
     hide_source_data = mcp_source_data_protected()
     value_redacted_types = TestType.value_redacted_types(test_types) if hide_source_data else frozenset()
@@ -181,7 +183,7 @@ def list_test_results(
         if custom_metadata:
             doc.heading(3, "Custom Metadata")
             for key, value in custom_metadata.items():
-                doc.field(MdDoc.escape(key), value)
+                doc.field(MdDoc.escape(key), json.dumps(value, default=str) if isinstance(value, dict | list) else value)
 
     return doc.render()
 
@@ -327,6 +329,7 @@ def list_test_result_history(
 ) -> str:
     """Get the historical results of one test definition across runs.
     Shows how status — and, when available, the measure and threshold — changed over time.
+    A contract's test includes its results from every version of the contract.
     """
     def_uuid = parse_uuid(test_definition_id, "test_definition_id")
     validate_page(page)
@@ -341,6 +344,7 @@ def list_test_result_history(
         offset=offset,
         project_codes=perms.allowed_codes,
         suite_types=MCP_SUITE_TYPES,
+        across_versions=True,
     )
 
     if not results:
@@ -358,9 +362,9 @@ def list_test_result_history(
     doc.field("Table", first.table_name, code=True)
     if first.column_names:
         doc.field("Column", first.column_names, code=True)
-    doc.text(f"Showing {len(results)} result(s), newest first (page {page}).")
-    # Every row belongs to the same test definition, so one classification governs
-    # the whole table and the Measure column is present or absent as a unit.
+    doc.text(f"Results on this page: {len(results)}, newest first (page {page}).")
+    # Every row has the same test type, so one classification governs the whole table
+    # and the Measure column is present or absent as a unit.
     if mcp_source_data_protected():
         measure_redacted = first.test_type in TestType.value_redacted_types(test_types)
         if measure_redacted:
@@ -506,6 +510,7 @@ def get_failure_trend(
     ] = "30 days",
     bucket: Annotated[
         BucketInterval,
+        any_case(BucketInterval),
         Field(description="Time bucket size — 'day' or 'week' (default 'day')."),
     ] = BucketInterval.DAY,
     exclude_today: Annotated[

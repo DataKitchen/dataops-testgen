@@ -26,7 +26,7 @@ def _make_run_summary(**overrides):
         "status_label": "Completed",
         "created_at": _CREATED, "started_at": _STARTED, "completed_at": _COMPLETED,
         "test_ct": 50, "passed_ct": 45, "failed_ct": 3, "warning_ct": 2, "error_ct": 0,
-        "log_ct": 0, "dismissed_ct": 0, "dq_score_testing": 92.5,
+        "log_ct": 0, "dismissed_ct": 0, "dq_score_testing": 0.925,
         "error_message": None,
         "version_number": None, "version_frozen_at": None, "active_version_number": None,
         "test_starttime": None, "is_preview": False, "version_discarded": False, "version_label": None,
@@ -331,6 +331,67 @@ def test_get_test_run_pending_no_results(mock_run, db_session_mock):
     assert "Results" not in result
 
 
+@patch("testgen.mcp.tools.test_runs.TableGroup")
+@patch("testgen.mcp.tools.test_runs.TestSuite")
+@patch("testgen.mcp.tools.test_runs.JobExecution")
+@patch("testgen.mcp.tools.test_runs.TestRun")
+def test_get_test_run_without_run_record_names_suite_from_job(
+    mock_run, mock_je, mock_suite, mock_tg, db_session_mock,
+):
+    suite_id = str(uuid4())
+    summary = _make_run_summary(
+        project_code="demo", test_run_id=None, test_suite=None, table_groups_name=None,
+        status=JobStatus.QUEUED, status_label="Queued", started_at=None, completed_at=None,
+        test_ct=None, passed_ct=None, failed_ct=None, warning_ct=None, error_ct=None,
+        log_ct=None, dismissed_ct=None, dq_score_testing=None,
+    )
+    mock_run.select_summary.return_value = ([summary], 1)
+    mock_je.get.return_value = MagicMock(kwargs={"test_suite_id": suite_id})
+    mock_suite.get.return_value = MagicMock(test_suite="Orders Suite", suite_type=SuiteType.REGULAR)
+    mock_tg.get.return_value = MagicMock(table_groups_name="orders_tg")
+
+    with patch("testgen.mcp.permissions._compute_project_permissions") as mock_compute:
+        mock_compute.return_value = ProjectPermissions(
+            memberships={"demo": "role_a"}, permission="view", username="test_user",
+        )
+        with patch("testgen.mcp.permissions.PluginHook") as mock_hook:
+            mock_hook.instance().rbac.get_roles_with_permission.return_value = ["role_a"]
+            from testgen.mcp.tools.test_runs import get_test_run
+
+            result = get_test_run(str(summary.job_execution_id))
+
+    mock_suite.get.assert_called_once_with(suite_id)
+    assert "# Test run: Orders Suite" in result
+    assert "**Test suite:** Orders Suite" in result
+    assert "**Table group:** orders_tg" in result
+
+
+@patch("testgen.mcp.tools.test_runs.TestSuite")
+@patch("testgen.mcp.tools.test_runs.JobExecution")
+@patch("testgen.mcp.tools.test_runs.TestRun")
+def test_get_test_run_without_run_record_refuses_a_monitor_suite(mock_run, mock_je, mock_suite, db_session_mock):
+    summary = _make_run_summary(
+        project_code="demo", test_run_id=None, test_suite=None, table_groups_name=None,
+        status=JobStatus.QUEUED, status_label="Queued", started_at=None, completed_at=None,
+        test_ct=None, passed_ct=None, failed_ct=None, warning_ct=None, error_ct=None,
+        log_ct=None, dismissed_ct=None, dq_score_testing=None,
+    )
+    mock_run.select_summary.return_value = ([summary], 1)
+    mock_je.get.return_value = MagicMock(kwargs={"test_suite_id": str(uuid4())})
+    mock_suite.get.return_value = MagicMock(test_suite="Orders Monitors", suite_type=SuiteType.MONITOR)
+
+    with patch("testgen.mcp.permissions._compute_project_permissions") as mock_compute:
+        mock_compute.return_value = ProjectPermissions(
+            memberships={"demo": "role_a"}, permission="view", username="test_user",
+        )
+        with patch("testgen.mcp.permissions.PluginHook") as mock_hook:
+            mock_hook.instance().rbac.get_roles_with_permission.return_value = ["role_a"]
+            from testgen.mcp.tools.test_runs import get_test_run
+
+            with pytest.raises(MCPResourceNotAccessible):
+                get_test_run(str(summary.job_execution_id))
+
+
 @patch("testgen.mcp.tools.test_runs.TestRun")
 def test_get_test_run_not_found(mock_run, db_session_mock):
     mock_run.select_summary.return_value = ([], 0)
@@ -432,6 +493,53 @@ def test_list_test_runs_with_a_version_requires_a_suite(db_session_mock):
 
     with pytest.raises(MCPUserError, match="`version` needs `test_suite`"):
         list_test_runs(project_code="demo", version=3)
+
+
+@patch("testgen.mcp.tools.test_runs.TestSuite")
+def test_list_test_runs_refuses_a_name_shared_by_several_suites(mock_suite, db_session_mock):
+    first, second = uuid4(), uuid4()
+    mock_suite.select_minimal_where.return_value = [MagicMock(id=first), MagicMock(id=second)]
+
+    from testgen.mcp.tools.test_runs import list_test_runs
+
+    with pytest.raises(MCPUserError, match=f"2 test suites .* `{first}`, `{second}`. Filter by `test_suite_id`"):
+        list_test_runs(project_code="demo", test_suite="Orders")
+
+
+@patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
+@patch("testgen.mcp.tools.test_runs.JobExecution")
+@patch("testgen.mcp.tools.test_runs.resolve_contract_version")
+@patch("testgen.mcp.tools.test_runs.TestRun")
+@patch("testgen.mcp.tools.test_runs.resolve_test_suite")
+def test_list_test_runs_filters_by_test_suite_id_and_takes_its_project(
+    mock_resolve_suite, mock_run, mock_resolve, mock_je, mock_next, db_session_mock,
+):
+    mock_je.select_active_by_kwargs.return_value = []
+    suite = MagicMock(id=uuid4(), project_code="demo", test_suite="Orders")
+    mock_resolve_suite.return_value = suite
+    mock_run.select_summary.return_value = ([], 0)
+
+    from testgen.mcp.tools.test_runs import list_test_runs
+
+    out = list_test_runs(test_suite_id=str(suite.id))
+
+    assert mock_run.select_summary.call_args.kwargs["test_suite_id"] == str(suite.id)
+    assert mock_run.select_summary.call_args.kwargs["project_code"] == "demo"
+    assert "suite `Orders`" in out
+
+
+@patch("testgen.mcp.tools.test_runs.resolve_table_group")
+@patch("testgen.mcp.tools.test_runs.resolve_test_suite")
+def test_list_test_runs_refuses_a_suite_outside_the_table_group(mock_resolve_suite, mock_resolve_tg, db_session_mock):
+    mock_resolve_suite.return_value = MagicMock(
+        id=uuid4(), project_code="demo", test_suite="Orders", table_groups_id=uuid4()
+    )
+    mock_resolve_tg.return_value = MagicMock(id=uuid4(), project_code="demo", table_groups_name="sales")
+
+    from testgen.mcp.tools.test_runs import list_test_runs
+
+    with pytest.raises(MCPUserError, match="Test suite `Orders` is not in table group `sales`."):
+        list_test_runs(test_suite_id=str(uuid4()), table_group_id=str(uuid4()))
 
 
 @patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)

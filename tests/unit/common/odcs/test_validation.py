@@ -73,6 +73,7 @@ def test_an_api_version_the_standard_allows_but_we_do_not_bundle_is_a_reported_p
     problems = validate_document(_minimal_document() | {"apiVersion": declared})
 
     assert problems, f"{declared} was accepted without a bundled schema to check it against"
+    assert f"Supported versions: v3.1.0, {ODCS_API_VERSION}." in problems[0]
     assert any(declared in problem and "apiVersion" in problem for problem in problems)
 
 

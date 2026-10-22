@@ -18,7 +18,7 @@ test_types:
   column_name_prompt: |-
     Categorical Column List
   column_name_help: |-
-    Specify one or more Categorical columns, separated by commas. Do not use continuous mesurements here. Do not use numeric values unless they represent discrete categories.
+    Specify one or more Categorical columns, separated by commas. Do not use continuous measurements here. Do not use numeric values unless they represent discrete categories.
   default_parm_columns: subset_condition,match_schema_name,match_table_name,match_groupby_names,match_subset_condition,threshold_value
   default_parm_values: null
   default_parm_prompts: |-

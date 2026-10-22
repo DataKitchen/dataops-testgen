@@ -1,4 +1,3 @@
-import base64
 import logging
 import typing
 from enum import StrEnum
@@ -6,7 +5,6 @@ from uuid import UUID
 
 import streamlit as st
 
-from testgen import settings
 from testgen.commands.run_observability_exporter import export_test_results
 from testgen.commands.test_generation import (
     TESTS_NEED_PROFILING,
@@ -16,8 +14,7 @@ from testgen.commands.test_generation import (
 )
 from testgen.common.contract_creation import create_contract, create_contract_from_import
 from testgen.common.contract_document import catalog_table_names
-from testgen.common.contract_import import ContractImportPlan, ContractTermReason, prepare_import
-from testgen.common.contract_service import InvalidContractDocumentError
+from testgen.common.contract_import import prepare_import
 from testgen.common.database.test_suite_service import validate_test_suite_fields
 from testgen.common.enums import TEST_SUITE_TYPES, JobSource, RegenerationGroup, SuiteType
 from testgen.common.flavors import FLAVOR_CODE_TO_LABEL
@@ -37,16 +34,21 @@ from testgen.common.models.notification_settings import TestRunNotificationSetti
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.suite_version import ContractState, VersionState, format_version
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.odcs.servers import CustomServerReason
-from testgen.common.test_definition_export_import_service import ImportAction
 from testgen.common.value_hash import VALUE_HASH_TEST_TYPES
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
+from testgen.ui.services.contract_import_service import (
+    UnreadableContractFileError,
+    contract_file_max_bytes,
+    import_preview,
+    read_contract_file,
+)
+from testgen.ui.services.contract_run_service import run_test_suite_options
 from testgen.ui.services.query_cache import (
     get_contract_states,
     get_project_summary,
@@ -85,16 +87,6 @@ WIZARD_PREVIEW_KEY = "ts:wizard:preview"
 WIZARD_RESULT_KEY = "ts:wizard:result"
 WIZARD_KEYS = (WIZARD_TABLE_GROUP_KEY, WIZARD_FILE_KEY, WIZARD_PREVIEW_KEY, WIZARD_RESULT_KEY)
 
-IMPORT_PREVIEW_ROW_LIMIT = 500
-_FILE_MESSAGE_ENVELOPE_BYTES = 64 * 1024
-_PREVIEW_ACTION_ORDER = {ImportAction.delete: 0, ImportAction.create: 1, ImportAction.update: 2, ImportAction.skip: 3}
-_TERM_REASON_LABELS = {
-    ContractTermReason.NEW: "New rule",
-    ContractTermReason.ABSENT: "Not in the file",
-    ContractTermReason.MATCHED_BY_ID: "Changed",
-    ContractTermReason.MATCHED_BY_KEY: "Changed",
-    ContractTermReason.UNCHANGED: "Unchanged",
-}
 
 
 class SuiteTypeFilter(StrEnum):
@@ -213,10 +205,9 @@ class TestSuitesPage(Page):
             run_tests_data = {
                 "title": "Run Tests",
                 "project_code": project_code,
-                "test_suites": [
-                    {"value": str(ts.id), "label": ts.test_suite, "suite_type": ts.suite_type}
-                    for ts in test_suites if str(ts.id) == str(run_tests_ts_id)
-                ],
+                "test_suites": run_test_suite_options(
+                    [ts for ts in test_suites if str(ts.id) == str(run_tests_ts_id)], states
+                ),
                 "default_test_suite_id": str(run_tests_ts_id) if run_tests_ts_id else None,
                 "result": st.session_state.get(RUN_TESTS_RESULT_KEY),
             }
@@ -246,7 +237,10 @@ class TestSuitesPage(Page):
                 with database_session():
                     JobExecution.submit(
                         job_key="run-tests",
-                        kwargs={"test_suite_id": str(selected_id)},
+                        kwargs={
+                            "test_suite_id": str(selected_id),
+                            **({"version_id": str(data["version_id"])} if data.get("version_id") else {}),
+                        },
                         source=JobSource.ui,
                         project_code=project_code,
                     )
@@ -549,18 +543,21 @@ def prepare_ts_delete_dialog(test_suite_id: str) -> None:
         "open": True,
         "test_suite_id": str(selected.id),
         "test_suite_name": selected.test_suite,
+        "suite_type": selected.suite_type,
         "is_in_use": is_in_use,
     }
 
 
 @with_database_session
 def execute_ts_delete(test_suite_id: str) -> None:
-    test_suite_name = st.session_state.get("ts_delete_dialog", {}).get("test_suite_name", "")
+    dialog = st.session_state.get("ts_delete_dialog", {})
+    test_suite_name = dialog.get("test_suite_name", "")
+    noun = "Contract" if dialog.get("suite_type") == SuiteType.CONTRACT else "Test Suite"
     if TestRun.has_active_job_for(TestSuite, test_suite_id):
-        st.toast("This Test Suite is in use by a running process and cannot be deleted.", icon=":material/error:")
+        st.toast(f"This {noun} is in use by a running process and cannot be deleted.", icon=":material/error:")
     else:
         TestSuite.cascade_delete([test_suite_id])
-        st.toast(f"Test Suite {test_suite_name} has been deleted.", icon=":material/check:")
+        st.toast(f"{noun} {test_suite_name} has been deleted.", icon=":material/check:")
     st.session_state.pop("ts_delete_dialog", None)
     get_test_suite_summaries.clear()
     get_project_summary.clear()
@@ -592,20 +589,13 @@ def _row(icon: WizardRowIcon, text: str, link: dict | None = None) -> dict:
     return {"icon": icon.value, "text": text, "link": link}
 
 
-def _contract_file_max_bytes() -> int:
-    """The largest contract file the wizard accepts: the configured limit, capped by what fits in one
-    Streamlit WebSocket message once the file is base64-encoded into the component value."""
-    transport_bytes = st.config.get_option("server.maxMessageSize") * 1024 * 1024
-    return min(settings.CONTRACT_IMPORT_MAX_BYTES, transport_bytes * 3 // 4 - _FILE_MESSAGE_ENVELOPE_BYTES)
-
-
 def build_wizard_data(table_group_options: list[dict]) -> dict:
     return {
         "open": True,
         "table_groups": table_group_options,
         "generation_sets": list_generation_sets(),
         "default_generation_sets": [DEFAULT_GENERATION_SET],
-        "max_file_bytes": _contract_file_max_bytes(),
+        "max_file_bytes": contract_file_max_bytes(),
         "table_group": st.session_state.get(WIZARD_TABLE_GROUP_KEY),
         "file_preview": st.session_state.get(WIZARD_PREVIEW_KEY),
         "result": st.session_state.get(WIZARD_RESULT_KEY),
@@ -635,74 +625,19 @@ def contract_file_uploaded(payload: dict) -> None:
     payload = payload if isinstance(payload, dict) else {}
     file = payload.get("file") if isinstance(payload.get("file"), dict) else {}
     content = file.get("content") if isinstance(file.get("content"), str) else ""
-    max_bytes = _contract_file_max_bytes()
-    too_large = {"error": f"The file is larger than the {max_bytes:,} bytes limit.", "problems": []}
-    if len(content) > max_bytes * 4 // 3 + 1024:
-        st.session_state[WIZARD_PREVIEW_KEY] = too_large
-        return
     try:
-        raw = base64.b64decode(content.split(",", 1)[1])
-    except (IndexError, ValueError):
-        st.session_state[WIZARD_PREVIEW_KEY] = {"error": "The file could not be read.", "problems": []}
-        return
-    if len(raw) > max_bytes:
-        st.session_state[WIZARD_PREVIEW_KEY] = too_large
-        return
-    if not raw:
-        st.session_state[WIZARD_PREVIEW_KEY] = {"error": "The file is empty.", "problems": []}
-        return
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        st.session_state[WIZARD_PREVIEW_KEY] = {"error": "The file is not a text file.", "problems": []}
+        text = read_contract_file(content)
+    except UnreadableContractFileError as e:
+        st.session_state[WIZARD_PREVIEW_KEY] = {"error": str(e), "problems": []}
         return
     table_group_id = payload.get("table_group_id")
-    try:
-        with database_session():
-            table_group = TableGroup.get(table_group_id)
-            connection = Connection.get(table_group.connection_id)
-            plan = prepare_import(text, table_group, connection, None)
-            short_names = {row.test_type: row.test_name_short for row in TestType.select_where()}
-            preview = _serialize_plan(plan, short_names)
-    except InvalidContractDocumentError as e:
-        st.session_state[WIZARD_PREVIEW_KEY] = {"error": "This file cannot be imported.", "problems": e.problems}
-        return
-    except Exception:
-        LOG.exception("Could not build contract import preview")
-        st.session_state[WIZARD_PREVIEW_KEY] = {
-            "error": "Something went wrong while reading this file.",
-            "problems": [],
-        }
-        return
-    st.session_state[WIZARD_FILE_KEY] = {"table_group_id": table_group_id, "content": text}
+    with database_session():
+        table_group = TableGroup.get(table_group_id)
+        connection = Connection.get(table_group.connection_id)
+        preview = import_preview(text, table_group, connection, None)
+    if not preview.get("error"):
+        st.session_state[WIZARD_FILE_KEY] = {"table_group_id": table_group_id, "content": text}
     st.session_state[WIZARD_PREVIEW_KEY] = preview
-
-
-def _serialize_plan(plan: ContractImportPlan, short_names: dict[str, str]) -> dict:
-    changes = sorted(
-        plan.changes,
-        key=lambda change: (_PREVIEW_ACTION_ORDER[change.action], change.table_name, change.column_name or ""),
-    )
-    rows = [
-        {
-            "action_code": change.action.value,
-            "reason": _TERM_REASON_LABELS[change.reason],
-            "table_name": change.table_name,
-            "column_name": change.column_name or "",
-            "test_name": short_names.get(change.test_type) or change.test_type,
-        }
-        for change in changes
-    ]
-    return {
-        "creating": True,
-        "summary": {action.value: plan.count(action) for action in _PREVIEW_ACTION_ORDER},
-        "rows": rows[:IMPORT_PREVIEW_ROW_LIMIT],
-        "total_rows": len(rows),
-        "truncated": len(rows) > IMPORT_PREVIEW_ROW_LIMIT,
-        "unverifiable_count": len(plan.unverifiable_rules),
-        "server_type_warning": plan.server_type_warning,
-        "tables_not_in_catalog": plan.tables_not_in_catalog,
-    }
 
 
 def contract_file_cleared(*_) -> None:
@@ -806,12 +741,16 @@ def _add_contract_from_tables(suite: TestSuite, table_group: TableGroup, table_n
     name = created.suite.test_suite
     not_in_catalog = generation.tables_not_in_catalog if generation else []
     not_profiled = [table for table in generation.tables_not_profiled if table not in not_in_catalog] if generation else []
-    rows = [_row(WizardRowIcon.SUCCESS, f"Contract {name} created{_with_tests(created.suite.id)}.")]
+    no_quality_tests = (
+        not created.generation_failed and generation is not None and generation.term_count == 0 and bool(not_profiled)
+    )
+    kind = " schema" if no_quality_tests else ""
+    rows = [_row(WizardRowIcon.SUCCESS, f"Contract {name} created{_with_tests(created.suite.id, kind)}.")]
     if created.generation_failed:
         rows.append(
             _row(WizardRowIcon.WARNING, "Generating the contract failed. Generate its tests on the Test Suites page.")
         )
-    elif generation is not None and generation.term_count == 0 and not_profiled:
+    elif no_quality_tests:
         in_catalog = [table for table in generation.tables_declared if table not in not_in_catalog]
         cause = (
             "has not been profiled"
@@ -851,11 +790,11 @@ def _add_contract_from_file(suite: TestSuite, table_group: TableGroup, content: 
     return rows
 
 
-def _with_tests(suite_id: UUID) -> str:
+def _with_tests(suite_id: UUID, kind: str = "") -> str:
     test_count = TestSuite.test_definition_stats(suite_id).total
     if not test_count:
         return ""
-    return f" with {test_count} {'test' if test_count == 1 else 'tests'}"
+    return f" with {test_count}{kind} {'test' if test_count == 1 else 'tests'}"
 
 
 def _contract_info_rows(

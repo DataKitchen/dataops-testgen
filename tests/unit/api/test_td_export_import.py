@@ -49,6 +49,7 @@ from testgen.common.test_definition_export_import_service import (
     Origin,
     TestDefinitionExport,
     _create_td,
+    _reports_schema,
     _update_td,
     import_definitions,
 )
@@ -110,6 +111,16 @@ def target_qualifies_table_refs():
     """
     with patch(f"{SERVICE_MODULE}.table_group_qualifies_table_refs", return_value=True) as resolved:
         yield resolved
+
+
+@pytest.fixture(autouse=True)
+def target_reports_schema():
+    """Export from a table group whose connection type has a schema.
+
+    Tests about a file connection set ``return_value`` themselves.
+    """
+    with patch(f"{SERVICE_MODULE}._reports_schema", return_value=True) as reports:
+        yield reports
 
 
 class _EveryColumn:
@@ -262,6 +273,16 @@ def _reasons(response: ImportResponse, action: ImportAction) -> set[ImportReason
 # --- Export tests ---
 
 
+@pytest.mark.parametrize(
+    ("flavor_code", "reports"),
+    [("postgresql", True), ("salesforce_data360", True), ("files", False), ("s3", False)],
+)
+def test_reports_schema_follows_the_connection_type(flavor_code, reports):
+    connection = MagicMock(sql_flavor_code=flavor_code)
+    with patch(f"{SERVICE_MODULE}.Connection.get_by_table_group", return_value=connection):
+        assert _reports_schema(_make_table_group()) is reports
+
+
 class Test_export_definitions:
 
     @patch(f"{SERVICE_MODULE}.settings")
@@ -304,6 +325,27 @@ class Test_export_definitions:
         assert result.source.testgen_version == "5.12.0"
         assert len(result.definitions) == 1
         assert result.definitions[0].test_type == "Alpha"
+
+    @patch(f"{SERVICE_MODULE}.settings")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_export_omits_schema_on_a_file_connection(
+        self, mock_session_fn, mock_tg_cls, mock_settings, target_reports_schema
+    ):
+        mock_settings.VERSION = "5.12.0"
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        session.scalars.return_value.all.return_value = []
+        tg = _make_table_group()
+        mock_tg_cls.get.return_value = tg
+        target_reports_schema.return_value = False
+
+        from testgen.common.test_definition_export_import_service import export_definitions
+
+        result = export_definitions(_make_test_suite(table_groups_id=tg.id), Origin.both, None, None)
+
+        assert result.source.table_group_schema is None
+        assert "table_group_schema" not in result.model_dump(exclude_defaults=True)["source"]
 
     @patch(f"{SERVICE_MODULE}.settings")
     @patch(f"{SERVICE_MODULE}.TableGroup")
@@ -2258,6 +2300,11 @@ def test_export_without_a_version_reads_what_the_suite_resolves_to():
             UnknownVersionError(MagicMock(), 9, 3),
             "unknown_version",
             "This contract has no version 9. Its versions are v1\u2013v3.",
+        ),
+        (
+            UnknownVersionError(MagicMock(), 2, 1),
+            "unknown_version",
+            "This contract has no version 2. Its only version is v1.",
         ),
     ],
 )

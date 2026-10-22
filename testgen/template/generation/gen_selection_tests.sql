@@ -14,7 +14,7 @@ selected_columns AS (
       WHERE dcc.table_groups_id = p.table_groups_id
         AND dcc.table_name = p.table_name
         AND dcc.column_name = p.column_name
-        AND dcc.excluded_data_element IS TRUE
+        AND (dcc.excluded_data_element IS TRUE OR dcc.drop_date IS NOT NULL)
     )
     AND {SELECTION_CRITERIA}
 )

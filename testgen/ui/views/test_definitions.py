@@ -17,16 +17,18 @@ from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
     table_group_qualifies_table_refs,
 )
-from testgen.common.enums import JobSource, SuiteType
+from testgen.common.enums import MANAGED_TEST_TYPES, JobSource, SuiteType
 from testgen.common.flavors import TableGroupSchemaLabel, table_group_schema_label
 from testgen.common.generation_set_service import CONTRACT_GENERATION_SET, MONITOR_GENERATION_SET
-from testgen.common.models import database_session, with_database_session
+from testgen.common.models import database_session, get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
+from testgen.common.models.suite_version import FrozenVersionError, RemovedInDraftError
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_definition import (
     MISSING_TEST_DEFINITION_MESSAGE,
     NON_PUBLIC_TEST_TYPES,
+    ManagedTestDefinitionError,
     MissingTestDefinitionError,
     TestDefinition,
     TestDefinitionMinimal,
@@ -64,6 +66,7 @@ from testgen.ui.components.widgets.download_dialog import (
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries import profiling_queries
+from testgen.ui.services.contract_page_service import contract_page
 from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db, fetch_from_target_db
 from testgen.ui.services.query_cache import (
     get_connection,
@@ -78,6 +81,7 @@ from testgen.ui.services.query_cache import (
 )
 from testgen.ui.services.test_definition_service import save_from_dialog
 from testgen.ui.session import session
+from testgen.ui.views.dialogs.contract_dialogs import contract_props, follow_editable_version
 from testgen.utils import dataframe_to_json_records, make_json_safe, to_dataframe
 
 LOG = logging.getLogger("testgen")
@@ -107,6 +111,10 @@ TD_PROFILING_KEY = "td:profiling"
 TD_IMPORT_DIALOG_KEY = "td:import_dialog"
 TD_IMPORT_PREVIEW_KEY = "td:import_preview"
 TD_IMPORT_RESULT_KEY = "td:import_result"
+TD_MANAGED_LEFT_OUT_KEY = "td:managed_left_out"
+
+REFUSED_WRITE_ERRORS = (ManagedTestDefinitionError, FrozenVersionError, RemovedInDraftError)
+CONTRACT_CHANGED_MESSAGE = "This contract changed since the page loaded. Refresh the page and try again."
 TD_IMPORT_PREVIEW_CONTENT_KEY = "td:import_preview_content"
 TD_IMPORT_PREVIEW_POLICY_KEY = "td:import_preview_policy"
 TD_IMPORT_FILE_NAME_KEY = "td:import_file_name"
@@ -153,9 +161,11 @@ class TestDefinitionsPage(Page):
         page: str | None = None,
         page_size: str | None = None,
         sort: str | None = None,
+        version: str | None = None,
+        tab: str | None = None,
         **_kwargs,
     ) -> None:
-        test_suite = get_test_suite(test_suite_id, TestSuite.suite_type == SuiteType.REGULAR)
+        test_suite = get_test_suite(test_suite_id, TestSuite.suite_type.in_((SuiteType.REGULAR, SuiteType.CONTRACT)))
         if not test_suite:
             self.router.navigate_with_warning(
                 f"Test suite with ID '{test_suite_id}' does not exist. Redirecting to list of Test Suites ...",
@@ -191,12 +201,21 @@ class TestDefinitionsPage(Page):
         with st.spinner("Loading data ..."):
             user_can_edit = session.auth.user_has_permission("edit")
             user_can_disposition = session.auth.user_has_permission("disposition")
+            contract = (
+                contract_page(test_suite, version, user_can_edit)
+                if test_suite.suite_type == SuiteType.CONTRACT
+                else None
+            )
+            read_version_id = contract.read_version_id if contract else None
+            # Every control that changes the definitions is hidden on a contract version other than its editable one
+            grid_can_edit = contract.editable if contract else user_can_edit
+            grid_can_disposition = user_can_disposition and read_version_id is None
             df, total_count = get_test_definitions(test_suite, table_name, column_name, test_type, sorting_columns,
                                                     page_index=current_page, page_size=current_page_size,
-                                                    flagged_filter=flagged)
+                                                    flagged_filter=flagged, version_id=read_version_id)
             test_types = run_test_type_lookup_query().to_dict("records")
             table_columns = get_columns(str(table_group.id))
-            filter_columns_df = get_test_suite_columns(test_suite_id)
+            filter_columns_df = get_test_suite_columns(test_suite_id, read_version_id)
 
         # Build filter options
         table_options = sorted(filter_columns_df["table_name"].dropna().unique().tolist(), key=str.lower)
@@ -271,7 +290,12 @@ class TestDefinitionsPage(Page):
 
         delete_dialog = None
         if selected := st.session_state.get(TD_DELETE_DIALOG_KEY):
-            delete_dialog = {"open": True, "count": len(selected), "ids": [s["id"] for s in selected]}
+            delete_dialog = {
+                "open": True,
+                "count": len(selected),
+                "ids": [s["id"] for s in selected],
+                "managed_note": _managed_left_out_note(st.session_state.get(TD_MANAGED_LEFT_OUT_KEY, 0)),
+            }
 
         unlock_dialog = None
         if selected := st.session_state.get(TD_UNLOCK_DIALOG_KEY):
@@ -305,6 +329,7 @@ class TestDefinitionsPage(Page):
             copy_move_dialog = {
                 "open": True,
                 "selected": selected,
+                "managed_note": _managed_left_out_note(st.session_state.get(TD_MANAGED_LEFT_OUT_KEY, 0)),
                 "projects": [
                     {"project_code": p.project_code, "project_name": p.project_name}
                     for p in editable_projects
@@ -323,7 +348,9 @@ class TestDefinitionsPage(Page):
             run_tests_data = {
                 "open": True,
                 "project_code": project_code,
-                "test_suites": [{"value": str(test_suite.id), "label": test_suite.test_suite}],
+                "test_suites": [
+                    contract.run_option if contract else {"value": str(test_suite.id), "label": test_suite.test_suite},
+                ],
                 "default_test_suite_id": str(test_suite.id),
                 "result": st.session_state.get(TD_RUN_TESTS_RESULT_KEY),
             }
@@ -333,6 +360,10 @@ class TestDefinitionsPage(Page):
             notes_dialog = _load_notes_dialog_data(notes_state.get("id") or notes_state, df)
 
         # --- Event handlers ---
+
+        def follow_contract_draft() -> None:
+            if contract:
+                follow_editable_version(test_suite)
 
         def on_add_dialog_opened(*_) -> None:
             st.session_state[TD_ADD_DIALOG_KEY] = True
@@ -349,17 +380,39 @@ class TestDefinitionsPage(Page):
                 test_def = dataframe_to_json_records(row_df)[0]
                 st.session_state[TD_EDIT_DIALOG_KEY] = test_def
 
+        def open_without_managed(dialog_key: str, rows: list[dict]) -> None:
+            managed = _managed_ids([row["id"] for row in rows])
+            kept = [row for row in rows if row["id"] not in managed]
+            if rows and not kept:
+                st.toast(
+                    "TestGen manages the selected test. It cannot be deleted, moved, or copied."
+                    if len(rows) == 1
+                    else "TestGen manages the selected tests. They cannot be deleted, moved, or copied.",
+                    icon=":material/error:",
+                )
+                return
+            st.session_state[dialog_key] = kept
+            st.session_state[TD_MANAGED_LEFT_OUT_KEY] = len(managed)
+
+        def refuse_write(error: Exception, *dialog_keys: str) -> None:
+            get_current_session().rollback()
+            message = str(error) if isinstance(error, ManagedTestDefinitionError) else CONTRACT_CHANGED_MESSAGE
+            st.toast(message, icon=":material/error:")
+            for key in (*dialog_keys, TD_MANAGED_LEFT_OUT_KEY):
+                st.session_state.pop(key, None)
+
+        @with_database_session
         def on_delete_dialog_opened(selected: list) -> None:
-            # Extract just ids from the payload
-            if selected and isinstance(selected[0], dict):
-                st.session_state[TD_DELETE_DIALOG_KEY] = [{"id": s["id"]} for s in selected]
-            else:
-                st.session_state[TD_DELETE_DIALOG_KEY] = selected
+            open_without_managed(
+                TD_DELETE_DIALOG_KEY, [{"id": s["id"] if isinstance(s, dict) else s} for s in selected or []]
+            )
 
         @with_database_session
         def on_delete_all_opened(*_) -> None:
-            all_ids = get_test_definition_ids(test_suite, table_name, column_name, test_type, flagged_filter=flagged)
-            st.session_state[TD_DELETE_DIALOG_KEY] = [{"id": id_} for id_ in all_ids]
+            all_ids = get_test_definition_ids(
+                test_suite, table_name, column_name, test_type, flagged_filter=flagged, version_id=read_version_id
+            )
+            open_without_managed(TD_DELETE_DIALOG_KEY, [{"id": id_} for id_ in all_ids])
 
         def on_unlock_dialog_opened(selected: list) -> None:
             if selected and isinstance(selected[0], dict):
@@ -369,21 +422,25 @@ class TestDefinitionsPage(Page):
 
         @with_database_session
         def on_unlock_all_opened(*_) -> None:
-            all_ids = get_test_definition_ids(test_suite, table_name, column_name, test_type, flagged_filter=flagged)
+            all_ids = get_test_definition_ids(
+                test_suite, table_name, column_name, test_type, flagged_filter=flagged, version_id=read_version_id
+            )
             st.session_state[TD_UNLOCK_DIALOG_KEY] = [{"id": id_} for id_ in all_ids]
 
         @with_database_session
         def on_copy_move_dialog_opened(selected) -> None:
             if selected == "all":
-                all_ids = get_test_definition_ids(test_suite, table_name, column_name, test_type, flagged_filter=flagged)
-                results = select_test_definitions_where(TestDefinition.id.in_(all_ids))
+                all_ids = get_test_definition_ids(
+                    test_suite, table_name, column_name, test_type, flagged_filter=flagged, version_id=read_version_id
+                )
+                results = select_test_definitions_where(TestDefinition.id.in_(all_ids), version_id=read_version_id)
                 selected = [
                     {"id": str(r.id), "table_name": r.table_name, "column_name": r.column_name,
                      "test_type": r.test_type, "lock_refresh": r.lock_refresh}
                     for r in results
                 ]
             # selected contains minimal row dicts (id, table_name, column_name, test_type, lock_refresh)
-            st.session_state[TD_COPY_MOVE_DIALOG_KEY] = selected
+            open_without_managed(TD_COPY_MOVE_DIALOG_KEY, selected)
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, None)
 
@@ -397,6 +454,7 @@ class TestDefinitionsPage(Page):
 
         def on_delete_dialog_closed(*_) -> None:
             st.session_state.pop(TD_DELETE_DIALOG_KEY, None)
+            st.session_state.pop(TD_MANAGED_LEFT_OUT_KEY, None)
 
         def on_unlock_dialog_closed(*_) -> None:
             st.session_state.pop(TD_UNLOCK_DIALOG_KEY, None)
@@ -405,6 +463,7 @@ class TestDefinitionsPage(Page):
             st.session_state.pop(TD_COPY_MOVE_DIALOG_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, None)
+            st.session_state.pop(TD_MANAGED_LEFT_OUT_KEY, None)
 
         def _save_test_definition(test_def: dict) -> str | None:
             td_columns = set(TestDefinition.__table__.columns.keys())
@@ -421,6 +480,7 @@ class TestDefinitionsPage(Page):
                 st.session_state[TD_VALIDATE_RESULT_KEY] = {"success": False, "message": error}
                 return
             st.cache_data.clear()
+            follow_contract_draft()
             st.session_state.pop(TD_ADD_DIALOG_KEY, None)
             st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)
 
@@ -431,25 +491,40 @@ class TestDefinitionsPage(Page):
                 error = _save_test_definition(test_def)
             except MissingTestDefinitionError:
                 error = MISSING_TEST_DEFINITION_MESSAGE
+            except (FrozenVersionError, RemovedInDraftError):
+                get_current_session().rollback()
+                error = CONTRACT_CHANGED_MESSAGE
             if error:
                 st.session_state[TD_VALIDATE_RESULT_KEY] = {"success": False, "message": error}
                 return
             st.cache_data.clear()
+            follow_contract_draft()
             st.session_state.pop(TD_EDIT_DIALOG_KEY, None)
             st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)
 
         @with_database_session
         def on_delete_confirmed(payload: dict) -> None:
             ids = payload.get("ids", [])
-            TestDefinition.delete_where(TestDefinition.id.in_(ids))
+            try:
+                TestDefinition.delete_where(TestDefinition.id.in_(ids))
+            except REFUSED_WRITE_ERRORS as error:
+                refuse_write(error, TD_DELETE_DIALOG_KEY)
+                return
             st.cache_data.clear()
+            follow_contract_draft()
             st.session_state.pop(TD_DELETE_DIALOG_KEY, None)
+            st.session_state.pop(TD_MANAGED_LEFT_OUT_KEY, None)
 
         @with_database_session
         def on_unlock_confirmed(payload: dict) -> None:
             ids = payload.get("ids", [])
-            TestDefinition.set_status_attribute("lock_refresh", ids, False)
+            try:
+                TestDefinition.set_status_attribute("lock_refresh", ids, False)
+            except REFUSED_WRITE_ERRORS as error:
+                refuse_write(error, TD_UNLOCK_DIALOG_KEY)
+                return
             st.cache_data.clear()
+            follow_contract_draft()
             st.session_state.pop(TD_UNLOCK_DIALOG_KEY, None)
 
         @with_database_session
@@ -457,17 +532,29 @@ class TestDefinitionsPage(Page):
             attribute = payload["attribute"]
             ids = payload["ids"]
             value = payload["value"]
-            TestDefinition.set_status_attribute(attribute, ids, value)
+            try:
+                TestDefinition.set_status_attribute(attribute, ids, value)
+            except REFUSED_WRITE_ERRORS as error:
+                refuse_write(error)
+                return
             st.cache_data.clear()
+            follow_contract_draft()
 
         @with_database_session
         def on_update_attribute_all(payload: dict) -> None:
             attribute = payload["attribute"]
             value = payload["value"]
-            all_ids = get_test_definition_ids(test_suite, table_name, column_name, test_type, flagged_filter=flagged)
+            all_ids = get_test_definition_ids(
+                test_suite, table_name, column_name, test_type, flagged_filter=flagged, version_id=read_version_id
+            )
             if all_ids:
-                TestDefinition.set_status_attribute(attribute, all_ids, value)
+                try:
+                    TestDefinition.set_status_attribute(attribute, all_ids, value)
+                except REFUSED_WRITE_ERRORS as error:
+                    refuse_write(error)
+                    return
                 st.cache_data.clear()
+                follow_contract_draft()
 
 
         @with_database_session
@@ -483,22 +570,27 @@ class TestDefinitionsPage(Page):
                 st.toast("You do not have edit permission for the target project.", icon=":material/error:")
                 return
             overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
-            if overwrite_ids:
-                TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
-            TestDefinition.copy(
-                ids,
-                target_tg_id,
-                target_ts_id,
-                target_table,
-                target_col,
-                target_schema=target_tg.table_group_schema,
-                qualifies_table_refs=table_group_qualifies_table_refs(target_tg_id),
-            )
+            try:
+                if overwrite_ids:
+                    TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
+                TestDefinition.copy(
+                    ids,
+                    target_tg_id,
+                    target_ts_id,
+                    target_table,
+                    target_col,
+                    target_schema=target_tg.table_group_schema,
+                    qualifies_table_refs=table_group_qualifies_table_refs(target_tg_id),
+                )
+            except REFUSED_WRITE_ERRORS as error:
+                refuse_write(error, TD_COPY_MOVE_DIALOG_KEY, TD_COPY_MOVE_COLLISION_KEY)
+                return
             st.cache_data.clear()
             get_test_suite_columns.clear()
             st.session_state.pop(TD_COPY_MOVE_DIALOG_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, None)
+            st.session_state.pop(TD_MANAGED_LEFT_OUT_KEY, None)
 
         @with_database_session
         def on_move_confirmed(payload: dict) -> None:
@@ -513,22 +605,28 @@ class TestDefinitionsPage(Page):
                 st.toast("You do not have edit permission for the target project.", icon=":material/error:")
                 return
             overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
-            if overwrite_ids:
-                TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
-            TestDefinition.move(
-                ids,
-                target_tg_id,
-                target_ts_id,
-                target_table,
-                target_col,
-                target_schema=target_tg.table_group_schema,
-                qualifies_table_refs=table_group_qualifies_table_refs(target_tg_id),
-            )
+            try:
+                if overwrite_ids:
+                    TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
+                TestDefinition.move(
+                    ids,
+                    target_tg_id,
+                    target_ts_id,
+                    target_table,
+                    target_col,
+                    target_schema=target_tg.table_group_schema,
+                    qualifies_table_refs=table_group_qualifies_table_refs(target_tg_id),
+                )
+            except REFUSED_WRITE_ERRORS as error:
+                refuse_write(error, TD_COPY_MOVE_DIALOG_KEY, TD_COPY_MOVE_COLLISION_KEY)
+                return
             st.cache_data.clear()
+            follow_contract_draft()
             get_test_suite_columns.clear()
             st.session_state.pop(TD_COPY_MOVE_DIALOG_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, None)
+            st.session_state.pop(TD_MANAGED_LEFT_OUT_KEY, None)
 
         @with_database_session
         def on_copy_move_target_changed(payload: dict) -> None:
@@ -574,7 +672,10 @@ class TestDefinitionsPage(Page):
             try:
                 JobExecution.submit(
                     job_key="run-tests",
-                    kwargs={"test_suite_id": str(selected_id)},
+                    kwargs={
+                        "test_suite_id": str(selected_id),
+                        **({"version_id": str(data["version_id"])} if data.get("version_id") else {}),
+                    },
                     source=JobSource.ui,
                     project_code=project_code,
                 )
@@ -644,7 +745,7 @@ class TestDefinitionsPage(Page):
             download_dialog(
                 dialog_title="Download Excel Report",
                 file_content_func=get_excel_report_data,
-                args=(test_suite, table_group.table_group_schema, schema_label),
+                args=(test_suite, table_group.table_group_schema, schema_label, None, read_version_id),
             )
 
         def on_export_filtered(payload: dict) -> None:
@@ -659,7 +760,7 @@ class TestDefinitionsPage(Page):
         def on_export_selected(payload: dict) -> None:
             ids = payload.get("ids", [])
             if ids:
-                data, _ = get_test_definitions(test_suite)
+                data, _ = get_test_definitions(test_suite, version_id=read_version_id)
                 data = data[data["id"].isin(ids)]
                 download_dialog(
                     dialog_title="Download Excel Report",
@@ -724,6 +825,8 @@ class TestDefinitionsPage(Page):
             policy = st.session_state.get(TD_IMPORT_PREVIEW_POLICY_KEY, IMPORT_POLICY_DEFAULTS)
             result = _run_import(test_suite, content, policy)
             st.session_state[TD_IMPORT_RESULT_KEY] = result
+            if result["success"]:
+                follow_contract_draft()
             # A failed import keeps its preview and content so a retry is one click away;
             # storing a new preview clears the result.
             if result["success"]:
@@ -738,7 +841,7 @@ class TestDefinitionsPage(Page):
             download_dialog(
                 dialog_title="Download Test Definitions",
                 file_content_func=get_test_definitions_json_data,
-                args=(test_suite,),
+                args=(test_suite, read_version_id),
             )
 
         def on_filter_changed(filters: dict) -> None:
@@ -787,9 +890,15 @@ class TestDefinitionsPage(Page):
                 "file_name": st.session_state.get(TD_IMPORT_FILE_NAME_KEY),
             }
 
+        contract_data, contract_handlers = (
+            contract_props(test_suite, contract, project_code, tab) if contract else (None, {})
+        )
+
         testgen.test_definitions_widget(
             key="test_definitions",
+            **contract_handlers,
             data={
+                "contract": contract_data,
                 "test_suite": {
                     "id": str(test_suite.id),
                     "test_suite": test_suite.test_suite,
@@ -814,9 +923,12 @@ class TestDefinitionsPage(Page):
                 "page_size": current_page_size,
                 "sort_state": sort_state,
                 "permissions": {
-                    "can_edit": user_can_edit,
-                    "can_disposition": user_can_disposition,
+                    "can_edit": grid_can_edit,
+                    "can_disposition": grid_can_disposition,
+                    "can_run": user_can_edit,
+                    "can_note": user_can_edit,
                 },
+                "run_tests_disabled_reason": contract.run_disabled_reason if contract else None,
                 "validate_result": validate_result,
                 "add_dialog": add_dialog,
                 "edit_dialog": edit_dialog,
@@ -912,13 +1024,14 @@ def get_excel_report_data(
     schema: str,
     schema_label: str | None,
     data: pd.DataFrame | None = None,
+    version_id: UUID | None = None,
 ) -> FILE_DATA_TYPE:
     from datetime import datetime
 
     if data is not None:
         data = data.copy()
     else:
-        data, _ = get_test_definitions(test_suite)
+        data, _ = get_test_definitions(test_suite, version_id=version_id)
 
     for key in ["test_active_display", "lock_refresh_display", "flagged_display"]:
         data[key] = data[key].apply(lambda val: val if val == "Yes" else None)
@@ -1150,9 +1263,10 @@ def _import_target_labels(
 def get_test_definitions_json_data(
     update_progress: PROGRESS_UPDATE_TYPE,
     test_suite: TestSuite,
+    version_id: UUID | None = None,
 ) -> FILE_DATA_TYPE:
     update_progress(0.3)
-    document = export_definitions(test_suite, Origin.both, None, None)
+    document = export_definitions(test_suite, Origin.both, None, None, version_id)
     update_progress(0.8)
 
     # exclude_defaults keeps the document compact and, more importantly, lets import
@@ -1228,10 +1342,11 @@ def run_test_type_lookup_query(test_type: str | None = None) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def get_test_suite_columns(test_suite_id: str) -> pd.DataFrame:
+def get_test_suite_columns(test_suite_id: str, version_id: UUID | None = None) -> pd.DataFrame:
     results = select_test_definitions_minimal_where(
         TestDefinition.test_suite_id == test_suite_id,
         order_by=(asc(func.lower(TestDefinition.table_name)), asc(func.lower(TestDefinition.column_name))),
+        version_id=version_id,
     )
     return to_dataframe(results, TestDefinitionMinimal.columns())
 
@@ -1245,6 +1360,7 @@ def get_test_definitions(
     page_index: int | None = None,
     page_size: int = 500,
     flagged_filter: str | None = None,
+    version_id: UUID | None = None,
 ) -> tuple[pd.DataFrame, int]:
     """Return ``(df, total_count)`` for test definitions matching the given filters.
 
@@ -1287,9 +1403,10 @@ def get_test_definitions(
             order_by=order_by_tuple,
             page=page_index + 1,
             limit=page_size,
+            version_id=version_id,
         )
     else:
-        test_definitions = select_test_definitions_where(*clauses, order_by=order_by_tuple)
+        test_definitions = select_test_definitions_where(*clauses, order_by=order_by_tuple, version_id=version_id)
         total_count = len(test_definitions)
 
     df = to_dataframe(test_definitions, TestDefinitionSummary.columns())
@@ -1325,12 +1442,32 @@ def get_test_definitions(
     return df, total_count
 
 
+def _managed_ids(ids: list[str]) -> set[str]:
+    """The ids among the given ones that name a definition of a managed test type."""
+    if not ids:
+        return set()
+    rows = select_test_definitions_minimal_where(
+        TestDefinition.id.in_(ids), TestDefinition.test_type.in_(MANAGED_TEST_TYPES)
+    )
+    return {str(row.id) for row in rows}
+
+
+def _managed_left_out_note(count: int) -> str | None:
+    """The line telling the user how many selected tests a bulk dialog leaves out because TestGen manages them."""
+    if not count:
+        return None
+    if count == 1:
+        return "1 selected test is managed by TestGen and is left out."
+    return f"{count} selected tests are managed by TestGen and are left out."
+
+
 def get_test_definition_ids(
     test_suite: TestSuite,
     table_name: str | None = None,
     column_name: str | None = None,
     test_type: str | None = None,
     flagged_filter: str | None = None,
+    version_id: UUID | None = None,
 ) -> list[str]:
     clauses = [TestDefinition.test_suite_id == test_suite.id]
     if table_name:
@@ -1343,7 +1480,7 @@ def get_test_definition_ids(
         clauses.append(TestDefinition.flagged == True)
     elif flagged_filter == "Not Flagged":
         clauses.append(TestDefinition.flagged == False)
-    results = select_test_definitions_where(*clauses)
+    results = select_test_definitions_where(*clauses, version_id=version_id)
     return [str(r.id) for r in results]
 
 

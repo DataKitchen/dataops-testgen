@@ -16,9 +16,8 @@ from testgen.utils import chunk_queries, to_sql_timestamp
 
 def _like_to_regex(pattern: str) -> re.Pattern[str]:
     # Mirrors SQL LIKE semantics used in _get_table_criteria: `%` is the only
-    # wildcard; `_` is treated as a literal character (escaped to `\_` in the
-    # SQL path). Anything else is literal.
-    return re.compile("^" + re.escape(pattern.strip()).replace("%", ".*") + "$")
+    # wildcard; `_` and `\_` both match a literal underscore. Anything else is literal.
+    return re.compile("^" + re.escape(pattern.strip().replace("\\_", "_")).replace("%", ".*") + "$")
 
 
 class RefreshDataCharsSQL:
@@ -68,30 +67,36 @@ class RefreshDataCharsSQL:
     def _get_table_criteria(self) -> str:
         table_criteria = ""
         ddf_table_ref = self.flavor_service.ddf_table_ref
-        escaped_underscore = self.flavor_service.escaped_underscore
         escape_clause = self.flavor_service.escape_clause
 
         if table_names := split_criteria(self.table_group.profiling_table_set):
-            quoted_table_names = ",".join([f"'{item}'" for item in table_names])
-            table_criteria += f" AND c.{ddf_table_ref} IN ({quoted_table_names})"
+            # Oracle allows at most 1000 expressions in an IN list
+            in_lists = [
+                f"c.{ddf_table_ref} IN ({self.flavor_service.string_literal_list(table_names[i:i + 1000])})"
+                for i in range(0, len(table_names), 1000)
+            ]
+            table_criteria += f" AND ({' OR '.join(in_lists)})"
 
         if include_masks := split_criteria(self.table_group.profiling_include_mask):
-            include_table_names = [item.replace("_", escaped_underscore) for item in include_masks]
             table_criteria += f"""
             AND (
-                {" OR ".join([ f"(c.{ddf_table_ref} LIKE '{item}' {escape_clause})" for item in include_table_names ])}
+                {" OR ".join([ f"(c.{ddf_table_ref} LIKE {self._like_pattern(item)} {escape_clause})" for item in include_masks ])}
             )
             """
 
         if exclude_masks := split_criteria(self.table_group.profiling_exclude_mask):
-            exclude_table_names = [item.replace("_", escaped_underscore) for item in exclude_masks]
             table_criteria += f"""
             AND NOT (
-                {" OR ".join([ f"(c.{ddf_table_ref} LIKE '{item}' {escape_clause})" for item in exclude_table_names ])}
+                {" OR ".join([ f"(c.{ddf_table_ref} LIKE {self._like_pattern(item)} {escape_clause})" for item in exclude_masks ])}
             )
             """
 
         return table_criteria
+
+    def _like_pattern(self, mask: str) -> str:
+        # `\_` is the usual way to write a literal underscore in a LIKE pattern, so stored masks may carry it
+        escaped = re.sub(r"\\?_", lambda _: self.flavor_service.escaped_underscore, mask)
+        return self.flavor_service.string_literal(escaped)
 
     def filter_schema_columns(self, columns: list[ColumnChars]) -> list[ColumnChars]:
         """Apply the table group's filters (table set, include/exclude masks) to a column list.

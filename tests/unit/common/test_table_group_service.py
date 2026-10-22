@@ -174,13 +174,13 @@ def test_validate_names_fields_by_their_public_names_by_default():
     errors = validate_table_group_fields(_tg(
         table_groups_name="",
         table_group_schema="",
-        profiling_include_mask="x" * 2001,
+        description="x" * 1001,
     ))
 
     assert errors == [
         "`table_group_name` is required.",
         "`schema_name` is required.",
-        "`include_masks` must be at most 2000 characters in total, counting a comma between entries.",
+        "`description` must be at most 1000 characters.",
     ]
 
 
@@ -234,23 +234,11 @@ def test_validate_rejects_a_schema_that_would_end_the_quoting():
     assert "`schema_name` must not contain quote characters or control characters." in errors
 
 
-@pytest.mark.parametrize(
-    ("attr", "message_name"),
-    [
-        ("profiling_table_set", "table_set"),
-        ("profiling_include_mask", "include_masks"),
-        ("profiling_exclude_mask", "exclude_masks"),
-    ],
-)
-def test_validate_measures_a_list_column_as_stored(attr, message_name):
-    """The list columns hold their entries comma-joined, so the width counts the commas."""
-    tables = [f"client_table_{i:03d}" for i in range(120)]
+@pytest.mark.parametrize("attr", ["profiling_table_set", "profiling_include_mask", "profiling_exclude_mask"])
+def test_validate_accepts_a_long_table_list(attr):
+    tables = [f"client_table_{i:03d}" for i in range(500)]
 
-    errors = validate_table_group_fields(_tg(**{attr: ",".join(tables)}))
-
-    assert errors == [
-        f"`{message_name}` must be at most 2000 characters in total, counting a comma between entries.",
-    ]
+    assert validate_table_group_fields(_tg(**{attr: ",".join(tables)})) == []
 
 
 def test_validate_rejects_integers_beyond_their_columns():

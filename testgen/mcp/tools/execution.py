@@ -22,6 +22,7 @@ from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
     DocGroup,
+    match_enum,
     not_a_contract_error,
     parse_uuid,
     resolve_table_group,
@@ -156,7 +157,7 @@ def generate_tests(
         )),
     ] = None,
 ) -> str:
-    """Submit a test-generation job for a test suite or a contract.
+    """Submit a test-generation job for a test suite, including a contract.
     Auto-creates test definitions from the latest profiling results for the table group;
     locked and manually created test definitions are preserved. Returns immediately with
     a job_execution_id.
@@ -186,9 +187,12 @@ def generate_tests(
         table_group = TableGroup.get(suite.table_groups_id)
         profiled = resolve_generation_profile_run(table_group) is not None
         try:
-            groups = parse_regeneration_groups(
-                list(RegenerationGroup) if regenerate is None else regenerate, has_profiling_run=profiled
+            requested = (
+                list(RegenerationGroup)
+                if regenerate is None
+                else [match_enum(value, RegenerationGroup) or value for value in regenerate]
             )
+            groups = parse_regeneration_groups(requested, has_profiling_run=profiled)
         except ValueError as error:
             raise MCPUserError(str(error)) from error
         if not profiled and (skipped := unprofiled_regeneration_note(table_group.table_groups_name, groups)):
