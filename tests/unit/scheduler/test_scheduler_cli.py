@@ -298,3 +298,17 @@ def test_the_scheduler_drives_its_executor(scheduler_instance):
 
         scheduler_instance.wait(3)
         wait.assert_called_once_with(3)
+
+
+def test_a_failed_start_still_stops_the_executor(scheduler_instance):
+    """The poll thread is not a daemon, so an executor left running keeps the process alive."""
+    executor = scheduler_instance.executor
+    with (
+        patch.object(scheduler_instance, "start", side_effect=RuntimeError("boom")),
+        patch.object(executor, "drain"),
+        patch("testgen.scheduler.cli_scheduler.signal.signal"),
+        pytest.raises(RuntimeError),
+    ):
+        scheduler_instance.run()
+
+    assert executor._stopping.is_set()

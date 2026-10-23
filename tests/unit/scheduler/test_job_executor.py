@@ -1,3 +1,4 @@
+import signal
 from unittest.mock import MagicMock, Mock, patch
 from uuid import uuid4
 
@@ -153,6 +154,7 @@ def test_poll_loop_claims_and_dispatches(executor, job_exec, mock_session):
         return call_count > 1
 
     executor._stopping = Mock()
+    executor._stopping.is_set.return_value = False
     executor._stopping.wait.side_effect = stopping_side_effect
 
     with (
@@ -174,6 +176,7 @@ def test_poll_loop_handles_claim_error(executor, mock_session):
         return call_count > 1
 
     executor._stopping = Mock()
+    executor._stopping.is_set.return_value = False
     executor._stopping.wait.side_effect = stopping_side_effect
 
     with patch.object(JobExecution, "claim_actionable", side_effect=RuntimeError("db down")):
@@ -201,6 +204,7 @@ def test_poll_loop_skips_wait_when_batch_full(executor, mock_session):
         return partial_batch
 
     executor._stopping = Mock()
+    executor._stopping.is_set.return_value = False
     executor._stopping.wait.side_effect = stopping_side_effect
 
     with (
@@ -232,6 +236,7 @@ def test_poll_loop_routes_cancel_requested(executor, mock_session):
         return call_count > 1
 
     executor._stopping = Mock()
+    executor._stopping.is_set.return_value = False
     executor._stopping.wait.side_effect = stopping_side_effect
 
     with (
@@ -255,6 +260,7 @@ def _run_one_poll(executor, actionable):
         return call_count > 1
 
     executor._stopping = Mock()
+    executor._stopping.is_set.return_value = False
     executor._stopping.wait.side_effect = stopping_side_effect
     with (
         patch.object(JobExecution, "claim_actionable", return_value=actionable) as claim_mock,
@@ -294,6 +300,7 @@ def test_claimed_in_process_rows_do_not_fill_the_batch(executor, mock_session):
         return in_process_batch
 
     executor._stopping = Mock()
+    executor._stopping.is_set.return_value = False
     executor._stopping.wait.side_effect = stopping_side_effect
     with (
         patch(f"{EXECUTOR_MODULE}.settings.MAX_CONCURRENT_IN_PROCESS_RUNS", batch_size),
@@ -439,6 +446,7 @@ def test_a_processing_failure_settles_the_row_without_callbacks(executor, job_ex
     """The real run state is unknown here, and a live job process may still finish and settle it."""
     mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job_exec, status="error")
     executor._stopping = Mock()
+    executor._stopping.is_set.return_value = False
     executor._stopping.wait.side_effect = [False, True]
     callback = Mock()
 
@@ -607,3 +615,40 @@ def test_the_kill_deadline_is_armed_once_however_often_the_poll_asks(executor):
             executor._schedule_force_kill(job_id, proc)
 
     assert timer.call_count == 1
+
+
+def test_the_poll_stops_even_while_batches_come_back_full(executor, mock_session):
+    """A backlog keeps every batch full, and a full batch skips the wait that checks for a stop."""
+    full_batch = [
+        JobExecution(id=uuid4(), job_key=JobKey.run_tests, kwargs={}, source="ui", status="claimed", in_process=False)
+        for _ in range(executor._poll_batch_size)
+    ]
+    polls = 0
+
+    def claim(**_kwargs):
+        nonlocal polls
+        polls += 1
+        if polls == 2:
+            executor.stop()
+        return full_batch
+
+    with (
+        patch.object(JobExecution, "claim_actionable", side_effect=claim),
+        patch.object(executor, "_dispatch"),
+    ):
+        executor._poll_loop()
+
+    assert polls == 2
+
+
+def test_signaling_running_jobs_survives_a_job_exiting_meanwhile(executor):
+    """The handler runs while watcher threads remove the jobs that exit."""
+    first, second = MagicMock(), MagicMock()
+    executor._running_jobs[uuid4()] = first
+    executor._running_jobs[uuid4()] = second
+    first.send_signal.side_effect = lambda _signum: executor._running_jobs.pop(next(iter(executor._running_jobs)))
+
+    executor.signal_running_jobs(signal.SIGTERM)
+
+    first.send_signal.assert_called_once_with(signal.SIGTERM)
+    second.send_signal.assert_called_once_with(signal.SIGTERM)

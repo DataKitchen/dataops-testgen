@@ -117,6 +117,8 @@ class CliScheduler(Scheduler):
             self.shutdown()
             self.wait()
         finally:
+            # Already stopped on a clean shutdown; this covers a start or a wait that raised.
+            self.executor.stop()
             LOG.info("The scheduler has been shut down. No new jobs will be started.")
 
             self.executor.drain()

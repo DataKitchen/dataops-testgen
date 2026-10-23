@@ -49,7 +49,9 @@ class JobExecutor:
     def signal_running_jobs(self, signum: int) -> None:
         """Send ``signum`` to every running job process."""
         LOG.info("Received signal %s, propagating to %d running job(s)", signal.Signals(signum).name, len(self._running_jobs))
-        for proc in self._running_jobs.values():
+        # A snapshot: this runs in a signal handler, which cannot take the lock, while job
+        # watcher threads add and remove entries.
+        for proc in list(self._running_jobs.values()):
             proc.send_signal(signum)
 
     def drain(self) -> None:
@@ -81,7 +83,8 @@ class JobExecutor:
 
     def _poll_loop(self):
         skip_wait = False
-        while skip_wait or not self._stopping.wait(timeout=self._poll_interval):
+        # Checked on its own as well: a full batch skips the wait, and with it the stop check.
+        while not self._stopping.is_set() and (skip_wait or not self._stopping.wait(timeout=self._poll_interval)):
             try:
                 with self._running_jobs_cond:
                     free_slots = settings.MAX_CONCURRENT_IN_PROCESS_RUNS - len(self._in_process_jobs)
