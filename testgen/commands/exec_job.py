@@ -11,8 +11,7 @@ import logging
 import os
 import signal
 import sys
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from functools import partial
 from uuid import UUID
 
@@ -49,10 +48,11 @@ def exec_job(job_execution_id: UUID) -> None:
             job_config = JOB_DISPATCH.get(job_exec.job_key)
 
         if not job_config:
-            _settle(job_exec, partial(job_exec.mark_failed, f"Unknown job key: {job_exec.job_key}"))
+            _settle(job_execution_id, lambda job: job.mark_failed(f"Unknown job key: {job.job_key}"))
             return
 
-        if not _settle(job_exec, job_exec.mark_running):
+        started, job_exec = _settle(job_execution_id, lambda job: job.mark_running())
+        if not started:
             LOG.info("Job %s could not transition to running, skipping", job_execution_id)
             return
         if job_exec.status != JobStatus.RUNNING:
@@ -65,7 +65,7 @@ def exec_job(job_execution_id: UUID) -> None:
             with database_session():
                 job_exec = JobExecution.get(job_execution_id)
                 job_config.handler(**job_exec.kwargs)
-            _settle(job_exec, job_exec.mark_completed)
+            _settle(job_execution_id, lambda job: job.mark_completed())
         except JobParked as interrupted:
             # Publishing the status here rather than where the stop was detected is deliberate:
             # by now the handler has finished unwinding, so a run this hands to the next claimer
@@ -74,10 +74,12 @@ def exec_job(job_execution_id: UUID) -> None:
             # than handed on, and a cancel that arrived meanwhile ends the run.
             # Returning exits 0, which the scheduler reads as a clean stop.
             LOG.info("Job %s stopped in step '%s'", job_execution_id, interrupted.step)
-            _settle(job_exec, partial(job_exec.park, interrupted.resume_state))
+            resume_state = interrupted.resume_state
+            _settle(job_execution_id, lambda job: job.park(resume_state))
         except Exception as e:
             LOG.exception("Job %s failed", job_execution_id)
-            _settle(job_exec, partial(job_exec.mark_failed, get_exception_message(e)))
+            message = get_exception_message(e)
+            _settle(job_execution_id, lambda job: job.mark_failed(message))
         finally:
             job_context.reset(context_token)
 
@@ -86,24 +88,25 @@ def exec_job(job_execution_id: UUID) -> None:
         sys.exit(1)
 
 
-def _settle(job_exec: JobExecution, transition: Callable[[], bool]) -> bool:
-    """``finalize`` the job with any terminate signal held until its callbacks have run.
+def _settle(job_execution_id: UUID, transition: Callable[[JobExecution], bool]) -> tuple[bool, JobExecution]:
+    """Reload the job and ``finalize`` it with ``transition``, holding any terminate signal meanwhile.
 
-    A terminate that lands after the transition commits would otherwise kill the process
-    mid-callback, and nothing fires them again: the row is already final.
+    The job is read afresh because a handler that raised has rolled back its session, which
+    expires every instance it loaded. A terminate held here is delivered afterwards only if the
+    job is still running; one that ended or parked exits normally, so its exit hooks run and send
+    what its final callbacks queued. Killed by the signal, the process would skip them, and nothing
+    reports the run again: its row is already final.
+
+    :returns: Whether ``transition`` moved the job, and the job as it stands after.
     """
-    with _termination_deferred():
-        return finalize(job_exec, transition)
-
-
-@contextmanager
-def _termination_deferred() -> Iterator[None]:
-    """Hold SIGTERM for the duration of the block, then deliver it to this process."""
+    with database_session():
+        job_exec = JobExecution.get(job_execution_id)
     received: list[int] = []
     previous = signal.signal(signal.SIGTERM, lambda signum, _frame: received.append(signum))
     try:
-        yield
+        settled = finalize(job_exec, partial(transition, job_exec))
     finally:
         signal.signal(signal.SIGTERM, previous)
-        if received:
-            os.kill(os.getpid(), signal.SIGTERM)
+    if received and job_exec.status == JobStatus.RUNNING:
+        os.kill(os.getpid(), signal.SIGTERM)
+    return settled, job_exec

@@ -351,35 +351,85 @@ def test_finalize_refuses_to_run_inside_an_open_session(mock_session):
     job.mark_completed.assert_not_called()
 
 
-def test_exec_job_holds_a_terminate_until_the_callbacks_have_run(mock_session):
-    """The row is final once the transition commits, so a terminate mid-callback would lose them."""
-    job = _make_job_exec(job_key=JobKey.run_tests)
-    job.mark_running.return_value = True
-    _settles(job, job.mark_completed, "canceled")
-    order = []
-
-    def callback(_job):
-        signal.raise_signal(signal.SIGTERM)
-        order.append("callback")
-
-    def terminate(_signum, _frame):
-        order.append("terminated")
-
-    previous = signal.signal(signal.SIGTERM, terminate)
+@pytest.fixture
+def terminate_handler():
+    """A SIGTERM handler that records the signal instead of ending the test run."""
+    received = []
+    previous = signal.signal(signal.SIGTERM, lambda _signum, _frame: received.append("terminated"))
     try:
-        with (
-            patch.object(JobExecution, "get", return_value=job),
-            patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock())}),
-            patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [callback]}),
-            patch("testgen.commands.exec_job.os.kill", side_effect=lambda _pid, sig: signal.raise_signal(sig)) as kill,
-        ):
-            exec_job(job.id)
-        assert signal.getsignal(signal.SIGTERM) is terminate
+        yield received
     finally:
         signal.signal(signal.SIGTERM, previous)
 
+
+def test_a_terminate_during_settling_waits_for_the_callbacks_and_then_lets_the_job_exit(
+    mock_session, terminate_handler,
+):
+    """Ended by the signal, the process would skip the exit hooks that send what the callbacks
+    queued, and nothing reports the run again once its row is final."""
+    job = _make_job_exec(job_key=JobKey.run_tests)
+    _settles(job, job.mark_completed, "canceled")
+
+    def callback(_job):
+        signal.raise_signal(signal.SIGTERM)
+        terminate_handler.append("callback")
+
+    with (
+        patch.object(JobExecution, "get", return_value=job),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock())}),
+        patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [callback]}),
+        patch("testgen.commands.exec_job.os.kill") as kill,
+    ):
+        exec_job(job.id)
+
+    kill.assert_not_called()
+    assert terminate_handler == ["callback"]
+
+
+def test_a_terminate_held_while_the_job_started_is_delivered_before_the_handler_runs(
+    mock_session, terminate_handler,
+):
+    """The cancel arrived just after the start, and a handler with no stop check must not run on."""
+    job = _make_job_exec(job_key=JobKey.run_tests)
+
+    def start(*_args):
+        signal.raise_signal(signal.SIGTERM)
+        job.status = "running"
+        return True
+
+    job.mark_running.side_effect = start
+    handler = Mock()
+
+    with (
+        patch.object(JobExecution, "get", return_value=job),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=handler)}),
+        patch("testgen.commands.exec_job.os.kill", side_effect=lambda _pid, sig: signal.raise_signal(sig)) as kill,
+        pytest.raises(SystemExit),
+    ):
+        # The real handler ends the process; this one stands in for that by raising.
+        signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(SystemExit(-15)))
+        exec_job(job.id)
+
     kill.assert_called_once_with(os.getpid(), signal.SIGTERM)
-    assert order == ["callback", "terminated"]
+    handler.assert_not_called()
+
+
+def test_a_failed_handler_settles_a_freshly_read_job(mock_session):
+    """The handler's session rolled back, which expires every instance it loaded."""
+    loaded = [_make_job_exec(job_key=JobKey.run_tests) for _ in range(4)]
+    for job in loaded:
+        job.id = loaded[0].id
+    handler = Mock(side_effect=RuntimeError("boom"))
+
+    with (
+        patch.object(JobExecution, "get", side_effect=loaded),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=handler)}),
+    ):
+        exec_job(loaded[0].id)
+
+    handler_job, settled_job = loaded[2], loaded[3]
+    handler_job.mark_failed.assert_not_called()
+    settled_job.mark_failed.assert_called_once_with("boom")
 
 
 def test_run_final_callbacks_isolates_failures():

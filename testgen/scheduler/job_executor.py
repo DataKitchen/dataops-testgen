@@ -191,12 +191,12 @@ class JobExecutor:
             raise
 
     def _proc_wrapper(self, proc: subprocess.Popen, job_exec: JobExecution):
-        """Monitor a subprocess and act as crash-recovery safety net.
+        """Watch a job process and settle its job when the process exits non-zero.
 
-        exec_job owns the full lifecycle and settles every exit of its own.
-        This wrapper only intervenes on nonzero exit codes, which indicate exec_job
-        itself crashed before it could update the DB (OOM, kill -9, etc.).
-        _transition() guards make redundant calls safe.
+        A process that exits cleanly has settled its own job. A non-zero exit means it was
+        terminated or killed (a cancel, a force-kill, the operating system) or crashed before it
+        could, and this settles the job as failed, or as canceled when a cancel was requested.
+        The guarded transition makes this a no-op for a job the process did settle.
         """
         with self._running_jobs_cond:
             self._running_jobs[job_exec.id] = proc
