@@ -459,7 +459,8 @@ def test_revocation_query_token_by_refresh_token(mock_get_session):
     mock_session.scalars.assert_called_once()
 
 
-def test_revocation_revoke_token_sets_timestamps():
+@patch("testgen.api.oauth.server.get_current_session")
+def test_revocation_revoke_token_sets_timestamps(_mock_get_session):
     token = MagicMock()
     request = MagicMock()
     request.form = {}
@@ -485,6 +486,108 @@ def test_revocation_access_only_hint():
     assert token.access_token_revoked_at is not None
     # refresh_token_revoked_at should NOT have been set
     assert token.refresh_token_revoked_at is None
+
+
+OWNER = MagicMock(id=uuid4(), username="alice")
+OWNER.name = "Alice"
+DAY = 86400
+
+
+def _client(*, public: bool = True) -> OAuth2Client:
+    client = OAuth2Client(client_id="c1")
+    client.set_client_metadata({
+        "client_name": "Claude",
+        "token_endpoint_auth_method": "none" if public else "client_secret_basic",
+    })
+    return client
+
+
+@pytest.fixture
+def tokens(audit_session):
+    """A database holding the token table, whose session is the current one."""
+    OAuth2Token.__table__.create(audit_session.get_bind())
+    with patch.object(audit_session, "get", return_value=OWNER):
+        yield audit_session
+
+
+def _token_row(session, chain_started_days_ago: float, *, refresh_revoked: bool = False, refresh: bool = True,
+               rotated_from: OAuth2Token | None = None) -> OAuth2Token:
+    """A token row of the chain started ``chain_started_days_ago``; ``rotated_from`` names the row it replaced."""
+    issued_at = int(time.time() - chain_started_days_ago * DAY)
+    row = OAuth2Token(
+        id=uuid4(),
+        client_id="c1",
+        user_id=OWNER.id,
+        token_type="Bearer",  # noqa: S106
+        access_token=uuid4().hex,
+        refresh_token=uuid4().hex if refresh else None,
+        scope="",
+        issued_at=issued_at,
+        expires_in=3600,
+        access_token_revoked_at=0,
+        refresh_token_revoked_at=int(time.time()) if refresh_revoked else 0,
+        refresh_token_chain_issued_at=rotated_from.refresh_chain_issued_at if rotated_from else None,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def _revoke(token: OAuth2Token, hint: str | None, client: OAuth2Client) -> None:
+    request = MagicMock(form={"token_type_hint": hint} if hint else {}, client=client)
+    TestGenRevocationEndpoint.__new__(TestGenRevocationEndpoint).revoke_token(token, request)
+
+
+def test_revoking_a_public_clients_rotated_token_records_the_owner_ending_its_live_grant(tokens, audit_log):
+    first = _token_row(tokens, 2, refresh_revoked=True)
+    _token_row(tokens, 2, rotated_from=first)
+
+    _revoke(first, "refresh_token", _client())
+    tokens.commit()
+
+    [entry] = audit_log.records()
+    assert (entry["action"], entry["source"], entry["actor_id"], entry["actor_username"]) == (
+        "oauth_client.access_revoked", "api", str(OWNER.id), "alice",
+    )
+    assert (entry["target_type"], entry["targets"], entry["target_name"]) == ("oauth_client", ["c1"], "Claude")
+
+
+@pytest.mark.parametrize("public", [True, False], ids=["public", "confidential"])
+def test_revoking_a_live_refresh_token_records_the_grant_ending(tokens, audit_log, public):
+    _revoke(_token_row(tokens, 2), None, _client(public=public))
+    tokens.commit()
+
+    assert [entry["action"] for entry in audit_log.records()] == ["oauth_client.access_revoked"]
+
+
+@pytest.mark.parametrize("public", [True, False], ids=["public", "confidential"])
+def test_revoking_a_grant_that_already_lapsed_records_nothing(tokens, audit_log, public):
+    first = _token_row(tokens, 31, refresh_revoked=True)
+    latest = _token_row(tokens, 31, rotated_from=first)
+
+    _revoke(latest if not public else first, "refresh_token", _client(public=public))
+    tokens.commit()
+
+    assert audit_log.records() == []
+
+
+def test_revoking_a_grant_already_revoked_records_nothing(tokens, audit_log):
+    # The access tokens are still live: revoking them ends no grant, since no refresh token could renew them
+    first = _token_row(tokens, 0, refresh_revoked=True)
+    _token_row(tokens, 0, refresh_revoked=True, rotated_from=first)
+
+    _revoke(first, None, _client())
+    tokens.commit()
+
+    assert audit_log.records() == []
+
+
+@pytest.mark.parametrize("token_values", [{}, {"refresh": False}], ids=["refresh-token-kept", "no-refresh-token"])
+def test_revoking_an_access_token_alone_records_nothing(tokens, audit_log, token_values):
+    _revoke(_token_row(tokens, 0, **token_values), "access_token", _client())
+    tokens.commit()
+
+    assert audit_log.records() == []
 
 
 # --- create_authorization_server ---
@@ -896,3 +999,21 @@ def test_code_challenge_accepts_s256_or_omitted_method(data):
 def test_code_challenge_is_required_for_every_client(data):
     with pytest.raises(InvalidRequestError, match="Missing 'code_challenge'"):
         S256CodeChallenge(required=True).validate_code_challenge(_challenge_grant(data), REDIRECT_URI)
+
+
+def test_exchanging_an_authorization_code_records_the_authorization_with_its_lifetime(store, http, audit_log):
+    store.add_client("pub", "none")
+
+    # The test app has no database session to bind the acting user to, so the binding is checked directly
+    with patch("testgen.api.oauth.server.bind") as mock_bind:
+        issued = http.post("/oauth/token", data=_code_form("pub", store.add_code("pub"))).json()
+        http.post(
+            "/oauth/token",
+            data={"grant_type": "refresh_token", "refresh_token": issued["refresh_token"], "client_id": "pub"},
+        )
+
+    [entry] = audit_log.records()
+    assert (entry["action"], entry["targets"]) == ("oauth_client.authorized", ["pub"])
+    assert entry["changes"] == {"expires_in": {"to": settings.REFRESH_TOKEN_EXPIRES_IN}}
+    [context] = [call.args[0] for call in mock_bind.call_args_list]
+    assert (context.source, context.actor.username) == ("api", "alice")

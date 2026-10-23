@@ -3,6 +3,8 @@ from uuid import uuid4
 
 import pytest
 
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record
 from testgen.common.auth import AuthError
 from testgen.mcp.exceptions import MCPAuthenticationError, MCPPermissionDenied, MCPResourceNotAccessible
 from testgen.mcp.permissions import (
@@ -267,6 +269,21 @@ def test_mcp_permission_sets_contextvar(mock_set_acting):
     assert result == "ok"
     assert "demo" in captured["perms"].allowed_codes
     assert captured["perms"].memberships == {"demo": "role_a"}
+
+
+def test_mcp_permission_attributes_the_tool_records_to_the_user(mcp_user, audit_session, audit_log):
+    set_mcp_username("test")
+    mcp_user.username = "test"
+
+    @mcp_permission("view")
+    def tool_fn():
+        record(AuditAction.USER_SIGNED_IN)
+
+    tool_fn()
+    audit_session.commit()
+
+    [entry] = audit_log.records()
+    assert (entry["source"], entry["actor_id"], entry["actor_username"]) == ("mcp", str(mcp_user.id), "test")
 
 
 @patch("testgen.mcp.permissions.ProjectMembership")
