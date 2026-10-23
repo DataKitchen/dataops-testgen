@@ -27,7 +27,7 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.hygiene_issue import HygieneIssue
-from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.job_execution import RESTARTED_MESSAGE, JobExecution
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import PROGRESS_KEYS, ProfilingRun, ProgressKey, ProgressStatus
 from testgen.common.models.stg_functional_table_update import StgFunctionalTableUpdate
@@ -67,16 +67,18 @@ def report_profiling_run(job_exec: JobExecution) -> None:
     # now. Report what is left rather than raising into a caller that swallows the event.
     table_group = TableGroup.get(profiling_run.table_groups_id)
     connection = Connection.get(profiling_run.connection_id)
-    MixpanelService().send_event(
-        "run-profiling",
-        source=job_exec.source.upper(),
-        username=job_exec.kwargs.get("username"),
-        sql_flavor=connection.sql_flavor_code if connection else None,
-        sampling=table_group.profile_use_sampling if table_group else None,
-        table_count=profiling_run.table_ct or 0,
-        column_count=profiling_run.column_ct or 0,
-        run_duration=run_duration_seconds(job_exec.active_seconds, job_exec.status),
-    )
+    properties = {
+        "source": job_exec.source.upper(),
+        "username": job_exec.kwargs.get("username"),
+        "sql_flavor": connection.sql_flavor_code if connection else None,
+        "sampling": table_group.profile_use_sampling if table_group else None,
+        "table_count": profiling_run.table_ct or 0,
+        "column_count": profiling_run.column_ct or 0,
+    }
+    # A run a restart ended was active until the restart, so its total includes the downtime.
+    if job_exec.error_message != RESTARTED_MESSAGE:
+        properties["run_duration"] = run_duration_seconds(job_exec.active_seconds, job_exec.status)
+    MixpanelService().send_event("run-profiling", **properties)
 
 
 @with_database_session
