@@ -6,7 +6,9 @@ import itertools
 import threading
 import time
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
+from uuid import uuid4
 
 import httpx
 import jwt
@@ -16,6 +18,8 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel
 
 from testgen.api.deps import db_session, fields_to_change, get_authorized_user, score_percent
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record
 from testgen.common.models import POOL_MAX_OVERFLOW, POOL_SIZE, get_current_session
 
 JWT_KEY = base64.b64encode(b"test-secret-key-for-jwt-signing!").decode("ascii")
@@ -64,6 +68,23 @@ def test_get_authorized_user_returns_user_for_valid_token(mock_get_session, mock
 
     assert result is mock_user
     mock_set_acting.assert_called_once_with("testuser")
+
+
+@patch("testgen.api.deps.authorize_token")
+@patch("testgen.common.auth.settings")
+def test_get_authorized_user_attributes_the_request_records_to_the_user(
+    mock_settings, mock_authorize, audit_session, audit_log
+):
+    mock_settings.JWT_HASHING_KEY_B64 = JWT_KEY
+    user = SimpleNamespace(id=uuid4(), username="testuser", name="Test User")
+    mock_authorize.return_value = user
+
+    get_authorized_user(_make_credentials(_make_token("testuser")))
+    record(AuditAction.USER_SIGNED_IN)
+    audit_session.commit()
+
+    [entry] = audit_log.records()
+    assert (entry["source"], entry["actor_id"], entry["actor_username"]) == ("api", str(user.id), "testuser")
 
 
 @patch("testgen.common.auth.settings")

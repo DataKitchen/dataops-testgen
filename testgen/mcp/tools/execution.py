@@ -11,12 +11,14 @@ from testgen.commands.test_generation import (
     unprofiled_regeneration_note,
 )
 from testgen.common import contract_service
+from testgen.common.audit.runs import RunOperation
 from testgen.common.enums import JOB_STATUS_LABEL, JobKey, JobSource, RegenerationGroup, SuiteType
 from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import EXTERNAL_URL_MAX_LENGTH, JobExecution, validate_caller_metadata
 from testgen.common.models.suite_version import VersionState, format_version
 from testgen.common.models.table_group import TableGroup, validate_schema_name
+from testgen.common.run_service import launch_run, request_run_transition
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
@@ -97,7 +99,7 @@ def run_tests(
         version_label = format_version(target.version.version, target.state)
         kwargs["version_id"] = str(target.version.id)
         note = target.note
-    job = JobExecution.submit(
+    job = launch_run(
         job_key=JobKey.run_tests,
         kwargs=kwargs,
         source=JobSource.mcp,
@@ -123,7 +125,7 @@ def run_profiling(
     track status.
     """
     table_group = resolve_table_group(table_group_id)
-    job = JobExecution.submit(
+    job = launch_run(
         job_key=JobKey.run_profile,
         kwargs={"table_group_id": str(table_group.id)},
         source=JobSource.mcp,
@@ -293,7 +295,7 @@ def _render_submission(
 
 
 def _render_cancel(job: JobExecution, kind: str, poll_tool: str) -> str:
-    if not job.request_cancel():
+    if not request_run_transition(job, RunOperation.CANCELED):
         status_label = JOB_STATUS_LABEL.get(job.status, job.status)
         raise MCPUserError(
             f"Cannot cancel — current status is {status_label}. Only a job that has not finished can be canceled."

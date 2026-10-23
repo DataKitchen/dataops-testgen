@@ -19,6 +19,14 @@ class AuditAction(StrEnum):
     OAUTH_CLIENT_AUTHORIZED = "oauth_client.authorized"
     OAUTH_CLIENT_ACCESS_REVOKED = "oauth_client.access_revoked"
     SETTING_UPDATED = "setting.updated"
+    PROFILING_RUN_LAUNCHED = "profiling_run.launched"
+    PROFILING_RUN_PAUSED = "profiling_run.paused"
+    PROFILING_RUN_RESUMED = "profiling_run.resumed"
+    PROFILING_RUN_CANCELED = "profiling_run.canceled"
+    PROFILING_RUN_DELETED = "profiling_run.deleted"
+    TEST_RUN_LAUNCHED = "test_run.launched"
+    TEST_RUN_CANCELED = "test_run.canceled"
+    TEST_RUN_DELETED = "test_run.deleted"
 
 
 class AuditTargetType(StrEnum):
@@ -29,6 +37,9 @@ class AuditTargetType(StrEnum):
     ACCESS_TOKEN = "access_token"  # noqa: S105
     OAUTH_CLIENT = "oauth_client"
     SETTING = "setting"
+    PROFILING_RUN = "profiling_run"
+    TEST_RUN = "test_run"
+    SCHEDULE = "schedule"
 
 
 CHANGE_ACTIONS = frozenset({
