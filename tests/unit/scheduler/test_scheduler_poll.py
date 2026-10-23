@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from testgen.commands.job_registry import JOB_DISPATCH, JobConfig
+from testgen.commands.job_registry import JOB_DISPATCH, JOB_FINAL_CALLBACKS, JobConfig
 from testgen.common.enums import JobKey, JobStatus
 from testgen.common.models.job_execution import JobExecution
 from testgen.scheduler.cli_scheduler import CliScheduler
@@ -410,3 +410,69 @@ def test_dispatch_frees_the_slot_when_the_wrapper_cannot_start(scheduler_instanc
         scheduler_instance._dispatch(job_exec)
 
     assert scheduler_instance._in_process_jobs == set()
+
+
+def _wrapped(scheduler_instance, proc_mock, job_exec):
+    with (
+        patch.object(scheduler_instance, "_running_jobs_cond") as cond_mock,
+        patch.object(scheduler_instance, "_running_jobs"),
+    ):
+        cond_mock.__enter__ = Mock(return_value=True)
+        cond_mock.__exit__ = Mock(return_value=False)
+        scheduler_instance._proc_wrapper(proc_mock, job_exec)
+
+
+def test_a_cancel_with_no_process_fires_the_callbacks_once(scheduler_instance, mock_session):
+    job_exec = JobExecution(id=uuid4(), job_key=JobKey.run_tests, kwargs={}, source="ui", status="cancel_requested")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job_exec, status="canceled")
+    callback = Mock()
+
+    with patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [callback]}):
+        scheduler_instance._handle_cancellation(job_exec)
+
+    assert job_exec.status == "canceled"
+    callback.assert_called_once_with(job_exec)
+
+
+def test_a_crashed_job_process_fires_the_callbacks_once(scheduler_instance, job_exec, mock_session):
+    job_exec.status = "running"
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job_exec, status="error")
+    proc_mock = Mock(pid=555)
+    proc_mock.wait.return_value = -9
+    callback = Mock()
+
+    with patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [callback]}):
+        _wrapped(scheduler_instance, proc_mock, job_exec)
+
+    callback.assert_called_once_with(job_exec)
+
+
+def test_a_cleanly_exited_job_process_fires_no_callbacks(scheduler_instance, job_exec, mock_session):
+    """The job process settled its own row and fired its own callbacks."""
+    job_exec.status = "running"
+    proc_mock = Mock(pid=555)
+    proc_mock.wait.return_value = 0
+    callback = Mock()
+
+    with patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [callback]}):
+        _wrapped(scheduler_instance, proc_mock, job_exec)
+
+    callback.assert_not_called()
+
+
+def test_a_processing_failure_settles_the_row_without_callbacks(scheduler_instance, job_exec, mock_session):
+    """The real run state is unknown here, and a live job process may still finish and settle it."""
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job_exec, status="error")
+    scheduler_instance._stopping = Mock()
+    scheduler_instance._stopping.wait.side_effect = [False, True]
+    callback = Mock()
+
+    with (
+        patch.object(JobExecution, "claim_actionable", return_value=[job_exec]),
+        patch.object(scheduler_instance, "_dispatch", side_effect=RuntimeError("boom")),
+        patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [callback]}),
+    ):
+        scheduler_instance._poll_loop()
+
+    assert job_exec.status == "error"
+    callback.assert_not_called()

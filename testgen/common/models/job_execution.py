@@ -30,7 +30,7 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import QueryableAttribute, aliased
 from sqlalchemy.sql.elements import ColumnElement
 
 from testgen.common.enums import (
@@ -99,15 +99,23 @@ def _merged_ids_sql(key: str) -> str:
 
 @dataclass(frozen=True)
 class OnlyWhenTransitioningTo:
-    """A column value that applies to one target of a multi-target transition.
+    """A column value that applies to some of the targets of a multi-target transition.
 
     ``_transition`` picks its target from the row's current status. Wrapping a value binds it to
-    the same condition that selects ``target``, writing NULL to the column, rather than leaving it
-    unchanged, when a different target wins.
+    the conditions that select ``targets``; when a different target wins, the column gets
+    ``otherwise``, which is NULL unless given. Pass the column itself to leave it unchanged.
+    ``targets`` is one status or a tuple of them.
     """
 
-    target: JobStatus
+    targets: JobStatus | tuple[JobStatus, ...]
     value: Any
+    otherwise: Any = None
+
+    def __post_init__(self) -> None:
+        targets = (self.targets,) if isinstance(self.targets, JobStatus) else tuple(self.targets)
+        if not targets or not all(isinstance(target, JobStatus) for target in targets):
+            raise TypeError(f"Targets must be JobStatus members, got {self.targets!r}")
+        object.__setattr__(self, "targets", targets)
 
 
 # Caller metadata is stored verbatim and rendered back to whoever opens the run, so it is bounded
@@ -644,6 +652,17 @@ class JobExecution(Base):
             )
         }
 
+    @classmethod
+    def _typed_for(cls, column_name: str, value: Any) -> Any:
+        """``value`` as a literal of the column's type, unless it is already a SQL expression.
+
+        Inside a CASE a plain value loses the column's type, so a dict bound for a JSONB column
+        would reach the driver as a dict it cannot send.
+        """
+        if value is None or isinstance(value, ColumnElement | QueryableAttribute):
+            return value
+        return literal(value, type_=cls.__table__.columns[column_name].type)
+
     def _transition(self, *targets: JobStatus, **values: Any) -> bool:
         """Transition to a new status, guarded by the valid-transitions map.
 
@@ -651,8 +670,9 @@ class JobExecution(Base):
         atomically picks the right one based on the current DB status.
         Earlier targets get first pick of source states (priority order).
 
-        A value wrapped in ``OnlyWhenTransitioningTo`` is written only if the row lands on that
-        target, and NULL otherwise. Plain values are written whichever target is selected.
+        A value wrapped in ``OnlyWhenTransitioningTo`` is written only if the row lands on one of
+        its targets, and its ``otherwise`` value if not. Plain values are written whichever target
+        is selected.
 
         Returns True if the row was updated, False if the current status
         did not allow any of the transitions.
@@ -680,14 +700,17 @@ class JobExecution(Base):
         for key, value in values.items():
             if not isinstance(value, OnlyWhenTransitioningTo):
                 resolved[key] = value
-            elif value.target not in targets:
-                raise ValueError(f"{key} is bound to {value.target}, which this transition does not offer")
-            elif value.target in selected_by:
-                resolved[key] = case((selected_by[value.target], value.value), else_=None)
+            elif unoffered := [target.value for target in value.targets if target not in targets]:
+                raise ValueError(f"{key} is bound to {unoffered}, which this transition does not offer")
+            elif conditions := [selected_by[target] for target in value.targets if target in selected_by]:
+                resolved[key] = case(
+                    (or_(*conditions), cls._typed_for(key, value.value)),
+                    else_=cls._typed_for(key, value.otherwise),
+                )
             else:
-                # An earlier target claimed every source state that could have reached this one,
-                # so no row can land on it.
-                resolved[key] = None
+                # Earlier targets claimed every source state that could have reached these, so no
+                # row can land on them.
+                resolved[key] = value.otherwise
 
         row = session.execute(
             update(cls)
@@ -706,21 +729,36 @@ class JobExecution(Base):
         return self._transition(JobStatus.CLAIMED, claimed_at=datetime.now(UTC))
 
     def mark_running(self) -> bool:
+        """Mark as RUNNING, or CANCELED if a cancellation was requested before the run started."""
         # A resumed run passes through RUNNING again, and started_at anchors the run's begin
         # time, so it must not be restamped.
         return self._transition(
             JobStatus.RUNNING,
-            started_at=func.coalesce(type(self).started_at, datetime.now(UTC)),
+            JobStatus.CANCELED,
+            started_at=OnlyWhenTransitioningTo(
+                JobStatus.RUNNING,
+                func.coalesce(type(self).started_at, datetime.now(UTC)),
+                otherwise=type(self).started_at,
+            ),
+            completed_at=OnlyWhenTransitioningTo(JobStatus.CANCELED, datetime.now(UTC)),
         )
 
     def park(self, resume_state: dict[str, Any]) -> bool:
-        """Stop the run and persist its checkpoint in one statement.
+        """Stop the run and persist its checkpoint in one statement, or cancel it if a cancellation
+        was requested.
 
-        Which parked status it lands in follows from the request that stopped it, so the job
-        never has to be told which intent it is serving: an interrupted run is queued for the
-        next poll, a paused one waits to be asked back.
+        Which status it lands in follows from the request that stopped it, so the job never has
+        to be told which intent it is serving: an interrupted run is queued for the next poll, a
+        paused one waits to be asked back. The checkpoint is written only on the parked branches;
+        a canceled run keeps whatever checkpoint it had.
         """
-        return self._transition(JobStatus.INTERRUPTED, JobStatus.PAUSED, resume_state=resume_state)
+        parked = (JobStatus.INTERRUPTED, JobStatus.PAUSED)
+        return self._transition(
+            *parked,
+            JobStatus.CANCELED,
+            resume_state=OnlyWhenTransitioningTo(parked, resume_state, otherwise=type(self).resume_state),
+            completed_at=OnlyWhenTransitioningTo(JobStatus.CANCELED, datetime.now(UTC)),
+        )
 
     def request_pause(self) -> bool:
         """Ask a running job to stop at a work-key boundary and stay stopped.
@@ -744,7 +782,8 @@ class JobExecution(Base):
         return self._transition(JobStatus.CANCEL_REQUESTED)
 
     def mark_completed(self) -> bool:
-        return self._transition(JobStatus.COMPLETED, completed_at=datetime.now(UTC))
+        """Mark as COMPLETED, or CANCELED if a cancellation was requested while the run finished."""
+        return self._transition(JobStatus.COMPLETED, JobStatus.CANCELED, completed_at=datetime.now(UTC))
 
     def mark_failed(self, error_message: str) -> bool:
         """Mark as ERROR, or CANCELED if a cancellation was requested concurrently.

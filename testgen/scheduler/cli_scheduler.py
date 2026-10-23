@@ -7,11 +7,12 @@ import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import partial
 from typing import Any
 from uuid import UUID
 
 from testgen import settings
-from testgen.commands.job_registry import JOB_DISPATCH, run_final_callbacks
+from testgen.commands.job_registry import JOB_DISPATCH, finalize
 from testgen.commands.run_upgrade_db_config import is_db_revision_up_to_date
 from testgen.common.enums import PAUSABLE_JOB_KEYS, JobStatus
 from testgen.common.models import database_session, with_database_session
@@ -151,9 +152,7 @@ class CliScheduler(Scheduler):
             else:
                 self._schedule_force_kill(job_exec.id, proc)
         else:
-            with database_session():
-                if job_exec.mark_canceled():
-                    run_final_callbacks(job_exec)
+            finalize(job_exec, job_exec.mark_canceled)
 
     def _schedule_force_kill(self, job_id: UUID, proc: subprocess.Popen) -> None:
         """Arm a SIGKILL for ``JOB_TERMINATE_TIMEOUT`` seconds from now, and return.
@@ -187,8 +186,7 @@ class CliScheduler(Scheduler):
 
     def _dispatch(self, job_exec: JobExecution):
         if job_exec.job_key not in JOB_DISPATCH:
-            with database_session():
-                job_exec.mark_failed(f"Unknown job key: {job_exec.job_key}")
+            finalize(job_exec, partial(job_exec.mark_failed, f"Unknown job key: {job_exec.job_key}"))
             return
 
         exec_cmd = [sys.executable, sys.argv[0], "exec-job", str(job_exec.id)]
@@ -213,7 +211,7 @@ class CliScheduler(Scheduler):
     def _proc_wrapper(self, proc: subprocess.Popen, job_exec: JobExecution):
         """Monitor a subprocess and act as crash-recovery safety net.
 
-        exec_job owns the full lifecycle (mark_running/completed/interrupted/paused).
+        exec_job owns the full lifecycle and settles every exit of its own.
         This wrapper only intervenes on nonzero exit codes, which indicate exec_job
         itself crashed before it could update the DB (OOM, kill -9, etc.).
         _transition() guards make redundant calls safe.
@@ -224,14 +222,12 @@ class CliScheduler(Scheduler):
             ret_code = proc.wait()
             LOG.info("Job PID %d ended with code %d", proc.pid, ret_code)
             if ret_code != 0:
-                with database_session():
-                    if job_exec.mark_failed(process_failure_message(proc.pid, ret_code, job_exec.job_key)):
-                        run_final_callbacks(job_exec)
+                message = process_failure_message(proc.pid, ret_code, job_exec.job_key)
+                finalize(job_exec, partial(job_exec.mark_failed, message))
         except Exception:
             LOG.exception("Error monitoring job PID %d", proc.pid)
-            with database_session():
-                if job_exec.mark_failed(f"Process monitoring error for PID {proc.pid}"):
-                    run_final_callbacks(job_exec)
+            message = f"Process monitoring error for PID {proc.pid}"
+            finalize(job_exec, partial(job_exec.mark_failed, message))
         finally:
             with self._running_jobs_cond:
                 del self._running_jobs[job_exec.id]

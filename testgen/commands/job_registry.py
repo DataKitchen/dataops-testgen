@@ -4,11 +4,9 @@ Two registries keyed by `job_key`:
   - `JOB_DISPATCH`: maps a job to its `JobConfig` (handler + per-job metadata).
     `exec_job` and the scheduler resolve this.
   - `JOB_FINAL_CALLBACKS`: maps a job to post-terminal-transition callbacks
-    (notifications, follow-up job submissions). `run_final_callbacks` iterates.
+    (notifications, follow-up job submissions).
 
-`run_final_callbacks` is invoked wherever a JE reaches a terminal status:
-`exec_job` after mark_completed/mark_failed, `_proc_wrapper`'s nonzero-exit
-safety net, and `_handle_cancellation`'s no-subprocess branch.
+`finalize` settles a job and fires its final callbacks.
 """
 
 import logging
@@ -27,7 +25,7 @@ from testgen.commands.run_score_update import rollup_run_and_request_refresh, ru
 from testgen.commands.run_test_execution import run_test_execution
 from testgen.commands.test_generation import run_monitor_generation, run_test_generation
 from testgen.common.enums import JobKey, JobSource, JobStatus
-from testgen.common.models import database_session
+from testgen.common.models import database_session, get_current_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.test_run import TestRun
@@ -70,6 +68,25 @@ JOB_DISPATCH: dict[JobKey, JobConfig] = {
     JobKey.refresh_run_scores:         JobConfig(handler=run_refresh_run_scores, scheduler_source=JobSource.system),
     JobKey.recalculate_score_card:     JobConfig(handler=run_recalculate_score_card, scheduler_source=JobSource.system),
 }
+
+
+def finalize(job_exec: JobExecution, settle: Callable[[], bool]) -> bool:
+    """Settle a job in its own transaction, then fire its final callbacks if it ended.
+
+    :param job_exec: The job to settle. It may be detached from any session.
+    :param settle: One of ``job_exec``'s transitions, such as ``job_exec.mark_completed``. It picks
+        the status from the row's current one, so it may land on a parked status rather than a
+        terminal one.
+    :returns: Whether ``settle`` moved the job. Callbacks fire only when it did and the status it
+        landed on is terminal, and only after that transition is committed.
+    """
+    if get_current_session() is not None:
+        raise RuntimeError("finalize commits its own transaction, so it cannot run inside an open session")
+    with database_session():
+        settled = settle()
+    if settled and job_exec.status in JobStatus.terminal():
+        run_final_callbacks(job_exec)
+    return settled
 
 
 def run_final_callbacks(job_exec: JobExecution) -> None:

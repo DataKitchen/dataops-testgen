@@ -465,6 +465,62 @@ def test_park_offers_both_targets_so_the_row_decides(mock_session):
     assert "status=CASE" in set_clause
 
 
+def test_park_writes_the_checkpoint_only_where_it_parks(mock_session):
+    """A cancel that wins the CASE ends the run, so a checkpoint written there would outlive it."""
+    job = JobExecution(id=uuid4(), status="cancel_requested", job_key="run-profile")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="canceled")
+
+    assert job.park({"version": 1, "tasks": [], "completed": 0}) is True
+
+    assert job.status == "canceled"
+    checkpoint = _assigned_value(mock_session, "resume_state")
+    assert "cancel_requested" not in _compiled(checkpoint.whens[0][0])
+    assert checkpoint.else_ is not None  # keeps the checkpoint it had rather than erasing it
+    assert isinstance(_assigned_value(mock_session, "completed_at"), Case)
+    assert "'canceled'" in _compiled(_assigned_value(mock_session, "status"))
+
+
+def test_park_binds_the_checkpoint_as_json(mock_session):
+    """Inside a CASE a plain dict loses the column's JSONB type and the driver cannot send it."""
+    job = JobExecution(id=uuid4(), status="pause_requested", job_key="run-profile")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="paused")
+
+    job.park({"version": 1, "tasks": [], "completed": 0})
+
+    checkpoint = _assigned_value(mock_session, "resume_state").whens[0][1]
+    assert isinstance(checkpoint.type, postgresql.JSONB)
+
+
+def test_mark_running_cancels_a_run_a_cancel_reached_before_it_started(mock_session):
+    job = JobExecution(id=uuid4(), status="cancel_requested")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="canceled")
+
+    assert job.mark_running() is True
+
+    assert job.status == "canceled"
+    assert "'canceled'" in _compiled(_assigned_value(mock_session, "status"))
+    started_at = _assigned_value(mock_session, "started_at")
+    assert "cancel_requested" not in _compiled(started_at.whens[0][0])
+    assert started_at.else_ is not None  # a resumed run keeps the start it already has
+
+
+def test_a_marker_needs_job_status_targets():
+    """A plain string is iterable, so without the check it would be read one character at a time."""
+    with pytest.raises(TypeError):
+        OnlyWhenTransitioningTo("error", "boom")
+
+
+def test_mark_completed_offers_canceled_for_a_run_a_cancel_reached(mock_session):
+    """A handler can finish after a cancel was requested, and the run must still end."""
+    job = JobExecution(id=uuid4(), status="cancel_requested")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="canceled")
+
+    assert job.mark_completed() is True
+
+    assert job.status == "canceled"
+    assert "'canceled'" in _compiled(mock_session.execute.call_args[0][0])
+
+
 def test_request_pause_is_refused_for_a_job_that_cannot_honor_it(mock_session):
     """Nothing would ever park the row, so it would read as pausing with no process behind it."""
     job = JobExecution(id=uuid4(), status="running", job_key="run-score-update")
@@ -818,6 +874,33 @@ def test_a_marker_bound_to_a_target_the_transition_does_not_offer_is_refused(moc
 
     with pytest.raises(ValueError, match="canceled"):
         job._transition(JobStatus.ERROR, error_message=OnlyWhenTransitioningTo(JobStatus.CANCELED, "boom"))
+
+
+def test_a_marker_bound_to_several_targets_applies_to_each(mock_session):
+    job = JobExecution(id=uuid4(), status="running")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="error")
+
+    job._transition(
+        JobStatus.ERROR,
+        JobStatus.COMPLETED,
+        JobStatus.CANCELED,
+        error_message=OnlyWhenTransitioningTo((JobStatus.ERROR, JobStatus.CANCELED), "boom"),
+    )
+
+    written = _assigned_value(mock_session, "error_message")
+    assert isinstance(written, Case)
+    condition = str(written.whens[0][0].compile(dialect=postgresql.dialect()))
+    assert " OR " in condition
+
+
+def test_a_marker_naming_one_target_the_transition_does_not_offer_is_refused(mock_session):
+    job = JobExecution(id=uuid4(), status="running")
+
+    with pytest.raises(ValueError, match="paused"):
+        job._transition(
+            JobStatus.INTERRUPTED,
+            resume_state=OnlyWhenTransitioningTo((JobStatus.INTERRUPTED, JobStatus.PAUSED), {}),
+        )
 
 
 def test_a_marker_bound_to_a_target_an_earlier_one_consumed_writes_null(mock_session):

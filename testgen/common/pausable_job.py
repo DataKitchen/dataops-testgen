@@ -419,8 +419,8 @@ class PausableJob(ABC, Generic[K]):
     def _park_checkpoint(self, payload: dict[str, Any]) -> None:
         """Commit the checkpoint, unless the row is no longer one a resume can reach.
 
-        A cancel that arrived first wins and the scheduler settles it, so a checkpoint written
-        now would only outlive the run that wrote it.
+        A cancel that arrived first wins and the run ends canceled, so a checkpoint written now
+        would only outlive the run that wrote it.
         """
         # Read the column, not the row: this job's JobExecution is already in the session's
         # identity map, so fetching the entity would never see a status set from elsewhere.
