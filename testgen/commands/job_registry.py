@@ -22,8 +22,8 @@ from testgen.commands.run_recalculate_project_scores import run_recalculate_proj
 from testgen.commands.run_refresh_score_cards_results import run_recalculate_score_card
 from testgen.commands.run_rollup_scores import run_refresh_run_scores
 from testgen.commands.run_score_update import rollup_run_and_request_refresh, run_project_score_refresh
-from testgen.commands.run_test_execution import run_test_execution
-from testgen.commands.test_generation import run_monitor_generation, run_test_generation
+from testgen.commands.run_test_execution import report_test_run, run_test_execution
+from testgen.commands.test_generation import report_test_generation, run_monitor_generation, run_test_generation
 from testgen.common.enums import JobKey, JobSource, JobStatus
 from testgen.common.models import database_session, get_current_session
 from testgen.common.models.job_execution import JobExecution
@@ -155,7 +155,10 @@ def _rollup_scores(job_exec: JobExecution) -> None:
 
 
 JOB_FINAL_CALLBACKS: dict[JobKey, list[FinalCallback]] = {
-    JobKey.run_profile: [_notify_profiling_run, report_profiling_run, _rollup_scores],
-    JobKey.run_tests: [_notify_test_run, _rollup_scores],
-    JobKey.run_monitors: [_notify_monitor_run],
+    # Telemetry first: it only queues an event, while a notification can wait out a mail server
+    # past the scheduler's force-kill and take the rest of the list with it.
+    JobKey.run_profile: [report_profiling_run, _notify_profiling_run, _rollup_scores],
+    JobKey.run_tests: [report_test_run, _notify_test_run, _rollup_scores],
+    JobKey.run_monitors: [report_test_run, _notify_monitor_run],
+    JobKey.run_test_generation: [report_test_generation],
 }

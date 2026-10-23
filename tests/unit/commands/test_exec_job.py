@@ -20,6 +20,7 @@ from testgen.commands.job_registry import (
 )
 from testgen.commands.run_test_execution import run_test_execution
 from testgen.common.enums import PAUSABLE_JOB_KEYS, JobKey
+from testgen.common.job_context import job_context
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.pausable_job import JobParked, PausableJob
@@ -404,6 +405,24 @@ def test_registered_callbacks_cover_notification_job_keys():
     assert JobKey.run_profile in JOB_FINAL_CALLBACKS
     assert JobKey.run_tests in JOB_FINAL_CALLBACKS
     assert JobKey.run_monitors in JOB_FINAL_CALLBACKS
+    assert JobKey.run_test_generation in JOB_FINAL_CALLBACKS
+
+
+def test_exec_job_ends_the_job_context_once_the_job_settled(mock_session):
+    """The callbacks read the job's context, and nothing after the job may see it."""
+    job = _make_job_exec(job_key=JobKey.run_tests)
+    _settles(job, job.mark_completed, "completed")
+    seen = []
+
+    with (
+        patch.object(JobExecution, "get", return_value=job),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock())}),
+        patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [lambda _job: seen.append(job_context.get().job_id)]}),
+    ):
+        exec_job(job.id)
+
+    assert seen == [job.id]
+    assert job_context.get().job_id is None
 
 
 def test_exec_job_marks_paused_without_settling_the_run(mock_session):

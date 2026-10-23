@@ -860,10 +860,9 @@ def test_a_checkpoint_from_a_build_that_measured_differently_is_discarded():
         job.pin("result_shape", PROFILE_RESULT_SHAPE_VERSION)
 
 
-@pytest.mark.parametrize("status", [JobStatus.CANCELED, JobStatus.CANCEL_REQUESTED])
-def test_a_canceled_run_is_not_reported(status):
-    """It settles through these same callbacks, but its counts describe work somebody abandoned
-    partway rather than a run that produced results."""
+@pytest.mark.parametrize("status", [JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELED])
+def test_every_settled_run_is_reported_with_its_status(status):
+    """The status is what lets a consumer tell a canceled run's partial counts from a finished run's."""
     job_exec = _settled_job_exec(active_seconds=90.0, status=status)
 
     with (
@@ -874,22 +873,7 @@ def test_a_canceled_run_is_not_reported(status):
     ):
         report_profiling_run(job_exec)
 
-    mixpanel.return_value.send_event.assert_not_called()
-
-
-def test_a_run_that_errored_is_still_reported():
-    """It ran and measured what it could; only a cancel is excluded."""
-    job_exec = _settled_job_exec(active_seconds=90.0, status=JobStatus.ERROR)
-
-    with (
-        patch(f"{MODULE}.ProfilingRun"),
-        patch(f"{MODULE}.TableGroup"),
-        patch(f"{MODULE}.Connection"),
-        patch(f"{MODULE}.MixpanelService") as mixpanel,
-    ):
-        report_profiling_run(job_exec)
-
-    mixpanel.return_value.send_event.assert_called_once()
+    assert mixpanel.return_value.send_event.call_args.kwargs["status"] == status
 
 
 # --- the schema a run scanned ---

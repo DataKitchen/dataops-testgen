@@ -6,6 +6,8 @@ import pytest
 from sqlalchemy import literal_column
 
 from testgen.commands import run_test_execution
+from testgen.common.enums import JobKey, JobSource, JobStatus
+from testgen.common.job_context import JobContext, job_context, measurements_for, record_measurement
 
 pytestmark = pytest.mark.unit
 
@@ -233,3 +235,79 @@ def test_a_run_opens_its_own_database_session(monkeypatch, mocked_collaborators)
     run_test_execution.run_test_execution(uuid4())
 
     database_session.return_value.__enter__.assert_called_once()
+
+
+@pytest.fixture
+def running_as_job():
+    job_id = uuid4()
+    token = job_context.set(JobContext(job_id=job_id, source=JobSource.scheduler))
+    yield job_id
+    job_context.reset(token)
+
+
+def test_a_run_leaves_its_telemetry_to_the_final_callback(mocked_collaborators, monkeypatch):
+    """Sent from the run, a run that is canceled or killed would never report."""
+    mixpanel = MagicMock()
+    monkeypatch.setattr(run_test_execution, "MixpanelService", mixpanel)
+
+    run_test_execution.run_test_execution(uuid4())
+
+    mixpanel.return_value.send_event.assert_not_called()
+
+
+def test_a_run_keeps_its_prediction_time_for_the_final_callback(mocked_collaborators, running_as_job):
+    run_test_execution.run_test_execution(uuid4())
+
+    assert "prediction_duration" in measurements_for(running_as_job)
+
+
+def _settled_job(job_id, status=JobStatus.COMPLETED, job_key=JobKey.run_tests):
+    return MagicMock(id=job_id, job_key=job_key, source="scheduler", status=status, active_seconds=12.5, kwargs={})
+
+
+@pytest.mark.parametrize("status", [JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELED])
+def test_a_settled_run_is_reported_with_its_status(mocked_collaborators, monkeypatch, status):
+    mixpanel = MagicMock()
+    monkeypatch.setattr(run_test_execution, "MixpanelService", mixpanel)
+    mocked_collaborators["test_run_cls"].get.return_value = MagicMock(test_ct=7)
+
+    run_test_execution.report_test_run(_settled_job(uuid4(), status=status))
+
+    event = mixpanel.return_value.send_event.call_args
+    assert event.args == ("run-tests",)
+    assert event.kwargs["status"] == status
+    assert event.kwargs["test_count"] == 7
+    assert event.kwargs["run_duration"] == 12.5
+
+
+def test_a_monitor_run_is_reported_as_one(mocked_collaborators, monkeypatch):
+    mixpanel = MagicMock()
+    monkeypatch.setattr(run_test_execution, "MixpanelService", mixpanel)
+
+    run_test_execution.report_test_run(_settled_job(uuid4(), job_key=JobKey.run_monitors))
+
+    assert mixpanel.return_value.send_event.call_args.args == ("run-monitors",)
+
+
+def test_the_prediction_time_is_reported_by_the_process_that_measured_it(
+    mocked_collaborators, monkeypatch, running_as_job,
+):
+    mixpanel = MagicMock()
+    monkeypatch.setattr(run_test_execution, "MixpanelService", mixpanel)
+    record_measurement("prediction_duration", 1.5)
+
+    run_test_execution.report_test_run(_settled_job(running_as_job))
+    assert mixpanel.return_value.send_event.call_args.kwargs["prediction_duration"] == 1.5
+
+    run_test_execution.report_test_run(_settled_job(uuid4()))
+    assert "prediction_duration" not in mixpanel.return_value.send_event.call_args.kwargs
+
+
+def test_a_run_with_no_run_row_is_not_reported(mocked_collaborators, monkeypatch):
+    mixpanel = MagicMock()
+    monkeypatch.setattr(run_test_execution, "MixpanelService", mixpanel)
+    mocked_collaborators["test_run_cls"].get.return_value = None
+
+    run_test_execution.report_test_run(_settled_job(uuid4()))
+
+    mixpanel.return_value.send_event.assert_not_called()

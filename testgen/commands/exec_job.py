@@ -59,10 +59,11 @@ def exec_job(job_execution_id: UUID) -> None:
             LOG.info("Job %s was canceled before it started", job_execution_id)
             return
 
+        # Held until the job settles: its final callbacks read what the handler measured.
+        context_token = job_context.set(JobContext(job_id=job_execution_id, source=job_exec.source))
         try:
             with database_session():
                 job_exec = JobExecution.get(job_execution_id)
-                job_context.set(JobContext(job_id=job_execution_id, source=job_exec.source))
                 job_config.handler(**job_exec.kwargs)
             _settle(job_exec, job_exec.mark_completed)
         except JobParked as interrupted:
@@ -77,6 +78,8 @@ def exec_job(job_execution_id: UUID) -> None:
         except Exception as e:
             LOG.exception("Job %s failed", job_execution_id)
             _settle(job_exec, partial(job_exec.mark_failed, get_exception_message(e)))
+        finally:
+            job_context.reset(context_token)
 
     except Exception:
         LOG.exception("Unrecoverable error executing job %s", job_execution_id)

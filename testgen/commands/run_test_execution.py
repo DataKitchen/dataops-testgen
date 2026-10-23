@@ -1,4 +1,5 @@
 import logging
+import time
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -19,11 +20,12 @@ from testgen.common import (
 )
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import ThreadedProgress
-from testgen.common.enums import SuiteType
-from testgen.common.job_context import job_context
+from testgen.common.enums import JobKey, SuiteType, run_duration_seconds
+from testgen.common.job_context import job_context, measurements_for, record_measurement
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
@@ -84,7 +86,6 @@ def _a_later_contract_run_is_latest(test_suite: TestSuite, test_run: TestRun) ->
 @with_database_session
 def run_test_execution(
     test_suite_id: str | UUID,
-    username: str | None = None,
     run_date: datetime | None = None,
     version_id: str | UUID | None = None,
     match_schema_name: str | None = None,
@@ -205,34 +206,47 @@ def run_test_execution(
 
     except Exception:
         LOG.exception("Test execution encountered an error.")
-        end_time = datetime.now(UTC) + time_delta
         raise
     else:
-        end_time = datetime.now(UTC) + time_delta
         if test_run.checked_version_in_force() and not _a_later_contract_run_is_latest(test_suite, test_run):
             LOG.info("Updating latest run for test suite")
             test_suite.last_complete_test_run_id = test_run.id
             test_suite.save()
             session.commit()
     finally:
-        prediction_start = datetime.now(UTC) + time_delta
+        prediction_start = time.monotonic()
         try:
             if writes_definitions:
                 TestThresholdsPrediction(test_suite, test_run).run()
         except Exception:
             LOG.exception("Error predicting test thresholds")
-
-        MixpanelService().send_event(
-            "run-monitors" if test_suite.suite_type == SuiteType.MONITOR else "run-tests",
-            source=job_context.get().source.upper(),
-            username=username,
-            sql_flavor=connection.sql_flavor_code,
-            test_count=test_run.test_ct,
-            run_duration=(end_time - test_run.test_starttime.replace(tzinfo=UTC)).total_seconds(),
-            prediction_duration=(datetime.now(UTC) + time_delta - prediction_start).total_seconds(),
-        )
+        record_measurement("prediction_duration", time.monotonic() - prediction_start)
 
     return test_run.id
+
+
+@with_database_session
+def report_test_run(job_exec: JobExecution) -> None:
+    """Send the ``run-tests`` or ``run-monitors`` telemetry event for a run that has settled."""
+    test_run = TestRun.get(job_exec.id)
+    if test_run is None:
+        # A failure before the run row is written leaves nothing to report on.
+        return
+
+    # Settling releases the delete guard that held these in place, so any of them can be gone by
+    # now. Report what is left rather than raising into a caller that swallows the event.
+    test_suite = TestSuite.get(test_run.test_suite_id)
+    table_group = TableGroup.get(test_suite.table_groups_id) if test_suite else None
+    connection = Connection.get(table_group.connection_id) if table_group else None
+    MixpanelService().send_event(
+        "run-monitors" if job_exec.job_key == JobKey.run_monitors else "run-tests",
+        source=job_exec.source.upper(),
+        sql_flavor=connection.sql_flavor_code if connection else None,
+        test_count=test_run.test_ct,
+        status=job_exec.status,
+        run_duration=run_duration_seconds(job_exec.active_seconds, job_exec.status),
+        **measurements_for(job_exec.id),
+    )
 
 
 def _sync_monitor_definitions(sql_generator: TestExecutionSQL, data_chars: list[ColumnChars]) -> None:
