@@ -1,5 +1,6 @@
 from testgen.common import fetch_list_from_db, read_template_sql_file
 from testgen.common.database.database_service import replace_params
+from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.suite_version import SuiteVersion
 
 
@@ -53,8 +54,12 @@ def run_profile_info(profiling_run_id: str, table_name: str | None = None):
 def run_profile_screen(profiling_run_id: str, table_name: str | None = None):
     return fetch_list_from_db(
         read_template_sql_file("get_profile_screen.sql", "get_entities"),
-        # if no table_name, we select all the tables
-        {"PROFILING_RUN_ID": profiling_run_id, "TABLE_NAME": table_name or "%"},
+        {
+            "PROFILING_RUN_ID": profiling_run_id,
+            # if no table_name, we select all the tables
+            "TABLE_NAME": table_name or "%",
+            **{f"{name.upper()}_LABEL": measure.label for name, measure in ProfileResult.measures.items()},
+        },
     )
 
 

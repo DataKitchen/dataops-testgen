@@ -14,6 +14,7 @@ from testgen.common.database.flavor.duckdb_flavor_service import container_path_
 from testgen.common.generation_set_service import get_generation_set_members
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssueType
+from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.test_definition import (
     COLUMN_NAME_SCOPES,
     NON_PUBLIC_TEST_TYPES,
@@ -217,9 +218,13 @@ def hygiene_issue_types_resource() -> str:
     return doc.render()
 
 
+def _field(measure: str) -> str:
+    return ProfileResult.measures[measure].sentence_label
+
+
 def column_profile_fields_resource() -> str:
     """Reference for column-profile fields by general_type, with PII redaction notes."""
-    return """\
+    return f"""\
 # TestGen Column Profile Fields Reference
 
 Column profiling stores ~70 statistics per column. The fields populated
@@ -255,84 +260,84 @@ When the column has not been profiled, the Profile section holds a single line s
 - **Hygiene issues (confirmed)** — Confirmed hygiene issues against this column (count). Omitted when the column has a profiling error.
 
 ### Counts
-- **Row count** — Total rows in the table (count, integer).
-- **Value count** — Non-null values in this column (count, integer).
-- **Distinct values** — Distinct non-null values (count, integer).
-- **Null** — Null values (count, integer).
-- **Dummy values** — Dummy / placeholder values like `'?'`, `'-'`, `'unknown'` (count, integer).
-- **Zero values** — Exact-zero or `'0'`-string values (count, integer). Populated for numeric and alpha columns.
+- **{_field('record_ct')}** — Total rows in the table (count, integer).
+- **{_field('value_ct')}** — Non-null values in this column (count, integer).
+- **{_field('distinct_value_ct')}** — Distinct non-null values (count, integer).
+- **{_field('null_value_ct')}** — Null values (count, integer).
+- **{_field('filled_value_ct')}** — Dummy / placeholder values like `'?'`, `'-'`, `'unknown'` (count, integer).
+- **{_field('zero_value_ct')}** — Exact-zero or `'0'`-string values (count, integer). Populated for numeric and alpha columns.
 
 ## Alpha (text) Columns
 
 Populated when `General type == "Alpha"`.
 
 ### Length
-- **Minimum length** — Shortest string length (chars).
-- **Maximum length** — Longest string length (chars).
-- **Average length** — Average string length (chars, float).
+- **{_field('min_length')}** — Shortest string length (chars).
+- **{_field('max_length')}** — Longest string length (chars).
+- **{_field('avg_length')}** — Average string length (chars, float).
 
 ### Text Range
-- **Minimum text** — Lexicographic minimum value (raw string; **PII-redactable**).
-- **Maximum text** — Lexicographic maximum value (raw string; **PII-redactable**).
+- **{_field('min_text')}** — Lexicographic minimum value (raw string; **PII-redactable**).
+- **{_field('max_text')}** — Lexicographic maximum value (raw string; **PII-redactable**).
 
 ### Patterns
-- **Standard pattern match** — Recognized standard pattern when applicable (`Email`, `Phone (USA)`,
+- **{_field('std_pattern_match')}** — Recognized standard pattern when applicable (`Email`, `Phone (USA)`,
   `Street Address`, `State (USA)`, `Zip Code (USA)`, `Zip Code (US/Canada)`, `Filename`, `Credit Card`,
   `Delimited Data`, `SSN (USA)`).
-- **Distinct patterns** — Distinct character-class patterns observed (count).
-- **Frequent patterns** — Top patterns and counts, pipe-separated.
-- **Frequent values** — Top frequent raw values and counts (raw strings; **PII-redactable**).
-- **Distinct standard values** — Distinct values after standardization (count).
+- **{_field('distinct_pattern_ct')}** — Distinct character-class patterns observed (count).
+- **{_field('frequent_patterns')}** — Top patterns and counts, pipe-separated.
+- **{_field('frequent_values')}** — Top frequent raw values and counts (raw strings; **PII-redactable**).
+- **{_field('distinct_std_value_ct')}** — Distinct values after standardization (count).
 
 ### Case & Composition
-- **Upper case / Lower case / Mixed case / Non-alpha** — Case-distribution counts.
-- **Includes digits** — Values containing at least one digit (count).
-- **Numeric values** — Values parseable as numeric (count).
-- **Date values** — Values parseable as a date (count).
-- **Quoted values** — Values wrapped in quotes (count).
-- **Leading spaces** — Values with leading whitespace (count).
-- **Embedded spaces** — Values with internal whitespace (count).
-- **Average embedded spaces** — Average embedded-space count per value (float).
-- **Zero length** — Empty strings (count).
+- **{_field('upper_case_ct')} / {_field('lower_case_ct')} / {_field('mixed_case_ct')} / {_field('non_alpha_ct')}** — Case-distribution counts.
+- **{_field('includes_digit_ct')}** — Values containing at least one digit (count).
+- **{_field('numeric_ct')}** — Values parseable as numeric (count).
+- **{_field('date_ct')}** — Values parseable as a date (count).
+- **{_field('quoted_value_ct')}** — Values wrapped in quotes (count).
+- **{_field('lead_space_ct')}** — Values with leading whitespace (count).
+- **{_field('embedded_space_ct')}** — Values with internal whitespace (count).
+- **{_field('avg_embedded_spaces')}** — Average embedded-space count per value (float).
+- **{_field('zero_length_ct')}** — Empty strings (count).
 
 ## Numeric Columns
 
 Populated when `General type == "Numeric"`.
 
 ### Distribution
-- **Minimum value** — Minimum numeric value (raw value; **PII-redactable**).
-- **Minimum value > 0** — Minimum value strictly greater than zero (**PII-redactable**).
-- **Maximum value** — Maximum numeric value (**PII-redactable**).
-- **Average value** — Arithmetic mean.
-- **Standard deviation** — Standard deviation.
+- **{_field('min_value')}** — Minimum numeric value (raw value; **PII-redactable**).
+- **{_field('min_value_over_0')}** — Minimum value strictly greater than zero (**PII-redactable**).
+- **{_field('max_value')}** — Maximum numeric value (**PII-redactable**).
+- **{_field('avg_value')}** — Arithmetic mean.
+- **{_field('stdev_value')}** — Standard deviation.
 
 ### Percentiles
-- **25th percentile** — 25th percentile (Q1).
-- **Median value** — Median (Q2 / 50th percentile).
-- **75th percentile** — 75th percentile (Q3).
+- **{_field('percentile_25')}** — 25th percentile (Q1).
+- **{_field('percentile_50')}** — Median (Q2 / 50th percentile).
+- **{_field('percentile_75')}** — 75th percentile (Q3).
 
 ## Datetime Columns
 
 Populated when `General type == "Datetime"`.
 
 ### Date Range
-- **Minimum date** — Minimum timestamp (**PII-redactable**).
-- **Maximum date** — Maximum timestamp (**PII-redactable**).
+- **{_field('min_date')}** — Minimum timestamp (**PII-redactable**).
+- **{_field('max_date')}** — Maximum timestamp (**PII-redactable**).
 
 ### Age Buckets
-- **Before 1 year** — Values older than 1 year from profiling date (count).
-- **Before 5 years** — Values older than 5 years (count).
-- **Before 20 years** — Values older than 20 years (count).
-- **Within 1 year** — Values within the past year (count).
-- **Within 1 month** — Values within the past month (count).
-- **Future dates** — Values dated after the profiling date (count).
+- **{_field('before_1yr_date_ct')}** — Values older than 1 year from profiling date (count).
+- **{_field('before_5yr_date_ct')}** — Values older than 5 years (count).
+- **{_field('before_20yr_date_ct')}** — Values older than 20 years (count).
+- **{_field('within_1yr_date_ct')}** — Values within the past year (count).
+- **{_field('within_1mo_date_ct')}** — Values within the past month (count).
+- **{_field('future_date_ct')}** — Values dated after the profiling date (count).
 
 ## Boolean Columns
 
 Populated when `General type == "Boolean"`.
 
-- **True count** — Rows where the value is true (count).
-- **False count** — Rows where the value is false (count, derived as `Value count - True count`).
+- **{_field('boolean_true_ct')}** — Rows where the value is true (count).
+- **False count** — Rows where the value is false (count, derived as `{_field('value_ct')} - {_field('boolean_true_ct')}`).
 
 ## Sampled and Approximate Values
 
@@ -350,16 +355,16 @@ patterns tools show one in a `Counts` field:
 When a column is flagged as PII AND the caller's role lacks permission to view PII on the column's
 project, the following raw-value fields render as `[PII Redacted]`:
 
-- Frequent values
-- Minimum text
-- Maximum text
-- Minimum value
-- Minimum value > 0
-- Maximum value
-- Minimum date
-- Maximum date
+- {_field('frequent_values')}
+- {_field('min_text')}
+- {_field('max_text')}
+- {_field('min_value')}
+- {_field('min_value_over_0')}
+- {_field('max_value')}
+- {_field('min_date')}
+- {_field('max_date')}
 
-Aggregates, counts, `Frequent patterns`, and `Standard pattern match` are never redacted — they're
+Aggregates, counts, `{_field('frequent_patterns')}`, and `{_field('std_pattern_match')}` are never redacted — they're
 distribution-level signals that don't expose individual rows.
 
 ## Semantic Data Type — values emitted by profiling, grouped by family.

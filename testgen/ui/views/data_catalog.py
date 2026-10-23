@@ -62,7 +62,8 @@ from testgen.ui.queries.profiling_queries import (
     get_table_by_id,
     get_tables_by_id,
     get_tables_by_table_group,
-    with_provenance,
+    measure_export_columns,
+    with_measure_display,
 )
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db
 from testgen.ui.services.query_cache import (
@@ -528,50 +529,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
         "add_date": {"header": "First detected"},
         "last_mod_date": {"header": "Modification detected"},
         "drop_date": {"header": "Drop detected"},
-        "record_ct": {"header": "Row count"},
-        "value_ct": {"header": "Value count"},
-        "distinct_value_ct": {"header": "Distinct values"},
-        "null_value_ct": {"header": "Null values"},
-        "zero_value_ct": {"header": "Zero values"},
-        "zero_length_ct": {"header": "Zero length"},
-        "filled_value_ct": {"header": "Dummy values"},
-        "mixed_case_ct": {"header": "Mixed case"},
-        "lower_case_ct": {"header": "Lower case"},
-        "non_alpha_ct": {"header": "Non-alpha"},
-        "includes_digit_ct": {"header": "Includes digits"},
-        "numeric_ct": {"header": "Numeric values"},
-        "date_ct": {"header": "Date values"},
-        "quoted_value_ct": {"header": "Quoted values"},
-        "lead_space_ct": {"header": "Leading spaces"},
-        "embedded_space_ct": {"header": "Embedded spaces"},
-        "avg_embedded_spaces": {"header": "Average embedded spaces"},
-        "min_length": {"header": "Minimum length"},
-        "max_length": {"header": "Maximum length"},
-        "avg_length": {"header": "Average length"},
-        "min_text": {"header": "Minimum text", "wrap": True},
-        "max_text": {"header": "Maximum text", "wrap": True},
-        "distinct_std_value_ct": {"header": "Distinct standard values"},
-        "distinct_pattern_ct": {"header": "Distinct patterns"},
-        "std_pattern_match": {"header": "Standard pattern match"},
-        "frequent_values": {"header": "Frequent values", "wrap": True},
-        "frequent_patterns": {"header": "Frequent patterns", "wrap": True},
-        "min_value": {"header": "Minimum value"},
-        "min_value_over_0": {"header": "Minimum value > 0"},
-        "max_value": {"header": "Maximum value"},
-        "avg_value": {"header": "Average value"},
-        "stdev_value": {"header": "Standard deviation"},
-        "percentile_25": {"header": "25th percentile"},
-        "percentile_50": {"header": "Median value"},
-        "percentile_75": {"header": "75th percentile"},
-        "min_date": {"header": "Minimum date (UTC)"},
-        "max_date": {"header": "Maximum date (UTC)"},
-        "before_1yr_date_ct": {"header": "Before 1 year"},
-        "before_5yr_date_ct": {"header": "Before 5 years"},
-        "before_20yr_date_ct": {"header": "Before 20 years"},
-        "within_1yr_date_ct": {"header": "Within 1 year"},
-        "within_1mo_date_ct": {"header": "Within 1 month"},
-        "future_date_ct": {"header": "Future dates"},
-        "boolean_true_ct": {"header": "Boolean true values"},
+        **measure_export_columns(),
         "sampling": {},
         "percentiles": {},
         "description": {"wrap": True},
@@ -940,7 +898,7 @@ def _get_history_run_column(run_id: str, table_name: str, column_name: str) -> d
     }
     from testgen.ui.services.database_service import fetch_one_from_db
     result = fetch_one_from_db(query, params)
-    return make_json_safe(with_provenance(dict(result))) if result else None
+    return make_json_safe(with_measure_display(dict(result))) if result else None
 
 
 def get_preview_data(

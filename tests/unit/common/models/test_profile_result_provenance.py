@@ -19,7 +19,7 @@ EXACT_ROW = {"general_type": "A", "sample_ratio": None, "percentile_method": Per
 
 
 def _measures(*acquisitions: MeasureAcquisition) -> list[str]:
-    return [measure for measure, how in ProfileResult.measure_acquisition.items() if how in acquisitions]
+    return [name for name, measure in ProfileResult.measures.items() if measure.acquisition in acquisitions]
 
 
 @pytest.mark.parametrize("measure", _measures(MeasureAcquisition.WHOLE_TABLE))

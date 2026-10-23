@@ -110,24 +110,24 @@ class ProfileMetric(StrEnum):
     DISTINCT_RATIO = "Distinct Ratio"
     FILLED_RATIO = "Filled Ratio"
     # Apply to the parent table
-    RECORD_COUNT = "Row Count"
+    RECORD_COUNT = ProfileResult.measures["record_ct"].label
     # Apply to the whole table group
     PROFILING_SCORE = "Profiling Score"
     HYGIENE_COUNT = "Hygiene Issues"
     # Alpha-only
-    MIN_LENGTH = "Minimum Length"
-    MAX_LENGTH = "Maximum Length"
-    AVG_LENGTH = "Average Length"
+    MIN_LENGTH = ProfileResult.measures["min_length"].label
+    MAX_LENGTH = ProfileResult.measures["max_length"].label
+    AVG_LENGTH = ProfileResult.measures["avg_length"].label
     # Numeric-only
-    MIN = "Minimum Value"
-    MAX = "Maximum Value"
-    AVG = "Average Value"
-    STDEV = "Standard Deviation"
+    MIN = ProfileResult.measures["min_value"].label
+    MAX = ProfileResult.measures["max_value"].label
+    AVG = ProfileResult.measures["avg_value"].label
+    STDEV = ProfileResult.measures["stdev_value"].label
     # Date-only
-    MIN_DATE = "Minimum Date"
-    MAX_DATE = "Maximum Date"
+    MIN_DATE = ProfileResult.measures["min_date"].label
+    MAX_DATE = ProfileResult.measures["max_date"].label
     # Boolean-only
-    TRUE_COUNT = "True Count"
+    TRUE_COUNT = ProfileResult.measures["boolean_true_ct"].label
 
 
 @dataclass

@@ -25,15 +25,8 @@ NOT_MEASURES = {
     "query_error",
 }
 
-# Measure columns no profiling query writes, so there is no acquisition to declare.
-UNWRITTEN_MEASURES = {"mixed_case_ct"}
 
-
-def test_every_measure_column_declares_how_it_is_acquired():
+def test_every_measure_column_is_declared():
     columns = {column.name for column in ProfileResult.__table__.columns}
 
-    assert set(ProfileResult.measure_acquisition) == columns - NOT_MEASURES - UNWRITTEN_MEASURES
-
-
-def test_every_measure_has_a_display_label():
-    assert set(ProfileResult.measure_labels) == set(ProfileResult.measure_acquisition)
+    assert set(ProfileResult.measures) == columns - NOT_MEASURES
