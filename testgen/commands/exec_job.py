@@ -27,8 +27,6 @@ from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
 
-POLL_INTERVAL = 2
-
 
 def exec_job(job_execution_id: UUID) -> None:
     """Execute a queued job. Called as a subprocess by the scheduler.
