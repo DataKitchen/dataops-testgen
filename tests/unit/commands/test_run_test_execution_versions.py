@@ -8,6 +8,7 @@ from sqlalchemy import literal_column
 from testgen.commands import run_test_execution
 from testgen.common.enums import JobKey, JobSource, JobStatus
 from testgen.common.job_context import JobContext, job_context, measurements_for, record_measurement
+from testgen.common.models.job_execution import RESTARTED_MESSAGE
 
 pytestmark = pytest.mark.unit
 
@@ -261,8 +262,11 @@ def test_a_run_keeps_its_prediction_time_for_the_final_callback(mocked_collabora
     assert "prediction_duration" in measurements_for(running_as_job)
 
 
-def _settled_job(job_id, status=JobStatus.COMPLETED, job_key=JobKey.run_tests):
-    return MagicMock(id=job_id, job_key=job_key, source="scheduler", status=status, active_seconds=12.5, kwargs={})
+def _settled_job(job_id, status=JobStatus.COMPLETED, job_key=JobKey.run_tests, error_message=None):
+    return MagicMock(
+        id=job_id, job_key=job_key, source="scheduler", status=status, active_seconds=12.5, kwargs={},
+        error_message=error_message,
+    )
 
 
 @pytest.mark.parametrize("status", [JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELED])
@@ -311,3 +315,15 @@ def test_a_run_with_no_run_row_is_not_reported(mocked_collaborators, monkeypatch
     run_test_execution.report_test_run(_settled_job(uuid4()))
 
     mixpanel.return_value.send_event.assert_not_called()
+
+
+def test_a_run_a_restart_ended_reports_no_duration(mocked_collaborators, monkeypatch):
+    """Its worked time runs up to the restart, downtime included."""
+    mixpanel = MagicMock()
+    monkeypatch.setattr(run_test_execution, "MixpanelService", mixpanel)
+
+    run_test_execution.report_test_run(_settled_job(uuid4(), JobStatus.ERROR, error_message=RESTARTED_MESSAGE))
+
+    event = mixpanel.return_value.send_event.call_args.kwargs
+    assert event["status"] == JobStatus.ERROR
+    assert "run_duration" not in event

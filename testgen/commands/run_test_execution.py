@@ -25,7 +25,7 @@ from testgen.common.job_context import job_context, measurements_for, record_mea
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
-from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.job_execution import RESTARTED_MESSAGE, JobExecution
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
@@ -238,15 +238,18 @@ def report_test_run(job_exec: JobExecution) -> None:
     test_suite = TestSuite.get(test_run.test_suite_id)
     table_group = TableGroup.get(test_suite.table_groups_id) if test_suite else None
     connection = Connection.get(table_group.connection_id) if table_group else None
-    MixpanelService().send_event(
-        "run-monitors" if job_exec.job_key == JobKey.run_monitors else "run-tests",
-        source=job_exec.source.upper(),
-        sql_flavor=connection.sql_flavor_code if connection else None,
-        test_count=test_run.test_ct,
-        status=job_exec.status,
-        run_duration=run_duration_seconds(job_exec.active_seconds, job_exec.status),
+    properties = {
+        "source": job_exec.source.upper(),
+        "sql_flavor": connection.sql_flavor_code if connection else None,
+        "test_count": test_run.test_ct,
+        "status": job_exec.status,
         **measurements_for(job_exec.id),
-    )
+    }
+    # A run a restart ended was active until the restart, so its total includes the downtime.
+    if job_exec.error_message != RESTARTED_MESSAGE:
+        properties["run_duration"] = run_duration_seconds(job_exec.active_seconds, job_exec.status)
+    event = "run-monitors" if job_exec.job_key == JobKey.run_monitors else "run-tests"
+    MixpanelService().send_event(event, **properties)
 
 
 def _sync_monitor_definitions(sql_generator: TestExecutionSQL, data_chars: list[ColumnChars]) -> None:
