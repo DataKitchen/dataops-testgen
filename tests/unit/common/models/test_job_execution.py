@@ -8,6 +8,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql.elements import Case
 
 from testgen.common.models.job_execution import (
+    RESTARTED_MESSAGE,
     JobExecution,
     JobStatus,
     OnlyWhenTransitioningTo,
@@ -493,14 +494,32 @@ def test_request_resume_hands_a_paused_run_back_to_the_poll(mock_session):
     assert job.status == "resume_requested"
 
 
-def test_recover_stale_cancels_every_status_that_implies_a_dead_process(mock_session):
-    mock_session.scalars.return_value.all.return_value = [uuid4(), uuid4()]
+def test_recover_stale_ends_every_status_that_implies_a_dead_process_as_an_error(mock_session):
+    moved = {JobStatus.PAUSED: {uuid4()}, JobStatus.INTERRUPTED: {uuid4()}, JobStatus.ERROR: {uuid4(), uuid4()}}
+    mock_session.scalars.side_effect = lambda statement: MagicMock(
+        all=MagicMock(return_value=list(moved[statement.compile().params["status"]]))
+    )
 
-    # Three passes now -- hold the paused, continue the rest of the checkpointed, cancel what
-    # is left -- so all three are counted.
-    assert JobExecution.recover_stale() == 6
+    # Only the error pass's rows have settled; the parked ones still have work coming.
+    assert JobExecution.recover_stale() == moved[JobStatus.ERROR]
 
-    assert _narrows_to(_settling_pass(mock_session, JobStatus.CANCEL_REQUESTED), JobStatus.stale_recoverable())
+    error = _settling_pass(mock_session, JobStatus.ERROR)
+    assert _narrows_to(error, JobStatus.stale_recoverable())
+    assert error.params["error_message"] == RESTARTED_MESSAGE
+    assert "completed_at" in error.params
+
+
+def test_recover_stale_leaves_a_requested_cancel_for_the_poll(mock_session):
+    """A cancel somebody asked for is the only thing that ends a run as canceled, so a restart
+    neither cancels a run on its own nor turns a requested cancel into an error."""
+    mock_session.scalars.return_value.all.return_value = []
+
+    JobExecution.recover_stale()
+
+    targets = {call[0][0].compile().params["status"] for call in mock_session.scalars.call_args_list}
+    assert JobStatus.CANCEL_REQUESTED not in targets
+    assert JobStatus.CANCELED not in targets
+    assert JobStatus.CANCEL_REQUESTED not in JobStatus.sources_for(JobStatus.ERROR)
 
 
 def _billing_expression(statement):
@@ -540,7 +559,7 @@ def test_recover_stale_holds_a_checkpointed_pause_rather_than_queueing_it(mock_s
     """A pause is the one stop a restart must not undo. Continuing it would land INTERRUPTED,
     which the next poll claims -- silently resuming a run somebody chose to stop.
 
-    Runs before the cancel pass, so the pause is settled by the time that pass looks."""
+    Runs before the error pass, so the pause is settled by the time that pass looks."""
     mock_session.scalars.return_value.all.return_value = []
 
     JobExecution.recover_stale()
@@ -551,21 +570,21 @@ def test_recover_stale_holds_a_checkpointed_pause_rather_than_queueing_it(mock_s
     assert "resume_state IS NOT NULL" in str(park)
 
 
-def test_recover_stale_cancels_a_pause_that_never_checkpointed(mock_session):
-    """The cancel pass takes the whole stale set, so a pause that never got far enough to write
+def test_recover_stale_ends_a_pause_that_never_checkpointed_as_an_error(mock_session):
+    """The error pass takes the whole stale set, so a pause that never got far enough to write
     a checkpoint falls through to it rather than parking as progress it does not have."""
     mock_session.scalars.return_value.all.return_value = []
 
     JobExecution.recover_stale()
 
-    cancel = _settling_pass(mock_session, JobStatus.CANCEL_REQUESTED)
-    assert _narrows_to(cancel, JobStatus.stale_recoverable())
-    assert "resume_state IS NOT NULL" not in str(cancel)
+    error = _settling_pass(mock_session, JobStatus.ERROR)
+    assert _narrows_to(error, JobStatus.stale_recoverable())
+    assert "resume_state IS NOT NULL" not in str(error)
 
 
 def test_recover_stale_continues_a_row_that_carries_a_checkpoint(mock_session):
     """The checkpoint is the job's last write before it unwinds, so a row holding one has its
-    work accounted for and only its exit went unrecorded. Canceling it would throw that away."""
+    work accounted for and only its exit went unrecorded. Ending it would throw that away."""
     mock_session.scalars.return_value.all.return_value = []
 
     JobExecution.recover_stale()
@@ -737,13 +756,13 @@ def test_the_recovery_passes_bill_what_the_dead_process_worked(mock_session):
 
     JobExecution.recover_stale()
 
-    for target in (JobStatus.PAUSED, JobStatus.INTERRUPTED, JobStatus.CANCEL_REQUESTED):
+    for target in (JobStatus.PAUSED, JobStatus.INTERRUPTED, JobStatus.ERROR):
         statement = str(_settling_pass(mock_session, target)).split(" WHERE ")[0]
         assert "active_seconds=CASE" in statement, target
         assert "coalesce(job_executions.active_seconds" in statement, target
 
 
-def test_the_recovery_cancel_pass_does_not_bill_a_claim_that_never_dispatched(mock_session):
+def test_the_recovery_error_pass_does_not_bill_a_claim_that_never_dispatched(mock_session):
     """It is the one recovery pass a claimed row reaches, and the span from a claim the row is
     still sitting on is nobody's work. Spelled out rather than derived the way the code derives
     it, so re-admitting CLAIMED fails here rather than passing silently."""
@@ -752,7 +771,7 @@ def test_the_recovery_cancel_pass_does_not_bill_a_claim_that_never_dispatched(mo
     JobExecution.recover_stale()
 
     assert _narrows_to(
-        _settling_pass(mock_session, JobStatus.CANCEL_REQUESTED),
+        _settling_pass(mock_session, JobStatus.ERROR),
         {JobStatus.RUNNING, JobStatus.INTERRUPT_REQUESTED, JobStatus.PAUSE_REQUESTED},
     )
 

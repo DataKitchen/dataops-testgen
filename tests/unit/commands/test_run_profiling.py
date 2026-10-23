@@ -23,6 +23,7 @@ from testgen.common.database.profiling_capabilities import ProfilingCapabilities
 from testgen.common.enums import JobKey, JobStatus
 from testgen.common.models import get_current_session
 from testgen.common.models.hygiene_issue import HygieneIssue
+from testgen.common.models.job_execution import RESTARTED_MESSAGE
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import PROGRESS_KEYS, ProfilingRun
 from testgen.common.models.stg_functional_table_update import StgFunctionalTableUpdate
@@ -626,7 +627,9 @@ def test_on_start_keeps_a_resumed_runs_original_start_time():
     assert existing.profiling_starttime == ORIGINAL_START
 
 
-def _settled_job_exec(active_seconds=None, started_at=None, completed_at=None, status=JobStatus.COMPLETED):
+def _settled_job_exec(
+    active_seconds=None, started_at=None, completed_at=None, status=JobStatus.COMPLETED, error_message=None
+):
     job_exec = MagicMock()
     job_exec.id = uuid4()
     job_exec.source = "ui"
@@ -635,6 +638,7 @@ def _settled_job_exec(active_seconds=None, started_at=None, completed_at=None, s
     job_exec.started_at = started_at
     job_exec.completed_at = completed_at
     job_exec.status = status
+    job_exec.error_message = error_message
     return job_exec
 
 
@@ -890,6 +894,40 @@ def test_a_run_that_errored_is_still_reported():
         report_profiling_run(job_exec)
 
     mixpanel.return_value.send_event.assert_called_once()
+
+
+def test_a_run_a_restart_ended_is_reported_without_a_duration():
+    """It stayed active from its last claim until the restart, so its total counts the downtime."""
+    job_exec = _settled_job_exec(active_seconds=90.0, status=JobStatus.ERROR, error_message=RESTARTED_MESSAGE)
+
+    with (
+        patch(f"{MODULE}.ProfilingRun"),
+        patch(f"{MODULE}.TableGroup"),
+        patch(f"{MODULE}.Connection"),
+        patch(f"{MODULE}.MixpanelService") as mixpanel,
+    ):
+        report_profiling_run(job_exec)
+
+    mixpanel.return_value.send_event.assert_called_once()
+    assert "run_duration" not in mixpanel.return_value.send_event.call_args.kwargs
+
+
+@pytest.mark.parametrize(
+    ("status", "error_message"),
+    [(JobStatus.COMPLETED, None), (JobStatus.ERROR, "Connection refused")],
+)
+def test_a_run_a_restart_did_not_end_is_reported_with_its_duration(status, error_message):
+    job_exec = _settled_job_exec(active_seconds=90.0, status=status, error_message=error_message)
+
+    with (
+        patch(f"{MODULE}.ProfilingRun"),
+        patch(f"{MODULE}.TableGroup"),
+        patch(f"{MODULE}.Connection"),
+        patch(f"{MODULE}.MixpanelService") as mixpanel,
+    ):
+        report_profiling_run(job_exec)
+
+    assert mixpanel.return_value.send_event.call_args.kwargs["run_duration"] == 90.0
 
 
 # --- the schema a run scanned ---
