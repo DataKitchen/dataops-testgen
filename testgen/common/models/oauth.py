@@ -11,6 +11,8 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.hybrid import hybrid_property
 
 from testgen import settings
+from testgen.common.audit.actions import AuditTargetType
+from testgen.common.audit.fields import SECRET_INFO_KEY, AuditFields
 from testgen.common.models import Base
 
 
@@ -49,6 +51,9 @@ class OAuth2Client(Base, OAuth2ClientMixin):
 
     id = Column(postgresql.UUID(as_uuid=True), primary_key=True, server_default="gen_random_uuid()")
     client_type = Column(String(20), nullable=False, default=OAuth2ClientType.EXTERNAL)
+    client_secret = Column(String(120), info={SECRET_INFO_KEY: True})
+
+    __audit__ = AuditFields(target_type=AuditTargetType.OAUTH_CLIENT, id="client_id", name="client_name")
 
     # Override to widen — JWTs can exceed 255 chars
     # (the mixin defines client_id as VARCHAR(48) which is fine)
@@ -81,7 +86,8 @@ class OAuth2Token(Base, OAuth2TokenMixin):
     user_id = Column(postgresql.UUID(as_uuid=True), ForeignKey("auth_users.id", ondelete="CASCADE"), nullable=True)
 
     # Override to allow longer JWTs as access tokens
-    access_token = Column(String(2048), unique=True, nullable=False)
+    access_token = Column(String(2048), unique=True, nullable=False, info={SECRET_INFO_KEY: True})
+    refresh_token = Column(String(255), index=True, info={SECRET_INFO_KEY: True})
 
     # Set only for personal access tokens; NULL for tokens from the auth-code / MCP flows
     name = Column(String(255), nullable=True)
@@ -90,6 +96,8 @@ class OAuth2Token(Base, OAuth2TokenMixin):
     # rotation does not extend the chain's lifetime. With client_id and user_id, it also
     # identifies the chain.
     refresh_token_chain_issued_at = Column(Integer, nullable=True)
+
+    __audit__ = AuditFields(target_type=AuditTargetType.ACCESS_TOKEN, name="name", values=("name", "expires_in"))
 
     @hybrid_property
     def refresh_chain_issued_at(self) -> int:

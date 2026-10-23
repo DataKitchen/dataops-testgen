@@ -6,6 +6,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import Boolean, Column, String, asc, func, select, text, update
 from sqlalchemy.dialects import postgresql
 
+from testgen.common.audit.actions import AuditTargetType
+from testgen.common.audit.fields import SECRET_INFO_KEY, AuditFields
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString
 from testgen.common.models.entity import Entity
@@ -40,7 +42,7 @@ class User(Entity):
     username: str = Column(String)
     email: str = Column(NullIfEmptyString)
     name: str = Column(NullIfEmptyString)
-    password: str = Column(String)
+    password: str = Column(String, info={SECRET_INFO_KEY: True})
     is_global_admin: bool = Column(Boolean, nullable=False, default=False)
     latest_login: datetime = Column(postgresql.TIMESTAMP)
     preferences: dict = Column(
@@ -49,6 +51,13 @@ class User(Entity):
 
     _get_by = "username"
     _default_order_by = (asc(func.lower(username)),)
+
+    __audit__ = AuditFields(
+        target_type=AuditTargetType.USER,
+        name="username",
+        values=("username", "email", "name", "is_global_admin"),
+        withheld=("password",),
+    )
 
     def save(self, update_latest_login: bool = False) -> None:
         if self.id and not update_latest_login:

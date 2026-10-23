@@ -13,9 +13,11 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import create_engine
 
 from testgen import settings
 from testgen.common.audit.sinks import AUDIT_LOG_FILE_NAME, get_sink
+from testgen.common.models import Session, bound_session
 from testgen.mcp.permissions import set_mcp_username
 
 # Fictional role matrix for tests. role_a has full access (but NOT view_pii — several
@@ -65,6 +67,15 @@ def audit_log(tmp_path, monkeypatch):
     if get_sink.cache_info().currsize and (close := getattr(get_sink(), "close", None)):
         close()
     get_sink.cache_clear()
+
+
+@pytest.fixture
+def audit_session():
+    """A current database session, with no tables, whose commit writes the audit records made on it."""
+    db_session = Session(bind=create_engine("sqlite://"))
+    with bound_session(db_session):
+        yield db_session
+    db_session.close()
 
 
 @pytest.fixture

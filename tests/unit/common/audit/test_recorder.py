@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from testgen.common.audit import recorder
-from testgen.common.audit.actions import AuditAction, Outcome
+from testgen.common.audit.actions import AuditAction, AuditTargetType, Outcome
 from testgen.common.audit.record import TARGETS_CAP, Actor
 from testgen.common.audit.recorder import AuditContext, bind, record, set_context_resolver
 from testgen.common.enums import JobSource
@@ -96,6 +96,17 @@ def test_record_carries_the_bound_context(session, audit_log):
     assert entry["actor_username"] == "alice"
     assert entry["actor_display_name"] == "Alice A."
     assert (entry["cause_type"], entry["cause_id"]) == ("schedule", "s1")
+
+
+def test_an_explicit_cause_overrides_the_cause_of_the_context(session, audit_log):
+    user_id = uuid4()
+    bind(AuditContext(source=JobSource.ui, actor=Actor.of(_user()), cause_type="schedule", cause_id="s1"))
+    record(AuditAction.PROJECT_MEMBER_REMOVED, cause_type=AuditTargetType.USER, cause_id=user_id)
+    session.commit()
+
+    [entry] = audit_log.records()
+    assert (entry["cause_type"], entry["cause_id"]) == ("user", str(user_id))
+    assert entry["actor_username"] == "alice"
 
 
 def test_resolver_supplies_the_context_when_none_is_bound(session, audit_log):

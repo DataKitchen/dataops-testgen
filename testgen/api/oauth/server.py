@@ -17,10 +17,14 @@ from authlib.oauth2.rfc6749.authenticate_client import authenticate_none
 from authlib.oauth2.rfc6749.errors import InvalidRequestError
 from authlib.oauth2.rfc7009 import RevocationEndpoint
 from authlib.oauth2.rfc7636 import CodeChallenge
-from sqlalchemy import and_, case, or_, select, update
+from sqlalchemy import ColumnElement, and_, case, exists, or_, select, update
 
 from testgen import settings
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.record import Actor
+from testgen.common.audit.recorder import AuditContext, bind, record
 from testgen.common.auth import create_jwt_token
+from testgen.common.enums import JobSource
 from testgen.common.models import get_current_session
 from testgen.common.models.oauth import OAuth2AuthorizationCode, OAuth2Client, OAuth2ClientAuthMethod, OAuth2Token
 from testgen.common.models.user import User
@@ -66,6 +70,17 @@ class AuthorizationCodeGrant(grants.AuthorizationCodeGrant):
         session = get_current_session()
         session.add(auth_code)
         return auth_code
+
+    def save_token(self, token):
+        """Save the tokens issued for an authorization code, and record the client's authorization with its lifetime.
+
+        The grant lasts as long as its refresh token, which refreshing does not extend; without one, as long as the
+        access token.
+        """
+        super().save_token(token)
+        lifetime = settings.REFRESH_TOKEN_EXPIRES_IN if token.get("refresh_token") else token.get("expires_in")
+        bind(AuditContext(source=JobSource.api, actor=Actor.of(self.request.user)))
+        record(AuditAction.OAUTH_CLIENT_AUTHORIZED, self.request.client, changes={"expires_in": {"to": lifetime}})
 
     def query_authorization_code(self, code, client):
         session = get_current_session()
@@ -150,6 +165,29 @@ class RefreshTokenGrant(grants.RefreshTokenGrant):
             credential.refresh_token_revoked_at = int(time.time())
 
 
+def _chain_of(credential: OAuth2Token) -> ColumnElement[bool]:
+    """The condition selecting the rows of the credential's rotation chain."""
+    return and_(
+        OAuth2Token.client_id == credential.client_id,
+        OAuth2Token.user_id == credential.user_id,
+        OAuth2Token.refresh_chain_issued_at == credential.refresh_chain_issued_at,
+    )
+
+
+def _chain_holds_live_refresh_token(credential: OAuth2Token) -> bool:
+    """Whether a row of the credential's rotation chain holds a refresh token that is neither revoked nor expired."""
+    return get_current_session().scalar(
+        select(
+            exists().where(
+                _chain_of(credential),
+                OAuth2Token.refresh_token.is_not(None),
+                OAuth2Token.refresh_token_revoked_at == 0,
+                OAuth2Token.refresh_chain_issued_at + settings.REFRESH_TOKEN_EXPIRES_IN >= int(time.time()),
+            )
+        )
+    )
+
+
 def _revoke_chain(credential: OAuth2Token) -> int:
     """Revoke every live access and refresh token in the credential's rotation chain.
 
@@ -163,12 +201,7 @@ def _revoke_chain(credential: OAuth2Token) -> int:
     )
     result = get_current_session().execute(
         update(OAuth2Token)
-        .where(
-            OAuth2Token.client_id == credential.client_id,
-            OAuth2Token.user_id == credential.user_id,
-            OAuth2Token.refresh_chain_issued_at == credential.refresh_chain_issued_at,
-            or_(access_live, OAuth2Token.refresh_token_revoked_at == 0),
-        )
+        .where(_chain_of(credential), or_(access_live, OAuth2Token.refresh_token_revoked_at == 0))
         .values(
             access_token_revoked_at=case((access_live, now), else_=OAuth2Token.access_token_revoked_at),
             refresh_token_revoked_at=case(
@@ -199,10 +232,19 @@ class TestGenRevocationEndpoint(RevocationEndpoint):
         if hint == "access_token":
             token.access_token_revoked_at = now
         else:
+            # The client's access ends with its live refresh token; revoking an access token alone leaves it
+            public_client = request.client.token_endpoint_auth_method == OAuth2ClientAuthMethod.NONE
+            ends_access = (bool(token.refresh_token) and token.is_refresh_token_active()) or (
+                public_client and _chain_holds_live_refresh_token(token)
+            )
             token.access_token_revoked_at = now
             token.refresh_token_revoked_at = now
-            if request.client.token_endpoint_auth_method == OAuth2ClientAuthMethod.NONE:
+            if public_client:
                 _revoke_chain(token)
+            if ends_access:
+                owner = get_current_session().get(User, token.user_id) if token.user_id else None
+                bind(AuditContext(source=JobSource.api, actor=Actor.of(owner) if owner else None))
+                record(AuditAction.OAUTH_CLIENT_ACCESS_REVOKED, request.client)
 
 
 class TestGenAuthorizationServer(AuthorizationServer):

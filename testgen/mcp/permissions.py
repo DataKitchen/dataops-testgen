@@ -7,6 +7,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from testgen.common.acting_user import set_acting_username
+from testgen.common.audit.record import Actor
+from testgen.common.audit.recorder import AuditContext, bind
+from testgen.common.enums import JobSource
 from testgen.common.models.project_membership import ProjectMembership
 from testgen.common.models.user import User
 from testgen.mcp.exceptions import MCPAuthenticationError, MCPPermissionDenied
@@ -154,6 +157,7 @@ def mcp_permission(permission: str) -> Callable:
         def wrapper(*args, **kwargs):
             user = get_authorized_mcp_user()
             set_acting_username(user.username)
+            bind(AuditContext(source=JobSource.mcp, actor=Actor.of(user)))
             if permission == "global_admin":
                 if not user.is_global_admin:
                     raise MCPPermissionDenied(

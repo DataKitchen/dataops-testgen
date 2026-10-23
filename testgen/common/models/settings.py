@@ -32,14 +32,17 @@ class PersistedSetting(Base):
             return default
 
     @classmethod
-    def set(cls, key: str, value: Any):
+    def set(cls, key: str, value: Any) -> Any:
+        """Store ``value`` under ``key``. Returns the value it replaced, or ``None`` when the key was unset."""
         # Atomic upsert: avoids the check-then-insert race that bites when multiple
         # Streamlit reruns or sibling processes (UI + scheduler) touch the same key.
         session = get_current_session()
+        previous = select(cls.value).where(cls.key == key).scalar_subquery()
         stmt = pg_insert(cls).values(key=key, value=value)
         stmt = stmt.on_conflict_do_update(index_elements=["key"], set_={"value": stmt.excluded.value})
-        session.execute(stmt)
+        replaced = session.execute(stmt.returning(previous)).scalar_one()
         session.flush()
+        return replaced
 
     def __repr__(self):
         return f"{self.__class__.__name__}(key={self.key!r} value={self.value!r})"
