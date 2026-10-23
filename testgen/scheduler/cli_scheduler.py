@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from testgen.commands.job_registry import JOB_DISPATCH
+from testgen.commands.job_registry import JOB_DISPATCH, run_final_callbacks
 from testgen.commands.run_upgrade_db_config import is_db_revision_up_to_date
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
@@ -143,14 +143,31 @@ def check_db_is_ready() -> bool:
     return True
 
 
+def _run_final_callbacks_for(job_ids: Iterable[UUID]) -> None:
+    """Fire the final callbacks of each job execution in ``job_ids`` that can still be read."""
+    for job_id in job_ids:
+        try:
+            with database_session():
+                job_exec = JobExecution.get(job_id)
+        except Exception:
+            LOG.exception("Could not read job execution %s to fire its final callbacks", job_id)
+            continue
+        if job_exec:
+            run_final_callbacks(job_exec)
+
+
 def run_scheduler():
     while not check_db_is_ready():
         time.sleep(10)
 
     with database_session():
-        settled = JobExecution.recover_stale()
-    if settled:
-        LOG.info("Settled %d job execution(s) left by a previous session", settled)
+        failed = JobExecution.recover_stale()
+    if failed:
+        # On a thread, because a notification can wait on its delivery timeout, and the cron
+        # triggers that fall due before the scheduler starts are never fired.
+        threading.Thread(
+            target=_run_final_callbacks_for, args=(failed,), name="restart-callbacks", daemon=True,
+        ).start()
 
     scheduler = CliScheduler()
     scheduler.run()

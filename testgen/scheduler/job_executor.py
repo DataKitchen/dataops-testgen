@@ -226,8 +226,8 @@ class JobExecutor:
         Only pausable job keys are asked, since no other handler can see the request. This
         does not wait: the jobs that honor it exit like any other, so the shutdown wait that
         follows covers them and asking adds no delay of its own. A job that stops writes its own
-        INTERRUPTED and the next start claims it; one killed before it got there is canceled by
-        ``recover_stale``, since nothing recorded where it had reached.
+        INTERRUPTED and the next start claims it; one killed before it got there is ended as an
+        error by ``recover_stale``, since nothing recorded where it had reached.
         """
         with self._running_jobs_cond:
             running_ids = set(self._running_jobs)

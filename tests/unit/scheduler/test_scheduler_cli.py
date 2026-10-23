@@ -13,7 +13,7 @@ from testgen.common.enums import JobKey, JobSource
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import JobSchedule
 from testgen.scheduler.base import DelayedPolicy
-from testgen.scheduler.cli_scheduler import CliJob, CliScheduler, run_scheduler
+from testgen.scheduler.cli_scheduler import CliJob, CliScheduler, _run_final_callbacks_for, run_scheduler
 
 pytestmark = pytest.mark.unit
 
@@ -201,13 +201,54 @@ def test_the_shutdown_wait_is_bounded(scheduler_instance):
 def test_run_scheduler_settles_stale_jobs_before_starting(scheduler_db_session):
     with (
         patch("testgen.scheduler.cli_scheduler.check_db_is_ready", return_value=True),
-        patch.object(JobExecution, "recover_stale", return_value=2) as recover,
+        patch.object(JobExecution, "recover_stale", return_value=set()) as recover,
         patch("testgen.scheduler.cli_scheduler.CliScheduler") as scheduler_cls,
     ):
         run_scheduler()
 
     recover.assert_called_once()
     scheduler_cls.return_value.run.assert_called_once()
+
+
+def test_run_scheduler_fires_final_callbacks_for_the_runs_a_restart_ended(scheduler_db_session):
+    """Those runs reached a final status, so they notify like any other run that failed. Off the
+    startup path, so a slow delivery does not hold back the scheduler."""
+    failed = {uuid4(), uuid4()}
+    rows = {job_id: MagicMock(id=job_id) for job_id in failed}
+    with (
+        patch("testgen.scheduler.cli_scheduler.check_db_is_ready", return_value=True),
+        patch.object(JobExecution, "recover_stale", return_value=failed),
+        patch.object(JobExecution, "get", side_effect=rows.get),
+        patch("testgen.scheduler.cli_scheduler.run_final_callbacks") as callbacks,
+        patch("testgen.scheduler.cli_scheduler.threading.Thread") as thread,
+        patch("testgen.scheduler.cli_scheduler.CliScheduler") as scheduler_cls,
+    ):
+        run_scheduler()
+        callbacks.assert_not_called()
+        thread.return_value.start.assert_called_once()
+        scheduler_cls.return_value.run.assert_called_once()
+
+        thread.call_args.kwargs["target"](*thread.call_args.kwargs["args"])
+
+    assert {call.args[0].id for call in callbacks.call_args_list} == failed
+
+
+def test_a_restart_ended_run_that_cannot_be_read_does_not_stop_the_others(scheduler_db_session):
+    unreadable, deleted, readable = uuid4(), uuid4(), uuid4()
+    row = MagicMock(id=readable)
+
+    def get(job_id):
+        if job_id == unreadable:
+            raise RuntimeError("connection reset")
+        return row if job_id == readable else None
+
+    with (
+        patch.object(JobExecution, "get", side_effect=get),
+        patch("testgen.scheduler.cli_scheduler.run_final_callbacks") as callbacks,
+    ):
+        _run_final_callbacks_for([unreadable, deleted, readable])
+
+    callbacks.assert_called_once_with(row)
 
 
 @pytest.mark.parametrize(
@@ -229,7 +270,7 @@ def test_the_scheduler_waits_for_the_upgrade_instead_of_exiting(scheduler_db_ses
     with (
         patch("testgen.scheduler.cli_scheduler.is_db_revision_up_to_date", side_effect=[False, False, True]),
         patch("testgen.scheduler.cli_scheduler.time.sleep") as sleep,
-        patch.object(JobExecution, "recover_stale", return_value=0) as recover,
+        patch.object(JobExecution, "recover_stale", return_value=set()) as recover,
         patch("testgen.scheduler.cli_scheduler.CliScheduler"),
     ):
         run_scheduler()
