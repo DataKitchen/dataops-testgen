@@ -553,10 +553,7 @@ def get_profiling_trends(
     metrics: Annotated[
         list[str],
         Field(
-            description="One or more metric names. Accepted values: `Null Ratio`, `Distinct Ratio`, `Filled Ratio`, "
-            "`Row Count`, `Profiling Score`, `Hygiene Issues`, `Minimum Length`, `Maximum Length`, `Average Length`, "
-            "`Minimum Value`, `Maximum Value`, `Average Value`, `Standard Deviation`, `Minimum Date`, `Maximum Date`, "
-            "`True Count`.",
+            description=f"One or more metric names. Accepted values: {', '.join(f'`{metric}`' for metric in ProfileMetric)}.",
         ),
     ],
     table_name: Annotated[str | None, Field(description="Optional — restrict to one table (case-sensitive).")] = None,

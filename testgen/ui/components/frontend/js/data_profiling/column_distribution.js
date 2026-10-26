@@ -117,9 +117,9 @@ function AlphaColumn(/** @type Column */ item) {
                 ),
                 items: [
                     { label: 'Actual Values', value: item.value_ct - item.zero_length_ct - item.filled_value_ct, color: 'green' },
-                    { label: 'Null', value: item.null_value_ct, color: 'brownLight', showPercent: true },
-                    { label: 'Zero Length', value: item.zero_length_ct, color: 'yellow' },
-                    { label: 'Dummy Values', value: item.filled_value_ct, color: 'orange' },
+                    { label: measureLabel(item, 'null_value_ct'), value: item.null_value_ct, color: 'brownLight', showPercent: true },
+                    { label: measureLabel(item, 'zero_length_ct'), value: item.zero_length_ct, color: 'yellow' },
+                    { label: measureLabel(item, 'filled_value_ct'), value: item.filled_value_ct, color: 'orange' },
                 ],
             }),
             SummaryBar({
@@ -127,7 +127,7 @@ function AlphaColumn(/** @type Column */ item) {
                 width: summaryWidth,
                 label: `Duplicate Values: ${formatNumber(duplicates)} (${friendlyPercent(duplicates * 100 / item.value_ct)}%)`,
                 items: [
-                    { label: 'Distinct', value: item.distinct_value_ct, color: 'indigo' },
+                    { label: measureLabel(item, 'distinct_value_ct'), value: item.distinct_value_ct, color: 'indigo' },
                     { label: 'Duplicates', value: duplicates, color: 'orange' },
                     { value: item.null_value_ct, color: 'empty' },
                 ],
@@ -138,7 +138,7 @@ function AlphaColumn(/** @type Column */ item) {
                     width: summaryWidth,
                     label: `Duplicate Values, Standardized: ${formatNumber(duplicatesStandardized)} (${friendlyPercent(duplicatesStandardized * 100 / item.value_ct)}%)`,
                     items: [
-                        { label: 'Distinct', value: item.distinct_std_value_ct, color: 'indigo' },
+                        { label: measureLabel(item, 'distinct_std_value_ct'), value: item.distinct_std_value_ct, color: 'indigo' },
                         { label: 'Duplicates', value: duplicatesStandardized, color: 'orange' },
                         { value: item.null_value_ct, color: 'empty' },
                     ],
@@ -149,10 +149,10 @@ function AlphaColumn(/** @type Column */ item) {
                 width: summaryWidth,
                 label: withProvenanceMark('Case Distribution', item, 'upper_case_ct'),
                 items: [
-                    { label: 'Mixed Case', value: item.mixed_case_ct, color: 'purple' },
-                    { label: 'Lower Case', value: item.lower_case_ct, color: 'blueLight' },
-                    { label: 'Upper Case', value: item.upper_case_ct, color: 'blue' },
-                    { label: 'Non-Alpha', value: item.non_alpha_ct, color: 'brown' },
+                    { label: measureLabel(item, 'mixed_case_ct'), value: item.mixed_case_ct, color: 'purple' },
+                    { label: measureLabel(item, 'lower_case_ct'), value: item.lower_case_ct, color: 'blueLight' },
+                    { label: measureLabel(item, 'upper_case_ct'), value: item.upper_case_ct, color: 'blue' },
+                    { label: measureLabel(item, 'non_alpha_ct'), value: item.non_alpha_ct, color: 'brown' },
                     { value: item.null_value_ct, color: 'empty' },
                 ],
             }),
@@ -160,15 +160,15 @@ function AlphaColumn(/** @type Column */ item) {
         item.frequent_values || item.frequent_patterns ? div(
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-5 tg-profile--plot-block' },
             item.frequent_values === PII_REDACTED
-                ? Attribute({ label: 'Frequent Values', value: PII_REDACTED, width: attributeWidth })
+                ? Attribute({ label: measureLabel(item, 'frequent_values'), value: PII_REDACTED, width: attributeWidth })
                 : item.frequent_values ? FrequencyBars({
-                    title: withProvenanceMark('Frequent Values', item, 'frequent_values'),
+                    title: measureLabelWithMark(item, 'frequent_values'),
                     total: item.record_ct,
                     nullCount: item.null_value_ct,
                     items: frequencyItems(item.frequent_values),
                 }) : null,
             item.frequent_patterns ? FrequencyBars({
-                title: withProvenanceMark('Frequent Patterns', item, 'frequent_patterns'),
+                title: measureLabelWithMark(item, 'frequent_patterns'),
                 total: item.record_ct,
                 nullCount: item.null_value_ct,
                 items: frequencyItems(item.frequent_patterns),
@@ -178,34 +178,34 @@ function AlphaColumn(/** @type Column */ item) {
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
             div(
                 { class: 'flex-column fx-gap-3 tg-profile--percent-column' },
-                PercentBar({ label: 'Includes Digits', adornment: ProvenanceMark(item, 'includes_digit_ct'), value: item.includes_digit_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Numeric Values', adornment: ProvenanceMark(item, 'numeric_ct'), value: item.numeric_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Zero Values', value: item.zero_value_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Date Values', adornment: ProvenanceMark(item, 'date_ct'), value: item.date_ct, total, width: percentWidth }),
+                PercentBar({ label: measureLabel(item, 'includes_digit_ct'), adornment: ProvenanceMark(item, 'includes_digit_ct'), value: item.includes_digit_ct, total, width: percentWidth }),
+                PercentBar({ label: measureLabel(item, 'numeric_ct'), adornment: ProvenanceMark(item, 'numeric_ct'), value: item.numeric_ct, total, width: percentWidth }),
+                PercentBar({ label: measureLabel(item, 'zero_value_ct'), value: item.zero_value_ct, total, width: percentWidth }),
+                PercentBar({ label: measureLabel(item, 'date_ct'), adornment: ProvenanceMark(item, 'date_ct'), value: item.date_ct, total, width: percentWidth }),
             ),
             div(
                 { class: 'flex-column fx-gap-3 tg-profile--percent-column' },
-                PercentBar({ label: 'Quoted Values', adornment: ProvenanceMark(item, 'quoted_value_ct'), value: item.quoted_value_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Leading Spaces', adornment: ProvenanceMark(item, 'lead_space_ct'), value: item.lead_space_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Embedded Spaces', adornment: ProvenanceMark(item, 'embedded_space_ct'), value: item.embedded_space_ct ?? 0, total, width: percentWidth }),
-                Attribute({ label: withProvenanceMark('Average Embedded Spaces', item, 'avg_embedded_spaces'), value: formatNumber(item.avg_embedded_spaces), width: attributeWidth }),
+                PercentBar({ label: measureLabel(item, 'quoted_value_ct'), adornment: ProvenanceMark(item, 'quoted_value_ct'), value: item.quoted_value_ct, total, width: percentWidth }),
+                PercentBar({ label: measureLabel(item, 'lead_space_ct'), adornment: ProvenanceMark(item, 'lead_space_ct'), value: item.lead_space_ct, total, width: percentWidth }),
+                PercentBar({ label: measureLabel(item, 'embedded_space_ct'), adornment: ProvenanceMark(item, 'embedded_space_ct'), value: item.embedded_space_ct ?? 0, total, width: percentWidth }),
+                Attribute({ label: measureLabelWithMark(item, 'avg_embedded_spaces'), value: formatNumber(item.avg_embedded_spaces), width: attributeWidth }),
             ),
         ),
         div(
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
-            Attribute({ label: 'Minimum Length', value: formatNumber(item.min_length), width: attributeWidth }),
-            Attribute({ label: 'Maximum Length', value: formatNumber(item.max_length), width: attributeWidth }),
-            Attribute({ label: 'Average Length', value: formatNumber(item.avg_length), width: attributeWidth }),
+            Attribute({ label: measureLabel(item, 'min_length'), value: formatNumber(item.min_length), width: attributeWidth }),
+            Attribute({ label: measureLabel(item, 'max_length'), value: formatNumber(item.max_length), width: attributeWidth }),
+            Attribute({ label: measureLabel(item, 'avg_length'), value: formatNumber(item.avg_length), width: attributeWidth }),
         ),
         div(
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
-            Attribute({ label: 'Minimum Text', value: item.min_text, width: attributeWidth }),
-            Attribute({ label: 'Maximum Text', value: item.max_text, width: attributeWidth }),
+            Attribute({ label: measureLabel(item, 'min_text'), value: item.min_text, width: attributeWidth }),
+            Attribute({ label: measureLabel(item, 'max_text'), value: item.max_text, width: attributeWidth }),
         ),
         div(
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
-            Attribute({ label: withProvenanceMark('Standard Pattern Match', item, 'std_pattern_match'), value: standardPattern, width: attributeWidth }),
-            Attribute({ label: withProvenanceMark('Distinct Patterns', item, 'distinct_pattern_ct'), value: formatNumber(item.distinct_pattern_ct), width: attributeWidth }),
+            Attribute({ label: measureLabelWithMark(item, 'std_pattern_match'), value: standardPattern, width: attributeWidth }),
+            Attribute({ label: measureLabelWithMark(item, 'distinct_pattern_ct'), value: formatNumber(item.distinct_pattern_ct), width: attributeWidth }),
         ),
     );
 }
@@ -221,7 +221,7 @@ function BooleanColumn(/** @type Column */ item) {
             items: [
                 { label: 'True', value: item.boolean_true_ct, color: 'brownLight' },
                 { label: 'False', value: item.value_ct - item.boolean_true_ct, color: 'brown' },
-                { label: 'Null', value: item.null_value_ct, color: 'brownDark' },
+                { label: measureLabel(item, 'null_value_ct'), value: item.null_value_ct, color: 'brownDark' },
             ],
         }),
     );
@@ -238,29 +238,29 @@ function DatetimeColumn(/** @type Column */ item) {
             width: summaryWidth,
             items: [
                 { label: 'Values', value: item.record_ct - item.null_value_ct, color: 'blue' },
-                { label: 'Null', value: item.null_value_ct, color: 'brownLight' },
+                { label: measureLabel(item, 'null_value_ct'), value: item.null_value_ct, color: 'brownLight' },
             ],
         }),
         div(
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
             div(
                 { class: 'flex-column fx-gap-3 tg-profile--percent-column' },
-                PercentBar({ label: 'Before 1 Year', value: item.before_1yr_date_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Before 5 Years', value: item.before_5yr_date_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Before 20 Years', value: item.before_20yr_date_ct, total, width: percentWidth }),
+                PercentBar({ label: measureLabel(item, 'before_1yr_date_ct'), value: item.before_1yr_date_ct, total, width: percentWidth }),
+                PercentBar({ label: measureLabel(item, 'before_5yr_date_ct'), value: item.before_5yr_date_ct, total, width: percentWidth }),
+                PercentBar({ label: measureLabel(item, 'before_20yr_date_ct'), value: item.before_20yr_date_ct, total, width: percentWidth }),
             ),
             div(
                 { class: 'flex-column fx-gap-3 tg-profile--percent-column' },
-                PercentBar({ label: 'Within 1 Year', value: item.within_1yr_date_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Within 1 Month', value: item.within_1mo_date_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Future Dates', value: item.future_date_ct, total, width: percentWidth }),
+                PercentBar({ label: measureLabel(item, 'within_1yr_date_ct'), value: item.within_1yr_date_ct, total, width: percentWidth }),
+                PercentBar({ label: measureLabel(item, 'within_1mo_date_ct'), value: item.within_1mo_date_ct, total, width: percentWidth }),
+                PercentBar({ label: measureLabel(item, 'future_date_ct'), value: item.future_date_ct, total, width: percentWidth }),
             ),
         ),
         div(
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
-            Attribute({ label: 'Minimum Date', value: formatTimestamp(item.min_date, true), width: attributeWidth }),
-            Attribute({ label: 'Maximum Date', value: formatTimestamp(item.max_date, true), width: attributeWidth }),
-            Attribute({ label: 'Distinct Values', value: formatNumber(item.distinct_value_ct), width: attributeWidth }),
+            Attribute({ label: measureLabel(item, 'min_date'), value: formatTimestamp(item.min_date, true), width: attributeWidth }),
+            Attribute({ label: measureLabel(item, 'max_date'), value: formatTimestamp(item.max_date, true), width: attributeWidth }),
+            Attribute({ label: measureLabel(item, 'distinct_value_ct'), value: formatNumber(item.distinct_value_ct), width: attributeWidth }),
         ),
     );
 }
@@ -276,22 +276,22 @@ function NumericColumn(/** @type Column */ item) {
                 label: 'Numeric Distribution',
                 items: [
                     { label: 'Non-Zero Values', value: item.record_ct - item.zero_value_ct - item.null_value_ct, color: 'blue' },
-                    { label: 'Zero Values', value: item.zero_value_ct, color: 'brown' },
-                    { label: 'Null', value: item.null_value_ct, color: 'brownLight' },
+                    { label: measureLabel(item, 'zero_value_ct'), value: item.zero_value_ct, color: 'brown' },
+                    { label: measureLabel(item, 'null_value_ct'), value: item.null_value_ct, color: 'brownLight' },
                 ],
             }),
         ),
         div(
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4 tg-profile--attribute-block' },
-            Attribute({ label: 'Distinct Values', value: formatNumber(item.distinct_value_ct), width: attributeWidth }),
-            Attribute({ label: 'Average Value', value: formatNumber(item.avg_value), width: attributeWidth }),
-            Attribute({ label: 'Standard Deviation', value: formatNumber(item.stdev_value), width: attributeWidth }),
-            Attribute({ label: 'Minimum Value', value: formatNumber(item.min_value), width: attributeWidth }),
-            Attribute({ label: 'Minimum Value > 0', value: formatNumber(item.min_value_over_0), width: attributeWidth }),
-            Attribute({ label: 'Maximum Value', value: formatNumber(item.max_value), width: attributeWidth }),
-            Attribute({ label: withProvenanceMark('25th Percentile', item, 'percentile_25'), value: formatNumber(item.percentile_25), width: attributeWidth }),
-            Attribute({ label: withProvenanceMark('Median Value', item, 'percentile_50'), value: formatNumber(item.percentile_50), width: attributeWidth }),
-            Attribute({ label: withProvenanceMark('75th Percentile', item, 'percentile_75'), value: formatNumber(item.percentile_75), width: attributeWidth }),
+            Attribute({ label: measureLabel(item, 'distinct_value_ct'), value: formatNumber(item.distinct_value_ct), width: attributeWidth }),
+            Attribute({ label: measureLabel(item, 'avg_value'), value: formatNumber(item.avg_value), width: attributeWidth }),
+            Attribute({ label: measureLabel(item, 'stdev_value'), value: formatNumber(item.stdev_value), width: attributeWidth }),
+            Attribute({ label: measureLabel(item, 'min_value'), value: formatNumber(item.min_value), width: attributeWidth }),
+            Attribute({ label: measureLabel(item, 'min_value_over_0'), value: formatNumber(item.min_value_over_0), width: attributeWidth }),
+            Attribute({ label: measureLabel(item, 'max_value'), value: formatNumber(item.max_value), width: attributeWidth }),
+            Attribute({ label: measureLabelWithMark(item, 'percentile_25'), value: formatNumber(item.percentile_25), width: attributeWidth }),
+            Attribute({ label: measureLabelWithMark(item, 'percentile_50'), value: formatNumber(item.percentile_50), width: attributeWidth }),
+            Attribute({ label: measureLabelWithMark(item, 'percentile_75'), value: formatNumber(item.percentile_75), width: attributeWidth }),
         ),
         item.min_value === PII_REDACTED || item.max_value === PII_REDACTED ? null : div(
                 { class: 'flex-row fx-justify-center tg-profile--plot-block' },
@@ -324,6 +324,15 @@ function UnknownColumn(/** @type Column */ item) {
 }
 
 /**
+ * The name of a measure, as the profile row carries it.
+ *
+ * @param {Column} item
+ * @param {string} measure
+ * @returns {string}
+ */
+const measureLabel = (item, measure) => item.measure_labels?.[measure] ?? measure;
+
+/**
  * A mark whose tooltip says how a measure was taken, or null when the measure is exact.
  *
  * @param {Column} item
@@ -353,16 +362,24 @@ const withProvenanceMark = (label, item, measure) => {
     return mark ? span({ class: 'flex-row fx-gap-1' }, label, mark) : label;
 };
 
+/**
+ * A measure's name followed by its provenance mark, or the bare name when the measure is exact.
+ *
+ * @param {Column} item
+ * @param {string} measure
+ */
+const measureLabelWithMark = (item, measure) => withProvenanceMark(measureLabel(item, measure), item, measure);
+
 const BaseCounts = (/** @type Column */ item) => {
     const useApprox = item.record_ct === null;
     const attributes = [
         {
-            label: `Row Count${useApprox ? ' †' : ''}`,
+            label: `${measureLabel(item, 'record_ct')}${useApprox ? ' †' : ''}`,
             value: useApprox ? item.approx_record_ct : item.record_ct,
         }
     ];
     if (item.value_ct !== null) {
-        attributes.push({ label: 'Value Count', value: item.value_ct });
+        attributes.push({ label: measureLabel(item, 'value_ct'), value: item.value_ct });
     }
     return div(
         div(
