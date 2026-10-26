@@ -68,6 +68,20 @@ class MeasureAcquisition(StrEnum):
     """Read on the sample when the row has a ``sample_ratio``, and stored as measured."""
 
 
+@dataclass(frozen=True)
+class ProfileMeasure:
+    """A column of ``profile_results`` that measures the profiled column."""
+
+    label: str
+    """The measure's name, in Title Case."""
+    acquisition: MeasureAcquisition
+
+    @property
+    def sentence_label(self) -> str:
+        """The measure's name in sentence case, such as "Leading spaces"."""
+        return self.label[:1] + self.label[1:].lower()
+
+
 class MeasureProvenance(StrEnum):
     """Whether a profile row's value of a measure is exact, approximate, or estimated from a sample."""
 
@@ -280,125 +294,67 @@ class ProfileResult(Entity):
         with database_session() as session, session.begin_nested():
             session.execute(statement)
 
-    measure_acquisition: ClassVar[Mapping[str, MeasureAcquisition]] = MappingProxyType({
-        "record_ct": MeasureAcquisition.WHOLE_TABLE,
-        "value_ct": MeasureAcquisition.WHOLE_TABLE,
-        "null_value_ct": MeasureAcquisition.WHOLE_TABLE,
-        "distinct_value_ct": MeasureAcquisition.WHOLE_TABLE,
-        "zero_value_ct": MeasureAcquisition.WHOLE_TABLE,
-        "min_length": MeasureAcquisition.WHOLE_TABLE,
-        "max_length": MeasureAcquisition.WHOLE_TABLE,
-        "avg_length": MeasureAcquisition.WHOLE_TABLE,
-        "min_text": MeasureAcquisition.WHOLE_TABLE,
-        "max_text": MeasureAcquisition.WHOLE_TABLE,
-        "distinct_std_value_ct": MeasureAcquisition.WHOLE_TABLE,
-        "min_value": MeasureAcquisition.WHOLE_TABLE,
-        "min_value_over_0": MeasureAcquisition.WHOLE_TABLE,
-        "max_value": MeasureAcquisition.WHOLE_TABLE,
-        "avg_value": MeasureAcquisition.WHOLE_TABLE,
-        "stdev_value": MeasureAcquisition.WHOLE_TABLE,
-        "fractional_sum": MeasureAcquisition.WHOLE_TABLE,
-        "sum_value": MeasureAcquisition.WHOLE_TABLE,
-        "multiset_hash": MeasureAcquisition.WHOLE_TABLE,
-        "epoch_sum": MeasureAcquisition.WHOLE_TABLE,
-        "keyed_hash": MeasureAcquisition.WHOLE_TABLE,
-        "min_date": MeasureAcquisition.WHOLE_TABLE,
-        "max_date": MeasureAcquisition.WHOLE_TABLE,
-        "before_1yr_date_ct": MeasureAcquisition.WHOLE_TABLE,
-        "before_5yr_date_ct": MeasureAcquisition.WHOLE_TABLE,
-        "before_20yr_date_ct": MeasureAcquisition.WHOLE_TABLE,
-        "before_100yr_date_ct": MeasureAcquisition.WHOLE_TABLE,
-        "within_1yr_date_ct": MeasureAcquisition.WHOLE_TABLE,
-        "within_1mo_date_ct": MeasureAcquisition.WHOLE_TABLE,
-        "future_date_ct": MeasureAcquisition.WHOLE_TABLE,
-        "distant_future_date_ct": MeasureAcquisition.WHOLE_TABLE,
-        "date_days_present": MeasureAcquisition.WHOLE_TABLE,
-        "date_weeks_present": MeasureAcquisition.WHOLE_TABLE,
-        "date_months_present": MeasureAcquisition.WHOLE_TABLE,
-        "boolean_true_ct": MeasureAcquisition.WHOLE_TABLE,
-        "percentile_25": MeasureAcquisition.PERCENTILE,
-        "percentile_50": MeasureAcquisition.PERCENTILE,
-        "percentile_75": MeasureAcquisition.PERCENTILE,
-        "zero_length_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
-        "lead_space_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
-        "quoted_value_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
-        "includes_digit_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
-        "filled_value_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
-        "upper_case_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
-        "lower_case_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
-        "non_alpha_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
-        "non_printing_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
-        "numeric_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
-        "date_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
-        "embedded_space_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
-        "frequent_patterns": MeasureAcquisition.SAMPLEABLE_COUNT,
-        "avg_embedded_spaces": MeasureAcquisition.SAMPLEABLE,
-        "std_pattern_match": MeasureAcquisition.SAMPLEABLE,
-        "distinct_pattern_ct": MeasureAcquisition.SAMPLEABLE,
-        "frequent_values": MeasureAcquisition.SAMPLEABLE_COUNT,
-        "distinct_value_hash": MeasureAcquisition.SAMPLEABLE,
+    measures: ClassVar[Mapping[str, ProfileMeasure]] = MappingProxyType({
+        "record_ct": ProfileMeasure("Row Count", MeasureAcquisition.WHOLE_TABLE),
+        "value_ct": ProfileMeasure("Value Count", MeasureAcquisition.WHOLE_TABLE),
+        "null_value_ct": ProfileMeasure("Null Values", MeasureAcquisition.WHOLE_TABLE),
+        "distinct_value_ct": ProfileMeasure("Distinct Values", MeasureAcquisition.WHOLE_TABLE),
+        "zero_value_ct": ProfileMeasure("Zero Values", MeasureAcquisition.WHOLE_TABLE),
+        "min_length": ProfileMeasure("Minimum Length", MeasureAcquisition.WHOLE_TABLE),
+        "max_length": ProfileMeasure("Maximum Length", MeasureAcquisition.WHOLE_TABLE),
+        "avg_length": ProfileMeasure("Average Length", MeasureAcquisition.WHOLE_TABLE),
+        "min_text": ProfileMeasure("Minimum Text", MeasureAcquisition.WHOLE_TABLE),
+        "max_text": ProfileMeasure("Maximum Text", MeasureAcquisition.WHOLE_TABLE),
+        "distinct_std_value_ct": ProfileMeasure("Distinct Standard Values", MeasureAcquisition.WHOLE_TABLE),
+        "min_value": ProfileMeasure("Minimum Value", MeasureAcquisition.WHOLE_TABLE),
+        "min_value_over_0": ProfileMeasure("Minimum Value > 0", MeasureAcquisition.WHOLE_TABLE),
+        "max_value": ProfileMeasure("Maximum Value", MeasureAcquisition.WHOLE_TABLE),
+        "avg_value": ProfileMeasure("Average Value", MeasureAcquisition.WHOLE_TABLE),
+        "stdev_value": ProfileMeasure("Standard Deviation", MeasureAcquisition.WHOLE_TABLE),
+        "fractional_sum": ProfileMeasure("Fractional Sum", MeasureAcquisition.WHOLE_TABLE),
+        "sum_value": ProfileMeasure("Sum", MeasureAcquisition.WHOLE_TABLE),
+        "multiset_hash": ProfileMeasure("Value Hash", MeasureAcquisition.WHOLE_TABLE),
+        "epoch_sum": ProfileMeasure("Epoch Sum", MeasureAcquisition.WHOLE_TABLE),
+        "keyed_hash": ProfileMeasure("Keyed Value Hash", MeasureAcquisition.WHOLE_TABLE),
+        "min_date": ProfileMeasure("Minimum Date", MeasureAcquisition.WHOLE_TABLE),
+        "max_date": ProfileMeasure("Maximum Date", MeasureAcquisition.WHOLE_TABLE),
+        "before_1yr_date_ct": ProfileMeasure("Before 1 Year", MeasureAcquisition.WHOLE_TABLE),
+        "before_5yr_date_ct": ProfileMeasure("Before 5 Years", MeasureAcquisition.WHOLE_TABLE),
+        "before_20yr_date_ct": ProfileMeasure("Before 20 Years", MeasureAcquisition.WHOLE_TABLE),
+        "before_100yr_date_ct": ProfileMeasure("Before 100 Years", MeasureAcquisition.WHOLE_TABLE),
+        "within_1yr_date_ct": ProfileMeasure("Within 1 Year", MeasureAcquisition.WHOLE_TABLE),
+        "within_1mo_date_ct": ProfileMeasure("Within 1 Month", MeasureAcquisition.WHOLE_TABLE),
+        "future_date_ct": ProfileMeasure("Future Dates", MeasureAcquisition.WHOLE_TABLE),
+        "distant_future_date_ct": ProfileMeasure("Distant Future Dates", MeasureAcquisition.WHOLE_TABLE),
+        "date_days_present": ProfileMeasure("Days Present", MeasureAcquisition.WHOLE_TABLE),
+        "date_weeks_present": ProfileMeasure("Weeks Present", MeasureAcquisition.WHOLE_TABLE),
+        "date_months_present": ProfileMeasure("Months Present", MeasureAcquisition.WHOLE_TABLE),
+        "boolean_true_ct": ProfileMeasure("True Count", MeasureAcquisition.WHOLE_TABLE),
+        "percentile_25": ProfileMeasure("25th Percentile", MeasureAcquisition.PERCENTILE),
+        "percentile_50": ProfileMeasure("Median Value", MeasureAcquisition.PERCENTILE),
+        "percentile_75": ProfileMeasure("75th Percentile", MeasureAcquisition.PERCENTILE),
+        "zero_length_ct": ProfileMeasure("Zero Length", MeasureAcquisition.SAMPLEABLE_COUNT),
+        "lead_space_ct": ProfileMeasure("Leading Spaces", MeasureAcquisition.SAMPLEABLE_COUNT),
+        "quoted_value_ct": ProfileMeasure("Quoted Values", MeasureAcquisition.SAMPLEABLE_COUNT),
+        "includes_digit_ct": ProfileMeasure("Includes Digits", MeasureAcquisition.SAMPLEABLE_COUNT),
+        "filled_value_ct": ProfileMeasure("Dummy Values", MeasureAcquisition.SAMPLEABLE_COUNT),
+        "upper_case_ct": ProfileMeasure("Upper Case", MeasureAcquisition.SAMPLEABLE_COUNT),
+        "lower_case_ct": ProfileMeasure("Lower Case", MeasureAcquisition.SAMPLEABLE_COUNT),
+        "non_alpha_ct": ProfileMeasure("Non-Alpha", MeasureAcquisition.SAMPLEABLE_COUNT),
+        # Generated by the database from the letter-case counts, so it is taken as they are
+        "mixed_case_ct": ProfileMeasure("Mixed Case", MeasureAcquisition.SAMPLEABLE_COUNT),
+        "non_printing_ct": ProfileMeasure("Non-Printing Characters", MeasureAcquisition.SAMPLEABLE_COUNT),
+        "numeric_ct": ProfileMeasure("Numeric Values", MeasureAcquisition.SAMPLEABLE_COUNT),
+        "date_ct": ProfileMeasure("Date Values", MeasureAcquisition.SAMPLEABLE_COUNT),
+        "embedded_space_ct": ProfileMeasure("Embedded Spaces", MeasureAcquisition.SAMPLEABLE_COUNT),
+        "frequent_patterns": ProfileMeasure("Frequent Patterns", MeasureAcquisition.SAMPLEABLE_COUNT),
+        "avg_embedded_spaces": ProfileMeasure("Average Embedded Spaces", MeasureAcquisition.SAMPLEABLE),
+        "std_pattern_match": ProfileMeasure("Standard Pattern Match", MeasureAcquisition.SAMPLEABLE),
+        "distinct_pattern_ct": ProfileMeasure("Distinct Patterns", MeasureAcquisition.SAMPLEABLE),
+        "frequent_values": ProfileMeasure("Frequent Values", MeasureAcquisition.SAMPLEABLE_COUNT),
+        "distinct_value_hash": ProfileMeasure("Distinct Value Hash", MeasureAcquisition.SAMPLEABLE),
     })
-    """How each measure column is taken. See ``MeasureAcquisition``."""
-
-    measure_labels: ClassVar[Mapping[str, str]] = MappingProxyType({
-        "record_ct": "Row Count",
-        "value_ct": "Value Count",
-        "null_value_ct": "Null",
-        "distinct_value_ct": "Distinct Values",
-        "zero_value_ct": "Zero Values",
-        "min_length": "Minimum Length",
-        "max_length": "Maximum Length",
-        "avg_length": "Average Length",
-        "min_text": "Minimum Text",
-        "max_text": "Maximum Text",
-        "distinct_std_value_ct": "Distinct Standard Values",
-        "min_value": "Minimum Value",
-        "min_value_over_0": "Minimum Value > 0",
-        "max_value": "Maximum Value",
-        "avg_value": "Average Value",
-        "stdev_value": "Standard Deviation",
-        "fractional_sum": "Fractional Sum",
-        "sum_value": "Sum",
-        "min_date": "Minimum Date",
-        "max_date": "Maximum Date",
-        "before_1yr_date_ct": "Before 1 Year",
-        "before_5yr_date_ct": "Before 5 Years",
-        "before_20yr_date_ct": "Before 20 Years",
-        "before_100yr_date_ct": "Before 100 Years",
-        "within_1yr_date_ct": "Within 1 Year",
-        "within_1mo_date_ct": "Within 1 Month",
-        "future_date_ct": "Future Dates",
-        "distant_future_date_ct": "Distant Future Dates",
-        "date_days_present": "Days Present",
-        "date_weeks_present": "Weeks Present",
-        "date_months_present": "Months Present",
-        "boolean_true_ct": "True Count",
-        "percentile_25": "25th Percentile",
-        "percentile_50": "Median Value",
-        "percentile_75": "75th Percentile",
-        "zero_length_ct": "Zero Length",
-        "lead_space_ct": "Leading Spaces",
-        "quoted_value_ct": "Quoted Values",
-        "includes_digit_ct": "Includes Digits",
-        "filled_value_ct": "Dummy Values",
-        "upper_case_ct": "Upper Case",
-        "lower_case_ct": "Lower Case",
-        "non_alpha_ct": "Non-Alpha",
-        "non_printing_ct": "Non-Printing Characters",
-        "numeric_ct": "Numeric Values",
-        "date_ct": "Date Values",
-        "embedded_space_ct": "Embedded Spaces",
-        "frequent_patterns": "Frequent Patterns",
-        "avg_embedded_spaces": "Average Embedded Spaces",
-        "std_pattern_match": "Standard Pattern Match",
-        "distinct_pattern_ct": "Distinct Patterns",
-        "frequent_values": "Frequent Values",
-        "distinct_value_hash": "Distinct Value Hash",
-        "multiset_hash": "Value Hash",
-        "epoch_sum": "Epoch Sum",
-        "keyed_hash": "Keyed Value Hash",
-    })
-    """The display label of each measure in ``measure_acquisition``."""
+    """Each measure column, keyed by column name."""
 
     @classmethod
     def run_sampled(cls, profile_run_id: UUID) -> bool:
@@ -412,7 +368,8 @@ class ProfileResult(Entity):
         return [
             measure
             for measure in measures
-            if cls.measure_acquisition.get(measure) in (MeasureAcquisition.SAMPLEABLE, MeasureAcquisition.SAMPLEABLE_COUNT)
+            if measure in cls.measures
+            and cls.measures[measure].acquisition in (MeasureAcquisition.SAMPLEABLE, MeasureAcquisition.SAMPLEABLE_COUNT)
         ]
 
     @classmethod
@@ -422,10 +379,10 @@ class ProfileResult(Entity):
 
         Such a measure is exact on a row profiled without sampling, and on a row whose column holds
         no values, where the sample has nothing to count. Raises ``ValueError`` for a name that is not
-        in ``measure_acquisition`` or names a measure a sampled profile does not take from the sample.
+        in ``measures`` or names a measure a sampled profile does not take from the sample.
         """
         for measure in measures:
-            if measure not in cls.measure_acquisition:
+            if measure not in cls.measures:
                 raise ValueError(f"'{measure}' is not a profiling measure")
             if not cls.taken_from_sample([measure]):
                 raise ValueError(f"'{measure}' is measured over every row even when profiling samples")
@@ -475,7 +432,7 @@ class ProfileResult(Entity):
         exact on a row profiled without sampling. Every measure is exact on a row whose column holds no
         values.
         """
-        acquisition = cls.measure_acquisition[measure]
+        acquisition = cls.measures[measure].acquisition
         if not _is_positive(row.get("value_ct")):
             return MeasureProvenance.EXACT
         if acquisition == MeasureAcquisition.PERCENTILE:
@@ -508,7 +465,7 @@ class ProfileResult(Entity):
         value and a fuller sentence for an approximate one."""
         kinds = {}
         descriptions = {}
-        for measure in cls.measure_acquisition:
+        for measure in cls.measures:
             if label := cls.provenance_label(measure, row):
                 kind = cls.provenance(measure, row)
                 kinds[measure] = kind
@@ -552,8 +509,8 @@ class ProfileResult(Entity):
 
             counts = [
                 column
-                for column, acquisition in cls.measure_acquisition.items()
-                if acquisition is MeasureAcquisition.SAMPLEABLE_COUNT
+                for column, measure in cls.measures.items()
+                if measure.acquisition is MeasureAcquisition.SAMPLEABLE_COUNT
                 and column not in ("frequent_patterns", "frequent_values")
                 and column in row
             ]

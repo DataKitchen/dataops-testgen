@@ -18,10 +18,10 @@ class SampledProfileGaps:
 
 
 def requires_exact_label(exact_measures: list[str] | None) -> str | None:
-    """Display labels of the measures that must be exact, or None when the type requires none."""
+    """Names of the measures that must be exact, in sentence case, or None when the type requires none."""
     if not exact_measures:
         return None
-    return ", ".join(ProfileResult.measure_labels[measure] for measure in exact_measures)
+    return ", ".join(ProfileResult.measures[measure].sentence_label for measure in exact_measures)
 
 
 @with_database_session

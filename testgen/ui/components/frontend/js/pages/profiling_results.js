@@ -42,6 +42,7 @@
  * @property {number} page_size
  * @property {object[]} sort_state
  * @property {object} filter_options
+ * @property {Object<string, string>} measure_labels
  */
 import van from '/app/static/js/van.min.js';
 import { Table } from '/app/static/js/components/table.js';
@@ -286,7 +287,7 @@ const ProfilingResults = (/** @type Properties */ props) => {
                         ),
                     ),
                     DataCharacteristicsCard({ emit,  border: true }, selectedRow.val),
-                    ColumnDistributionCard({ emit,  border: true, dataPreview: true }, selectedRow.val),
+                    ColumnDistributionCard({ emit,  border: true, dataPreview: true }, { ...selectedRow.val, measure_labels: getValue(props.measure_labels) }),
                     () => {
                         const si = selectedItemData.val;
                         if (!si || si.id !== selectedRowId.rawVal) return '';

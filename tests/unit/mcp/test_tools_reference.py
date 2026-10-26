@@ -47,7 +47,7 @@ def test_get_test_type_states_the_measures_it_needs_exact(mock_tt_cls, _mock_res
 
     result = get_test_type("Match Leading Space Count")
 
-    assert "Leading Spaces. Not generated on a column profiled from a sample." in result
+    assert "Leading spaces. Not generated on a column profiled from a sample." in result
     assert "lead_space_ct" not in result
 
 
@@ -188,7 +188,7 @@ def test_hygiene_issue_types_resource_basic(mock_type_cls, db_session_mock):
         "| Issue Type | Impact Dimension | Quality Dimension | Likelihood | Description | Suggested Action "
         "| Requires Exact Profiling |"
     )
-    assert "| Dummy Values, Zero Length |" in result
+    assert "| Dummy values, Zero length |" in result
     # All values surface:
     assert "Personally Identifiable Information" in result
     assert "Non-Standard Blank Values" in result
