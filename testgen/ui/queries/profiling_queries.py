@@ -67,8 +67,40 @@ profile_results.percentile_method
 """
 
 
-def with_provenance(row: dict) -> dict:
+MEASURE_LABELS = {name: measure.label for name, measure in ProfileResult.measures.items()}
+
+
+_EXPORT_MEASURES = (
+    "record_ct", "value_ct", "distinct_value_ct", "null_value_ct", "zero_value_ct", "zero_length_ct",
+    "filled_value_ct", "mixed_case_ct", "lower_case_ct", "upper_case_ct", "non_alpha_ct", "includes_digit_ct",
+    "numeric_ct", "date_ct", "quoted_value_ct", "lead_space_ct", "embedded_space_ct", "avg_embedded_spaces",
+    "min_length", "max_length", "avg_length", "min_text", "max_text", "distinct_std_value_ct",
+    "distinct_pattern_ct", "std_pattern_match", "frequent_values", "frequent_patterns", "min_value",
+    "min_value_over_0", "max_value", "avg_value", "stdev_value", "percentile_25", "percentile_50", "percentile_75",
+    "min_date", "max_date", "before_1yr_date_ct", "before_5yr_date_ct", "before_20yr_date_ct", "within_1yr_date_ct",
+    "within_1mo_date_ct", "future_date_ct", "boolean_true_ct",
+)
+_WRAPPED_EXPORT_MEASURES = frozenset({"min_text", "max_text", "frequent_values", "frequent_patterns"})
+_UTC_EXPORT_MEASURES = frozenset({"min_date", "max_date"})
+
+
+def measure_export_columns() -> dict[str, dict]:
+    """The profile measures' export columns, in export order, each headed by its measure's name in sentence case."""
+    columns = {}
+    for measure in _EXPORT_MEASURES:
+        header = ProfileResult.measures[measure].sentence_label
+        columns[measure] = {
+            "header": f"{header} (UTC)" if measure in _UTC_EXPORT_MEASURES else header,
+            **({"wrap": True} if measure in _WRAPPED_EXPORT_MEASURES else {}),
+        }
+    return columns
+
+
+def with_measure_display(row: dict) -> dict:
+    """Add to a profile row what the column distribution shows besides the values: ``provenance``
+    (see ``ProfileResult.provenance_details``) and ``measure_labels``, each measure's name."""
     row["provenance"] = ProfileResult.provenance_details(row)
+    row["measure_labels"] = MEASURE_LABELS
     return row
 
 
@@ -76,12 +108,12 @@ def add_provenance_columns(data: pd.DataFrame) -> None:
     """Add export columns ``sampling`` (the sampled measures' label) and ``percentiles`` ("Exact" or
     "Approximate", blank for a row with no percentiles)."""
     sampled = [
-        measure for measure, acquisition in ProfileResult.measure_acquisition.items()
-        if acquisition in (MeasureAcquisition.SAMPLEABLE, MeasureAcquisition.SAMPLEABLE_COUNT)
+        name for name, measure in ProfileResult.measures.items()
+        if measure.acquisition in (MeasureAcquisition.SAMPLEABLE, MeasureAcquisition.SAMPLEABLE_COUNT)
     ]
     percentiles = [
-        measure for measure, acquisition in ProfileResult.measure_acquisition.items()
-        if acquisition == MeasureAcquisition.PERCENTILE
+        name for name, measure in ProfileResult.measures.items()
+        if measure.acquisition == MeasureAcquisition.PERCENTILE
     ]
     sampling_labels = []
     percentile_labels = []
@@ -470,7 +502,7 @@ def get_columns_by_condition(
     {filter_condition}
     ORDER BY LOWER(column_chars.table_name), ordinal_position;
     """
-    columns = [ with_provenance(dict(row)) for row in fetch_all_from_db(query, filter_params) ]
+    columns = [ with_measure_display(dict(row)) for row in fetch_all_from_db(query, filter_params) ]
 
     if include_active_tests:
         # Counted apart and merged here: joined into the query above, the planner underestimates

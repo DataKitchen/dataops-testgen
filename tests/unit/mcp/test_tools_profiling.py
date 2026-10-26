@@ -335,8 +335,8 @@ def test_list_columns_happy_path(mock_tg_cls, mock_dcc_cls, db_session_mock):
     assert "# Columns in table group" in result
     assert "customer_name" in result
     assert (
-        "| Column | Table | General Type | Semantic Data Type | Suggestion | PII | CDE | XDE | Records | Nulls | "
-        "Distinct | Filled | Profiling Score | Testing Score | Hygiene Issues | Catalog Tags |"
+        "| Column | Table | General Type | Semantic Data Type | Suggestion | PII | CDE | XDE | Row Count | Null Values | "
+        "Distinct Values | Dummy Values | Profiling Score | Testing Score | Hygiene Issues | Catalog Tags |"
     ) in result
 
 

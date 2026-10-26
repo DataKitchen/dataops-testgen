@@ -104,6 +104,7 @@ SAMPLEABLE_COUNTS = {
     "upper_case_ct",
     "lower_case_ct",
     "non_alpha_ct",
+    "mixed_case_ct",
     "non_printing_ct",
     "numeric_ct",
     "date_ct",
@@ -113,11 +114,11 @@ SAMPLEABLE_COUNTS = {
 }
 
 
-def test_calibrates_exactly_the_sampleable_counts():
+def test_declares_exactly_the_sampleable_counts():
     calibrated = {
         column
-        for column, acquisition in ProfileResult.measure_acquisition.items()
-        if acquisition is MeasureAcquisition.SAMPLEABLE_COUNT
+        for column, measure in ProfileResult.measures.items()
+        if measure.acquisition is MeasureAcquisition.SAMPLEABLE_COUNT
     }
     assert calibrated == SAMPLEABLE_COUNTS
 

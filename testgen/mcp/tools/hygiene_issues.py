@@ -11,6 +11,7 @@ from testgen.common.enums import Disposition, IssueLikelihood, PiiRisk
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssue, HygieneIssueType
 from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.common.pii_masking import PII_REDACTED
@@ -312,13 +313,13 @@ def get_hygiene_issue(
         if detail.column_db_data_type:
             doc.field("DB Data Type", detail.column_db_data_type)
         if detail.column_record_ct is not None:
-            doc.field("Records", detail.column_record_ct)
+            doc.field(ProfileResult.measures["record_ct"].sentence_label, detail.column_record_ct)
         if detail.column_null_value_ct is not None:
-            doc.field("Nulls", detail.column_null_value_ct)
+            doc.field(ProfileResult.measures["null_value_ct"].sentence_label, detail.column_null_value_ct)
             if detail.column_record_ct:
                 doc.field("Null Rate", f"{detail.column_null_value_ct / detail.column_record_ct:.2%}")
         if detail.column_distinct_value_ct is not None:
-            doc.field("Distinct values", detail.column_distinct_value_ct)
+            doc.field(ProfileResult.measures["distinct_value_ct"].sentence_label, detail.column_distinct_value_ct)
 
     doc.heading(2, "Profiling Run")
     doc.field("ID", detail.job_execution_id, code=True)

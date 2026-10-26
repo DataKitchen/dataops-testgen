@@ -35,9 +35,9 @@ WITH
                       p.column_name,
                       p.column_type,
                       'Non-Standard Blank Values'   AS qualification_test,
-                      (((('Dummy Values: ' || p.filled_value_ct::VARCHAR(10)) || ', Null: ') ||
-                        p.null_value_ct::VARCHAR(10)) || ', Empty String: ') ||
-                      p.zero_length_ct::VARCHAR(10) AS detail
+                      :FILLED_VALUE_CT_LABEL || ': ' || p.filled_value_ct::VARCHAR(10)
+                        || ', ' || :NULL_VALUE_CT_LABEL || ': ' || p.null_value_ct::VARCHAR(10)
+                        || ', ' || :ZERO_LENGTH_CT_LABEL || ': ' || p.zero_length_ct::VARCHAR(10) AS detail
                  FROM profiling p
                 WHERE p.filled_value_ct > 0
                    OR p.zero_length_ct > 0
@@ -47,9 +47,9 @@ WITH
                       p.column_name,
                       p.column_type,
                       'Invalid Zip Code Format'      AS qualification_test,
-                      (((('Min Length: ' || p.min_length::VARCHAR(10)) || ', Max Length: ') ||
-                        p.max_length::VARCHAR(10)) || ', Dummy Values: ') ||
-                      p.filled_value_ct::VARCHAR(10) AS detail
+                      :MIN_LENGTH_LABEL || ': ' || p.min_length::VARCHAR(10)
+                        || ', ' || :MAX_LENGTH_LABEL || ': ' || p.max_length::VARCHAR(10)
+                        || ', ' || :FILLED_VALUE_CT_LABEL || ': ' || p.filled_value_ct::VARCHAR(10) AS detail
                  FROM profiling p
                 WHERE p.column_name ILIKE '%zip%'
                   AND (p.general_type <> 'A' OR p.filled_value_ct > 0 OR p.min_length >= 1 AND p.min_length <= 4 OR
@@ -93,9 +93,9 @@ WITH
                       p.column_name,
                       p.column_type,
                       'No column values present'    AS qualification_test,
-                      (((('Null: ' || p.null_value_ct::VARCHAR(10)) || ', Dummy: ') ||
-                        p.filled_value_ct::VARCHAR(10)) || ', Zero Len: ') ||
-                      p.zero_length_ct::VARCHAR(10) AS detail
+                      :NULL_VALUE_CT_LABEL || ': ' || p.null_value_ct::VARCHAR(10)
+                        || ', ' || :FILLED_VALUE_CT_LABEL || ': ' || p.filled_value_ct::VARCHAR(10)
+                        || ', ' || :ZERO_LENGTH_CT_LABEL || ': ' || p.zero_length_ct::VARCHAR(10) AS detail
                  FROM profiling p
                 WHERE (p.null_value_ct + p.filled_value_ct + p.zero_length_ct) = p.record_ct
                 UNION ALL
@@ -214,8 +214,8 @@ WITH
                       p.column_name,
                       p.column_type,
                       'Non-Standardized Values in Categories/Codes'   AS qualification_test,
-                      'Distinct Values: ' || p.distinct_value_ct::VARCHAR
-                         || ', Standardized: ' || p.distinct_std_value_ct::VARCHAR AS detail
+                      :DISTINCT_VALUE_CT_LABEL || ': ' || p.distinct_value_ct::VARCHAR
+                         || ', ' || :DISTINCT_STD_VALUE_CT_LABEL || ': ' || p.distinct_std_value_ct::VARCHAR AS detail
                  FROM profiling p
                 WHERE p.general_type = 'A'
                   AND p.distinct_std_value_ct <> p.distinct_value_ct
