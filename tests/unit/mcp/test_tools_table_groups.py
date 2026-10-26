@@ -27,6 +27,12 @@ def catalog_write():
         yield mock_write
 
 
+@pytest.fixture(autouse=True)
+def scorecards():
+    with patch(f"{SERVICE_MODULE}.ScoreDefinition") as scorecard_cls:
+        yield scorecard_cls
+
+
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
@@ -354,7 +360,7 @@ def test_create_table_group_connection_not_accessible(mock_resolve, db_session_m
 
 @patch(f"{MODULE}.TableGroup")
 @patch(f"{MODULE}.resolve_connection")
-def test_create_table_group_adds_scorecard_by_default(mock_resolve, mock_tg_cls, db_session_mock):
+def test_create_table_group_adds_scorecard_by_default(mock_resolve, mock_tg_cls, db_session_mock, scorecards):
     """Mirrors the UI checkbox default — a new table group gets a scorecard unless opted out."""
     mock_resolve.return_value = _mock_connection()
     instance = _mock_table_group()
@@ -369,12 +375,15 @@ def test_create_table_group_adds_scorecard_by_default(mock_resolve, mock_tg_cls,
             schema="public",
         )
 
-    instance.save.assert_called_once_with(add_scorecard_definition=True)
+    instance.save.assert_called_once_with()
+    scorecards.from_table_group.assert_called_once_with(instance)
 
 
 @patch(f"{MODULE}.TableGroup")
 @patch(f"{MODULE}.resolve_connection")
-def test_create_table_group_add_scorecard_false_skips_scorecard(mock_resolve, mock_tg_cls, db_session_mock):
+def test_create_table_group_add_scorecard_false_skips_scorecard(
+    mock_resolve, mock_tg_cls, db_session_mock, scorecards
+):
     mock_resolve.return_value = _mock_connection()
     instance = _mock_table_group()
     mock_tg_cls.return_value = instance
@@ -389,7 +398,8 @@ def test_create_table_group_add_scorecard_false_skips_scorecard(mock_resolve, mo
             add_scorecard=False,
         )
 
-    instance.save.assert_called_once_with(add_scorecard_definition=False)
+    instance.save.assert_called_once_with()
+    scorecards.from_table_group.assert_not_called()
 
 
 def test_create_table_group_requires_edit(db_session_mock):

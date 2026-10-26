@@ -4,6 +4,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import Boolean, Column, Integer, String, asc, func, select, text
 from sqlalchemy.dialects import postgresql
 
+from testgen.common.audit.actions import AuditTargetType
+from testgen.common.audit.fields import SECRET_INFO_KEY, AuditFields
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.custom_types import NullIfEmptyString
@@ -40,12 +42,22 @@ class Project(Entity):
     project_code: str = Column(String, primary_key=True, nullable=False)
     project_name: str = Column(String)
     observability_api_url: str = Column(NullIfEmptyString)
-    observability_api_key: str = Column(NullIfEmptyString)
+    observability_api_key: str = Column(NullIfEmptyString, info={SECRET_INFO_KEY: True})
     use_dq_score_weights: bool = Column(Boolean, default=True)
     data_retention_enabled: bool = Column(Boolean, nullable=False, default=True)
     data_retention_days: int | None = Column(Integer, default=180)
 
     _get_by = "project_code"
+
+    __audit__ = AuditFields(
+        target_type=AuditTargetType.PROJECT,
+        id="project_code",
+        name="project_name",
+        project="project_code",
+        values=("project_name", "observability_api_url", "use_dq_score_weights", "data_retention_enabled",
+                "data_retention_days"),
+        withheld=("observability_api_key",),
+    )
     _default_order_by = (asc(func.lower(project_name)),)
 
     @classmethod

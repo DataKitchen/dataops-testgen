@@ -10,6 +10,7 @@ from fastapi import APIRouter, Body, Depends, Response
 from testgen.api.deps import api_error, api_errors, db_session, fields_to_change, resolve_table_group
 from testgen.api.enums import MonitorSensitivity
 from testgen.api.schemas import ErrorResponse, MonitoringConfig, MonitoringResponse, MonitoringUpdate
+from testgen.common.audit.monitors import record_monitoring_enabled, record_monitoring_updated
 from testgen.common.cron_service import describe_cron, normalize_cron, validate_schedule
 from testgen.common.enums import SuiteType
 from testgen.common.models import get_current_session
@@ -80,12 +81,14 @@ def put_monitoring(
     if monitor_suite is None:
         monitor_suite, monitor_count = enable_monitoring(table_group, cron_expr, body.timezone, suite_attrs=settings)
         schedule = JobSchedule.get_for_monitor_suite(monitor_suite.id)
+        record_monitoring_enabled(monitor_suite, schedule)
         response.status_code = 201
     else:
         schedule = JobSchedule.get_for_monitor_suite(monitor_suite.id)
         if schedule is None:
             schedule = create_monitor_schedule(monitor_suite, cron_expr, body.timezone)
         update_monitoring(monitor_suite, schedule, suite_attrs=settings, cron_expr=cron_expr, cron_tz=body.timezone)
+        record_monitoring_updated(monitor_suite, schedule)
 
     get_current_session().flush()
     return _to_response(table_group, monitor_suite, schedule, monitor_count=monitor_count)
@@ -128,6 +131,7 @@ def patch_monitoring(
     update_monitoring(
         monitor_suite, schedule, suite_attrs=settings, cron_expr=cron_expr, cron_tz=cron_tz, active=active
     )
+    record_monitoring_updated(monitor_suite, schedule)
     get_current_session().flush()
     return _to_response(table_group, monitor_suite, schedule)
 

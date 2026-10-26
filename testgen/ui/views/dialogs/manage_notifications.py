@@ -6,6 +6,8 @@ from uuid import UUID
 
 import streamlit as st
 
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record, record_update
 from testgen.common.models import with_database_session
 from testgen.common.models.notification_destinations import (
     NotificationDestination,
@@ -63,6 +65,7 @@ class NotificationSettingsDialogBase:
     @event_handler(success_message="Notification deleted")
     def on_delete_item(self, item):
         if ns := self.ns_class.get(item["id"]):
+            record(AuditAction.NOTIFICATION_DELETED, ns)
             ns.delete()
 
     def _update_item(self, item_id: UUID | str, item_data: dict[str, Any]):
@@ -71,6 +74,13 @@ class NotificationSettingsDialogBase:
             if key != "id" and value != getattr(ns, key):
                 setattr(ns, key, value)
         ns.save()
+        record_update(
+            ns,
+            AuditAction.NOTIFICATION_UPDATED,
+            switch="enabled",
+            on=AuditAction.NOTIFICATION_RESUMED,
+            off=AuditAction.NOTIFICATION_PAUSED,
+        )
 
     def _item_to_model_attrs(self, item: dict[str, Any]) -> dict[str, Any]:
         raise NotImplementedError
@@ -82,7 +92,8 @@ class NotificationSettingsDialogBase:
     def on_add_item(self, item):
         attrs = self._item_to_model_attrs(item)
         addressing = self._addressing_kwargs(item)
-        self.ns_class.create(**self.ns_attrs, **addressing, **attrs)
+        ns = self.ns_class.create(**self.ns_attrs, **addressing, **attrs)
+        record(AuditAction.NOTIFICATION_CREATED, ns)
 
     @event_handler(success_message="Notification updated")
     def on_update_item(self, item):

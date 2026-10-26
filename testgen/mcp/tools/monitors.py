@@ -6,6 +6,11 @@ from uuid import UUID
 from pydantic import Field
 from sqlalchemy import select
 
+from testgen.common.audit.monitors import (
+    record_monitoring_deleted,
+    record_monitoring_enabled,
+    record_monitoring_updated,
+)
 from testgen.common.cron_service import describe_cron, get_cron_sample
 from testgen.common.enums import MonitorCalculation, MonitorType
 from testgen.common.history_calculation_service import (
@@ -430,7 +435,8 @@ def enable_monitors(
         raise MCPUserError("Monitoring is already enabled for this table group.")
     _validate_cron_verbatim(cron_expression, cron_tz)
 
-    _, count = enable_monitoring(tg, cron_expression, cron_tz)
+    new_monitor_suite, count = enable_monitoring(tg, cron_expression, cron_tz)
+    record_monitoring_enabled(new_monitor_suite)
 
     doc = MdDoc()
     doc.heading(1, f"Monitoring enabled for `{tg.table_groups_name}`")
@@ -571,6 +577,7 @@ def update_monitor_settings(
         cron_tz=cron_tz,
         active=active,
     )
+    record_monitoring_updated(monitor_suite, schedule)
 
     doc = MdDoc()
     doc.heading(1, f"Monitor settings updated for `{tg.table_groups_name}`")
@@ -592,6 +599,7 @@ def disable_monitors(
         raise MCPUserError("Monitoring is not enabled for this table group.")
 
     counts = disable_monitoring(monitor_suite)
+    record_monitoring_deleted(monitor_suite)
 
     doc = MdDoc()
     doc.heading(1, f"Monitoring disabled for `{tg.table_groups_name}`")

@@ -7,6 +7,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import Column, ForeignKey, String, func, select
 from sqlalchemy.dialects import postgresql
 
+from testgen.common.audit.actions import AuditTargetType
+from testgen.common.audit.fields import AuditFields
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import JSON_TYPE, SafeEncryptedJson
 from testgen.common.models.entity import Entity
@@ -87,6 +89,14 @@ class NotificationDestination(Entity):
     }
 
     _default_order_by: ClassVar = ("name",)
+
+    __audit__: ClassVar = AuditFields(
+        target_type=AuditTargetType.NOTIFICATION_DESTINATION,
+        name="name",
+        project="project_code",
+        values=("name", "destination_type", "config"),
+        withheld=("secrets",),
+    )
 
     def _validate(self) -> None:
         name = (self.name or "").strip()

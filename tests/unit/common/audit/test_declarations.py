@@ -18,7 +18,10 @@ def _declared_models() -> list[type]:
 
 def test_models_with_recorded_operations_are_declared():
     names = {model.__name__ for model in _declared_models()}
-    assert {"User", "ProjectMembership", "OAuth2Client", "OAuth2Token"} <= names
+    assert {
+        "User", "ProjectMembership", "OAuth2Client", "OAuth2Token", "Project", "Connection", "TableGroup", "TestSuite",
+        "JobSchedule", "NotificationSettings", "NotificationDestination", "ScoreDefinition",
+    } <= names
 
 
 @pytest.mark.parametrize("model", _declared_models(), ids=lambda model: model.__name__)

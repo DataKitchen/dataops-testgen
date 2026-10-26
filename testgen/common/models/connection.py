@@ -19,6 +19,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
+from testgen.common.audit.actions import AuditTargetType
+from testgen.common.audit.fields import AuditFields
 from testgen.common.database.flavor.flavor_service import SQLFlavor
 from testgen.common.flavors import SqlFlavorCode, fixed_max_threads
 from testgen.common.models import get_current_session
@@ -90,6 +92,17 @@ class Connection(Entity):
     secrets: JSON_TYPE = Column(SafeEncryptedJson)
 
     _get_by = "connection_id"
+
+    __audit__ = AuditFields(
+        target_type=AuditTargetType.CONNECTION,
+        id="connection_id",
+        name="connection_name",
+        project="project_code",
+        values=("connection_name", "sql_flavor_code", "project_host", "project_port", "project_user", "project_db",
+                "url", "connect_by_url", "connect_by_key", "connect_with_identity", "connect_with_service_principal",
+                "http_path", "warehouse", "parameters", "max_threads", "max_query_chars"),
+        withheld=("project_pw_encrypted", "private_key", "private_key_passphrase", "service_account_key", "secrets"),
+    )
     _default_order_by = (asc(func.lower(connection_name)),)
     _minimal_columns = ConnectionMinimal.__annotations__.keys()
 

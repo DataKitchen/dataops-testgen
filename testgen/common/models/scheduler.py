@@ -4,12 +4,15 @@ from typing import Any, Self
 from uuid import UUID, uuid4
 
 from cron_converter import Cron
-from sqlalchemy import Boolean, Column, String, cast, delete, func, select, update
+from sqlalchemy import Boolean, Column, String, cast, delete, func, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
+from testgen.common.audit.actions import AuditTargetType
+from testgen.common.audit.fields import AuditFields
 from testgen.common.enums import JobKey
 from testgen.common.models import Base, get_current_session
+from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
 
@@ -25,6 +28,30 @@ DEFAULT_RETENTION_CRON_TZ = "UTC"
 SCHEDULABLE_JOB_KEYS: frozenset[JobKey] = frozenset({JobKey.run_profile, JobKey.run_tests})
 
 
+def _audit_name(schedule: "JobSchedule") -> str:
+    """The schedule's job and what it runs for, as audit records name it."""
+    kwargs = schedule.kwargs or {}
+    if table_group_id := kwargs.get("table_group_id"):
+        target = _name_of(TableGroup.table_groups_name, TableGroup.id, table_group_id)
+    elif test_suite_id := kwargs.get("test_suite_id"):
+        target = _name_of(TestSuite.test_suite, TestSuite.id, test_suite_id)
+    else:
+        target = schedule.project_code
+    return f"{_JOB_LABELS.get(schedule.key, schedule.key)} of {target}"
+
+
+def _name_of(name_column: InstrumentedAttribute, id_column: InstrumentedAttribute, id_value: str) -> str:
+    return get_current_session().scalar(select(name_column).where(id_column == id_value)) or id_value
+
+
+_JOB_LABELS = {
+    RUN_PROFILE_JOB_KEY: "Profiling",
+    RUN_TESTS_JOB_KEY: "Test run",
+    RUN_MONITORS_JOB_KEY: "Monitors",
+    JobKey.run_data_cleanup: "Data cleanup",
+}
+
+
 class JobSchedule(Base):
     __tablename__ = "job_schedules"
 
@@ -36,6 +63,13 @@ class JobSchedule(Base):
     cron_expr: str = Column(String, nullable=False)
     cron_tz: str = Column(String, nullable=False)
     active: bool = Column(Boolean, default=True)
+
+    __audit__ = AuditFields(
+        target_type=AuditTargetType.SCHEDULE,
+        name=_audit_name,
+        project="project_code",
+        values=("key", "kwargs", "cron_expr", "cron_tz", "active"),
+    )
 
     @classmethod
     def get(cls, *clauses) -> Self | None:
@@ -77,11 +111,6 @@ class JobSchedule(Base):
     @classmethod
     def delete(cls, job_id: str | UUID) -> None:
         query = delete(cls).where(JobSchedule.id == job_id)
-        get_current_session().execute(query)
-
-    @classmethod
-    def update_active(cls, job_id: str | UUID, active: bool) -> None:
-        query = update(cls).where(JobSchedule.id == job_id).values(active=active)
         get_current_session().execute(query)
 
     @classmethod
@@ -198,3 +227,4 @@ class JobSchedule(Base):
     def save(self) -> None:
         db_session = get_current_session()
         db_session.add(self)
+        db_session.flush([self])

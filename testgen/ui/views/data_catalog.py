@@ -12,6 +12,8 @@ from sqlalchemy.sql.expression import func as sa_func
 from streamlit.delta_generator import DeltaGenerator
 
 from testgen.common import date_service
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record
 from testgen.common.data_catalog_service import (
     apply_column_metadata,
     apply_table_metadata,
@@ -651,6 +653,7 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> None:
                     )
                     if disabled:
                         table_group.save()
+                        record(AuditAction.TABLE_GROUP_UPDATED, table_group)
 
     for func in [ get_catalog_page, get_table_by_id, get_column_by_id, get_tag_values, select_table_groups_minimal_where ]:
         func.clear()

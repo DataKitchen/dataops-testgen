@@ -19,6 +19,8 @@ from typing import Annotated
 from pydantic import Field
 from sqlalchemy import func, select
 
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.notification_destinations import (
     DESTINATION_TYPE_LABELS,
@@ -243,6 +245,7 @@ def create_notification_destination(
     except NotificationSettingsValidationError as exc:
         raise MCPUserError(str(exc)) from exc
 
+    record(AuditAction.NOTIFICATION_DESTINATION_CREATED, destination)
     return _render_created(destination, 0)
 
 
@@ -326,6 +329,7 @@ def update_notification_destination(
     except NotificationSettingsValidationError as exc:
         raise MCPUserError(str(exc)) from exc
 
+    record(AuditAction.NOTIFICATION_DESTINATION_UPDATED, destination)
     return _render_one(destination, _rule_counts_for([destination]).get(destination.id, 0))
 
 
@@ -346,6 +350,7 @@ def delete_notification_destination(
     destination = resolve_destination(destination_id)
     rule_count = _rule_counts_for([destination]).get(destination.id, 0)
     name = destination.name
+    record(AuditAction.NOTIFICATION_DESTINATION_DELETED, destination)
     destination.delete()
 
     doc = MdDoc()

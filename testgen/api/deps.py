@@ -12,8 +12,10 @@ from sqlalchemy import select
 
 from testgen.common import contract_service
 from testgen.common.acting_user import set_acting_username
+from testgen.common.audit.record import Actor
+from testgen.common.audit.recorder import AuditContext, bind
 from testgen.common.auth import AuthError, authorize_token, decode_jwt_token
-from testgen.common.enums import PublicJobKey, SuiteType
+from testgen.common.enums import JobSource, PublicJobKey, SuiteType
 from testgen.common.models import Session, bound_session, get_current_session, session_limiter
 from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
@@ -81,6 +83,7 @@ def get_authorized_user(credentials: HTTPAuthorizationCredentials = _bearer_secu
     except AuthError:
         raise _invalid from None
     set_acting_username(user.username)
+    bind(AuditContext(source=JobSource.api, actor=Actor.of(user)), session)
     return user
 
 

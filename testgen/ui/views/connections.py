@@ -7,6 +7,10 @@ import streamlit as st
 
 from testgen import settings
 from testgen.commands.run_catalog_refresh import submit_table_group_setup
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.monitors import record_monitoring_enabled
+from testgen.common.audit.recorder import record
+from testgen.common.audit.table_groups import record_table_group_created
 from testgen.common.connection_schema import connection_location
 from testgen.common.database.connection_service import (
     CLEAR_SENTINEL,
@@ -20,7 +24,7 @@ from testgen.common.database.connection_service import (
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.duckdb_flavor_service import container_path_help
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
-from testgen.common.database.table_group_service import apply_table_group_flavor_rules
+from testgen.common.database.table_group_service import apply_table_group_flavor_rules, save_new_table_group
 from testgen.common.enums import JobSource
 from testgen.common.flavors import (
     FLAVOR_CODE_TO_FAMILY,
@@ -206,7 +210,9 @@ class ConnectionsPage(Page):
             success = True
             try:
                 enforce_connection_rules(connection)
+                is_new = connection.connection_id is None
                 connection.save()
+                record(AuditAction.CONNECTION_CREATED if is_new else AuditAction.CONNECTION_UPDATED, connection)
                 select_connections_where.clear()
                 get_connection.clear()
                 message = "Changes have been saved successfully."
@@ -388,7 +394,8 @@ class ConnectionsPage(Page):
 
             if is_table_group_verified():
                 try:
-                    table_group.save(add_scorecard_definition)
+                    scorecard = save_new_table_group(table_group, add_scorecard=add_scorecard_definition)
+                    record_table_group_created(table_group, scorecard)
 
                     standard_test_suite_data = get_standard_test_suite_data() or {}
                     if standard_test_suite_data.get("generate"):
@@ -404,14 +411,17 @@ class ConnectionsPage(Page):
                             predict_min_lookback=0,
                         )
                         standard_test_suite.save()
+                        record(AuditAction.TEST_SUITE_CREATED, standard_test_suite)
 
-                        JobSchedule(
+                        test_run_schedule = JobSchedule(
                             project_code=project_code,
                             key=RUN_TESTS_JOB_KEY,
                             cron_expr=standard_test_suite_data["schedule"],
                             cron_tz=standard_test_suite_data["timezone"],
                             kwargs={"test_suite_id": str(standard_test_suite.id)},
-                        ).save()
+                        )
+                        test_run_schedule.save()
+                        record(AuditAction.SCHEDULE_CREATED, test_run_schedule)
 
                     monitor_test_suite_data = get_monitor_test_suite_data() or {}
                     if monitor_test_suite_data.get("generate"):
@@ -432,6 +442,7 @@ class ConnectionsPage(Page):
                             },
                             generate_monitors=False,
                         )
+                        record_monitoring_enabled(monitor_test_suite)
 
                     if standard_test_suite or monitor_test_suite:
                         table_group.default_test_suite_id = standard_test_suite.id if standard_test_suite else None

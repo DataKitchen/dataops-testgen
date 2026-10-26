@@ -12,6 +12,8 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import Select
 from sqlalchemy.sql.elements import ColumnElement
 
+from testgen.common.audit.actions import AuditTargetType
+from testgen.common.audit.fields import AuditFields
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import JSON_TYPE
 from testgen.common.models.entity import Entity
@@ -59,6 +61,35 @@ class NotificationEvent(enum.Enum):
     profiling_run = "profiling_run"
     score_drop = "score_drop"
     monitor_run = "monitor_run"
+
+
+_EVENT_LABELS = {
+    NotificationEvent.test_run: ("Test run", "all test suites"),
+    NotificationEvent.profiling_run: ("Profiling", "all table groups"),
+    NotificationEvent.score_drop: ("Score drop", "all scorecards"),
+    NotificationEvent.monitor_run: ("Monitor", "all table groups"),
+}
+
+
+def _audit_name(notification: "NotificationSettings") -> str:
+    """The notification's event and what it watches, as audit records name it."""
+    event = NotificationEvent(notification.event)
+    label, everything = _EVENT_LABELS[event]
+    if notification.score_definition_id:
+        scope = _name_of(ScoreDefinition.name, ScoreDefinition.id, notification.score_definition_id)
+    elif notification.table_group_id:
+        scope = _name_of(TableGroup.table_groups_name, TableGroup.id, notification.table_group_id)
+        if table_name := (notification.settings or {}).get("table_name"):
+            scope = f"{scope}, table {table_name}"
+    elif notification.test_suite_id:
+        scope = _name_of(TestSuite.test_suite, TestSuite.id, notification.test_suite_id)
+    else:
+        scope = everything
+    return f"{label} notification for {scope}"
+
+
+def _name_of(name_column: ColumnElement, id_column: ColumnElement, id_value: UUID) -> str:
+    return get_current_session().scalar(select(name_column).where(id_column == id_value)) or str(id_value)
 
 
 class NotificationSettingsValidationError(Exception):
@@ -130,6 +161,14 @@ class NotificationSettings(Entity):
     )
 
     settings: JSON_TYPE = Column(postgresql.JSONB, nullable=False, default={})
+
+    __audit__: ClassVar = AuditFields(
+        target_type=AuditTargetType.NOTIFICATION,
+        name=_audit_name,
+        project="project_code",
+        values=("event", "enabled", "recipients", "test_suite_id", "table_group_id", "score_definition_id",
+                "notification_destination_id", "settings"),
+    )
 
     __mapper_args__: ClassVar = {
         "polymorphic_on": event,

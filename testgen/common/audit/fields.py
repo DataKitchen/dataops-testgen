@@ -1,6 +1,8 @@
 """The fields of a model an audit record may carry, and the changes made to them."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 from sqlalchemy import Column, TypeDecorator, inspect
@@ -21,7 +23,7 @@ class AuditFields:
     A column appears in a record's changes only when it is declared here.
 
     :param target_type: the kind of object the record names as affected
-    :param name: attribute holding the object's name
+    :param name: attribute holding the object's name, or a function that builds a name for an object that has none
     :param id: attribute holding the id records carry
     :param project: attribute holding the object's project code
     :param values: fields recorded with their before and after values
@@ -29,7 +31,7 @@ class AuditFields:
     """
 
     target_type: AuditTargetType
-    name: str | None = None
+    name: str | Callable[[Any], str | None] | None = None
     id: str = "id"
     project: str | None = None
     values: tuple[str, ...] = ()
@@ -37,6 +39,11 @@ class AuditFields:
 
     def declared(self) -> tuple[str, ...]:
         return (*self.values, *self.withheld)
+
+    def name_of(self, obj: object) -> str | None:
+        if callable(self.name):
+            return self.name(obj)
+        return getattr(obj, self.name) if self.name else None
 
 
 def is_secret(column: Column) -> bool:
@@ -81,6 +88,12 @@ def pending_changes(obj: object, names: tuple[str, ...]) -> dict[str, FieldChang
     return changes
 
 
+def current_values(obj: object, names: tuple[str, ...]) -> dict[str, FieldChange]:
+    """The values ``obj`` holds for ``names``, as the changes that created it. Never loads an attribute."""
+    loaded = inspect(obj).dict
+    return {name: FieldChange(before=_UNSET, after=loaded[name]) for name in names if name in loaded}
+
+
 def to_record(obj: object, declaration: AuditFields, changes: dict[str, FieldChange]) -> dict[str, dict[str, Any]]:
     """A record's ``changes`` map: fields whose stored value changed, with values only where declared.
 
@@ -107,7 +120,9 @@ def to_record(obj: object, declaration: AuditFields, changes: dict[str, FieldCha
 
 
 def _reported(column: Column, value: Any) -> Any:
-    return None if _as_stored(column, value) is None else value
+    if _as_stored(column, value) is None:
+        return None
+    return value.value if isinstance(value, Enum) else value
 
 
 def _as_stored(column: Column, value: Any) -> Any:

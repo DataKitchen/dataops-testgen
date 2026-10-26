@@ -48,6 +48,7 @@ from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal, validate_schema_name
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
@@ -871,3 +872,16 @@ def cascade_delete_table_group(table_group: TableGroup) -> DeleteBlocker | None:
         return DeleteBlocker.CATALOG_REFRESH
     TableGroup.cascade_delete([str(table_group.id)])
     return None
+
+
+def save_new_table_group(table_group: TableGroup, *, add_scorecard: bool = False) -> ScoreDefinition | None:
+    """Save a new table group, with a scorecard for it when ``add_scorecard``.
+
+    :returns: the scorecard created, if any.
+    """
+    table_group.save()
+    if not add_scorecard:
+        return None
+    scorecard = ScoreDefinition.from_table_group(table_group)
+    scorecard.save()
+    return scorecard

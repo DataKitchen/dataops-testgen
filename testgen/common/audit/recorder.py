@@ -17,8 +17,9 @@ from sqlalchemy.orm import Session as SQLAlchemySession
 from sqlalchemy.orm import SessionTransaction
 
 from testgen.common.audit.actions import CHANGE_ACTIONS, AuditAction, AuditTargetType, Outcome
-from testgen.common.audit.fields import AuditFields, FieldChange, pending_changes, to_record
+from testgen.common.audit.fields import AuditFields, FieldChange, current_values, pending_changes, to_record
 from testgen.common.audit.record import Actor, AuditRecord
+from testgen.common.audit.safety import never_raises
 from testgen.common.audit.sinks import get_sink
 from testgen.common.enums import JobSource
 from testgen.common.models import Session, get_current_session
@@ -44,6 +45,7 @@ _SYSTEM_CONTEXT = AuditContext(source=JobSource.system)
 _context_resolver: Callable[[], AuditContext | None] | None = None
 
 
+@never_raises()
 def bind(context: AuditContext, session: SQLAlchemySession | None = None) -> None:
     """Attribute the records made on ``session`` (default: the current session) to ``context``."""
     if (session := session or get_current_session()) is None:
@@ -58,6 +60,7 @@ def set_context_resolver(resolver: Callable[[], AuditContext | None]) -> None:
     _context_resolver = resolver
 
 
+@never_raises()
 def record(
     action: AuditAction,
     subject: object | None = None,
@@ -93,53 +96,110 @@ def record(
     :param only: limits the subject's changed fields to these.
     :param exclude: leaves these out of the subject's changed fields.
     """
-    try:
-        session = get_current_session()
-        if subject is not None:
-            declaration: AuditFields = type(subject).__audit__
-            target_type = target_type or declaration.target_type
-            targets = targets or (getattr(subject, declaration.id),)
-            if target_name is None and declaration.name:
-                target_name = getattr(subject, declaration.name)
-            if project_code is None and declaration.project:
-                project_code = getattr(subject, declaration.project)
-            if changes is None:
-                names = tuple(
-                    name for name in declaration.declared()
-                    if (only is None or name in only) and name not in exclude
-                )
-                changes = _subject_changes(session, subject, declaration, names)
-        changes = {
-            name: entry for name, entry in (changes or {}).items()
-            if not ("from" in entry and entry["from"] == entry.get("to"))
-        }
-        if action in CHANGE_ACTIONS and not changes:
-            return
+    session = get_current_session()
+    if subject is not None:
+        declaration: AuditFields = type(subject).__audit__
+        target_type = target_type or declaration.target_type
+        targets = targets or (getattr(subject, declaration.id),)
+        if target_name is None:
+            target_name = _name_of(declaration, subject)
+        if project_code is None and declaration.project:
+            project_code = getattr(subject, declaration.project)
+        if changes is None:
+            changes = _changes_of(session, subject, only, exclude)
+    changes = {
+        name: entry for name, entry in (changes or {}).items()
+        if not ("from" in entry and entry["from"] == entry.get("to"))
+    }
+    if action in CHANGE_ACTIONS and not changes:
+        return
 
-        context = _context_of(session)
-        target_ids = tuple(str(target) for target in targets)
-        entry = AuditRecord(
-            id=uuid4(),
-            occurred_at=datetime.now(UTC).isoformat(),
-            action=action,
-            outcome=outcome,
-            source=context.source,
-            actor=actor or context.actor,
-            project_code=project_code,
-            target_type=target_type,
-            target_count=len(target_ids) if target_count is None else target_count,
-            targets=target_ids,
-            target_name=target_name,
-            cause_type=cause_type or context.cause_type,
-            cause_id=(None if cause_id is None else str(cause_id)) if cause_type else context.cause_id,
-            changes=changes,
-        )
-        if session is None or outcome != Outcome.SUCCEEDED:
-            get_sink().write([entry])
-        else:
-            session.info.setdefault(_PENDING_KEY, []).append(entry)
-    except Exception:
-        LOG.exception("Audit record failed: %s", action)
+    context = _context_of(session)
+    target_ids = tuple(str(target) for target in targets)
+    entry = AuditRecord(
+        id=uuid4(),
+        occurred_at=datetime.now(UTC).isoformat(),
+        action=action,
+        outcome=outcome,
+        source=context.source,
+        actor=actor or context.actor,
+        project_code=project_code,
+        target_type=target_type,
+        target_count=len(target_ids) if target_count is None else target_count,
+        targets=target_ids,
+        target_name=target_name,
+        cause_type=cause_type or context.cause_type,
+        cause_id=(None if cause_id is None else str(cause_id)) if cause_type else context.cause_id,
+        changes=changes,
+    )
+    if session is None or outcome != Outcome.SUCCEEDED:
+        get_sink().write([entry])
+    else:
+        session.info.setdefault(_PENDING_KEY, []).append(entry)
+
+
+@never_raises(dict)
+def changes_of(
+    subject: object, *, only: Collection[str] | None = None, exclude: Collection[str] = ()
+) -> dict[str, dict[str, Any]]:
+    """The changed fields of ``subject``, as ``record`` would write them, for a record that also names other changes.
+
+    The changes it reports are consumed, so that a later record of the same subject does not repeat them.
+
+    :param only: limits the changed fields to these.
+    :param exclude: leaves these out.
+    """
+    return _changes_of(get_current_session(), subject, only, exclude)
+
+
+@never_raises(dict)
+def created_changes(subject: object, *, only: Collection[str] | None = None) -> dict[str, dict[str, Any]]:
+    """The declared fields of a newly created ``subject`` that hold a value, read from the object rather than from
+    its change history, as ``record`` would write them.
+
+    :param only: limits the fields to these.
+    """
+    declaration: AuditFields = type(subject).__audit__
+    names = tuple(name for name in declaration.declared() if only is None or name in only)
+    return to_record(subject, declaration, current_values(subject, names))
+
+
+@never_raises()
+def record_switch(
+    subject: object, field: str, *, on: AuditAction, off: AuditAction, **kwargs: Any
+) -> None:
+    """Record ``on`` or ``off`` when ``subject``'s boolean ``field`` changed, with no changed-field map.
+
+    Arguments other than the actions are as for ``record``.
+    """
+    if switched := changes_of(subject, only=(field,)).get(field):
+        record(on if switched.get("to") else off, subject, changes={}, **kwargs)
+
+
+@never_raises()
+def record_update(
+    subject: object, updated: AuditAction, *, switch: str, on: AuditAction, off: AuditAction, **kwargs: Any
+) -> None:
+    """Record ``updated`` for the changes to ``subject`` other than its boolean ``switch``, and ``on`` or ``off``
+    when ``switch`` changed.
+
+    Arguments other than the actions and ``switch`` are as for ``record``.
+    """
+    record(updated, subject, exclude=(switch,), **kwargs)
+    record_switch(subject, switch, on=on, off=off, **kwargs)
+
+
+def _changes_of(
+    session: SQLAlchemySession | None,
+    subject: object,
+    only: Collection[str] | None,
+    exclude: Collection[str],
+) -> dict[str, dict[str, Any]]:
+    declaration: AuditFields = type(subject).__audit__
+    names = tuple(
+        name for name in declaration.declared() if (only is None or name in only) and name not in exclude
+    )
+    return _subject_changes(session, subject, declaration, names)
 
 
 def _subject_changes(
@@ -159,6 +219,11 @@ def _subject_changes(
     for name, change in pending_changes(subject, names).items():
         written[name] = written[name].then(change) if name in written else change
     return to_record(subject, declaration, written)
+
+
+@never_raises()
+def _name_of(declaration: AuditFields, subject: object) -> str | None:
+    return declaration.name_of(subject)
 
 
 def _context_of(session: SQLAlchemySession | None) -> AuditContext:

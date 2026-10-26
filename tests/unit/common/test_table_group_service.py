@@ -21,11 +21,13 @@ from testgen.common.database.table_group_service import (
     catalog_membership,
     is_duplicate_name_error,
     preview_table_group,
+    save_new_table_group,
     update_catalog_for_edit,
     validate_table_group_fields,
     write_table_group_catalog,
 )
 from testgen.common.models.connection import Connection
+from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.table_group import SCHEMA_NAME_MAX_LENGTH, TableGroup, table_group_defaults
 from testgen.ui.services.database_service import TargetQuery
 
@@ -972,3 +974,30 @@ def test_an_edit_that_keeps_the_tables_leaves_the_catalog(mock_apply, mock_write
 
     mock_write.assert_not_called()
     mock_apply.assert_not_called()
+
+
+def _new_table_group() -> TableGroup:
+    return TableGroup(project_code="demo", connection_id=1, table_groups_name="Sales", table_group_schema="sales")
+
+
+def _assign_id(obj, *_args, **_kwargs):
+    obj.id = obj.id or uuid4()
+
+
+
+@pytest.mark.parametrize("add_scorecard", [True, False])
+def test_save_new_table_group_returns_the_scorecard_it_creates(add_scorecard):
+    table_group = _new_table_group()
+    with (
+        patch.object(TableGroup, "save", autospec=True, side_effect=_assign_id) as save,
+        patch.object(ScoreDefinition, "save", autospec=True, side_effect=_assign_id) as save_scorecard,
+    ):
+        scorecard = save_new_table_group(table_group, add_scorecard=add_scorecard)
+
+    save.assert_called_once_with(table_group)
+    if add_scorecard:
+        save_scorecard.assert_called_once_with(scorecard)
+        assert (scorecard.name, scorecard.project_code) == ("Sales", "demo")
+    else:
+        assert scorecard is None
+        save_scorecard.assert_not_called()

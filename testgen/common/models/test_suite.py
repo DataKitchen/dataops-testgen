@@ -10,6 +10,8 @@ from sqlalchemy import BigInteger, Boolean, Column, Enum, ForeignKey, Integer, S
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
+from testgen.common.audit.actions import AuditTargetType
+from testgen.common.audit.fields import AuditFields
 from testgen.common.enums import SuiteType
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString
@@ -195,6 +197,17 @@ class TestSuite(Entity):
         if self.suite_type == SuiteType.CONTRACT:
             return False
         return bool(self.deactivate_invalid_tests)
+
+    __audit__ = AuditFields(
+        target_type=AuditTargetType.TEST_SUITE,
+        name="test_suite",
+        project="project_code",
+        values=(
+            "test_suite", "suite_type", "table_groups_id", "test_suite_description", "severity",
+            "export_to_observability", "component_key", "component_type", "component_name", "dq_score_exclude",
+            "deactivate_invalid_tests", "generation_sets", *MONITOR_SETTING_DEFAULTS,
+        ),
+    )
 
     _default_order_by = (asc(func.lower(test_suite)),)
     _minimal_columns = TestSuiteMinimal.__annotations__.keys()

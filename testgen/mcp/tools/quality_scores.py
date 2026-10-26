@@ -4,6 +4,9 @@ from typing import Annotated
 from pydantic import Field
 
 from testgen.commands.run_refresh_score_cards_results import save_and_refresh_score_definition
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record
+from testgen.common.audit.scorecards import scorecard_changes
 from testgen.common.enums import JobSource
 from testgen.common.models import with_database_session
 from testgen.common.models.scores import (
@@ -572,7 +575,9 @@ def create_scorecard(
         group_by_field=group_by_field,
     )
 
+    changes = scorecard_changes(definition)
     save_and_refresh_score_definition(definition, is_new=True, source=JobSource.mcp)
+    record(AuditAction.SCORECARD_CREATED, definition, changes=changes)
 
     doc = MdDoc()
     doc.heading(1, f"Scorecard `{definition.name}` created")
@@ -654,7 +659,9 @@ def update_scorecard(
         setattr(definition, attr, value)
     after = _snapshot_for_diff(definition, pending)
 
+    changes = scorecard_changes(definition)
     save_and_refresh_score_definition(definition, is_new=False, source=JobSource.mcp)
+    record(AuditAction.SCORECARD_UPDATED, definition, changes=changes)
 
     doc = MdDoc()
     doc.heading(1, f"Scorecard `{definition.name}` updated")
@@ -704,6 +711,7 @@ def delete_scorecard(
     project_code = definition.project_code
     deleted_id = definition.id
 
+    record(AuditAction.SCORECARD_DELETED, definition)
     definition.delete()
 
     doc = MdDoc()
