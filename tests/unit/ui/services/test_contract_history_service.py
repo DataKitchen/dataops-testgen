@@ -4,9 +4,11 @@ from uuid import uuid4
 
 import pytest
 
+from testgen.common.contract_comparison import TermChange, TermChangeKind
 from testgen.common.contract_service import ExportedDocument
 from testgen.common.enums import JobStatus
 from testgen.common.models.suite_version import SuiteVersion, SuiteVersionListItem
+from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.models.test_suite import TestSuite
 from testgen.ui.services import contract_history_service as service
 
@@ -182,3 +184,263 @@ def test_a_version_that_no_longer_exists_is_reported():
     assert result["target_label"] == "v5"
     assert result["source_document"] is None
     assert result["target_document"] is None
+
+
+# --- Changes: quality rules ---
+
+EARLIER = datetime(2026, 9, 1, tzinfo=UTC)
+
+
+def _term(term_id, **fields):
+    return TestDefinition(
+        id=uuid4(), contract_term_id=term_id, test_type=fields.pop("test_type", "Max_Val"),
+        table_name=fields.pop("table_name", "orders"), column_name=fields.pop("column_name", "amount"),
+        last_auto_gen_date=EARLIER, **fields,
+    )
+
+
+_TEST_TYPES = {
+    "Max_Val": TestType(
+        test_type="Max_Val", test_name_short="Maximum Value",
+        default_parm_columns="baseline_value,threshold_value", default_parm_prompts="Baseline Value,Threshold",
+    ),
+    "Required": TestType(test_type="Required", test_name_short="Required Entry", default_parm_columns=""),
+}
+
+
+def _rules(changes, hide=False, limit=None):
+    with (
+        patch.object(service.contract_comparison, "term_changes", return_value=changes),
+        patch.object(service, "_test_types", side_effect=lambda codes: {c: _TEST_TYPES[c] for c in codes}),
+        patch.object(service, "IMPORT_PREVIEW_ROW_LIMIT", limit or 500),
+    ):
+        return service.rule_changes(uuid4(), uuid4(), hide_source_data=hide)
+
+
+def _change(kind, before=None, after=None, fields=()):
+    return TermChange(kind, before, after, list(fields))
+
+
+def test_rule_rows_list_removals_then_changes_then_additions():
+    rules = _rules([
+        _change(TermChangeKind.ADDED, after=_term("a", column_name="a")),
+        _change(TermChangeKind.EDITED, _term("e", column_name="b"), _term("e", column_name="b", severity="Warning"), ["severity"]),
+        _change(TermChangeKind.REMOVED, before=_term("r", column_name="c")),
+        _change(TermChangeKind.REGENERATED, _term("g", column_name="d"), _term("g", column_name="d"), []),
+    ])
+
+    assert [(row["change"], row["column"]) for row in rules["rows"]] == [
+        ("Removed", "c"), ("Edited", "b"), ("Regenerated", "d"), ("Added", "a"),
+    ]
+
+
+def test_a_changed_rule_shows_each_field_before_and_after():
+    [row] = _rules([_change(
+        TermChangeKind.EDITED,
+        _term("m", baseline_value="10000", test_active=True),
+        _term("m", baseline_value="25000", test_active=False),
+        ["test_active", "baseline_value"],
+    )])["rows"]
+
+    assert (row["table"], row["column"], row["test_type"]) == ("orders", "amount", "Maximum Value")
+    assert row["fields"] == [
+        {"label": "Active", "before": "Yes", "after": "No"},
+        {"label": "Baseline Value", "before": "10000", "after": "25000"},
+    ]
+    assert row["omitted"] == []
+
+
+def test_the_summary_leaves_out_zero_counts():
+    edited = _change(TermChangeKind.EDITED, _term("e"), _term("e"), [])
+    rules = _rules([_change(TermChangeKind.ADDED, after=_term("a")), edited, edited])
+
+    assert rules["summary"] == "1 added · 2 changed"
+    assert rules["empty_state"] is None
+
+
+def test_with_no_rule_changes_the_empty_state_shows():
+    rules = _rules([])
+
+    assert rules["summary"] is None
+    assert rules["empty_state"] == "No quality rules changed."
+    assert rules["rows"] == []
+
+
+def test_a_field_the_test_type_does_not_prompt_for_still_gets_a_label():
+    [row] = _rules([_change(
+        TermChangeKind.EDITED,
+        _term("m", test_type="Max_Val", window_days=None),
+        _term("m", test_type="Required", window_days=7),
+        ["test_type", "window_days"],
+    )])["rows"]
+
+    assert row["test_type"] == "Required Entry"
+    assert row["fields"] == [
+        {"label": "Test Type", "before": "Maximum Value", "after": "Required Entry"},
+        {"label": "Window days", "before": "—", "after": "7"},
+    ]
+
+
+def test_under_hiding_calibration_fields_are_omitted_by_label():
+    [row] = _rules(
+        [_change(
+            TermChangeKind.REGENERATED,
+            _term("m", baseline_value="1", severity="Fail"),
+            _term("m", baseline_value="2", severity="Warning"),
+            ["severity", "baseline_value"],
+        )],
+        hide=True,
+    )["rows"]
+
+    assert row["fields"] == [{"label": "Severity", "before": "Fail", "after": "Warning"}]
+    assert row["omitted"] == ["Baseline Value"]
+
+
+def test_rule_rows_are_capped_at_the_preview_limit():
+    rules = _rules([_change(TermChangeKind.ADDED, after=_term(f"a{i}")) for i in range(3)], limit=2)
+
+    assert len(rules["rows"]) == 2
+    assert (rules["total_rows"], rules["truncated"]) == (3, True)
+    assert rules["summary"] == "3 added"
+
+
+# --- Changes: metadata ---
+
+
+def _metadata(before, after, hide=False):
+    source = SuiteVersion(id=uuid4(), version=3, frozen_at=FROZEN, metadata_document=before)
+    target = SuiteVersion(id=uuid4(), version=4, frozen_at=None, metadata_document=after)
+    return service.metadata_changes(source, target, _suite(), hide_source_data=hide)
+
+
+def _rows(metadata):
+    return [(row["section"], row["field"], row["before"], row["after"]) for row in metadata["rows"]]
+
+
+def test_metadata_rows_are_grouped_under_section_names():
+    before = {
+        "description": {"purpose": "Orders"},
+        "team": {"members": [{"username": "ana@acme.com"}]},
+        "schema": [{"name": "orders", "properties": [{"name": "ship_date", "criticalDataElement": False}]}],
+        "slaProperties": [{"property": "latency", "value": 6}],
+    }
+    after = {
+        "description": {"purpose": "Orders", "limitations": "Excludes marketplace orders"},
+        "team": {"members": [{"username": "ana@acme.com"}, {"username": "li@acme.com", "role": "steward"}]},
+        "schema": [{"name": "orders", "properties": [{"name": "ship_date", "criticalDataElement": True}]}],
+        "slaProperties": [{"property": "latency", "value": 4}],
+    }
+
+    metadata = _metadata(before, after)
+
+    assert _rows(metadata) == [
+        ("Overview", "Description · Limitations", "—", "Excludes marketplace orders"),
+        ("Schema", "orders.ship_date · Critical data element", "No", "Yes"),
+        ("Team", "li@acme.com", "—", "Added"),
+        ("Service Levels", "latency · Value", "6", "4"),
+    ]
+    assert metadata["summary"] == "4 changed"
+    assert metadata["empty_state"] is None
+
+
+def test_metadata_rows_are_ordered_by_section():
+    before = {"domain": "sales", "price": {"priceAmount": 5}, "support": [{"channel": "#orders"}], "tenant": "emea"}
+    after = {"domain": "commerce", "price": {"priceAmount": 6}, "team": {"name": "Data"}, "tags": ["a"]}
+
+    assert [(row["section"], row["field"]) for row in _metadata(before, after)["rows"]] == [
+        ("Overview", "Domain"),
+        ("Overview", "Tenant"),
+        ("Overview", "Tags"),
+        ("Team", "Team"),
+        ("Support", "Support"),
+        ("Other", "Price · Price amount"),
+    ]
+
+
+def test_a_removed_section_and_an_unmodeled_one_read_as_such():
+    assert _rows(_metadata({"support": [{"channel": "#orders"}]}, {"price": {"priceAmount": 5}})) == [
+        ("Support", "Support", "Removed", "—"),
+        ("Other", "Price", "—", "Added"),
+    ]
+
+
+def test_a_list_changed_whole_shows_both_sides():
+    assert _rows(_metadata({"tags": ["a"]}, {"tags": ["a", "b"]})) == [("Overview", "Tags", '["a"]', '["a", "b"]')]
+
+
+def _column(examples=None):
+    column = {"name": "amount"}
+    if examples is not None:
+        column["examples"] = examples
+    return {"schema": [{"name": "orders", "properties": [column]}]}
+
+
+def test_under_hiding_an_added_column_with_examples_reads_added_only():
+    before = {"schema": [{"name": "orders", "properties": []}]}
+
+    rows = _rows(_metadata(before, _column(["Jane Doe"]), hide=True))
+
+    assert rows == [("Schema", "orders.amount", "—", "Added")]
+
+
+def test_under_hiding_a_changed_example_reads_hidden():
+    rows = _rows(_metadata(_column(["Jane Doe"]), _column(["John Roe"]), hide=True))
+
+    assert rows == [("Schema", "orders.amount · Examples", "Hidden", "Hidden")]
+
+
+def test_with_no_metadata_changes_the_empty_state_shows():
+    metadata = _metadata({"status": "active", "domain": "sales"}, {"status": "draft", "domain": "sales"})
+
+    assert (metadata["rows"], metadata["summary"], metadata["empty_state"]) == ([], None, "No metadata changed.")
+
+
+# --- Changes: the pair ---
+
+
+def _version_changes(source, target, hide=False, missing=()):
+    versions = {
+        4: SuiteVersion(id=uuid4(), version=4, frozen_at=None, metadata_document={"domain": "sales"}),
+        3: SuiteVersion(id=uuid4(), version=3, frozen_at=FROZEN, metadata_document={"domain": "retail"}),
+    }
+
+    def resolve(_suite, number):
+        if number in missing:
+            raise ValueError(f"This contract has no version {number}.")
+        return versions[number]
+
+    with (
+        patch.object(service.contract_service, "version_for_export", side_effect=resolve),
+        patch.object(service, "rule_changes", return_value={"rows": []}) as rules,
+        patch.object(service, "metadata_changes", return_value={"rows": []}) as metadata,
+    ):
+        result = service.version_changes(_suite(), source, target, hide_source_data=hide)
+    return result, rules, metadata, versions
+
+
+def test_version_changes_compares_the_two_versions_it_names():
+    result, rules, metadata, versions = _version_changes(3, 4, hide=True)
+
+    assert (result["source"], result["target"], result["error"]) == (3, 4, None)
+    rules.assert_called_once_with(versions[3].id, versions[4].id, hide_source_data=True)
+    assert metadata.call_args.args[:2] == (versions[3], versions[4])
+    assert metadata.call_args.kwargs == {"hide_source_data": True}
+
+
+def test_version_changes_of_a_version_with_itself_shows_both_empty_states():
+    with patch.object(service.contract_service, "version_for_export", return_value=SuiteVersion(
+        id=uuid4(), version=3, frozen_at=FROZEN, metadata_document={"domain": "sales"},
+    )), patch.object(service.contract_comparison, "term_changes", return_value=[]):
+        result = service.version_changes(_suite(), 3, 3, hide_source_data=False)
+
+    assert result["error"] is None
+    assert result["rules"]["empty_state"] == "No quality rules changed."
+    assert result["metadata"]["empty_state"] == "No metadata changed."
+
+
+def test_version_changes_reports_an_unknown_version_as_an_error():
+    result, rules, _, _ = _version_changes(3, 9, missing=(9,))
+
+    assert result["error"] == "This contract has no version 9."
+    assert (result["rules"], result["metadata"]) == (None, None)
+    rules.assert_not_called()

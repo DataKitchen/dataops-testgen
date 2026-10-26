@@ -149,8 +149,10 @@ def contract_props(
     @with_database_session
     def on_compare(payload: dict) -> None:
         state = _state(suite, _Dialog.HISTORY) or {}
-        state["comparison"] = contract_history_service.version_comparison(
-            suite, int(payload["source"]), int(payload["target"]),
+        source, target = int(payload["source"]), int(payload["target"])
+        state["comparison"] = contract_history_service.version_comparison(suite, source, target)
+        state["changes"] = contract_history_service.version_changes(
+            suite, source, target, hide_source_data=not session.auth.user_has_permission("view_pii"),
         )
         _set_state(suite, _Dialog.HISTORY, state)
 
@@ -216,6 +218,7 @@ def contract_props(
             "project_code": project_code,
             "open_comparison": state.get("open_comparison"),
             "comparison": state.get("comparison"),
+            "changes": state.get("changes"),
         }
     if state := _state(suite, _Dialog.REMOVE_TABLES):
         data["remove_tables"] = state["dialog"]

@@ -364,7 +364,7 @@ class OwnedFieldError(InvalidContractDocumentError):
 
 
 # Root fields TestGen sets on a contract's document rather than taking from the caller.
-_OWNED_FIELDS = ("apiVersion", "kind", "id", "version")
+OWNED_FIELDS = ("apiVersion", "kind", "id", "version")
 
 
 @dataclass(frozen=True)
@@ -410,7 +410,7 @@ def save_metadata_document(suite: TestSuite, document: dict[str, Any]) -> SavedM
 
     if problems := [*_owned_field_changes(document, stored), *_name_changes(document, stored, suite)]:
         raise OwnedFieldError(problems)
-    for key in _OWNED_FIELDS:
+    for key in OWNED_FIELDS:
         if key not in document and key in stored:
             document[key] = stored[key]
     document["name"] = suite.test_suite
@@ -460,7 +460,7 @@ def document_with_contract_name(version: SuiteVersion, suite: TestSuite) -> dict
 def _owned_field_changes(document: dict[str, Any], stored: dict[str, Any]) -> list[str]:
     return [
         f"$.{key}: `{key}` cannot be changed. It is `{stored[key]}`."
-        for key in _OWNED_FIELDS
+        for key in OWNED_FIELDS
         if key in document and key in stored and document[key] != stored[key]
     ]
 

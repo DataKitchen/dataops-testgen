@@ -880,7 +880,7 @@ def _diff(suite, source, target, before, after, **kwargs):
         patch(f"{MODULE}.resolve_contract_version", side_effect=lambda _suite, number: source if number == source.version else target),
         patch.object(SuiteVersion, "draft_for", return_value=target),
         patch.object(SuiteVersion, "is_active", return_value=True),
-        patch(f"{MODULE}._terms_by_identity", side_effect=lambda version_id: terms[version_id]),
+        patch("testgen.common.contract_comparison._terms_by_identity", side_effect=lambda version_id: terms[version_id]),
         patch(f"{MODULE}._test_type_labels", return_value={"Required": "Required Entry", "Max_Val": "Maximum Value"}),
         patch(f"{MODULE}.mcp_source_data_protected", return_value=kwargs.pop("protected", False)),
     ):
@@ -1195,3 +1195,13 @@ def test_values_a_column_stores_alike_are_not_a_change(db_session_mock):
     )
 
     assert "No test changed." in out
+
+
+def test_a_diff_lists_a_team_member_by_username(db_session_mock):
+    source = _frozen(3)
+    source.metadata_document = {"team": {"members": [{"username": "ana@acme.com"}]}}
+    target = _draft(4, document={"team": {"members": [{"username": "ana@acme.com"}, {"username": "li@acme.com"}]}})
+
+    out = _diff(_contract(), source, target, [], [])
+
+    assert "| `$.team.members[li@acme.com]` | Added |" in out
