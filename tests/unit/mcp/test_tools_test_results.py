@@ -1,3 +1,4 @@
+import inspect
 from datetime import date
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -7,7 +8,7 @@ import pytest
 from testgen.common.enums import Disposition, JobStatus
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResultStatus
-from testgen.common.test_result_disposition_service import DispositionUpdate
+from testgen.common.test_result_disposition_service import ContractDraftChange, DispositionUpdate
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 from testgen.mcp.tools.common import MCP_SUITE_TYPES
@@ -1627,6 +1628,26 @@ def test_update_test_result_success_message(mock_resolve, mock_set, db_session_m
     assert rid in out and "Dismissed" in out
 
 
+@pytest.mark.parametrize(("disposition", "muted", "state"), [("Muted", True, "muted"), ("Confirmed", False, "unmuted")])
+@patch("testgen.mcp.tools.test_results.set_test_results_disposition")
+@patch("testgen.mcp.tools.test_results.resolve_test_result")
+def test_update_test_result_names_the_contract_draft_the_change_landed_on(
+    mock_resolve, mock_set, db_session_mock, disposition_perms, disposition, muted, state
+):
+    from testgen.mcp.tools.test_results import update_test_result
+
+    mock_resolve.return_value = MagicMock(id=uuid4(), test_type="Required")
+    mock_set.return_value = DispositionUpdate(
+        matched=1, passed_skipped=0, contract_drafts=(ContractDraftChange("Orders", 4, 1, muted=muted),),
+    )
+    out = update_test_result(test_result_id=str(uuid4()), disposition=disposition)
+
+    assert (
+        f"The test is {state} in draft v4 of the contract Orders. The active version keeps running it until the "
+        "draft is frozen."
+    ) in out
+
+
 @patch("testgen.mcp.tools.test_results.set_test_results_disposition")
 @patch("testgen.mcp.tools.test_results.resolve_test_result")
 def test_update_test_result_passed_row_is_noop(mock_resolve, mock_set, db_session_mock, disposition_perms):
@@ -1866,3 +1887,38 @@ def test_get_failure_summary_reads_contract_suites(
     get_failure_summary(job_execution_id=str(uuid4()))
 
     assert mock_result.select_failures.call_args.kwargs["suite_types"] == MCP_SUITE_TYPES
+
+
+@patch("testgen.mcp.tools.test_results.set_test_results_disposition")
+@patch("testgen.mcp.tools.test_results.get_current_session")
+@patch("testgen.mcp.tools.test_results.resolve_test_suite")
+def test_bulk_update_names_the_contract_draft_the_change_landed_on(
+    mock_resolve_suite, mock_session, mock_set, db_session_mock, disposition_perms
+):
+    from testgen.mcp.tools.test_results import bulk_update_test_results
+
+    run_id = uuid4()
+    suite = MagicMock(id=uuid4(), test_suite="Orders", last_complete_test_run_id=run_id)
+    mock_resolve_suite.return_value = suite
+    mock_session.return_value.scalars.return_value.all.return_value = [uuid4()]
+    mock_set.return_value = DispositionUpdate(
+        matched=1, passed_skipped=0, contract_drafts=(ContractDraftChange("Orders", 4, 1, muted=True),),
+    )
+
+    with patch("testgen.mcp.tools.test_results.TestRun.get",
+               return_value=MagicMock(id=run_id, job_execution_id=run_id, test_suite_id=suite.id)):
+        out = bulk_update_test_results(test_suite_id=str(uuid4()), disposition="Muted")
+
+    assert (
+        "The tests are muted in draft v4 of the contract Orders. The active version keeps running them until the "
+        "draft is frozen."
+    ) in out
+
+
+@pytest.mark.parametrize("tool_name", ["update_test_result", "bulk_update_test_results"])
+def test_the_disposition_description_says_a_contract_change_lands_on_its_draft(tool_name):
+    from testgen.mcp.tools import test_results
+
+    disposition = inspect.signature(getattr(test_results, tool_name)).parameters["disposition"]
+    description = disposition.annotation.__metadata__[0].description
+    assert "On a contract, the change lands on its draft" in description

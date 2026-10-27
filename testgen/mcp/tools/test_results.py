@@ -754,8 +754,9 @@ def update_test_result(
         Field(
             description="New disposition. One of 'Confirmed', 'Dismissed', 'Muted', 'No Decision' (clears it). 'Muted' "
             "deactivates the parent test and locks it against auto-regeneration; any other value reactivates and "
-            "unlocks it. A test TestGen manages, such as Schema Conformance, cannot be muted, and a disposition "
-            "leaves its state unchanged.",
+            "unlocks it. On a contract, the change lands on its draft, opening one when there is none, and the "
+            "active version keeps running the test until the draft is frozen. A test TestGen manages, such as "
+            "Schema Conformance, cannot be muted, and a disposition leaves its state unchanged.",
         ),
     ],
 ) -> str:
@@ -779,6 +780,8 @@ def update_test_result(
         return doc.render()
 
     doc.text(f"Updated test result {MdDoc.code(test_result_id)} disposition to **{disposition}**.")
+    for change in update.contract_drafts:
+        doc.text(change.notice())
     return doc.render()
 
 
@@ -791,8 +794,10 @@ def bulk_update_test_results(
         Field(
             description="New disposition. One of 'Confirmed', 'Dismissed', 'Muted', 'No Decision' (clears it). 'Muted' "
             "deactivates the parent tests and locks them against auto-regeneration; any other value reactivates and "
-            "unlocks. 'Muted' leaves out the results of tests TestGen manages, such as Schema Conformance, and a "
-            "disposition leaves the state of those tests unchanged.",
+            "unlocks. On a contract, the change lands on its draft, opening one when there is none, and the active "
+            "version keeps running the tests until the draft is frozen. 'Muted' leaves out the results of tests "
+            "TestGen manages, such as Schema Conformance, and a disposition leaves the state of those tests "
+            "unchanged.",
         ),
     ],
     job_execution_id: Annotated[
@@ -875,4 +880,6 @@ def bulk_update_test_results(
             f"Left {update.managed_skipped} results unmuted — TestGen manages their tests, so the tests cannot be "
             "muted."
         )
+    for change in update.contract_drafts:
+        doc.text(change.notice(counted=False))
     return doc.render()
