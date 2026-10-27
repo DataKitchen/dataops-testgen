@@ -41,14 +41,14 @@ def _audit_name(schedule: "JobSchedule") -> str:
 
 
 def _name_of(name_column: InstrumentedAttribute, id_column: InstrumentedAttribute, id_value: str) -> str:
-    return get_current_session().scalar(select(name_column).where(id_column == id_value)) or id_value
+    session = get_current_session()
+    with session.no_autoflush:
+        return session.scalar(select(name_column).where(id_column == id_value)) or id_value
 
 
 _JOB_LABELS = {
     RUN_PROFILE_JOB_KEY: "Profiling",
     RUN_TESTS_JOB_KEY: "Test run",
-    RUN_MONITORS_JOB_KEY: "Monitors",
-    JobKey.run_data_cleanup: "Data cleanup",
 }
 
 

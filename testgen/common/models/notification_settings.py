@@ -89,7 +89,9 @@ def _audit_name(notification: "NotificationSettings") -> str:
 
 
 def _name_of(name_column: ColumnElement, id_column: ColumnElement, id_value: UUID) -> str:
-    return get_current_session().scalar(select(name_column).where(id_column == id_value)) or str(id_value)
+    session = get_current_session()
+    with session.no_autoflush:
+        return session.scalar(select(name_column).where(id_column == id_value)) or str(id_value)
 
 
 class NotificationSettingsValidationError(Exception):
