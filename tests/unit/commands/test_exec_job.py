@@ -1,4 +1,5 @@
 import inspect
+import os
 import signal
 import subprocess
 import sys
@@ -14,10 +15,13 @@ from testgen.commands.job_registry import (
     JOB_DISPATCH,
     JOB_FINAL_CALLBACKS,
     JobConfig,
+    finalize,
     run_final_callbacks,
 )
 from testgen.commands.run_test_execution import run_test_execution
 from testgen.common.enums import PAUSABLE_JOB_KEYS, JobKey
+from testgen.common.job_context import job_context
+from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.pausable_job import JobParked, PausableJob
 
@@ -41,7 +45,16 @@ def _make_job_exec(job_key=JobKey.run_tests, status="claimed", **kwargs):
     job.source = "api"
     job.status = status
     job.configure_mock(**kwargs)
+    _settles(job, job.mark_running, "running")
     return job
+
+
+def _settles(job, transition, status):
+    """Make a mocked transition land the job on ``status``, as the real one does."""
+    def land(*_args, **_kwargs):
+        job.status = status
+        return True
+    transition.side_effect = land
 
 
 def test_exec_job_dispatches_run_tests(mock_session):
@@ -116,14 +129,39 @@ def test_exec_job_marks_interrupted_on_unknown_key(mock_session):
     job.mark_running.assert_not_called()
 
 
-def test_exec_job_skips_when_mark_running_fails(mock_session):
+def test_exec_job_cancels_a_run_a_cancel_reached_before_it_started(mock_session):
+    """A cancel that lands between the claim and the start is settled here, not by a later poll."""
     job = _make_job_exec(job_key=JobKey.run_tests)
-    job.mark_running.return_value = False
+    _settles(job, job.mark_running, "canceled")
+    handler, callback = Mock(), Mock()
 
-    with patch.object(JobExecution, "get", return_value=job):
+    with (
+        patch.object(JobExecution, "get", return_value=job),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=handler)}),
+        patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [callback]}),
+    ):
         exec_job(job.id)
 
+    handler.assert_not_called()
     job.mark_completed.assert_not_called()
+    callback.assert_called_once_with(job)
+
+
+def test_exec_job_skips_a_run_it_cannot_start(mock_session):
+    job = _make_job_exec(job_key=JobKey.run_tests)
+    job.mark_running.side_effect = None
+    job.mark_running.return_value = False
+    handler, callback = Mock(), Mock()
+
+    with (
+        patch.object(JobExecution, "get", return_value=job),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=handler)}),
+        patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [callback]}),
+    ):
+        exec_job(job.id)
+
+    handler.assert_not_called()
+    callback.assert_not_called()
 
 
 def test_exec_job_marks_interrupted_on_dispatch_error(mock_session):
@@ -162,7 +200,7 @@ def test_job_dispatch_has_all_job_keys():
 def test_exec_job_fires_final_callbacks_on_success(mock_session):
     job = _make_job_exec(job_key=JobKey.run_tests)
     job.mark_running.return_value = True
-    job.mark_completed.return_value = True
+    _settles(job, job.mark_completed, "completed")
     cb1, cb2 = Mock(), Mock()
 
     with (
@@ -179,7 +217,7 @@ def test_exec_job_fires_final_callbacks_on_success(mock_session):
 def test_exec_job_runs_callbacks_in_registered_order(mock_session):
     job = _make_job_exec(job_key=JobKey.run_tests)
     job.mark_running.return_value = True
-    job.mark_completed.return_value = True
+    _settles(job, job.mark_completed, "completed")
     order = []
     cb1 = Mock(side_effect=lambda _: order.append("cb1"))
     cb2 = Mock(side_effect=lambda _: order.append("cb2"))
@@ -210,10 +248,10 @@ def test_exec_job_skips_callbacks_when_mark_completed_fails(mock_session):
     cb.assert_not_called()
 
 
-def test_exec_job_fires_callbacks_on_interrupted(mock_session):
+def test_exec_job_fires_callbacks_on_failure(mock_session):
     job = _make_job_exec(job_key=JobKey.run_tests)
     job.mark_running.return_value = True
-    job.mark_failed.return_value = True
+    _settles(job, job.mark_failed, "error")
     cb = Mock()
 
     with (
@@ -242,6 +280,158 @@ def test_exec_job_skips_callbacks_when_mark_failed_fails(mock_session):
     cb.assert_not_called()
 
 
+def test_exec_job_settles_a_finished_run_as_canceled_when_a_cancel_arrived(mock_session):
+    """The handler can finish after a cancel was requested; the run still ends here, as canceled."""
+    job = _make_job_exec(job_key=JobKey.run_tests)
+    job.mark_running.return_value = True
+    _settles(job, job.mark_completed, "canceled")
+    callback = Mock()
+
+    with (
+        patch.object(JobExecution, "get", return_value=job),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock(return_value="ok"))}),
+        patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [callback]}),
+    ):
+        exec_job(job.id)
+
+    callback.assert_called_once_with(job)
+
+
+def test_exec_job_settles_a_stopped_run_as_canceled_when_a_cancel_arrived(mock_session):
+    """A run stopping at a boundary while a cancel lands ends as canceled, with its callbacks."""
+    job = _make_job_exec(job_key=JobKey.run_profile)
+    job.mark_running.return_value = True
+    resume_state = {"version": 1, "tasks": [], "completed": 0}
+    _settles(job, job.park, "canceled")
+    callback = Mock()
+
+    with (
+        patch.object(JobExecution, "get", return_value=job),
+        patch.dict(JOB_DISPATCH, {JobKey.run_profile: JobConfig(handler=Mock(side_effect=JobParked("x", resume_state)))}),
+        patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_profile: [callback]}),
+    ):
+        exec_job(job.id)
+
+    job.park.assert_called_once_with(resume_state)
+    callback.assert_called_once_with(job)
+
+
+def test_finalize_fires_callbacks_after_the_transition_is_committed(mock_session):
+    """A callback that reads the run, or queues follow-up work, must see the final status."""
+    job = _make_job_exec(job_key=JobKey.run_tests)
+    order = []
+    mock_session.commit.side_effect = lambda: order.append("commit")
+    _settles(job, job.mark_completed, "completed")
+    callback = Mock(side_effect=lambda _: order.append("callback"))
+
+    with patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [callback]}):
+        assert finalize(job, job.mark_completed) is True
+
+    assert order == ["commit", "callback"]
+
+
+def test_finalize_fires_no_callbacks_for_a_parked_status(mock_session):
+    job = _make_job_exec(job_key=JobKey.run_profile)
+    _settles(job, job.park, "interrupted")
+    callback = Mock()
+
+    with patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_profile: [callback]}):
+        assert finalize(job, job.park) is True
+
+    callback.assert_not_called()
+
+
+def test_finalize_refuses_to_run_inside_an_open_session(mock_session):
+    """Inside a caller's session the transition would not be committed before the callbacks fire."""
+    job = _make_job_exec(job_key=JobKey.run_tests)
+
+    with database_session(), pytest.raises(RuntimeError, match="open session"):
+        finalize(job, job.mark_completed)
+
+    job.mark_completed.assert_not_called()
+
+
+@pytest.fixture
+def terminate_handler():
+    """A SIGTERM handler that records the signal instead of ending the test run."""
+    received = []
+    previous = signal.signal(signal.SIGTERM, lambda _signum, _frame: received.append("terminated"))
+    try:
+        yield received
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
+def test_a_terminate_during_settling_waits_for_the_callbacks_and_then_lets_the_job_exit(
+    mock_session, terminate_handler,
+):
+    """Ended by the signal, the process would skip the exit hooks that send what the callbacks
+    queued, and nothing reports the run again once its row is final."""
+    job = _make_job_exec(job_key=JobKey.run_tests)
+    _settles(job, job.mark_completed, "canceled")
+
+    def callback(_job):
+        signal.raise_signal(signal.SIGTERM)
+        terminate_handler.append("callback")
+
+    with (
+        patch.object(JobExecution, "get", return_value=job),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock())}),
+        patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [callback]}),
+        patch("testgen.commands.exec_job.os.kill") as kill,
+    ):
+        exec_job(job.id)
+
+    kill.assert_not_called()
+    assert terminate_handler == ["callback"]
+
+
+def test_a_terminate_held_while_the_job_started_is_delivered_before_the_handler_runs(
+    mock_session, terminate_handler,
+):
+    """The cancel arrived just after the start, and a handler with no stop check must not run on."""
+    job = _make_job_exec(job_key=JobKey.run_tests)
+
+    def start(*_args):
+        signal.raise_signal(signal.SIGTERM)
+        job.status = "running"
+        return True
+
+    job.mark_running.side_effect = start
+    handler = Mock()
+
+    with (
+        patch.object(JobExecution, "get", return_value=job),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=handler)}),
+        patch("testgen.commands.exec_job.os.kill", side_effect=lambda _pid, sig: signal.raise_signal(sig)) as kill,
+        pytest.raises(SystemExit),
+    ):
+        # The real handler ends the process; this one stands in for that by raising.
+        signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(SystemExit(-15)))
+        exec_job(job.id)
+
+    kill.assert_called_once_with(os.getpid(), signal.SIGTERM)
+    handler.assert_not_called()
+
+
+def test_a_failed_handler_settles_a_freshly_read_job(mock_session):
+    """The handler's session rolled back, which expires every instance it loaded."""
+    loaded = [_make_job_exec(job_key=JobKey.run_tests) for _ in range(4)]
+    for job in loaded:
+        job.id = loaded[0].id
+    handler = Mock(side_effect=RuntimeError("boom"))
+
+    with (
+        patch.object(JobExecution, "get", side_effect=loaded),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=handler)}),
+    ):
+        exec_job(loaded[0].id)
+
+    handler_job, settled_job = loaded[2], loaded[3]
+    handler_job.mark_failed.assert_not_called()
+    settled_job.mark_failed.assert_called_once_with("boom")
+
+
 def test_run_final_callbacks_isolates_failures():
     job = _make_job_exec(job_key=JobKey.run_tests)
     failing = Mock(side_effect=RuntimeError("boom"), __name__="failing_cb")
@@ -265,6 +455,24 @@ def test_registered_callbacks_cover_notification_job_keys():
     assert JobKey.run_profile in JOB_FINAL_CALLBACKS
     assert JobKey.run_tests in JOB_FINAL_CALLBACKS
     assert JobKey.run_monitors in JOB_FINAL_CALLBACKS
+    assert JobKey.run_test_generation in JOB_FINAL_CALLBACKS
+
+
+def test_exec_job_ends_the_job_context_once_the_job_settled(mock_session):
+    """The callbacks read the job's context, and nothing after the job may see it."""
+    job = _make_job_exec(job_key=JobKey.run_tests)
+    _settles(job, job.mark_completed, "completed")
+    seen = []
+
+    with (
+        patch.object(JobExecution, "get", return_value=job),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock())}),
+        patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [lambda _job: seen.append(job_context.get().job_id)]}),
+    ):
+        exec_job(job.id)
+
+    assert seen == [job.id]
+    assert job_context.get().job_id is None
 
 
 def test_exec_job_marks_paused_without_settling_the_run(mock_session):

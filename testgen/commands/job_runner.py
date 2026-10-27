@@ -10,7 +10,6 @@ from uuid import UUID
 import click
 from sqlalchemy import select
 
-from testgen.commands.exec_job import POLL_INTERVAL
 from testgen.common.enums import JobSource, JobStatus
 from testgen.common.models import database_session, get_current_session
 from testgen.common.models.job_execution import QUEUED_MESSAGE, JobExecution
@@ -18,6 +17,8 @@ from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.test_run import TestRun
 
 LOG = logging.getLogger("testgen")
+
+POLL_INTERVAL = 2
 
 # Where a wait gives up. Neither parked status is terminal, but only one of them continues on
 # its own: a run stopped by a shutdown is picked up by the next scheduler start, so waiting

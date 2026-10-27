@@ -1,3 +1,4 @@
+import contextlib
 import re
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
@@ -12,10 +13,12 @@ from testgen.commands.test_generation import (
     _term_count,
     parse_regeneration_groups,
     reconcile_contract_conformance,
+    report_test_generation,
     run_contract_generation,
     run_test_generation,
+    run_test_generation_and_report,
 )
-from testgen.common.enums import RegenerationGroup, SuiteType
+from testgen.common.enums import JobSource, JobStatus, RegenerationGroup, SuiteType
 from testgen.common.models.suite_version import FrozenVersionError
 from tests.unit.sql_assertions import conjuncts, equality_conjunct
 
@@ -188,13 +191,11 @@ def generation_mocks():
         patch(f"{MODULE}.TestGeneration") as gen_cls,
         patch(f"{MODULE}.MixpanelService") as mixpanel_cls,
         patch(f"{MODULE}.resolve_generation_sets") as resolve,
-        patch(f"{MODULE}.job_context") as ctx,
     ):
         suite = MagicMock(suite_type=SuiteType.REGULAR, generation_sets=None)
         suite_cls.get.return_value = suite
         tg_cls.get.return_value = MagicMock()
         conn_cls.get.return_value = MagicMock(sql_flavor="postgresql")
-        ctx.get.return_value = MagicMock(source="ui")
         resolve.return_value = ["Standard"]
         yield {
             "suite": suite,
@@ -232,22 +233,13 @@ def test_run_test_generation_reraises_and_does_not_persist_on_failure(generation
     assert generation_mocks["suite"].generation_sets is None
 
 
-def test_run_test_generation_sends_the_full_set_list_to_mixpanel(generation_mocks):
+def test_an_inline_generation_reports_the_resolved_set_list(generation_mocks):
     generation_mocks["resolve"].return_value = ["Standard", "Plugin_Set"]
 
-    run_test_generation("suite-1", ["Standard", "Plugin_Set"])
+    run_test_generation_and_report(JobSource.ui, "suite-1", ["Standard", "Plugin_Set"])
 
     event_kwargs = generation_mocks["mixpanel"].return_value.send_event.call_args.kwargs
     assert event_kwargs["generation_sets"] == ["Standard", "Plugin_Set"]
-
-
-def test_run_test_generation_sends_mixpanel_event_even_on_failure(generation_mocks):
-    generation_mocks["generation"].return_value.run.side_effect = RuntimeError("boom")
-
-    with pytest.raises(RuntimeError):
-        run_test_generation("suite-1", ["Standard"])
-
-    generation_mocks["mixpanel"].return_value.send_event.assert_called_once()
 
 
 def test_run_test_generation_defaults_to_none_requested(generation_mocks):
@@ -757,7 +749,6 @@ def test_run_test_generation_generates_a_contract(generation_mocks):
         generation_mocks["suite"].id, table_names=None, profile_run_id=None, groups=list(RegenerationGroup)
     )
     generation_mocks["generation"].assert_not_called()
-    generation_mocks["mixpanel"].return_value.send_event.assert_called_once()
 
 
 # --- Exact-measure requirements ---
@@ -787,3 +778,97 @@ def test_a_type_declaring_nothing_keeps_its_criteria():
 
     assert "general_type = 'A' AND value_ct > 0" in query
     assert "sample_ratio" not in query
+
+
+def test_generation_sends_no_event_of_its_own(generation_mocks):
+    """A job reports from its final callback and an inline caller through the reporting wrapper,
+    so a caller that is neither, such as quick-start, reports nothing."""
+    run_test_generation("suite-1", ["Standard"])
+
+    generation_mocks["mixpanel"].return_value.send_event.assert_not_called()
+
+
+@pytest.mark.parametrize(("fails", "status"), [(False, JobStatus.COMPLETED), (True, JobStatus.ERROR)])
+def test_an_inline_generation_reports_its_status_and_source(generation_mocks, fails, status):
+    if fails:
+        generation_mocks["generation"].return_value.run.side_effect = RuntimeError("boom")
+
+    with pytest.raises(RuntimeError) if fails else contextlib.nullcontext():
+        run_test_generation_and_report(JobSource.ui, "suite-1", ["Standard"])
+
+    event = generation_mocks["mixpanel"].return_value.send_event.call_args
+    assert event.kwargs["status"] == status
+    assert event.kwargs["source"] == "UI"
+
+
+def test_an_inline_generation_refused_before_it_starts_still_reports(generation_mocks):
+    """An empty set list is refused while resolving it, before any generation runs."""
+    generation_mocks["resolve"].side_effect = ValueError("At least one generation set is required")
+
+    with pytest.raises(ValueError, match="generation set"):
+        run_test_generation_and_report(JobSource.ui, "suite-1", [])
+
+    event = generation_mocks["mixpanel"].return_value.send_event.call_args
+    assert event.kwargs["status"] == JobStatus.ERROR
+    assert event.kwargs["generation_sets"] == []
+
+
+def _settled_generation_job(status=JobStatus.COMPLETED, started=True, **kwargs):
+    return MagicMock(
+        source="api", status=status, started_at=datetime.now(UTC) if started else None,
+        kwargs={"test_suite_id": "suite-1", "generation_sets": ["Standard"], **kwargs},
+    )
+
+
+@pytest.mark.parametrize("status", [JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELED])
+def test_a_settled_generation_job_is_reported_with_its_status(generation_mocks, status):
+    report_test_generation(_settled_generation_job(status))
+
+    event = generation_mocks["mixpanel"].return_value.send_event.call_args
+    assert event.args == ("generate-tests",)
+    assert event.kwargs["status"] == status
+    assert event.kwargs["source"] == "API"
+    generation_mocks["resolve"].assert_called_once_with(generation_mocks["suite"], ["Standard"])
+
+
+def test_a_generation_job_canceled_before_it_started_is_not_reported(generation_mocks):
+    """No generation ran, the same as a profiling or test run canceled before it wrote its run."""
+    report_test_generation(_settled_generation_job(JobStatus.CANCELED, started=False))
+
+    generation_mocks["mixpanel"].return_value.send_event.assert_not_called()
+
+
+def test_a_generation_job_refused_for_its_sets_still_reports_them(generation_mocks):
+    """Resolving fails again here for the reason the job failed; the request is what it was asked."""
+    generation_mocks["resolve"].side_effect = ValueError("Unknown generation set")
+
+    report_test_generation(_settled_generation_job(JobStatus.ERROR, generation_sets=["Nope"]))
+
+    assert generation_mocks["mixpanel"].return_value.send_event.call_args.kwargs["generation_sets"] == ["Nope"]
+
+
+def test_a_generation_whose_suite_is_gone_still_reports(generation_mocks):
+    """Settling releases what held the suite in place; report what is left rather than raising."""
+    with patch(f"{MODULE}.TestSuite") as suite_cls:
+        suite_cls.get.return_value = None
+        report_test_generation(_settled_generation_job(test_suite_id="gone", generation_sets=None))
+
+    event = generation_mocks["mixpanel"].return_value.send_event.call_args
+    assert event.kwargs["sql_flavor"] is None
+    assert event.kwargs["generation_sets"] is None
+
+
+def test_a_reporting_failure_does_not_stand_in_for_the_generations_outcome(generation_mocks):
+    """The report reads the database, which can be what failed the generation in the first place."""
+    generation_mocks["generation"].return_value.run.side_effect = RuntimeError("generation failed")
+
+    with (
+        patch(f"{MODULE}._report_test_generation", side_effect=RuntimeError("report failed")),
+        pytest.raises(RuntimeError, match="generation failed"),
+    ):
+        run_test_generation_and_report(JobSource.ui, "suite-1", ["Standard"])
+
+
+def test_a_generation_that_succeeded_is_not_turned_into_a_failure_by_its_report(generation_mocks):
+    with patch(f"{MODULE}._report_test_generation", side_effect=RuntimeError("report failed")):
+        run_test_generation_and_report(JobSource.ui, "suite-1", ["Standard"])
