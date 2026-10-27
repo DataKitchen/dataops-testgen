@@ -21,7 +21,7 @@ WHERE c.table_groups_id = :TABLE_GROUPS_ID ::UUID
     FROM suite_versions sv
       CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
     WHERE sv.id = :VERSION_ID ::UUID
-      AND tbl ->> 'name' = c.table_name
+      AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = c.table_name
   )
   AND EXISTS (SELECT 1 FROM test_types WHERE test_type = 'Schema_Conformance' AND active = 'Y')
   {TABLE_FILTER}

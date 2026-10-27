@@ -385,19 +385,24 @@ def _narrow(
         return {section: document[section]}
 
     tables = [table for table in document.get("schema") or [] if isinstance(table, dict)]
-    table = next((table for table in tables if table.get("name") == table_name), None)
+    table = next((table for table in tables if table_name in (table.get("name"), table.get("physicalName"))), None)
     if table is None:
-        names = ", ".join(f"`{table.get('name')}`" for table in tables) or "none"
+        names = ", ".join(_declared_name(table) for table in tables) or "none"
         raise MCPUserError(f"The document declares no table `{table_name}`. Its tables are {names}.")
     if not column_name:
         return {"schema": [table]}
 
     properties = [prop for prop in table.get("properties") or [] if isinstance(prop, dict)]
-    prop = next((prop for prop in properties if prop.get("name") == column_name), None)
+    prop = next((prop for prop in properties if column_name in (prop.get("name"), prop.get("physicalName"))), None)
     if prop is None:
-        names = ", ".join(f"`{prop.get('name')}`" for prop in properties) or "none"
+        names = ", ".join(_declared_name(prop) for prop in properties) or "none"
         raise MCPUserError(f"Table `{table_name}` declares no column `{column_name}`. Its columns are {names}.")
-    return {"schema": [{"name": table_name, "properties": [prop]}]}
+    return {"schema": [{**{key: table[key] for key in ("name", "physicalName") if key in table}, "properties": [prop]}]}
+
+
+def _declared_name(entry: dict[str, Any]) -> str:
+    name, physical = entry.get("name"), entry.get("physicalName")
+    return f"`{name}` (`{physical}`)" if physical and physical != name else f"`{name}`"
 
 
 @with_database_session
@@ -419,11 +424,14 @@ def get_contract_metadata(
     ] = None,
     table_name: Annotated[
         str | None,
-        Field(description="Table to return from the `schema` section. Implies `section='schema'`."),
+        Field(
+            description="Table to return from the `schema` section, by its `name` or its `physicalName`. Implies "
+            "`section='schema'`.",
+        ),
     ] = None,
     column_name: Annotated[
         str | None,
-        Field(description="Column of `table_name` to return. Requires `table_name`."),
+        Field(description="Column of `table_name` to return, by its `name` or its `physicalName`. Requires `table_name`."),
     ] = None,
     chunk: Annotated[
         int,

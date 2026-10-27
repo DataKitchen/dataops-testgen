@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from testgen.common.contract_document import declared_tables
+from testgen.common.contract_document import declared_tables, physical_name
 from testgen.common.database.table_group_service import table_group_qualifies_table_refs
 from testgen.common.enums import SuiteType
 from testgen.common.flavors import SqlFlavorCode
@@ -120,14 +120,14 @@ def document_rules(document: dict[str, Any]) -> Iterator[DocumentRules]:
     for table_index, table in enumerate(document.get("schema") or []):
         if not isinstance(table, dict) or not table.get("name"):
             continue
-        table_name = table["name"]
+        table_name = physical_name(table)
         table_path = f"$.schema[{table_index}]"
         if isinstance(table.get("quality"), list):
             yield DocumentRules(table["quality"], RuleScope.TABLE, table_name, None, f"{table_path}.quality", table_name)
         for prop_index, prop in enumerate(table.get("properties") or []):
             if not isinstance(prop, dict) or not prop.get("name"):
                 continue
-            column_name = prop["name"]
+            column_name = physical_name(prop)
             prop_path = f"{table_path}.properties[{prop_index}]"
             label = f"{table_name}.{column_name}"
             if isinstance(prop.get("quality"), list):

@@ -24,6 +24,7 @@ from testgen.commands.test_generation import (
     run_contract_generation,
 )
 from testgen.common.acting_user import acting_username
+from testgen.common.contract_document import physical_name
 from testgen.common.contract_rules import RuleResolver, document_rules, rule_label
 from testgen.common.enums import MANAGED_TEST_TYPES, JobStatus, SuiteType
 from testgen.common.generation_set_service import CONTRACT_GENERATION_SET
@@ -672,7 +673,7 @@ def _rendered_declaration_differs(terms: list[TestDefinition], prop: dict[str, A
 
 def _properties(document: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
     return {
-        (table["name"], prop["name"]): prop
+        (physical_name(table), physical_name(prop)): prop
         for table in document.get("schema") or []
         if isinstance(table, dict) and table.get("name")
         for prop in table.get("properties") or []
@@ -739,7 +740,7 @@ def remove_table(suite: TestSuite, table_name: str) -> dict:
     document["schema"] = [
         descriptor
         for descriptor in document.get("schema", [])
-        if descriptor["name"] != table_name
+        if physical_name(descriptor) != table_name
     ]
     draft.metadata_document = document
     flag_modified(draft, "metadata_document")

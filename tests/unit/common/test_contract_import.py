@@ -964,3 +964,52 @@ def test_an_update_settles_the_reference_schema_as_a_create_would(qualifies, exp
     values = session.execute.call_args_list[-1].args[0].compile().params
     assert values["match_schema_name"] == expected
 
+
+
+# --- physical names ---
+
+
+def _physically_named() -> dict:
+    document = _document()
+    table = document["schema"][0]
+    table["physicalName"] = "tbl_orders"
+    table["properties"][0]["physicalName"] = "email_addr"
+    return document
+
+
+def test_terms_name_the_physical_table_and_column_and_the_document_keeps_its_logical_names():
+    split = _split(_physically_named())
+
+    assert sorted((term.test_type, term.table_name, term.column_name) for term in split.terms) == [
+        ("Max_Val", "tbl_orders", "amount"),
+        ("Required", "tbl_orders", "email_addr"),
+        ("Row_Ct", "tbl_orders", None),
+    ]
+    table = split.metadata_document["schema"][0]
+    assert (table["name"], table["physicalName"]) == ("orders", "tbl_orders")
+    assert (table["properties"][0]["name"], table["properties"][0]["physicalName"]) == ("email", "email_addr")
+
+
+def test_a_physical_type_is_compared_with_the_catalog_type_of_the_physical_column():
+    document = {"schema": [{"name": "orders", "physicalName": "tbl_orders", "properties": [
+        {"name": "email", "physicalName": "email_addr", "physicalType": "VARCHAR(255)"},
+    ]}]}
+    columns = [MagicMock(column_name="email_addr", db_data_type="character varying(255)")]
+    with patch(f"{MODULE}.contract_document.catalog_columns", return_value=columns) as catalog_columns:
+        _match_physical_types(document, MagicMock(id=uuid4()), "postgresql")
+
+    assert catalog_columns.call_args.args[1] == "tbl_orders"
+    assert document["schema"][0]["properties"][0]["physicalType"] == "character varying(255)"
+
+
+@pytest.mark.parametrize(("physical_name", "not_in_catalog"), [("orders", []), ("tbl_orders", ["tbl_orders"])])
+def test_the_preview_looks_the_physical_table_up_in_the_catalog(physical_name, not_in_catalog):
+    document = _document()
+    document["schema"][0].update(name="orders_logical", physicalName=physical_name)
+    with ExitStack() as stack:
+        _db_stubs(stack)
+        plan = contract_import.prepare_import(
+            yaml.safe_dump(document), MagicMock(table_group_schema="public"), _connection(), None
+        )
+
+    assert plan.tables_not_in_catalog == not_in_catalog

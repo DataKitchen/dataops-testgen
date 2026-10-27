@@ -209,7 +209,8 @@ def split_document(
     term resolves on it; one no test type checks stays and is reported. A property TestGen
     synthesized for a rule's subject leaves the document, its rules resolving against that
     subject. A managed, monitor, or inactive test type never comes from a document. The document's
-    ``testgenTerm`` entries, which name terms rather than describe the agreement, are dropped. Raises
+    ``testgenTerm`` entries, which name terms rather than describe the agreement, are dropped. A term
+    names its table and column by their ``physical_name``, and the document keeps both names. Raises
     ``InvalidContractDocumentError`` when two rules share an id, or an id is longer than a term
     id can be.
     """
@@ -255,7 +256,7 @@ def split_document(
     for table in metadata.get("schema") or []:
         if not isinstance(table, dict) or not table.get("name"):
             continue
-        table_name = table["name"]
+        table_name = contract_document.physical_name(table)
         if isinstance(table.get("quality"), list):
             table["quality"] = resolve_rules(table["quality"], RuleScope.TABLE, table_name, None)
         properties = table.get("properties") if isinstance(table.get("properties"), list) else []
@@ -271,7 +272,7 @@ def split_document(
         for prop in table.get("properties") or []:
             if not isinstance(prop, dict) or not prop.get("name"):
                 continue
-            column_name = prop["name"]
+            column_name = contract_document.physical_name(prop)
             first_term = len(terms)
             if isinstance(prop.get("quality"), list):
                 prop["quality"] = resolve_rules(prop["quality"], RuleScope.COLUMN, table_name, column_name)
@@ -828,14 +829,14 @@ def _match_physical_types(document: dict[str, Any], table_group: TableGroup, fla
             continue
         recorded = {
             column.column_name: column.db_data_type
-            for column in contract_document.catalog_columns(table_group.id, table["name"])
+            for column in contract_document.catalog_columns(table_group.id, contract_document.physical_name(table))
             if column.db_data_type
         }
         for prop in table.get("properties") or []:
             declared = prop.get("physicalType") if isinstance(prop, dict) else None
-            if not isinstance(declared, str) or prop.get("name") not in recorded:
+            if not isinstance(declared, str) or contract_document.physical_name(prop) not in recorded:
                 continue
-            catalog_type = recorded[prop["name"]]
+            catalog_type = recorded[contract_document.physical_name(prop)]
             match = compare_physical_types(declared, catalog_type, flavor_family)
             if match is TypeMatch.MISMATCH or declared == catalog_type:
                 continue

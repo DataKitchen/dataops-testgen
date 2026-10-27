@@ -15,6 +15,7 @@ from uuid import UUID
 
 from sqlalchemy import select, text
 
+from testgen.common.contract_document import physical_name
 from testgen.common.enums import MANAGED_TEST_TYPES
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, SqlFlavorCode
 from testgen.common.models import get_current_session
@@ -189,7 +190,7 @@ def _attach_to_property(
     unmatched subject would mint its own duplicate property instead of reusing the first one.
     """
     properties = table.setdefault("properties", [])
-    prop = next((candidate for candidate in properties if candidate.get("name") == subject), None)
+    prop = next((candidate for candidate in properties if physical_name(candidate) == subject), None)
     if prop is None:
         slug = _measure_property_name(subject)
         if slug in synthesized_names:
@@ -269,7 +270,7 @@ def _declared_property(
     name = _property_name(term, test_type)
     if name in synthesized_names:
         return None
-    return next((prop for prop in table.get("properties", []) if prop.get("name") == name), None)
+    return next((prop for prop in table.get("properties", []) if physical_name(prop) == name), None)
 
 
 def _declare(prop: dict[str, Any], declaration: dict[str, Any], claimed: dict[tuple[str, ...], Any]) -> bool:
@@ -325,7 +326,8 @@ def render_document(
     ``contract_name``, when given, is the document's ``name``.
 
     A term renders as a declaration when ``property_declaration`` finds one on its declared
-    column that no earlier term contradicts (``_declare``), otherwise as a quality rule.
+    column that no earlier term contradicts (``_declare``), otherwise as a quality rule. A term lands
+    on the table and column whose ``physical_name`` it names.
 
     Returns a new document; the version's own ``metadata_document`` is never mutated. Raises
     ``OrphanedTermError`` if a term names a table the document does not declare, names a test
@@ -347,7 +349,7 @@ def render_document(
         return document
 
     test_types = _test_types_for({term.test_type for term in terms})
-    tables_by_name = {table["name"]: table for table in document.get("schema", [])}
+    tables_by_name = {physical_name(table): table for table in document.get("schema", [])}
     for term in terms:
         if term.table_name not in tables_by_name:
             raise OrphanedTermError(

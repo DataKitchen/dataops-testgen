@@ -64,11 +64,17 @@ _PROFILED_VALUE_SOURCES: dict[str, tuple[tuple[str, str], ...]] = {
 _CONTRACT_TAGS = tuple(tag for tag in (*TAG_FIELDS, "data_location") if hasattr(TableGroup, tag))
 
 
+def physical_name(node: dict) -> str | None:
+    """The database name of an ODCS table or column: its ``physicalName``, else its ``name``."""
+    physical = node.get("physicalName")
+    return physical if isinstance(physical, str) and physical else node.get("name")
+
+
 def declared_tables(document: dict | None) -> list[str]:
-    """The table names a metadata document's schema section declares, in document order."""
+    """The physical names of the tables a metadata document's schema section declares, in document order."""
     if not document:
         return []
-    return [table["name"] for table in document.get("schema") or []]
+    return [physical_name(table) for table in document.get("schema") or []]
 
 
 def catalog_columns(table_groups_id: UUID, table_name: str) -> list[DataColumnChars]:
@@ -155,7 +161,7 @@ def _merge_properties(existing_properties: list[dict], columns: list[DataColumnC
 
     A declared column the catalog no longer holds stays declared.
     """
-    declared = {prop.get("name") for prop in existing_properties}
+    declared = {physical_name(prop) for prop in existing_properties}
     return [
         *existing_properties,
         *({"name": column.column_name} for column in columns if column.column_name not in declared),
@@ -309,7 +315,7 @@ def _refresh_primary_key(properties: list[dict], columns: list[DataColumnChars])
         if len(candidates) > 1:
             return
         if candidates:
-            prop = next((prop for prop in properties if prop.get("name") == candidates[0]), None)
+            prop = next((prop for prop in properties if physical_name(prop) == candidates[0]), None)
             if prop is not None:
                 prop["primaryKey"] = True
                 prop["primaryKeyPosition"] = 1
@@ -339,7 +345,8 @@ def refresh_tables(
     ``profiling``, it gets no primary key, format or profiled values, whatever its own excluded
     marker says; the marker itself is catalog metadata. A column the catalog flags PII loses its profiled
     values whichever groups are refreshed. A table the catalog does not hold is left as it is, and
-    so is a column, apart from its primary key when ``profiling`` is set.
+    so is a column, apart from its primary key when ``profiling`` is set. A table and a column are
+    matched to the catalog by ``physical_name``.
 
     Updates ``document`` in place. Returns the number of catalog columns found for each table.
     """
@@ -349,7 +356,7 @@ def refresh_tables(
     column_counts: dict[str, int] = {}
 
     for table_name in table_names:
-        descriptor = next((entry for entry in declared if entry["name"] == table_name), None)
+        descriptor = next((entry for entry in declared if physical_name(entry) == table_name), None)
         if descriptor is None:
             descriptor = {"name": table_name}
             declared.append(descriptor)
@@ -373,7 +380,7 @@ def refresh_tables(
 
         by_name = {column.column_name: column for column in columns}
         for prop in properties:
-            if (column := by_name.get(prop.get("name"))) is not None:
+            if (column := by_name.get(physical_name(prop))) is not None:
                 _refresh_column_types(prop, column)
                 if column.pii_flag is not None:
                     _set_custom_property(prop, PROFILED_VALUES, None)
@@ -447,10 +454,11 @@ def fill_profiled_values(
         )
     }
     for table in document.get("schema") or []:
-        if table["name"] not in table_names:
+        table_name = physical_name(table)
+        if table_name not in table_names:
             continue
         for prop in table.get("properties") or []:
-            column_key = (table["name"], prop.get("name"))
+            column_key = (table_name, physical_name(prop))
             withheld = catalog_withheld.get(column_key, is_excluded(prop) or is_pii(prop))
             if withheld:
                 _set_custom_property(prop, PROFILED_VALUES, None)

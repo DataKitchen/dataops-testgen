@@ -1479,3 +1479,38 @@ def test_generation_lands_in_the_draft_or_the_one_the_job_opens_without_opening_
         assert contract_service.generation_destination(suite) == number
 
     resolve_writable.assert_not_called()
+
+
+# --- physical names ---
+
+
+def test_a_declaration_is_compared_with_the_tests_on_its_physical_column():
+    stored = _metadata()
+    stored["schema"][0]["physicalName"] = "tbl_orders"
+    stored["schema"][0]["properties"][0].update(physicalName="amt", logicalTypeOptions={"maximum": 100})
+    document = copy.deepcopy(stored)
+    document["schema"][0]["properties"][0]["logicalTypeOptions"] = {"maximum": 200}
+    term = TestDefinition(
+        test_type="Max_Val", table_name="tbl_orders", column_name="amt", threshold_value="0", baseline_value="100"
+    )
+    with _save_stubs(stored, terms=[term]) as (suite, _, _calls):
+        saved = contract_service.save_metadata_document(suite, document)
+
+    assert saved.overridden_declarations == ["tbl_orders.amt: Max Val"]
+    assert saved.untested_declarations == []
+
+
+def test_removing_a_table_finds_its_descriptor_by_physical_name():
+    suite = _suite()
+    draft = SuiteVersion(
+        id=uuid4(), test_suite_id=suite.id, version=2,
+        metadata_document={"schema": [{"name": "orders", "physicalName": "tbl_orders"}, {"name": "customers"}]},
+    )
+    with (
+        patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
+        patch.object(SuiteVersion, "get", return_value=draft),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+    ):
+        contract_service.remove_table(suite, "tbl_orders")
+
+    assert [d["name"] for d in draft.metadata_document["schema"]] == ["customers"]
