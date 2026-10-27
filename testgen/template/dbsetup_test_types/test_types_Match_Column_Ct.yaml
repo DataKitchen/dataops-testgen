@@ -63,7 +63,7 @@ test_types:
              COUNT(*) AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND drop_date IS NULL;
   - id: '2419'
     test_type: Match_Column_Ct
@@ -84,7 +84,7 @@ test_types:
              COUNT(*) AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND drop_date IS NULL;
   - id: '2219'
     test_type: Match_Column_Ct
@@ -105,7 +105,7 @@ test_types:
              COUNT(*) AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND drop_date IS NULL;
   - id: '2319'
     test_type: Match_Column_Ct
@@ -126,7 +126,7 @@ test_types:
              COUNT(*) AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND drop_date IS NULL;
   - id: '2019'
     test_type: Match_Column_Ct
@@ -147,7 +147,7 @@ test_types:
              COUNT(*) AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND drop_date IS NULL;
   - id: '2616'
     test_type: Match_Column_Ct
@@ -168,7 +168,7 @@ test_types:
              COUNT(*) AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND drop_date IS NULL;
   - id: '2119'
     test_type: Match_Column_Ct
@@ -189,7 +189,7 @@ test_types:
              COUNT(*) AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND drop_date IS NULL;
   - id: '8016'
     test_type: Match_Column_Ct
@@ -210,7 +210,7 @@ test_types:
              COUNT(*) AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND drop_date IS NULL;
   - id: '8016'
     test_type: Match_Column_Ct
@@ -231,7 +231,7 @@ test_types:
              COUNT(*) AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND drop_date IS NULL;
   - id: '10095'
     test_type: Match_Column_Ct
@@ -252,7 +252,7 @@ test_types:
              COUNT(*) AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND drop_date IS NULL;
   - id: '11110'
     test_type: Match_Column_Ct
@@ -273,5 +273,5 @@ test_types:
              COUNT(*) AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND drop_date IS NULL;

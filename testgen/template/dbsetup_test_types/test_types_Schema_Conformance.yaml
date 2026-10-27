@@ -59,7 +59,7 @@ test_types:
                   dcc.logical_type AS live_logical
             FROM {APP_SCHEMA_NAME}.data_column_chars dcc
             WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.table_name = '{CATALOG_TABLE_NAME}'
                   AND dcc.drop_date IS NULL
       ),
       column_differences AS (
@@ -128,7 +128,7 @@ test_types:
                   dcc.logical_type AS live_logical
             FROM {APP_SCHEMA_NAME}.data_column_chars dcc
             WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.table_name = '{CATALOG_TABLE_NAME}'
                   AND dcc.drop_date IS NULL
       ),
       column_differences AS (
@@ -197,7 +197,7 @@ test_types:
                   dcc.logical_type AS live_logical
             FROM {APP_SCHEMA_NAME}.data_column_chars dcc
             WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.table_name = '{CATALOG_TABLE_NAME}'
                   AND dcc.drop_date IS NULL
       ),
       column_differences AS (
@@ -266,7 +266,7 @@ test_types:
                   dcc.logical_type AS live_logical
             FROM {APP_SCHEMA_NAME}.data_column_chars dcc
             WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.table_name = '{CATALOG_TABLE_NAME}'
                   AND dcc.drop_date IS NULL
       ),
       column_differences AS (
@@ -335,7 +335,7 @@ test_types:
                   dcc.logical_type AS live_logical
             FROM {APP_SCHEMA_NAME}.data_column_chars dcc
             WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.table_name = '{CATALOG_TABLE_NAME}'
                   AND dcc.drop_date IS NULL
       ),
       column_differences AS (
@@ -404,7 +404,7 @@ test_types:
                   dcc.logical_type AS live_logical
             FROM {APP_SCHEMA_NAME}.data_column_chars dcc
             WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.table_name = '{CATALOG_TABLE_NAME}'
                   AND dcc.drop_date IS NULL
       ),
       column_differences AS (
@@ -473,7 +473,7 @@ test_types:
                   dcc.logical_type AS live_logical
             FROM {APP_SCHEMA_NAME}.data_column_chars dcc
             WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.table_name = '{CATALOG_TABLE_NAME}'
                   AND dcc.drop_date IS NULL
       ),
       column_differences AS (
@@ -542,7 +542,7 @@ test_types:
                   dcc.logical_type AS live_logical
             FROM {APP_SCHEMA_NAME}.data_column_chars dcc
             WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.table_name = '{CATALOG_TABLE_NAME}'
                   AND dcc.drop_date IS NULL
       ),
       column_differences AS (
@@ -611,7 +611,7 @@ test_types:
                   dcc.logical_type AS live_logical
             FROM {APP_SCHEMA_NAME}.data_column_chars dcc
             WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.table_name = '{CATALOG_TABLE_NAME}'
                   AND dcc.drop_date IS NULL
       ),
       column_differences AS (
@@ -680,7 +680,7 @@ test_types:
                   dcc.logical_type AS live_logical
             FROM {APP_SCHEMA_NAME}.data_column_chars dcc
             WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.table_name = '{CATALOG_TABLE_NAME}'
                   AND dcc.drop_date IS NULL
       ),
       column_differences AS (
@@ -749,7 +749,7 @@ test_types:
                   dcc.logical_type AS live_logical
             FROM {APP_SCHEMA_NAME}.data_column_chars dcc
             WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
+                  AND dcc.table_name = '{CATALOG_TABLE_NAME}'
                   AND dcc.drop_date IS NULL
       ),
       column_differences AS (

@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Collection
 from datetime import datetime
 from uuid import uuid4
 
@@ -20,6 +21,55 @@ from testgen.utils import get_exception_message
 LOG = logging.getLogger("testgen")
 
 
+def read_target_columns(
+    connection: Connection,
+    sql_generator: RefreshDataCharsSQL,
+) -> list[ColumnChars]:
+    """Read column metadata from the target, writing nothing.
+
+    Args:
+        connection: The connection to read through.
+        sql_generator: Names the schema and the tables to read.
+
+    Returns:
+        A column per table column the generator selects.
+    """
+    try:
+        if sql_generator.flavor_service.metadata_via_api:
+            # Flavor returns column metadata directly (e.g., Salesforce Data 360
+            # via the connector's metadata API). These flavors have no information_schema.
+            # Apply the table filters in Python since we bypass the SQL {TABLE_CRITERIA} clause.
+            params = resolve_connection_params(connection.__dict__)
+            api_columns = sql_generator.flavor_service.get_schema_columns(params, sql_generator.schema_name) or []
+            return sql_generator.filter_schema_columns(api_columns)
+        rows = fetch_dict_from_db(*sql_generator.get_schema_ddf(), use_target_db=True)
+    except Exception as e:
+        raise RuntimeError(f"Error reading columns from {sql_generator.schema_name}. {get_exception_message(e)}") from e
+    return [ColumnChars(**row) for row in rows]
+
+
+def read_run_columns(
+    connection: Connection,
+    table_group: TableGroup,
+    schema_name: str,
+    table_names: Collection[str],
+) -> list[ColumnChars]:
+    """Read the columns of the tables a run reads, for validating its tests against them.
+
+    Args:
+        connection: The connection to read through.
+        table_group: The table group the run belongs to.
+        schema_name: The schema the run reads.
+        table_names: The tables the run reads, named as they are in that schema.
+
+    Returns:
+        A column per table column found, describing the location the run reads rather than the
+        table group's catalog, which a run never rewrites from an overridden location.
+    """
+    LOG.info(f"Getting DDF for the {len(table_names)} tables this run reads from {schema_name}")
+    return read_target_columns(connection, RefreshDataCharsSQL(connection, table_group, schema_name, table_names))
+
+
 def run_data_chars_refresh(
     connection: Connection,
     table_group: TableGroup,
@@ -35,18 +85,8 @@ def run_data_chars_refresh(
 
     LOG.info("Getting DDF for table group")
     try:
-        if sql_generator.flavor_service.metadata_via_api:
-            # Flavor returns column metadata directly (e.g., Salesforce Data 360
-            # via the connector's metadata API). These flavors have no information_schema.
-            # Apply the table-group filters in Python
-            # since we bypass the SQL {TABLE_CRITERIA} clause.
-            params = resolve_connection_params(connection.__dict__)
-            api_columns = sql_generator.flavor_service.get_schema_columns(params, table_group.table_group_schema) or []
-            data_chars = sql_generator.filter_schema_columns(api_columns)
-        else:
-            rows = fetch_dict_from_db(*sql_generator.get_schema_ddf(), use_target_db=True)
-            data_chars = [ColumnChars(**row) for row in rows]
-    except Exception as e:
+        data_chars = read_target_columns(connection, sql_generator)
+    except RuntimeError as e:
         raise RuntimeError(f"Error refreshing columns for data catalog. {get_exception_message(e)}") from e
 
     if data_chars:

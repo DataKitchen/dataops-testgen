@@ -31,6 +31,7 @@ from testgen.common.models.test_definition import (
 )
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.common.pii_masking import get_pii_columns, mask_profiling_pii
+from testgen.common.run_overrides import labelled_overrides
 from testgen.common.test_result_disposition_service import (
     DispositionUpdate,
     coerce_ui_disposition,
@@ -602,7 +603,13 @@ class TestResultsPage(Page):
                     "run_date": run_date,
                     "project_code": run.project_code,
                     "is_latest_run": run.is_latest_run,
-                    "overrides": {"Match schema": run.match_schema_override} if run.match_schema_override else None,
+                    "overrides": labelled_overrides(
+                        schema_name=run.schema_override,
+                        table_names=run.table_names_override,
+                        match_schema_name=run.match_schema_override,
+                        match_table_names=run.match_table_names_override,
+                    )
+                    or None,
                     "external_url": run.external_url,
                     "metadata": make_json_safe(run.caller_metadata) if run.caller_metadata else None,
                 },

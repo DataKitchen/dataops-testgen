@@ -42,9 +42,24 @@ class RefreshDataCharsSQL:
         "file_ct",
     )
 
-    def __init__(self, connection: Connection, table_group: TableGroup):
+    def __init__(
+        self,
+        connection: Connection,
+        table_group: TableGroup,
+        schema_name: str | None = None,
+        table_names: Collection[str] | None = None,
+    ):
+        """
+        Args:
+            connection: The connection to read through.
+            table_group: The table group whose catalog this describes.
+            schema_name: Schema to read, when it is not the table group's own.
+            table_names: Exact tables to read, in place of the table group's table filters.
+        """
         self.connection = connection
         self.table_group = table_group
+        self.schema_name = schema_name or table_group.table_group_schema
+        self.table_names = table_names
         self.flavor = connection.sql_flavor
         self.flavor_service = get_flavor_service(self.flavor)
 
@@ -56,7 +71,7 @@ class RefreshDataCharsSQL:
     ) -> tuple[str, dict]:
         query = read_template_sql_file(template_file_name, sub_directory)
         params = {
-            "DATA_SCHEMA": self.table_group.table_group_schema,
+            "DATA_SCHEMA": self.schema_name,
             "TABLE_GROUPS_ID": self.table_group.id,
         }
         if extra_params:
@@ -68,6 +83,15 @@ class RefreshDataCharsSQL:
         table_criteria = ""
         ddf_table_ref = self.flavor_service.ddf_table_ref
         escape_clause = self.flavor_service.escape_clause
+
+        if self.table_names is not None:
+            # An explicit set names the tables outright, so the table group's filters, which are
+            # written against its own tables, do not apply.
+            return (
+                f" AND c.{ddf_table_ref} IN ({self.flavor_service.string_literal_list(sorted(self.table_names))})"
+                if self.table_names
+                else " AND 1=0"
+            )
 
         if table_names := split_criteria(self.table_group.profiling_table_set):
             # Oracle allows at most 1000 expressions in an IN list
@@ -113,6 +137,10 @@ class RefreshDataCharsSQL:
         """
         result = columns
 
+        if self.table_names is not None:
+            wanted = set(self.table_names)
+            return [c for c in result if c.table_name in wanted]
+
         if allowed := set(split_criteria(self.table_group.profiling_table_set)):
             result = [c for c in result if c.table_name in allowed]
 
@@ -136,7 +164,7 @@ class RefreshDataCharsSQL:
 
     def get_row_counts(self, table_names: Iterable[str]) -> list[tuple[str, None]]:
         # Runs on Target database
-        schema = self.table_group.table_group_schema
+        schema = self.schema_name
         flavor_code = self.connection.sql_flavor_code
         count_queries = [
             f"SELECT '{table}' AS table_name, COUNT(*) AS row_count "
@@ -165,7 +193,7 @@ class RefreshDataCharsSQL:
 
     def verify_access(self, table_name: str) -> tuple[str, None]:
         # Runs on Target database
-        schema = self.table_group.table_group_schema
+        schema = self.schema_name
         table_ref = self.flavor_service.get_table_ref(schema, table_name, self.connection.sql_flavor_code)
         prefix, suffix = self.flavor_service.row_limit_clauses(1)
         query = f"SELECT {prefix} 1 FROM {table_ref} {suffix}".strip()

@@ -1,12 +1,14 @@
 import logging
 import time
 from collections import defaultdict
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.engine.row import RowMapping
 
 from testgen.commands.queries.execute_tests_query import TestExecutionDef, TestExecutionSQL
 from testgen.commands.test_generation import run_monitor_generation
@@ -30,8 +32,9 @@ from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.run_overrides import resolve_table_name
 
-from .run_refresh_data_chars import run_data_chars_refresh
+from .run_refresh_data_chars import read_run_columns, run_data_chars_refresh
 from .run_test_validation import ColumnLookup, run_test_validation
 
 LOG = logging.getLogger("testgen")
@@ -43,17 +46,21 @@ def attach_column_chars(test_defs: list[TestExecutionDef], data_chars: list[Colu
 
     Args:
         test_defs: The tests to run.
-        data_chars: The table group's catalog columns.
+        data_chars: Columns of the location the tests read.
         quote_char: The flavor's identifier quote, stripped from the tests' column names.
     """
     columns = ColumnLookup(data_chars)
     for td in test_defs:
         td.column_chars = (
-            columns.find(td.schema_name, td.table_name, td.column_name.strip(f" {quote_char}")) if td.column_name else None
+            columns.find(td.source_schema, td.source_table, td.column_name.strip(f" {quote_char}"))
+            if td.column_name
+            else None
         )
         td.column_type = td.column_chars.column_type if td.column_chars else None
         if td.groupby_names:
-            td.key_column_chars = columns.find(td.schema_name, td.table_name, td.groupby_names.strip(f" {quote_char}"))
+            td.key_column_chars = columns.find(
+                td.source_schema, td.source_table, td.groupby_names.strip(f" {quote_char}")
+            )
 
 
 def retarget_match_schema(test_defs: list[TestExecutionDef], match_schema_name: str) -> None:
@@ -73,6 +80,35 @@ def retarget_match_schema(test_defs: list[TestExecutionDef], match_schema_name: 
             test_def.match_schema_name = match_schema_name
 
 
+def retarget_read_location(
+    test_defs: list[TestExecutionDef],
+    schema_name: str | None = None,
+    table_names: Mapping[str, str] | None = None,
+    match_table_names: Mapping[str, str] | None = None,
+) -> None:
+    """Point loaded tests at the tables this run reads.
+
+    Args:
+        test_defs: The tests to run.
+        schema_name: Schema to read the table group's tables from, if overridden.
+        table_names: Each test's own table to the table to read, if overridden.
+        match_table_names: Each referential test's second table to the table to read, if overridden.
+
+    A test keeps the schema and table names its definition carries, so its results report where
+    the test is defined rather than where this run happened to look; the location it reads is
+    recorded among the result's input parameters instead. A second table is retargeted in place,
+    like its match schema, so that validation checks the table the run reads. The stored
+    ``test_definitions`` rows are untouched either way.
+    """
+    for test_def in test_defs:
+        if schema_name:
+            test_def.read_schema_name = schema_name
+        if table_names:
+            test_def.read_table_name = resolve_table_name(test_def.table_name, table_names)
+        if match_table_names and test_def.match_table_name:
+            test_def.match_table_name = resolve_table_name(test_def.match_table_name, match_table_names)
+
+
 def _a_later_contract_run_is_latest(test_suite: TestSuite, test_run: TestRun) -> bool:
     """Whether the latest run of a contract started after ``test_run``."""
     if test_suite.suite_type != SuiteType.CONTRACT or not test_suite.last_complete_test_run_id:
@@ -89,9 +125,17 @@ def run_test_execution(
     run_date: datetime | None = None,
     version_id: str | UUID | None = None,
     match_schema_name: str | None = None,
+    schema_name: str | None = None,
+    table_names: Mapping[str, str] | None = None,
+    match_table_names: Mapping[str, str] | None = None,
 ) -> UUID:
     if test_suite_id is None:
         raise ValueError("Test Suite ID was not specified")
+
+    # A failure against a caller-supplied location says nothing about the stored definition, so no
+    # override may deactivate a test. One predicate over all of them, so a later override added to
+    # the signature cannot forget it.
+    has_override = any([match_schema_name, schema_name, table_names, match_table_names])
 
     LOG.info(f"Starting test run for test suite {test_suite_id}")
     time_delta = (run_date - datetime.now(UTC)) if run_date else timedelta()
@@ -151,6 +195,18 @@ def run_test_execution(
 
         if match_schema_name:
             retarget_match_schema(test_defs, match_schema_name)
+        retarget_read_location(test_defs, schema_name, table_names, match_table_names)
+
+        # The catalog describes the table group, wherever this run happened to read. Tests are
+        # checked against what they read, so a run pointed elsewhere needs that location's columns.
+        run_chars = data_chars
+        if (schema_name or table_names) and test_defs:
+            run_chars = read_run_columns(
+                connection,
+                table_group,
+                schema_name or table_group.table_group_schema,
+                {td.source_table for td in test_defs if td.source_table},
+            )
 
         if test_defs:
             LOG.info(f"Active test definitions: {len(test_defs)}")
@@ -161,9 +217,8 @@ def run_test_execution(
             valid_test_defs = run_test_validation(
                 sql_generator,
                 test_defs,
-                data_chars,
-                # A failure against a caller-supplied match schema says nothing about the stored definition.
-                deactivate_invalid=test_suite.deactivates_invalid_tests and not match_schema_name,
+                run_chars,
+                deactivate_invalid=test_suite.deactivates_invalid_tests and not has_override,
             )
             invalid_count = len(test_defs) - len(valid_test_defs)
             test_run.set_progress(
@@ -173,7 +228,7 @@ def run_test_execution(
             )
 
             if valid_test_defs:
-                attach_column_chars(valid_test_defs, data_chars, sql_generator.flavor_service.quote_character)
+                attach_column_chars(valid_test_defs, run_chars, sql_generator.flavor_service.quote_character)
 
                 run_functions = {
                     "QUERY": partial(_run_tests, sql_generator, "QUERY"),
@@ -287,6 +342,51 @@ def _sync_monitor_definitions(sql_generator: TestExecutionSQL, data_chars: list[
         run_monitor_generation(test_suite_id, [test_type], mode="upsert", table_names=list(table_names))
 
 
+def restore_result_identity(
+    results: list[RowMapping],
+    columns: tuple[str, ...],
+    test_defs: list[TestExecutionDef],
+) -> list:
+    """Return the rows, each retargeted test's carrying the schema and table its definition holds.
+
+    Args:
+        results: Rows a test template returned, keyed by column name.
+        columns: The column each position of a written row holds.
+        test_defs: The tests the rows came from, found by test definition id.
+
+    Returns:
+        One row per input row: the row as it came for a test that read where it is defined, else
+        its values in ``columns`` order carrying the definition's schema and table.
+
+    A template renders the location the run reads into both its FROM clause and the schema and
+    table it selects back, so a run reading elsewhere would otherwise report its results under
+    the table it happened to read.
+    """
+    retargeted = {
+        str(td.id): (td.schema_name, td.table_name)
+        for td in test_defs
+        if td.read_schema_name or td.read_table_name
+    }
+    if not retargeted:
+        return results
+
+    position = {name: index for index, name in enumerate(columns)}
+    schema_at, table_at = position["schema_name"], position["table_name"]
+
+    restored = []
+    for row in results:
+        names = retargeted.get(str(row["test_definition_id"]))
+        if names is None:
+            restored.append(row)
+            continue
+        # A returned row is an immutable mapping, so the restored one is rebuilt positionally,
+        # in the order write_to_app_db copies the columns in.
+        values = [row[column] for column in columns]
+        values[schema_at], values[table_at] = names
+        restored.append(values)
+    return restored
+
+
 def _run_tests(
     sql_generator: TestExecutionSQL,
     run_type: Literal["QUERY", "METADATA"],
@@ -320,11 +420,9 @@ def _run_tests(
 
     if test_results:
         LOG.info(f"Writing {run_type} test results")
-        write_to_app_db(
-            test_results,
-            sql_generator.template_result_columns[run_type],
-            sql_generator.test_results_table,
-        )
+        columns = sql_generator.template_result_columns[run_type]
+        test_results = restore_result_identity(test_results, columns, test_defs)
+        write_to_app_db(test_results, columns, sql_generator.test_results_table)
 
     if error_count := len(error_data):
         LOG.warning(f"Errors running {run_type} tests: {error_count}")

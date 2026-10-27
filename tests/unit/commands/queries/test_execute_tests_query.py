@@ -544,6 +544,25 @@ def test_aggregate_cat_tests_handles_null_max_query_chars():
     assert grouped_defs == [[td]]
 
 
+def test_aggregate_cat_tests_read_the_location_the_run_points_at():
+    """CAT builds its FROM in Python rather than through a template, so it has to follow the
+    run's override the way a templated {SCHEMA_NAME} does."""
+    instance = _make_execution_sql()
+    instance.connection = Connection(sql_flavor="postgresql", max_query_chars=None)
+    instance.flavor = "postgresql"
+    instance.flavor_service = get_flavor_service("postgresql")
+
+    td = _make_td(measure_expression="m_expr", condition_expression="c_expr")
+    td.schema_name, td.table_name = "staging_a", "orders"
+    td.read_schema_name, td.read_table_name = "build123", "build_orders"
+
+    (query, _), *_ = instance.aggregate_cat_tests([td], single=True)[0]
+
+    assert "build123" in query
+    assert "build_orders" in query
+    assert "staging_a" not in query
+
+
 # --- TestExecutionSQL._get_params baseline guards ---
 
 

@@ -59,7 +59,10 @@ class TestRunMinimal(EntityMinimal):
     test_starttime: datetime
     dq_score_test_run: float
     is_latest_run: bool
+    schema_override: str | None
+    table_names_override: dict | None
     match_schema_override: str | None
+    match_table_names_override: dict | None
     external_url: str | None
     caller_metadata: dict | None
 
@@ -252,8 +255,12 @@ class TestRun(Entity):
             (id == TestSuite.last_complete_test_run_id, True),
             else_=False,
         ).label("is_latest_run"),
-        # Only set when the run pointed its referential tests at another schema.
+        # Each is set only when the run was submitted with that override. The two maps are JSONB
+        # objects, so they are read as JSON rather than through astext.
+        JobExecution.kwargs["schema_name"].astext.label("schema_override"),
+        JobExecution.kwargs["table_names"].label("table_names_override"),
         JobExecution.kwargs["match_schema_name"].astext.label("match_schema_override"),
+        JobExecution.kwargs["match_table_names"].label("match_table_names_override"),
         JobExecution.external_url,
         JobExecution.caller_metadata,
     )

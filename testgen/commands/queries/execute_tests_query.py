@@ -101,6 +101,22 @@ class TestExecutionDef(InputParameters):
     measure_expression: str = None
     condition_expression: str = None
     errors: list[str] = dataclasses.field(default_factory=list)
+    # Where this run reads the test's own table. A run-scoped override sets these; otherwise they
+    # follow the definition. Kept apart from schema_name and table_name because a result reports
+    # those two as its own identity, which stays where the test is defined, and off
+    # InputParameters because a result's own location is not what the run read. The match fields
+    # carry their override directly, since they are reported as input parameters rather than
+    # identity.
+    read_schema_name: str | None = None
+    read_table_name: str | None = None
+
+    @property
+    def source_schema(self) -> str:
+        return self.read_schema_name or self.schema_name
+
+    @property
+    def source_table(self) -> str:
+        return self.read_table_name or self.table_name
 
     def __post_init__(self) -> None:
         if self.subset_condition is not None and not self.subset_condition.strip():
@@ -421,8 +437,11 @@ class TestExecutionSQL:
                 "TEST_TYPE": test_def.test_type,
                 "TEST_DEFINITION_ID": test_def.id,
                 "APP_SCHEMA_NAME": get_tg_schema(),
-                "SCHEMA_NAME": test_def.schema_name,
-                "TABLE_NAME": test_def.table_name,
+                "SCHEMA_NAME": test_def.source_schema,
+                "TABLE_NAME": test_def.source_table,
+                # The data catalog holds the table group's own tables whatever a run reads, so a
+                # template querying it matches on the name the definition carries.
+                "CATALOG_TABLE_NAME": test_def.table_name,
                 "COLUMN_NAME": f"{quote}{test_def.column_name or ''}{quote}",
                 "COLUMN_NAME_NO_QUOTES": test_def.column_name,
                 "CONCAT_COLUMNS": concat_columns(test_def.column_name, self.null_value) if test_def.column_name else "",
@@ -480,7 +499,7 @@ class TestExecutionSQL:
             params.update(self.flavor_service.value_hash_params(test_def.column_chars, test_def.key_column_chars))
 
             # After every user-supplied parameter, since any of them may contain {DATA_SCHEMA}
-            params["DATA_SCHEMA"] = test_def.schema_name
+            params["DATA_SCHEMA"] = test_def.source_schema
 
             # Substituted last, in one pass, so placeholder text in a listed value is never expanded
             params["BASELINE_VALUE_LIST"] = FinalParam(
@@ -668,7 +687,7 @@ class TestExecutionSQL:
         subset_columns_by_table: dict[tuple[str, str], dict[str, None]] = {}
         for td in test_defs:
             if td.subset_condition:
-                subset_columns_by_table.setdefault((td.schema_name, td.table_name), {})[self._subset_column(td)] = None
+                subset_columns_by_table.setdefault((td.source_schema, td.source_table), {})[self._subset_column(td)] = None
         max_query_chars = (self.connection.max_query_chars or DEFAULT_MAX_QUERY_CHARS) - 400
         max_query_chars -= max(
             (len(self._from_clause(schema, table, columns)) for (schema, table), columns in subset_columns_by_table.items()),
@@ -679,8 +698,9 @@ class TestExecutionSQL:
         aggregate_queries: list[tuple[str, None]] = []
         aggregate_test_defs: list[list[TestExecutionDef]] = []
         for group in groups:
+            # Grouped by the definition's table, so every member of a group reads the same one.
             subset_columns = dict.fromkeys(self._subset_column(td) for td in group if td.subset_condition)
-            table_ref = self._from_clause(group[0].schema_name, group[0].table_name, subset_columns)
+            table_ref = self._from_clause(group[0].source_schema, group[0].source_table, subset_columns)
             query = (
                 f"SELECT {len(aggregate_queries)} AS query_index, "
                 f"{concat_operator.join([td.measure_expression for td in group])} AS result_measures, "
@@ -718,7 +738,7 @@ class TestExecutionSQL:
 
     def _expanded_subset(self, test_def: TestExecutionDef) -> str:
         # Written into the query directly, so no later parameter pass expands DATA_SCHEMA in it
-        return expand_subset(test_def.subset_condition, test_def.schema_name)
+        return expand_subset(test_def.subset_condition, test_def.source_schema)
 
     def get_cat_test_results(
         self,

@@ -379,6 +379,61 @@ class Test_match_schema_resolution:
 
 
 # ---------------------------------------------------------------------------
+# _build_query_standard: match table resolution
+# ---------------------------------------------------------------------------
+
+class Test_match_table_resolution:
+    """A second table is retargeted in place, so the run's value lands in the input parameters."""
+
+    def _build(self, test_definition, issue_data):
+        with (
+            patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q),
+            patch(f"{MODULE}.TestDefinition.get_for_project", return_value=test_definition),
+            patch(f"{MODULE}._get_lookup_data") as mock_lookup,
+        ):
+            mock_lookup.return_value = LookupData(
+                lookup_query="SELECT 1 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}",
+                sql_flavor="postgresql",
+            )
+            return _build_query_standard(issue_data, limit=500)
+
+    def test_run_value_wins_over_definition(self):
+        query = self._build(
+            _FakeTestDefinition(match_schema_name="ref", match_table_name="stored_table"),
+            _standard_issue_data(input_parameters=_run_input_parameters(match_table_name="prod_orders")),
+        )
+        assert "ref.prod_orders" in query
+        assert "stored_table" not in query
+
+    def test_falls_back_when_the_blob_omits_the_match_table(self):
+        query = self._build(
+            _FakeTestDefinition(match_schema_name="ref", match_table_name="stored_table"),
+            _standard_issue_data(input_parameters=_run_input_parameters(threshold_value="0")),
+        )
+        assert "ref.stored_table" in query
+
+    def test_the_test_s_own_table_stays_where_the_result_reports_it(self):
+        """A run's second table is run-scoped, the test's own table is not: it reads the table
+        group's location, so investigating a result still works once a build schema is dropped."""
+        with (
+            patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q),
+            patch(f"{MODULE}.TestDefinition.get_for_project", return_value=_FakeTestDefinition(match_table_name="ref")),
+            patch(f"{MODULE}._get_lookup_data") as mock_lookup,
+        ):
+            mock_lookup.return_value = LookupData(
+                lookup_query="SELECT 1 FROM {TARGET_SCHEMA}.{TABLE_NAME} JOIN {MATCH_TABLE_NAME}",
+                sql_flavor="postgresql",
+            )
+            query = _build_query_standard(
+                _standard_issue_data(input_parameters=_run_input_parameters(match_table_name="prod_orders")),
+                limit=500,
+            )
+
+        assert "demo.orders" in query
+        assert "JOIN prod_orders" in query
+
+
+# ---------------------------------------------------------------------------
 # _build_query_custom
 # ---------------------------------------------------------------------------
 

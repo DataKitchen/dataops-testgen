@@ -225,8 +225,11 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
 
     flavor_service = get_flavor_service(lookup_data.sql_flavor)
 
-    # The match schema is run-scoped, so the result row records what the run compared against.
-    # Callers resolving a test definition without a result row fall back to its stored value.
+    # A test's own schema and table come from the result, which reports where the test is defined
+    # rather than where a run read: once a build schema is promoted, investigating an old result
+    # reads where the data lives. The second table is run-scoped, so the result row records what
+    # the run compared against, and a caller resolving a test definition without a result row
+    # falls back to its stored value.
     run_parameters = dict_from_kv(issue_data.get("input_parameters"))
     column, key_column = _catalog_columns(flavor_service, issue_data, test_definition)
 
@@ -267,7 +270,7 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         "GROUPBY_NAMES": test_definition.groupby_names,
         "HAVING_CONDITION": f"HAVING {test_definition.having_condition}" if test_definition.having_condition else "",
         "MATCH_SCHEMA_NAME": run_parameters.get("match_schema_name") or test_definition.match_schema_name,
-        "MATCH_TABLE_NAME": test_definition.match_table_name,
+        "MATCH_TABLE_NAME": run_parameters.get("match_table_name") or test_definition.match_table_name,
         "MATCH_COLUMN_NAMES": test_definition.match_column_names,
         "MATCH_SUBSET_CONDITION": test_definition.match_subset_condition or "1=1",
         "MATCH_GROUPBY_NAMES": test_definition.match_groupby_names,

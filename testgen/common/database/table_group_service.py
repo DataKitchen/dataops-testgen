@@ -54,6 +54,7 @@ from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal, validate_schema_name
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.run_overrides import MATCH_SCHEMA_OVERRIDE_UNSUPPORTED, SCHEMA_OVERRIDE_UNSUPPORTED
 from testgen.ui.services.database_service import TargetQuery, target_db_session
 from testgen.utils import get_exception_message
 
@@ -296,6 +297,43 @@ def table_group_qualifies_table_refs(table_group_id: str | UUID) -> bool:
     if not connection:
         return True
     return get_flavor_service(connection.sql_flavor).qualifies_table_refs_with_schema(connection.sql_flavor_code)
+
+
+def unsupported_schema_override(
+    table_group_id: str | UUID,
+    *,
+    schema_name: str | None = None,
+    match_schema_name: str | None = None,
+) -> str | None:
+    """Return why a schema override does not apply to this table group's connection, else ``None``.
+
+    Args:
+        table_group_id: The table group the run reads.
+        schema_name: The run's override of the table group's own schema, if given.
+        match_schema_name: The run's override of referential tests' second schema, if given.
+
+    Returns:
+        The refusal message, or ``None`` when both overrides apply.
+    """
+    connection = Connection.get_by_table_group(table_group_id)
+    if not connection:
+        return None
+
+    flavor_code = connection.sql_flavor_code
+    # A pinned schema is not the user's to choose, and a flavor that does not qualify a table
+    # reference with a schema has nowhere to put one.
+    applies = (
+        fixed_table_group_schema(flavor_code) is None
+        and get_flavor_service(connection.sql_flavor).qualifies_table_refs_with_schema(flavor_code)
+    )
+    if applies:
+        return None
+
+    if schema_name:
+        return SCHEMA_OVERRIDE_UNSUPPORTED
+    if match_schema_name:
+        return MATCH_SCHEMA_OVERRIDE_UNSUPPORTED
+    return None
 
 
 # ---------------------------------------------------------------------------

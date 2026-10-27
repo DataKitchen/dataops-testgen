@@ -67,7 +67,7 @@ test_types:
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND column_name = '{COLUMN_NAME_NO_QUOTES}'
          AND drop_date IS NULL;
   - id: '2420'
@@ -92,7 +92,7 @@ test_types:
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND column_name = '{COLUMN_NAME_NO_QUOTES}'
          AND drop_date IS NULL;
   - id: '2220'
@@ -117,7 +117,7 @@ test_types:
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND column_name = '{COLUMN_NAME_NO_QUOTES}'
          AND drop_date IS NULL;
   - id: '2320'
@@ -142,7 +142,7 @@ test_types:
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND column_name = '{COLUMN_NAME_NO_QUOTES}'
          AND drop_date IS NULL;
   - id: '2020'
@@ -167,7 +167,7 @@ test_types:
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND column_name = '{COLUMN_NAME_NO_QUOTES}'
          AND drop_date IS NULL;
   - id: '2617'
@@ -192,7 +192,7 @@ test_types:
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND column_name = '{COLUMN_NAME_NO_QUOTES}'
          AND drop_date IS NULL;
   - id: '2120'
@@ -217,7 +217,7 @@ test_types:
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND column_name = '{COLUMN_NAME_NO_QUOTES}'
          AND drop_date IS NULL;
   - id: '8017'
@@ -242,7 +242,7 @@ test_types:
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND column_name = '{COLUMN_NAME_NO_QUOTES}'
          AND drop_date IS NULL;
   - id: '8017'
@@ -267,7 +267,7 @@ test_types:
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND column_name = '{COLUMN_NAME_NO_QUOTES}'
          AND drop_date IS NULL;
   - id: '10096'
@@ -292,7 +292,7 @@ test_types:
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND column_name = '{COLUMN_NAME_NO_QUOTES}'
          AND drop_date IS NULL;
   - id: '11111'
@@ -317,6 +317,6 @@ test_types:
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
         FROM {APP_SCHEMA_NAME}.data_column_chars
        WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
+         AND table_name = '{CATALOG_TABLE_NAME}'
          AND column_name = '{COLUMN_NAME_NO_QUOTES}'
          AND drop_date IS NULL;
