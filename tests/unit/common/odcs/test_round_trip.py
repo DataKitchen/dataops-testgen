@@ -442,10 +442,12 @@ def test_a_physically_named_export_imported_into_its_own_draft_plans_no_changes(
                        contract_term_id="term-required", threshold_value="3"),
         TestDefinition(test_type="Row_Ct", schema_name="sales", table_name="tbl_orders", column_name=None,
                        contract_term_id="term-rows", threshold_value="10"),
+        TestDefinition(test_type="Dupe_Rows", schema_name="sales", table_name="tbl_orders", column_name=None,
+                       contract_term_id="term-dupes", groupby_names='"email_addr", "placed"', skip_errors=0),
     ]
     version = _version()
     version.metadata_document["schema"] = [{"name": "orders", "physicalName": "tbl_orders", "properties": [
-        {"name": "email", "physicalName": "email_addr", "logicalType": "string"},
+        {"name": "email", "physicalName": "email_addr", "logicalType": "string"}, {"name": "placed"},
     ]}]
     test_types = {code: _test_type(code) for code in _CATALOGUE}
     with (
@@ -476,5 +478,6 @@ def test_a_physically_named_export_imported_into_its_own_draft_plans_no_changes(
     table, = exported["schema"]
     assert (table["name"], table["physicalName"]) == ("orders", "tbl_orders")
     assert (table["properties"][0]["name"], table["properties"][0]["physicalName"]) == ("email", "email_addr")
-    assert sorted(change.contract_term_id for change in changes) == ["term-required", "term-rows"]
+    assert table["quality"][-1]["arguments"] == {"properties": ["email", "placed"]}
+    assert sorted(change.contract_term_id for change in changes) == ["term-dupes", "term-required", "term-rows"]
     assert [change.contract_term_id for change in changes if change.action is not ImportAction.skip] == []

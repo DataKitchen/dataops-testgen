@@ -1013,3 +1013,28 @@ def test_the_preview_looks_the_physical_table_up_in_the_catalog(physical_name, n
         )
 
     assert plan.tables_not_in_catalog == not_in_catalog
+
+
+def test_a_table_duplicate_rule_groups_on_the_physical_columns_its_properties_name():
+    document = _physically_named()
+    document["schema"][0]["quality"].append({
+        "id": "orders-dupes", "metric": "duplicateValues", "unit": "rows", "mustBeLessOrEqualTo": 0,
+        "arguments": {"properties": ["email", "amount"]},
+    })
+
+    split = _split(document)
+
+    term = next(term for term in split.terms if term.test_type == "Dupe_Rows")
+    assert term.table_name == "tbl_orders"
+    assert term.parameters["groupby_names"] == '"email_addr", "amount"'
+
+
+def test_a_column_duplicate_rule_naming_its_own_property_groups_on_its_physical_column():
+    document = _physically_named()
+    document["schema"][0]["properties"][0]["quality"][1].update(unit="rows", arguments={"properties": ["email"]})
+
+    split = _split(document)
+
+    term = next(term for term in split.terms if term.test_type == "Dupe_Rows")
+    assert term.parameters["groupby_names"] == '"email_addr"'
+    assert "quality" not in split.metadata_document["schema"][0]["properties"][0]

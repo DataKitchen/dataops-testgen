@@ -1,13 +1,13 @@
 """Resolving a contract document's quality rules onto test types, walking the rules a document holds, and the
 tables a contract's tests may target."""
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import select
 
-from testgen.common.contract_document import declared_tables, physical_name
+from testgen.common.contract_document import declared_tables, physical_column_names, physical_name
 from testgen.common.database.table_group_service import table_group_qualifies_table_refs
 from testgen.common.enums import SuiteType
 from testgen.common.flavors import SqlFlavorCode
@@ -17,7 +17,14 @@ from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES, TestType
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
-from testgen.common.odcs.quality_rules import Operator, ResolvedTerm, RuleScope, resolve_rule, test_type_parameters
+from testgen.common.odcs.quality_rules import (
+    Operator,
+    ResolvedTerm,
+    RuleScope,
+    rename_argument_columns,
+    resolve_rule,
+    test_type_parameters,
+)
 
 
 class UndeclaredTableError(ValueError):
@@ -84,13 +91,22 @@ class RuleResolver:
         )
 
     def resolve(
-        self, rule: Any, scope: RuleScope, table_name: str, column_name: str | None
+        self,
+        rule: Any,
+        scope: RuleScope,
+        table_name: str,
+        column_name: str | None,
+        columns: Mapping[str, str] | None = None,
     ) -> ResolvedTerm | None:
-        """The term ``rule`` states, or ``None`` when no test type checks it."""
+        """The term ``rule`` states, or ``None`` when no test type checks it.
+
+        ``columns`` maps the table's property names to the column each names, for a rule whose
+        arguments list properties.
+        """
         if not isinstance(rule, dict):
             return None
         return resolve_rule(
-            rule, scope, self.known_test_types, column_name,
+            rename_argument_columns(rule, columns or {}), scope, self.known_test_types, column_name,
             flavor=self.flavor, table_name=table_name, qualify_tables=self.qualify_tables,
             declared_parameters=self.parameters_by_type,
         )
@@ -100,7 +116,8 @@ class RuleResolver:
 class DocumentRules:
     """One ``quality`` list of a document, with the node it sits on.
 
-    ``nested`` marks a list under a nested property, whose rules no term can check.
+    ``nested`` marks a list under a nested property, whose rules no term can check. ``columns`` maps
+    the table's property names to the column each names.
     """
 
     rules: list[Any]
@@ -110,6 +127,7 @@ class DocumentRules:
     path: str
     label: str
     nested: bool = False
+    columns: dict[str, str] = field(default_factory=dict)
 
 
 def document_rules(document: dict[str, Any]) -> Iterator[DocumentRules]:
@@ -122,8 +140,12 @@ def document_rules(document: dict[str, Any]) -> Iterator[DocumentRules]:
             continue
         table_name = physical_name(table)
         table_path = f"$.schema[{table_index}]"
+        columns = physical_column_names(table)
         if isinstance(table.get("quality"), list):
-            yield DocumentRules(table["quality"], RuleScope.TABLE, table_name, None, f"{table_path}.quality", table_name)
+            yield DocumentRules(
+                table["quality"], RuleScope.TABLE, table_name, None, f"{table_path}.quality", table_name,
+                columns=columns,
+            )
         for prop_index, prop in enumerate(table.get("properties") or []):
             if not isinstance(prop, dict) or not prop.get("name"):
                 continue
@@ -131,7 +153,10 @@ def document_rules(document: dict[str, Any]) -> Iterator[DocumentRules]:
             prop_path = f"{table_path}.properties[{prop_index}]"
             label = f"{table_name}.{column_name}"
             if isinstance(prop.get("quality"), list):
-                yield DocumentRules(prop["quality"], RuleScope.COLUMN, table_name, column_name, f"{prop_path}.quality", label)
+                yield DocumentRules(
+                    prop["quality"], RuleScope.COLUMN, table_name, column_name, f"{prop_path}.quality", label,
+                    columns=columns,
+                )
             for nested, nested_path, nested_label in nested_properties(prop, prop_path, label):
                 if isinstance(nested.get("quality"), list):
                     yield DocumentRules(

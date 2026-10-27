@@ -223,11 +223,11 @@ def split_document(
     unresolved: list[str] = []
 
     def resolve_rules(
-        rules: list[Any], scope: RuleScope, table_name: str, column_name: str | None
+        rules: list[Any], scope: RuleScope, table_name: str, column_name: str | None, columns: dict[str, str]
     ) -> list[Any]:
         kept = []
         for index, rule in enumerate(rules):
-            resolved = resolver.resolve(rule, scope, table_name, column_name)
+            resolved = resolver.resolve(rule, scope, table_name, column_name, columns)
             if resolved is None:
                 kept.append(mark_unverifiable(rule) if isinstance(rule, dict) else rule)
                 label = rule_label(rule, index, f"{table_name}.{column_name}" if column_name else table_name)
@@ -257,15 +257,16 @@ def split_document(
         if not isinstance(table, dict) or not table.get("name"):
             continue
         table_name = contract_document.physical_name(table)
+        columns = contract_document.physical_column_names(table)
         if isinstance(table.get("quality"), list):
-            table["quality"] = resolve_rules(table["quality"], RuleScope.TABLE, table_name, None)
+            table["quality"] = resolve_rules(table["quality"], RuleScope.TABLE, table_name, None, columns)
         properties = table.get("properties") if isinstance(table.get("properties"), list) else []
         for prop in [prop for prop in properties if isinstance(prop, dict) and is_synthesized_property(prop)]:
             # It names no column: its rules belong to the subject it stands for, and one that
             # resolves to nothing moves to the table.
             subject = prop.get("transformLogic") or prop.get("name")
             if isinstance(prop.get("quality"), list) and (
-                kept := resolve_rules(prop["quality"], RuleScope.COLUMN, table_name, subject)
+                kept := resolve_rules(prop["quality"], RuleScope.COLUMN, table_name, subject, columns)
             ):
                 table["quality"] = [*(table.get("quality") or []), *kept]
             properties.remove(prop)
@@ -275,7 +276,7 @@ def split_document(
             column_name = contract_document.physical_name(prop)
             first_term = len(terms)
             if isinstance(prop.get("quality"), list):
-                prop["quality"] = resolve_rules(prop["quality"], RuleScope.COLUMN, table_name, column_name)
+                prop["quality"] = resolve_rules(prop["quality"], RuleScope.COLUMN, table_name, column_name, columns)
                 if not prop["quality"]:
                     del prop["quality"]
             for resolved in resolve_declarations(prop, known):

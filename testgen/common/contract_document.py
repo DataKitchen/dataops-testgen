@@ -70,6 +70,15 @@ def physical_name(node: dict) -> str | None:
     return physical if isinstance(physical, str) and physical else node.get("name")
 
 
+def physical_column_names(table: dict) -> dict[str, str]:
+    """Each column an ODCS table declares, its ``physical_name`` by its ``name``."""
+    return {
+        prop["name"]: physical_name(prop)
+        for prop in table.get("properties") or []
+        if isinstance(prop, dict) and isinstance(prop.get("name"), str)
+    }
+
+
 def declared_tables(document: dict | None) -> list[str]:
     """The physical names of the tables a metadata document's schema section declares, in document order."""
     if not document:

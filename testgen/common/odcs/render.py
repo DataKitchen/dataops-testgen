@@ -15,7 +15,7 @@ from uuid import UUID
 
 from sqlalchemy import select, text
 
-from testgen.common.contract_document import physical_name
+from testgen.common.contract_document import physical_column_names, physical_name
 from testgen.common.enums import MANAGED_TEST_TYPES
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, SqlFlavorCode
 from testgen.common.models import get_current_session
@@ -37,6 +37,7 @@ from testgen.common.odcs.quality_rules import (
     lov_values,
     project_rule,
     property_declaration,
+    rename_argument_columns,
     rule_scope,
     rule_shape,
     synthesized_marker,
@@ -327,7 +328,8 @@ def render_document(
 
     A term renders as a declaration when ``property_declaration`` finds one on its declared
     column that no earlier term contradicts (``_declare``), otherwise as a quality rule. A term lands
-    on the table and column whose ``physical_name`` it names.
+    on the table and column whose ``physical_name`` it names, and a rule's arguments name columns by
+    their property names.
 
     Returns a new document; the version's own ``metadata_document`` is never mutated. Raises
     ``OrphanedTermError`` if a term names a table the document does not declare, names a test
@@ -407,6 +409,9 @@ def render_document(
             condition=conditions.get(term.test_type),
             column_type=column_types.get((term.table_name, term.column_name)),
             logical_type=logical_type,
+        )
+        rule = rename_argument_columns(
+            rule, {column: name for name, column in physical_column_names(table).items()}
         )
         prop = _attach_rule(table, term, test_type, rule, synthesized_names)
         if prop is not None and term.test_type == "LOV_Match":

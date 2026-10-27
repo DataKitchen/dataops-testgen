@@ -1378,6 +1378,22 @@ def _arguments_from_rule(rule: dict[str, Any]) -> dict[str, Any]:
     return dict(arguments) if isinstance(arguments, dict) else {}
 
 
+def rename_argument_columns(rule: dict[str, Any], names: Mapping[str, str]) -> dict[str, Any]:
+    """``rule`` with each column its ``arguments.properties`` lists renamed through ``names``.
+
+    A column ``names`` does not hold keeps its name. Returns ``rule`` itself when nothing is renamed,
+    and a copy otherwise.
+    """
+    arguments = rule.get("arguments")
+    columns = arguments.get("properties") if isinstance(arguments, dict) else None
+    if not isinstance(columns, list):
+        return rule
+    renamed = [names.get(column, column) if isinstance(column, str) else column for column in columns]
+    if renamed == columns:
+        return rule
+    return {**rule, "arguments": {**arguments, "properties": renamed}}
+
+
 def _conversion_properties_from_rule(rule: dict[str, Any]) -> dict[str, Any]:
     return {
         entry["property"]: entry["value"]

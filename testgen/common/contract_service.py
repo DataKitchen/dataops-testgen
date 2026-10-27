@@ -494,7 +494,11 @@ def _mark_unverifiable_rules(document: dict[str, Any], stored: dict[str, Any], r
         kept = {_comparable_rule(rule) for rule in rules.rules}
         for index, rule in enumerate(rules.rules):
             is_stored = (rules.label, _comparable_rule(rule)) in stored_rules
-            resolved = None if rules.nested else resolver.resolve(rule, rules.scope, rules.table_name, rules.column_name)
+            resolved = (
+                None
+                if rules.nested
+                else resolver.resolve(rule, rules.scope, rules.table_name, rules.column_name, rules.columns)
+            )
             if resolved is not None and not is_stored:
                 test_type = resolver.test_types[resolved.test_type]
                 replaced = stored_by_place.get((rules.label, _rule_identity(rule, index)))

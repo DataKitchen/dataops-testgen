@@ -984,3 +984,18 @@ def test_a_term_on_a_logical_table_name_is_refused_when_the_table_declares_a_phy
 
     with pytest.raises(OrphanedTermError, match="names table 'orders'"):
         _render_with(version=version, terms=[term], test_types={"Row_Ct": _test_type("Row_Ct", test_scope="table")})
+
+
+def test_a_dupe_rows_term_names_its_columns_by_their_property_names():
+    version = _version(metadata_document={"schema": [{"name": "orders", "physicalName": "tbl_orders", "properties": [
+        {"name": "order", "physicalName": "order_id"}, {"name": "line_no"},
+    ]}]})
+    term = _term(
+        test_type="Dupe_Rows", table_name="tbl_orders", column_name=None, groupby_names='"order_id", "line_no"',
+        contract_term_id="term-dupe",
+    )
+    test_types = {"Dupe_Rows": _test_type("Dupe_Rows", test_scope="table", dq_dimension="Uniqueness")}
+
+    document = _render_with(version=version, terms=[term], test_types=test_types)
+
+    assert document["schema"][0]["quality"][0]["arguments"] == {"properties": ["order", "line_no"]}
