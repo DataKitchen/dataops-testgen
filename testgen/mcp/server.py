@@ -483,7 +483,7 @@ def build_mcp_server(
         update_test_result,
     )
     from testgen.mcp.tools.test_runs import get_test_run, list_test_runs
-    from testgen.mcp.tools.test_suites import create_test_suite, update_test_suite
+    from testgen.mcp.tools.test_suites import create_test_suite, delete_test_suite, update_test_suite
 
     if server_url is None:
         server_url = f"{api_base_url}/mcp"
@@ -634,6 +634,7 @@ def build_mcp_server(
     tool_wrapper(update_project)
     tool_wrapper(create_test_suite)
     tool_wrapper(update_test_suite)
+    tool_wrapper(delete_test_suite)
     tool_wrapper(list_contract_versions)
     tool_wrapper(freeze_contract_version)
     tool_wrapper(discard_contract_draft)

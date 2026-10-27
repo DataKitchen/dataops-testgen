@@ -1,4 +1,4 @@
-"""MCP write tools for test suites — create and update regular and contract (non-monitor) suites.
+"""MCP write tools for test suites — create, update, and delete regular and contract (non-monitor) suites.
 
 Monitor suites (``suite_type`` of ``monitor``) are managed exclusively through the dedicated
 monitors surface. ``resolve_test_suite`` already filters them out, so an
@@ -8,8 +8,12 @@ monitors surface. ``resolve_test_suite`` already filters them out, so an
 
 from __future__ import annotations
 
+import hashlib
+from dataclasses import astuple, dataclass
 from typing import Annotated, Any
+from uuid import UUID
 
+from mcp.server.fastmcp import Context
 from pydantic import Field
 
 from testgen.commands.test_generation import ContractGenerationResult
@@ -18,12 +22,14 @@ from testgen.common.audit.actions import AuditAction
 from testgen.common.audit.recorder import record
 from testgen.common.audit.test_suites import record_contract_created
 from testgen.common.database.test_suite_service import validate_test_suite_fields
-from testgen.common.enums import SuiteType
+from testgen.common.enums import JOB_STATUS_LABEL, JobKey, JobStatus, SuiteType
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.test_definition import Severity
-from testgen.common.models.test_suite import TestSuite
+from testgen.common.models.test_suite import SuiteDeletionCounts, TestSuite
 from testgen.common.odcs.servers import CustomServerReason
+from testgen.mcp.confirmation import confirm_destructive_action
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import mcp_permission
 from testgen.mcp.tools.common import (
@@ -40,6 +46,7 @@ from testgen.mcp.tools.common import (
     resolve_test_suite,
 )
 from testgen.mcp.tools.markdown import MdDoc
+from testgen.mcp.workers import run_on_worker_thread
 
 _DOC_GROUP = DocGroup.MANAGE
 
@@ -407,3 +414,128 @@ _DIFF_LABELS: dict[str, str] = {
     "component_type": "Component type",
     "component_name": "Component name",
 }
+
+
+# ---------------------------------------------------------------------------
+# Delete
+# ---------------------------------------------------------------------------
+
+_JOB_LABELS = {
+    JobKey.run_tests: "test run",
+    JobKey.run_test_generation: "test generation",
+}
+
+_COUNT_LABELS = {
+    "test_definitions": "Test definitions",
+    "notes": "Notes",
+    "test_runs": "Test runs",
+    "test_results": "Test results",
+    "schedules": "Schedules",
+    "notification_settings": "Notification settings",
+    "contract_versions": "Frozen contract versions",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class _SuiteDeletePlan:
+    suite_id: UUID
+    label: str
+    counts: SuiteDeletionCounts
+
+    @property
+    def operation_id(self) -> str:
+        """Identifies the suite and the counts the user is shown, so a token does not confirm other counts."""
+        digest = hashlib.sha256(repr(astuple(self.counts)).encode()).hexdigest()
+        return f"delete_test_suite:{self.suite_id}:{digest}"
+
+
+def _suite_label(suite: TestSuite) -> str:
+    noun = "contract" if suite.suite_type == SuiteType.CONTRACT else "test suite"
+    return f"{noun} `{suite.test_suite}`"
+
+
+def _labelled_counts(counts: SuiteDeletionCounts) -> dict[str, int]:
+    return {label: getattr(counts, field) for field, label in _COUNT_LABELS.items()}
+
+
+def _refuse_while_a_job_names(suite: TestSuite) -> None:
+    """Raise naming every queued or running job for the suite, which deleting it would also delete."""
+    jobs = JobExecution.select_active_by_kwargs(
+        project_code=suite.project_code, kwargs_match={"test_suite_id": str(suite.id)}
+    )
+    if jobs:
+        listed = ", ".join(
+            f"{_JOB_LABELS.get(job.job_key, job.job_key)} `{job.id}` ({JOB_STATUS_LABEL.get(job.status, job.status)})"
+            for job in jobs
+        )
+        message = (
+            f"Nothing was deleted. Jobs for {_suite_label(suite)} are queued or running: {listed}. "
+            "Cancel them (a test run with `cancel_test_run`) or let them finish, then try again."
+        )
+        if any(job.status == JobStatus.CANCEL_REQUESTED for job in jobs):
+            message += " A job whose cancellation was requested blocks the delete until the cancellation completes."
+        raise MCPUserError(message)
+
+
+@with_database_session
+@mcp_permission("edit")
+def _plan_suite_deletion(test_suite_id: str) -> _SuiteDeletePlan:
+    """Resolve the suite, refuse while a job for it is in flight, and count what deleting it removes."""
+    suite = resolve_test_suite(test_suite_id)
+    _refuse_while_a_job_names(suite)
+    return _SuiteDeletePlan(suite.id, _suite_label(suite), TestSuite.deletion_counts(suite.id))
+
+
+@with_database_session
+@mcp_permission("edit")
+def _delete_planned_suite(plan: _SuiteDeletePlan, test_suite_id: str) -> str:
+    """Delete the suite, provided it still holds what ``plan`` counted, and render what went."""
+    suite = resolve_test_suite(test_suite_id)
+    _refuse_while_a_job_names(suite)
+    if TestSuite.deletion_counts(suite.id) != plan.counts:
+        raise MCPUserError(
+            f"What {plan.label} holds changed while the request waited for confirmation. Nothing was deleted. "
+            "Call `delete_test_suite` again to confirm what it holds now."
+        )
+    record(AuditAction.TEST_SUITE_DELETED, suite)
+    TestSuite.cascade_delete([str(suite.id)])
+
+    doc = MdDoc()
+    doc.heading(1, f"Deleted {plan.label}")
+    for label, count in _labelled_counts(plan.counts).items():
+        if count:
+            doc.field(label, count)
+    return doc.render()
+
+
+async def delete_test_suite(
+    ctx: Context,
+    test_suite_id: Annotated[
+        str, Field(description="UUID of the test suite or contract to delete, e.g. from `list_test_suites`.")
+    ],
+    confirmation_token: Annotated[
+        str | None,
+        Field(
+            description="Token from an earlier `delete_test_suite` call that asked for confirmation. Show the "
+            "user what that call said it would delete, and pass the token, with the same `test_suite_id`, "
+            "only after the user has explicitly agreed. Never pass it on your own judgment.",
+        ),
+    ] = None,
+) -> str:
+    """Delete a test suite or contract with everything in it, once the user confirms.
+
+    The user is shown what goes and must confirm before anything is removed: the suite's test
+    definitions in every version and their notes, its test runs and results, its schedules,
+    its notification settings, and, for a contract, its versions. Refused while a job for the
+    suite is queued or running.
+    """
+    plan = await run_on_worker_thread(_plan_suite_deletion, test_suite_id)
+    await confirm_destructive_action(
+        ctx,
+        operation_id=plan.operation_id,
+        prompt=f"Delete {plan.label} and everything in it?",
+        counts=_labelled_counts(plan.counts),
+        confirmation_token=confirmation_token,
+        scope=f"delete_test_suite:{plan.suite_id}",
+    )
+    return await run_on_worker_thread(_delete_planned_suite, plan, test_suite_id)

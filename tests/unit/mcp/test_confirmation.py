@@ -36,7 +36,13 @@ def _ctx(elicitation: ElicitationCapability | None = None, action: str = "accept
     return ctx
 
 
-def _confirm(ctx: MagicMock, operation_id: str = "delete_tests:abc", token: str | None = None, **counts: int) -> None:
+def _confirm(
+    ctx: MagicMock,
+    operation_id: str = "delete_tests:abc",
+    token: str | None = None,
+    scope: str | None = None,
+    **counts: int,
+) -> None:
     asyncio.run(
         confirm_destructive_action(
             ctx,
@@ -44,13 +50,14 @@ def _confirm(ctx: MagicMock, operation_id: str = "delete_tests:abc", token: str 
             prompt="Delete every test in suite `orders`?",
             counts=counts or {"Tests": 12, "Notes": 0},
             confirmation_token=token,
+            scope=scope,
         )
     )
 
 
-def _issued_token(ctx: MagicMock, operation_id: str = "delete_tests:abc") -> str:
+def _issued_token(ctx: MagicMock, operation_id: str = "delete_tests:abc", scope: str | None = None) -> str:
     with pytest.raises(MCPUserError) as raised:
-        _confirm(ctx, operation_id)
+        _confirm(ctx, operation_id, scope=scope)
     return re.search(r"`confirmation_token` set to `([^`]+)`", str(raised.value)).group(1)
 
 
@@ -212,3 +219,38 @@ def test_a_client_that_answers_the_elicitation_with_an_error_gets_a_token():
     token = _issued_token(ctx)
 
     _confirm(_ctx(), token=token)
+
+
+def test_a_token_for_the_same_scope_but_other_contents_says_what_it_would_delete_changed():
+    token = _issued_token(_ctx(), operation_id="delete_test_suite:s1:counts-shown", scope="delete_test_suite:s1")
+
+    with pytest.raises(MCPUserError) as refused:
+        _confirm(_ctx(), operation_id="delete_test_suite:s1:counts-now", token=token, scope="delete_test_suite:s1")
+
+    assert str(refused.value).startswith("Nothing was deleted. What this request would delete changed")
+    assert "invalid" not in str(refused.value)
+
+
+def test_a_token_for_another_scope_is_refused_as_any_unknown_token():
+    token = _issued_token(_ctx(), operation_id="delete_test_suite:s1:counts", scope="delete_test_suite:s1")
+
+    with pytest.raises(MCPUserError, match="issued for a different request"):
+        _confirm(_ctx(), operation_id="delete_test_suite:s2:counts", token=token, scope="delete_test_suite:s2")
+
+
+def test_a_changed_scope_token_is_spent_like_any_other():
+    token = _issued_token(_ctx(), operation_id="delete_test_suite:s1:a", scope="delete_test_suite:s1")
+    with pytest.raises(MCPUserError, match="changed"):
+        _confirm(_ctx(), operation_id="delete_test_suite:s1:b", token=token, scope="delete_test_suite:s1")
+
+    with pytest.raises(MCPUserError, match="already used"):
+        _confirm(_ctx(), operation_id="delete_test_suite:s1:a", token=token, scope="delete_test_suite:s1")
+
+
+def test_another_users_token_in_the_same_scope_is_refused_without_saying_what_changed():
+    set_mcp_username("alice")
+    token = _issued_token(_ctx(), operation_id="delete_test_suite:s1:a", scope="delete_test_suite:s1")
+
+    set_mcp_username("mallory")
+    with pytest.raises(MCPUserError, match="invalid, expired"):
+        _confirm(_ctx(), operation_id="delete_test_suite:s1:b", token=token, scope="delete_test_suite:s1")

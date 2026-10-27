@@ -1324,3 +1324,25 @@ def test_an_unsupported_entity_is_rejected(mock_session):
 
     with pytest.raises(ValueError, match="Unsupported entity: TestSuite"):
         JobExecution.cancel_queued_catalog_refreshes(TestSuite, str(uuid4()))
+
+
+def _selected_where(**kwargs) -> str:
+    """The WHERE clause ``select_active_by_kwargs`` runs for ``kwargs``, with values inlined."""
+    with patch(f"{MODULE}.get_current_session") as mock_session:
+        JobExecution.select_active_by_kwargs(project_code="demo", **kwargs)
+    statement = mock_session.return_value.scalars.call_args.args[0]
+    sql = str(statement.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    return sql.split("WHERE", 1)[1]
+
+
+def test_select_active_by_kwargs_matches_every_job_key_when_none_is_given():
+    where = _selected_where(kwargs_match={"test_suite_id": "abc"})
+
+    assert "job_key" not in where
+    assert "(job_executions.kwargs ->> 'test_suite_id') = 'abc'" in where
+
+
+def test_select_active_by_kwargs_narrows_to_the_job_key_given():
+    where = _selected_where(kwargs_match={"test_suite_id": "abc"}, job_key="run-tests")
+
+    assert "job_executions.job_key = 'run-tests'" in where

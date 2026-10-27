@@ -115,9 +115,10 @@ def test_registered_handlers_are_async_and_keep_their_parameters():
     assert "test_suite" in [argument.name for argument in prompts["investigate_failures"].arguments]
 
 
-def test_a_coroutine_tool_receives_the_context_without_exposing_it():
+@pytest.mark.parametrize("name", ["delete_tests", "delete_test_suite"])
+def test_a_coroutine_tool_receives_the_context_without_exposing_it(name):
     server = build_mcp_server(api_base_url="https://testgen.example.com")
-    tool = {tool.name: tool for tool in server._tool_manager.list_tools()}["delete_tests"]
+    tool = {tool.name: tool for tool in server._tool_manager.list_tools()}[name]
 
     assert tool.is_async
     assert tool.context_kwarg == "ctx"

@@ -1,14 +1,20 @@
-"""Tests for the MCP test-suite write tools — create / update for regular (non-monitor) suites."""
+"""Tests for the MCP test-suite write tools — create / update / delete for regular (non-monitor) suites."""
 
-from unittest.mock import MagicMock, patch
+import asyncio
+import re
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from mcp.types import ElicitationCapability
 
 from testgen.commands.test_generation import ContractGenerationResult
+from testgen.common.audit.actions import AuditAction
 from testgen.common.contract_service import InitializedContract
-from testgen.common.enums import SuiteType
+from testgen.common.enums import JobKey, JobStatus, SuiteType
+from testgen.common.models.test_suite import SuiteDeletionCounts
 from testgen.common.odcs.servers import CustomServerReason, ServerType
+from testgen.mcp import confirmation
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
@@ -847,3 +853,234 @@ def test_a_typed_server_entry_adds_no_note():
     out = _render_created_suite(_mock_test_suite(suite_type=SuiteType.CONTRACT), table_group_name="TG")
 
     assert "custom type" not in out
+
+
+# ---------------------------------------------------------------------------
+# delete_test_suite
+# ---------------------------------------------------------------------------
+
+
+def _counts(**overrides) -> SuiteDeletionCounts:
+    values = {
+        "test_definitions": 12, "notes": 3, "test_runs": 4, "test_results": 48,
+        "schedules": 1, "notification_settings": 2, "contract_versions": 0,
+    }
+    return SuiteDeletionCounts(**{**values, **overrides})
+
+
+def _confirming_ctx(action: str = "accept") -> MagicMock:
+    """An MCP context whose client supports elicitation and whose user answers with ``action``."""
+    ctx = MagicMock()
+    ctx.session.client_params.capabilities.elicitation = ElicitationCapability()
+    ctx.elicit = AsyncMock(return_value=MagicMock(action=action, data=MagicMock(confirm=True)))
+    return ctx
+
+
+def _no_elicitation_ctx() -> MagicMock:
+    ctx = MagicMock()
+    ctx.session.client_params.capabilities.elicitation = None
+    return ctx
+
+
+@pytest.fixture
+def no_pending_tokens():
+    confirmation._pending.clear()
+    yield
+    confirmation._pending.clear()
+
+
+@pytest.fixture
+def deletable_suite():
+    """A suite with no job in flight, the counts above, and ``cascade_delete`` and the audit record recorded."""
+    suite = _mock_test_suite(test_suite="orders_suite")
+    events = []
+    with (
+        patch(f"{MODULE}.resolve_test_suite", return_value=suite),
+        patch(f"{MODULE}.JobExecution.select_active_by_kwargs", return_value=[]) as jobs,
+        patch(f"{MODULE}.TestSuite.deletion_counts", return_value=_counts()) as counts,
+        patch(f"{MODULE}.TestSuite.cascade_delete", side_effect=lambda *_: events.append("delete")) as cascade,
+        patch(f"{MODULE}.record", side_effect=lambda *_a, **_k: events.append("audit")) as audit,
+    ):
+        yield MagicMock(suite=suite, jobs=jobs, counts=counts, cascade=cascade, audit=audit, events=events)
+
+
+def _delete_suite(ctx, test_suite_id, **kwargs) -> str:
+    from testgen.mcp.tools.test_suites import delete_test_suite
+
+    with _patch_perms():
+        return asyncio.run(delete_test_suite(ctx, test_suite_id, **kwargs))
+
+
+def test_delete_test_suite_asks_with_the_suite_and_everything_it_removes(deletable_suite, db_session_mock):
+    ctx = _confirming_ctx()
+
+    result = _delete_suite(ctx, str(deletable_suite.suite.id))
+
+    message = ctx.elicit.await_args.args[0]
+    assert message.startswith("Delete test suite `orders_suite` and everything in it?")
+    for line in ("- Test definitions: 12", "- Notes: 3", "- Test runs: 4", "- Test results: 48",
+                 "- Schedules: 1", "- Notification settings: 2"):
+        assert line in message
+    assert "Frozen contract versions" not in message
+    deletable_suite.cascade.assert_called_once_with([str(deletable_suite.suite.id)])
+    assert "# Deleted test suite `orders_suite`" in result
+    assert "Test results:** 48" in result
+
+
+def test_delete_test_suite_names_a_contract_and_its_frozen_versions(deletable_suite, db_session_mock):
+    deletable_suite.suite.suite_type = SuiteType.CONTRACT
+    deletable_suite.counts.return_value = _counts(contract_versions=3)
+    ctx = _confirming_ctx()
+
+    _delete_suite(ctx, str(deletable_suite.suite.id))
+
+    message = ctx.elicit.await_args.args[0]
+    assert message.startswith("Delete contract `orders_suite` and everything in it?")
+    assert "- Frozen contract versions: 3" in message
+
+
+def test_delete_test_suite_deletes_nothing_when_the_user_declines(deletable_suite, db_session_mock):
+    with pytest.raises(MCPUserError, match="did not confirm"):
+        _delete_suite(_confirming_ctx(action="decline"), str(deletable_suite.suite.id))
+
+    deletable_suite.cascade.assert_not_called()
+
+
+def test_delete_test_suite_refuses_while_a_job_names_the_suite_without_asking(deletable_suite, db_session_mock):
+    """Deleting the suite also deletes its queued jobs, so a queued run blocks the delete like a running one."""
+    queued = MagicMock(id=uuid4(), job_key=JobKey.run_tests, status=JobStatus.PENDING)
+    generating = MagicMock(id=uuid4(), job_key=JobKey.run_test_generation, status=JobStatus.RUNNING)
+    deletable_suite.jobs.return_value = [queued, generating]
+    ctx = _confirming_ctx()
+
+    with pytest.raises(MCPUserError) as refused:
+        _delete_suite(ctx, str(deletable_suite.suite.id))
+
+    message = str(refused.value)
+    assert message.startswith("Nothing was deleted.")
+    assert f"test run `{queued.id}` (Pending)" in message
+    assert f"test generation `{generating.id}` (Running)" in message
+    assert "cancel_test_run" in message
+    ctx.elicit.assert_not_awaited()
+    deletable_suite.cascade.assert_not_called()
+    assert deletable_suite.jobs.call_args.kwargs == {
+        "project_code": "demo", "kwargs_match": {"test_suite_id": str(deletable_suite.suite.id)},
+    }
+
+
+def test_delete_test_suite_says_a_job_being_canceled_blocks_until_its_cancellation_completes(
+    deletable_suite, db_session_mock
+):
+    canceling = MagicMock(id=uuid4(), job_key=JobKey.run_tests, status=JobStatus.CANCEL_REQUESTED)
+    deletable_suite.jobs.return_value = [canceling]
+
+    with pytest.raises(MCPUserError, match="blocks the delete until the cancellation completes"):
+        _delete_suite(_confirming_ctx(), str(deletable_suite.suite.id))
+
+
+def test_delete_test_suite_refuses_a_job_that_started_while_asking(deletable_suite, db_session_mock):
+    started = MagicMock(id=uuid4(), job_key=JobKey.run_tests, status=JobStatus.RUNNING)
+    deletable_suite.jobs.side_effect = [[], [started]]
+
+    with pytest.raises(MCPUserError, match=f"test run `{started.id}`"):
+        _delete_suite(_confirming_ctx(), str(deletable_suite.suite.id))
+
+    deletable_suite.cascade.assert_not_called()
+
+
+def test_delete_test_suite_deletes_nothing_when_its_contents_changed_while_asking(deletable_suite, db_session_mock):
+    deletable_suite.counts.side_effect = [_counts(), _counts(test_runs=5, test_results=60)]
+
+    with pytest.raises(MCPUserError, match="changed while the request waited for confirmation"):
+        _delete_suite(_confirming_ctx(), str(deletable_suite.suite.id))
+
+    deletable_suite.cascade.assert_not_called()
+
+
+@pytest.mark.usefixtures("no_pending_tokens")
+def test_delete_test_suite_without_elicitation_deletes_on_the_second_call_with_the_token(
+    deletable_suite, db_session_mock
+):
+    suite_id = str(deletable_suite.suite.id)
+
+    with pytest.raises(MCPUserError, match="Confirmation required") as asked:
+        _delete_suite(_no_elicitation_ctx(), suite_id)
+    deletable_suite.cascade.assert_not_called()
+
+    token = re.search(r"`confirmation_token` set to `([^`]+)`", str(asked.value)).group(1)
+    result = _delete_suite(_no_elicitation_ctx(), suite_id, confirmation_token=token)
+
+    assert "# Deleted test suite `orders_suite`" in result
+    deletable_suite.cascade.assert_called_once_with([suite_id])
+
+
+@pytest.mark.usefixtures("no_pending_tokens")
+def test_delete_test_suite_token_does_not_confirm_counts_the_user_was_not_shown(deletable_suite, db_session_mock):
+    """A run that lands between the two calls changes what goes; the token was issued for what the user saw."""
+    shown, grown = _counts(), _counts(test_runs=5, test_results=96)
+    deletable_suite.counts.side_effect = [shown, grown, grown]
+    suite_id = str(deletable_suite.suite.id)
+
+    with pytest.raises(MCPUserError) as asked:
+        _delete_suite(_no_elicitation_ctx(), suite_id)
+    token = re.search(r"`confirmation_token` set to `([^`]+)`", str(asked.value)).group(1)
+
+    with pytest.raises(MCPUserError, match="What this request would delete changed after the user was asked"):
+        _delete_suite(_no_elicitation_ctx(), suite_id, confirmation_token=token)
+
+    deletable_suite.cascade.assert_not_called()
+
+
+@pytest.mark.usefixtures("no_pending_tokens")
+def test_delete_test_suite_token_does_not_confirm_another_suite(deletable_suite, db_session_mock):
+    with pytest.raises(MCPUserError) as asked:
+        _delete_suite(_no_elicitation_ctx(), str(deletable_suite.suite.id))
+    token = re.search(r"`confirmation_token` set to `([^`]+)`", str(asked.value)).group(1)
+
+    deletable_suite.suite.id = uuid4()
+    with pytest.raises(MCPUserError, match="issued for a different request"):
+        _delete_suite(_no_elicitation_ctx(), str(deletable_suite.suite.id), confirmation_token=token)
+
+    deletable_suite.cascade.assert_not_called()
+
+
+@patch(f"{MODULE}.TestSuite.cascade_delete")
+@patch(f"{MODULE}.resolve_test_suite")
+def test_delete_test_suite_hides_whether_an_inaccessible_suite_exists(mock_resolve, mock_cascade, db_session_mock):
+    """Monitor suites and suites in other projects resolve to the same error, before anyone is asked."""
+    mock_resolve.side_effect = MCPResourceNotAccessible("Test suite", "abc")
+    ctx = _confirming_ctx()
+
+    with pytest.raises(MCPResourceNotAccessible, match="not found or not accessible"):
+        _delete_suite(ctx, "abc")
+
+    ctx.elicit.assert_not_awaited()
+    mock_cascade.assert_not_called()
+
+
+@patch(f"{MODULE}.TestSuite.cascade_delete")
+def test_delete_test_suite_requires_edit(mock_cascade, db_session_mock):
+    """role_c lacks edit (per conftest matrix)."""
+    from testgen.mcp.tools.test_suites import delete_test_suite
+
+    ctx = _confirming_ctx()
+    with _patch_perms(memberships={"demo": "role_c"}), pytest.raises(MCPPermissionDenied):
+        asyncio.run(delete_test_suite(ctx, str(uuid4())))
+
+    ctx.elicit.assert_not_awaited()
+    mock_cascade.assert_not_called()
+
+
+def test_delete_test_suite_records_the_delete_in_the_audit_trail_before_deleting(deletable_suite, db_session_mock):
+    """As the UI's delete does: the record reads the suite, so it is taken while the suite still exists."""
+    _delete_suite(_confirming_ctx(), str(deletable_suite.suite.id))
+
+    deletable_suite.audit.assert_called_once_with(AuditAction.TEST_SUITE_DELETED, deletable_suite.suite)
+    assert deletable_suite.events == ["audit", "delete"]
+
+
+def test_delete_test_suite_records_nothing_when_nothing_is_deleted(deletable_suite, db_session_mock):
+    with pytest.raises(MCPUserError):
+        _delete_suite(_confirming_ctx(action="decline"), str(deletable_suite.suite.id))
+
+    deletable_suite.audit.assert_not_called()
