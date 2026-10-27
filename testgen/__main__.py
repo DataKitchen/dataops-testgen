@@ -82,9 +82,7 @@ from testgen.commands.run_test_metadata_exporter import run_test_metadata_export
 from testgen.commands.run_upgrade_db_config import get_schema_revision, is_db_revision_up_to_date, run_upgrade_db_config
 from testgen.commands.test_generation import run_monitor_generation, run_test_generation
 from testgen.common import (
-    configure_logging,
     display_service,
-    docker_service,
     get_tg_db,
     get_tg_host,
     get_tg_schema,
@@ -97,9 +95,9 @@ from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.notifications.base import log_smtp_configuration_problems, smtp_configured
+from testgen.common.process_setup import ConfigurationError, setup_process
 from testgen.common.standalone_postgres import (
     STANDALONE_URI_ENV_VAR,
-    ensure_standalone_setup,
     get_server_uri,
     is_standalone_mode,
 )
@@ -235,27 +233,13 @@ def cli(ctx: Context, verbose: bool):
             err=True,
         )
 
-    if is_standalone_mode():
-        # Children spawned by `run-app all` (and the Streamlit subprocess) inherit the
-        # parent's pgserver URI. They must NOT call get_server() themselves — each call
-        # registers the calling PID in pgserver's on-disk handle list, and any PID left
-        # over after a hard kill prevents the parent from actually stopping postgres.
-        if inherited_uri := os.environ.get(STANDALONE_URI_ENV_VAR):
-            ensure_standalone_setup(inherited_uri)
-        else:
-            start_standalone_postgres()
-
-    if verbose:
-        configure_logging(level=logging.DEBUG)
-    else:
-        configure_logging(level=logging.INFO)
+    try:
+        setup_process(verbose=verbose, check_configuration=ctx.invoked_subcommand != "standalone-setup")
+    except ConfigurationError as error:
+        click.secho(str(error), fg="red")
+        sys.exit(1)
 
     ctx.obj = Configuration(verbose=verbose)
-    if not is_standalone_mode() and ctx.invoked_subcommand != "standalone-setup":
-        status_ok, message = docker_service.check_basic_configuration()
-        if not status_ok:
-            click.secho(message, fg="red")
-            sys.exit(1)
 
     if ctx.invoked_subcommand not in SYSTEM_COMMANDS and not is_db_revision_up_to_date():
         click.secho("The system database schema is outdated. Automatically running the following command:", fg="red")

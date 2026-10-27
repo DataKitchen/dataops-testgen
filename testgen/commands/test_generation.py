@@ -3,7 +3,7 @@ import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from functools import cached_property
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import func, select, text
@@ -16,16 +16,16 @@ from testgen.common.database.database_service import (
     get_flavor_service,
     replace_params,
 )
-from testgen.common.enums import MANAGED_TEST_TYPES, RegenerationGroup, SuiteType
+from testgen.common.enums import MANAGED_TEST_TYPES, JobSource, JobStatus, RegenerationGroup, SuiteType
 from testgen.common.generation_set_service import (
     CONTRACT_GENERATION_SET,
     MONITOR_GENERATION_SET,
     resolve_generation_sets,
 )
-from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
-from testgen.common.models import get_current_session
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.suite_version import SuiteVersion
@@ -166,15 +166,73 @@ def run_test_generation(
         LOG.exception("Test generation encountered an error.")
         raise
     finally:
-        MixpanelService().send_event(
-            "generate-tests",
-            source=job_context.get().source.upper(),
-            sql_flavor=connection.sql_flavor,
-            generation_sets=resolved_sets,
-        )
         if success:
             test_suite.generation_sets = resolved_sets
     return result
+
+
+def run_test_generation_and_report(
+    source: JobSource,
+    test_suite_id: str | UUID,
+    generation_sets: list[str] | None = None,
+    **options: Any,
+) -> ContractGenerationResult | None:
+    """Run ``run_test_generation`` outside a job, then send its ``generate-tests`` event.
+
+    :param source: What started the generation.
+    :param test_suite_id: The suite to generate tests for.
+    :param generation_sets: The generation sets requested.
+    :param options: Passed through to ``run_test_generation``.
+    :returns: What ``run_test_generation`` returns.
+    """
+    try:
+        result = run_test_generation(test_suite_id, generation_sets, **options)
+    except Exception:
+        _report_quietly(test_suite_id, generation_sets, source, JobStatus.ERROR)
+        raise
+    _report_quietly(test_suite_id, generation_sets, source, JobStatus.COMPLETED)
+    return result
+
+
+def _report_quietly(test_suite_id: str | UUID, requested_sets: list[str] | None, source: str, status: str) -> None:
+    """Report an inline generation without letting a reporting failure stand in for its outcome."""
+    try:
+        _report_test_generation(test_suite_id, requested_sets, source, status)
+    except Exception:
+        LOG.exception("Could not report test generation for test suite %s", test_suite_id)
+
+
+def report_test_generation(job_exec: JobExecution) -> None:
+    """Send the ``generate-tests`` telemetry event for a test generation job that has settled."""
+    if job_exec.started_at is None:
+        # Canceled before it started, so no generation ran.
+        return
+    _report_test_generation(
+        job_exec.kwargs.get("test_suite_id"), job_exec.kwargs.get("generation_sets"), job_exec.source, job_exec.status,
+    )
+
+
+@with_database_session
+def _report_test_generation(
+    test_suite_id: str | UUID | None, requested_sets: list[str] | None, source: str, status: str,
+) -> None:
+    # The suite, and with it its table group and connection, can be gone by now.
+    test_suite = TestSuite.get(test_suite_id) if test_suite_id else None
+    table_group = TableGroup.get(test_suite.table_groups_id) if test_suite else None
+    connection = Connection.get(table_group.connection_id) if table_group else None
+    generation_sets = requested_sets
+    if test_suite:
+        try:
+            generation_sets = resolve_generation_sets(test_suite, requested_sets)
+        except ValueError:
+            pass  # The request the generation failed on is what it was asked to do.
+    MixpanelService().send_event(
+        "generate-tests",
+        source=source.upper(),
+        sql_flavor=connection.sql_flavor if connection else None,
+        generation_sets=generation_sets,
+        status=status,
+    )
 
 
 def run_monitor_generation(

@@ -14,7 +14,7 @@ import testgen
 from testgen.commands.test_generation import ContractGenerationResult
 from testgen.common.contract_creation import ContractCreation, ContractImportCreation
 from testgen.common.contract_import import ContractTermReason, TermChange
-from testgen.common.enums import RegenerationGroup, SuiteType
+from testgen.common.enums import JobSource, RegenerationGroup, SuiteType
 from testgen.common.models.project import Project
 from testgen.common.models.suite_version import ContractState
 from testgen.common.models.test_suite import TestSuite
@@ -192,14 +192,14 @@ def test_generating_a_contract_sends_its_groups_and_no_generation_sets(session_s
     result = ContractGenerationResult(3, ["orders"], [], [], [RegenerationGroup.TESTS])
     with (
         patch.object(view.TestSuite, "get", return_value=SimpleNamespace(suite_type=SuiteType.CONTRACT)),
-        patch.object(view, "run_test_generation", return_value=result) as generate,
+        patch.object(view, "run_test_generation_and_report", return_value=result) as generate,
     ):
         view.generate_tests_confirmed({
             "test_suite_id": "abc", "test_suite_name": "orders", "generation_sets": ["Standard"],
             "regenerate": ["tests"],
         })
 
-    generate.assert_called_once_with("abc", None, regenerate=["tests"])
+    generate.assert_called_once_with(JobSource.ui, "abc", None, regenerate=["tests"])
 
 
 @pytest.mark.usefixtures("db_session_mock")
@@ -210,7 +210,7 @@ def test_a_contracts_dialog_stays_open_and_says_what_was_regenerated(session_sta
     )
     with (
         patch.object(view.TestSuite, "get", return_value=SimpleNamespace(suite_type=SuiteType.CONTRACT)),
-        patch.object(view, "run_test_generation", return_value=result),
+        patch.object(view, "run_test_generation_and_report", return_value=result),
     ):
         view.generate_tests_confirmed(
             {"test_suite_id": "abc", "test_suite_name": "orders", "regenerate": ["profiling", "catalog"]},
@@ -343,14 +343,14 @@ def test_notes_the_test_types_a_sampled_profile_cannot_support_for_what_the_suit
 def test_generating_a_test_suite_sends_its_sets_whatever_the_payload_claims(session_state):
     with (
         patch.object(view.TestSuite, "get", return_value=SimpleNamespace(suite_type=SuiteType.REGULAR)),
-        patch.object(view, "run_test_generation") as generate,
+        patch.object(view, "run_test_generation_and_report") as generate,
     ):
         view.generate_tests_confirmed({
             "test_suite_id": "abc", "test_suite_name": "orders", "generation_sets": ["Standard"], "is_contract": True,
             "regenerate": ["tests"],
         })
 
-    generate.assert_called_once_with("abc", ["Standard"], regenerate=None)
+    generate.assert_called_once_with(JobSource.ui, "abc", ["Standard"], regenerate=None)
 
 
 @pytest.mark.usefixtures("db_session_mock")
@@ -452,7 +452,7 @@ def test_a_test_suite_without_generation_is_saved_and_reports_skipped(session_st
     with (
         patch.object(view.TableGroup, "get", return_value=_table_group()),
         patch.object(TestSuite, "save", autospec=True, side_effect=_saved) as save,
-        patch.object(view, "run_test_generation") as generate,
+        patch.object(view, "run_test_generation_and_report") as generate,
     ):
         view.add_test_suite_confirmed(_wizard())
 
@@ -470,13 +470,13 @@ def test_a_test_suite_with_generation_generates_with_the_chosen_sets(session_sta
     with (
         patch.object(view.TableGroup, "get", return_value=_table_group()),
         patch.object(TestSuite, "save", autospec=True, side_effect=_saved) as save,
-        patch.object(view, "run_test_generation") as generate,
+        patch.object(view, "run_test_generation_and_report") as generate,
         patch.object(TestSuite, "test_definition_stats", return_value=SimpleNamespace(total=96)),
     ):
         view.add_test_suite_confirmed(_wizard(tests={"generate": True, "generation_sets": ["Standard"]}))
 
     saved = save.call_args.args[0]
-    generate.assert_called_once_with(saved.id, ["Standard"])
+    generate.assert_called_once_with(JobSource.ui, saved.id, ["Standard"])
     assert session_state[view.WIZARD_RESULT_KEY]["rows"][1] == {
         "icon": "success", "text": "Tests: 96 generated.", "link": _definitions_link(saved.id),
     }
@@ -494,7 +494,7 @@ def test_a_test_suite_generation_failure_rolls_back_to_the_suite_and_reports_it(
     with (
         patch.object(view.TableGroup, "get", return_value=_table_group()),
         patch.object(TestSuite, "save", autospec=True, side_effect=_saved),
-        patch.object(view, "run_test_generation", side_effect=fail_generation),
+        patch.object(view, "run_test_generation_and_report", side_effect=fail_generation),
     ):
         view.add_test_suite_confirmed(_wizard(tests={"generate": True, "generation_sets": ["Standard"]}))
 
@@ -988,7 +988,7 @@ def _regular_generation(session_state, total):
         patch.object(view.TableGroup, "get", return_value=_table_group()),
         patch.object(TestSuite, "save", autospec=True, side_effect=_saved),
         patch.object(view, "get_current_session", return_value=MagicMock(commit=lambda: order.append("commit"))),
-        patch.object(view, "run_test_generation", side_effect=lambda *_: order.append("generate")),
+        patch.object(view, "run_test_generation_and_report", side_effect=lambda *_: order.append("generate")),
         patch.object(TestSuite, "test_definition_stats", return_value=SimpleNamespace(total=total)),
     ):
         view.add_test_suite_confirmed(_wizard(tests={"generate": True, "generation_sets": ["Standard"]}))

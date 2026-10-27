@@ -10,7 +10,7 @@ from testgen.commands.test_generation import (
     TESTS_NEED_PROFILING,
     ContractGenerationResult,
     resolve_generation_profile_run,
-    run_test_generation,
+    run_test_generation_and_report,
 )
 from testgen.common.contract_creation import create_contract, create_contract_from_import
 from testgen.common.contract_document import catalog_table_names
@@ -493,7 +493,7 @@ def generate_tests_confirmed(data: dict) -> None:
     ts_name = data.get("test_suite_name", "")
     try:
         regenerate = data.get("regenerate") if is_contract else None
-        result = run_test_generation(selected_id, selected_sets, regenerate=regenerate)
+        result = run_test_generation_and_report(JobSource.ui, selected_id, selected_sets, regenerate=regenerate)
         if is_contract:
             # The dialog stays open to show what was regenerated; closing it clears the result.
             requested = list(RegenerationGroup) if regenerate is None else regenerate
@@ -730,7 +730,7 @@ def _add_test_suite(suite: TestSuite, tests: dict) -> list[dict]:
         rows.append(_row(WizardRowIcon.SKIPPED, "Tests: skipped. Generate them later on the Test Suites page."))
         return rows
     try:
-        run_test_generation(suite.id, tests.get("generation_sets") or [])
+        run_test_generation_and_report(JobSource.ui, suite.id, tests.get("generation_sets") or [])
         generated = TestSuite.test_definition_stats(suite.id).total
     except Exception:
         LOG.exception(f"Generating tests for test suite {suite.id} failed")
