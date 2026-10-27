@@ -38,6 +38,9 @@ EXEMPT = {
     ("common/models/test_suite.py", "(SELECT COUNT(*) FROM test_definitions WHERE test_suite_id"): (
         "counts what deleting a suite removes, which is every version"
     ),
+    ("common/models/table_group.py", "WITH suites AS (SELECT id, suite_type FROM test_suites"): (
+        "counts what deleting a table group removes, which is every version of its suites' tests"
+    ),
     ("ui/queries/test_result_queries.py", "test_definition_id = td.id"): (
         "joins definitions by id from a run's results"
     ),

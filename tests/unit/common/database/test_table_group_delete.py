@@ -1,13 +1,15 @@
 """Guards on deleting a table group, which run before anything is deleted."""
 
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
 from sqlalchemy.dialects import postgresql
 
-from testgen.common.database.table_group_service import DeleteBlocker, cascade_delete_table_group
+from testgen.common.database.table_group_service import DeleteBlocker, cascade_delete_table_group, delete_blockers
 from testgen.common.enums import JobKey, JobStatus
+from testgen.common.models.job_execution import JobExecution
 
 pytestmark = pytest.mark.unit
 
@@ -71,8 +73,8 @@ def test_queued_jobs_block_the_delete_and_catalog_refreshes_are_left_to_the_canc
     Catalog refreshes are the one kind it leaves out, because the delete cancels those instead."""
     session = MagicMock()
     mock_session.return_value = session
-    session.scalars.return_value.all.return_value = []
-    session.scalars.return_value.first.return_value = uuid4()
+    # The table group's suites, then the jobs naming it: one pending.
+    session.scalars.return_value.all.side_effect = [[], [MagicMock(status=JobStatus.PENDING)]]
 
     assert cascade_delete_table_group(_table_group()) == DeleteBlocker.JOB
 
@@ -83,3 +85,40 @@ def test_queued_jobs_block_the_delete_and_catalog_refreshes_are_left_to_the_canc
     assert JobKey.refresh_data_catalog in compiled.params.values()
     statuses = next(value for value in compiled.params.values() if isinstance(value, list | tuple))
     assert JobStatus.PENDING in statuses
+
+
+def _job(job_key: JobKey, status: JobStatus, claimed: bool = False) -> MagicMock:
+    return MagicMock(id=uuid4(), job_key=job_key, status=status, claimed_at=datetime.now(UTC) if claimed else None)
+
+
+def test_delete_blockers_names_every_job_that_would_refuse_the_delete_and_no_other():
+    """A catalog refresh that has not started is canceled by the delete, so it does not block it."""
+    test_run = _job(JobKey.run_tests, JobStatus.PENDING)
+    profiling = _job(JobKey.run_profile, JobStatus.RUNNING, claimed=True)
+    queued_refresh = _job(JobKey.refresh_data_catalog, JobStatus.PENDING)
+    canceled_before_claim = _job(JobKey.refresh_data_catalog, JobStatus.CANCEL_REQUESTED)
+    started_refresh = _job(JobKey.refresh_data_catalog, JobStatus.RUNNING, claimed=True)
+    table_group = _table_group()
+
+    with patch(
+        f"{MODULE}._jobs_in_flight",
+        return_value=[test_run, profiling, queued_refresh, canceled_before_claim, started_refresh],
+    ) as in_flight:
+        blockers = delete_blockers(table_group)
+
+    assert blockers == [test_run, profiling, started_refresh]
+    assert in_flight.call_args.args == (table_group,)
+
+
+@pytest.mark.parametrize(
+    ("status", "claimed", "started"),
+    [
+        (JobStatus.PENDING, False, False),
+        (JobStatus.CLAIMED, True, True),
+        (JobStatus.RUNNING, True, True),
+        (JobStatus.CANCEL_REQUESTED, False, False),
+        (JobStatus.CANCEL_REQUESTED, True, True),
+    ],
+)
+def test_a_job_has_started_once_claimed_unless_canceled_before_any_worker_took_it(status, claimed, started):
+    assert JobExecution.has_started(status, datetime.now(UTC) if claimed else None) is started

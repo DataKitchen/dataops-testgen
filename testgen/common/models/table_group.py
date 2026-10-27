@@ -333,6 +333,31 @@ def _build_monitor_order_clause(sort_by: str | None, anomaly_type: str | None) -
     return f"ORDER BY {column} {direction} NULLS LAST"
 
 
+@dataclass(frozen=True)
+class TableGroupDeletionCounts:
+    """What deleting a table group removes with it."""
+
+    test_suites: int
+    contracts: int
+    monitor_suites: int
+    test_definitions: int
+    monitors: int
+    notes: int
+    test_runs: int
+    test_results: int
+    monitor_runs: int
+    monitor_results: int
+    profiling_runs: int
+    profile_results: int
+    hygiene_issues: int
+    catalog_tables: int
+    catalog_columns: int
+    schema_changes: int
+    schedules: int
+    notification_settings: int
+    contract_versions: int
+
+
 class TableGroup(Entity):
     __tablename__ = "table_groups"
 
@@ -1281,6 +1306,56 @@ class TableGroup(Entity):
         params = {"table_group_ids": tuple(ids)}
         dependency_count = get_current_session().execute(text(query), params).rowcount
         return dependency_count > 0
+
+    @classmethod
+    def deletion_counts(cls, table_group_id: UUID | str) -> TableGroupDeletionCounts:
+        """Count the rows ``cascade_delete`` removes with the table group, across every version of its
+        suites' tests.
+
+        Monitors are the test definitions of its monitor suite, and monitor runs and results its runs and
+        results, each counted apart from the other suites' tests, runs, and results.
+
+        :param table_group_id: The table group to count for.
+        :returns: The counts, by kind of row.
+        """
+        query = """
+        WITH suites AS (SELECT id, suite_type FROM test_suites WHERE table_groups_id = :table_group_id)
+        SELECT
+            (SELECT COUNT(*) FROM suites WHERE suite_type = 'regular') AS test_suites,
+            (SELECT COUNT(*) FROM suites WHERE suite_type = 'contract') AS contracts,
+            (SELECT COUNT(*) FROM suites WHERE suite_type = 'monitor') AS monitor_suites,
+            (SELECT COUNT(*) FROM test_definitions d JOIN suites s ON s.id = d.test_suite_id
+                WHERE s.suite_type <> 'monitor') AS test_definitions,
+            (SELECT COUNT(*) FROM test_definitions d JOIN suites s ON s.id = d.test_suite_id
+                WHERE s.suite_type = 'monitor') AS monitors,
+            (SELECT COUNT(*) FROM test_definition_notes n
+                JOIN test_definitions d ON d.id = n.test_definition_id
+                JOIN suites s ON s.id = d.test_suite_id) AS notes,
+            (SELECT COUNT(*) FROM test_runs r JOIN suites s ON s.id = r.test_suite_id
+                WHERE s.suite_type <> 'monitor') AS test_runs,
+            (SELECT COUNT(*) FROM test_results r JOIN suites s ON s.id = r.test_suite_id
+                WHERE s.suite_type <> 'monitor') AS test_results,
+            (SELECT COUNT(*) FROM test_runs r JOIN suites s ON s.id = r.test_suite_id
+                WHERE s.suite_type = 'monitor') AS monitor_runs,
+            (SELECT COUNT(*) FROM test_results r JOIN suites s ON s.id = r.test_suite_id
+                WHERE s.suite_type = 'monitor') AS monitor_results,
+            (SELECT COUNT(*) FROM profiling_runs WHERE table_groups_id = :table_group_id) AS profiling_runs,
+            (SELECT COUNT(*) FROM profile_results WHERE table_groups_id = :table_group_id) AS profile_results,
+            (SELECT COUNT(*) FROM profile_anomaly_results WHERE table_groups_id = :table_group_id) AS hygiene_issues,
+            (SELECT COUNT(*) FROM data_table_chars WHERE table_groups_id = :table_group_id) AS catalog_tables,
+            (SELECT COUNT(*) FROM data_column_chars WHERE table_groups_id = :table_group_id) AS catalog_columns,
+            (SELECT COUNT(*) FROM data_structure_log WHERE table_groups_id = :table_group_id) AS schema_changes,
+            (SELECT COUNT(*) FROM job_schedules
+                WHERE (kwargs->>'test_suite_id')::UUID IN (SELECT id FROM suites)
+                    OR (kwargs->>'table_group_id')::UUID = :table_group_id) AS schedules,
+            (SELECT COUNT(*) FROM notification_settings
+                WHERE table_group_id = :table_group_id
+                    OR test_suite_id IN (SELECT id FROM suites)) AS notification_settings,
+            (SELECT COUNT(*) FROM suite_versions
+                WHERE test_suite_id IN (SELECT id FROM suites) AND frozen_at IS NOT NULL) AS contract_versions
+        """
+        row = get_current_session().execute(text(query), {"table_group_id": str(table_group_id)}).mappings().one()
+        return TableGroupDeletionCounts(**{key: int(value) for key, value in row.items()})
 
     @classmethod
     def cascade_delete(cls, ids: list[str]) -> None:

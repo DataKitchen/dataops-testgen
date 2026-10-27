@@ -11,6 +11,8 @@ any future caller:
   is built by callers via ``make_save_data_chars``.
 * ``cascade_delete_table_group`` — deletes a table group and everything recorded
   against it, unless a job for it is still running.
+* ``delete_blockers`` — the jobs that keep ``cascade_delete_table_group`` from
+  deleting a table group, read without locking or canceling anything.
 
 None of these belong on the ``TableGroup`` model: preview opens an external
 DB connection (I/O against an arbitrary target system), and the field-required
@@ -623,9 +625,9 @@ def _tables_in_use(table_group_id: UUID) -> set[str]:
     return {row[0] for row in rows}
 
 
-def _has_job_in_flight(table_group: TableGroup, *clauses) -> bool:
-    """Whether any non-terminal job names this table group or one of its test suites, queued jobs
-    included.
+def _jobs_in_flight(table_group: TableGroup, *clauses) -> list[JobExecution]:
+    """The non-terminal jobs that name this table group or one of its test suites, queued jobs
+    included, oldest first.
 
     :param clauses: Further conditions on ``JobExecution`` that a job must meet to count.
     """
@@ -635,8 +637,8 @@ def _has_job_in_flight(table_group: TableGroup, *clauses) -> bool:
     ).all()
     named = [str(table_group.id), *[str(suite_id) for suite_id in suite_ids]]
 
-    active = session.scalars(
-        select(JobExecution.id).where(
+    return list(session.scalars(
+        select(JobExecution).where(
             JobExecution.project_code == table_group.project_code,
             JobExecution.status.in_(list(JobStatus.active())),
             or_(
@@ -647,9 +649,17 @@ def _has_job_in_flight(table_group: TableGroup, *clauses) -> bool:
                 JobExecution.kwargs["monitor_suite_id"].astext.in_(named),
             ),
             *clauses,
-        )
-    ).first()
-    return active is not None
+        ).order_by(JobExecution.created_at)
+    ).all())
+
+
+def _has_job_in_flight(table_group: TableGroup, *clauses) -> bool:
+    """Whether any non-terminal job names this table group or one of its test suites, queued jobs
+    included.
+
+    :param clauses: Further conditions on ``JobExecution`` that a job must meet to count.
+    """
+    return bool(_jobs_in_flight(table_group, *clauses))
 
 
 def _repoint_definitions(table_group: TableGroup, previous: str, schema: str) -> int:
@@ -854,6 +864,21 @@ class DeleteBlocker(StrEnum):
 
     JOB = "job"
     CATALOG_REFRESH = "catalog_refresh"
+
+
+def delete_blockers(table_group: TableGroup) -> list[JobExecution]:
+    """The jobs that keep ``cascade_delete_table_group`` from deleting the table group, read without
+    locking or canceling anything.
+
+    :returns: Every queued or running job other than a catalog refresh that names the table group or
+        one of its test suites, and every refresh of its catalog that has started. Empty when the
+        delete would go ahead.
+    """
+    return [
+        job
+        for job in _jobs_in_flight(table_group)
+        if job.job_key != JobKey.refresh_data_catalog or JobExecution.has_started(job.status, job.claimed_at)
+    ]
 
 
 def cascade_delete_table_group(table_group: TableGroup) -> DeleteBlocker | None:

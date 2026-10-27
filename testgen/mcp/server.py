@@ -451,6 +451,7 @@ def build_mcp_server(
     from testgen.mcp.tools.source_data import get_source_data, get_source_data_query, get_table_sample
     from testgen.mcp.tools.table_groups import (
         create_table_group,
+        delete_table_group,
         get_table_group,
         list_table_groups,
         preview_table_group,
@@ -631,6 +632,7 @@ def build_mcp_server(
     tool_wrapper(create_table_group)
     tool_wrapper(update_table_group)
     tool_wrapper(preview_table_group)
+    tool_wrapper(delete_table_group)
     tool_wrapper(update_project)
     tool_wrapper(create_test_suite)
     tool_wrapper(update_test_suite)
