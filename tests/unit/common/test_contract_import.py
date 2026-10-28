@@ -14,6 +14,7 @@ from testgen.common.contract_import import (
     _BaselineTerm,
     _custom_metadata,
     _match_physical_types,
+    _normalize_value_lists,
     check_identity,
     parse_document,
     plan_changes,
@@ -22,6 +23,7 @@ from testgen.common.contract_import import (
 )
 from testgen.common.contract_service import InvalidContractDocumentError
 from testgen.common.flavors import SqlFlavorCode
+from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.test_definition import TestType
 from testgen.common.odcs.quality_rules import is_unverifiable_marker
 from testgen.common.test_definition_export_import_service import ImportAction
@@ -1038,3 +1040,45 @@ def test_a_column_duplicate_rule_naming_its_own_property_groups_on_its_physical_
     term = next(term for term in split.terms if term.test_type == "Dupe_Rows")
     assert term.parameters["groupby_names"] == '"email_addr"'
     assert "quality" not in split.metadata_document["schema"][0]["properties"][0]
+
+
+def _catalog_general_types(general_types: dict):
+    return patch.object(DataColumnChars, "select_general_types", return_value=general_types)
+
+
+_VALUE_MATCH_TYPES = {
+    "LOV_Match": TestType(test_type="LOV_Match", test_name_short="Value Match"),
+    "Required": TestType(test_type="Required", test_name_short="Required Entry"),
+}
+
+
+@pytest.mark.parametrize(
+    ("general_type", "listed", "stored"),
+    [("N", "1, 1.0,2", "1,2"), ("A", "a,A,a", "a,A"), (None, "x, y", "x,y")],
+)
+def test_normalize_value_lists_stores_each_listed_value_once(general_type, listed, stored):
+    term = _incoming("LOV_Match", column="code", baseline_value=listed)
+
+    with _catalog_general_types({("orders", "code"): general_type}):
+        problems = _normalize_value_lists([term], _VALUE_MATCH_TYPES, uuid4())
+
+    assert problems == []
+    assert term.parameters["baseline_value"] == stored
+
+
+def test_normalize_value_lists_reports_a_non_number_listed_for_a_numeric_column():
+    term = _incoming("LOV_Match", column="code", term_id="r1", baseline_value="1,two")
+
+    with _catalog_general_types({("orders", "code"): "N"}):
+        problems = _normalize_value_lists([term], _VALUE_MATCH_TYPES, uuid4())
+
+    assert problems == ["orders.code rule r1 (Value Match): baseline_value contains a value that is not a number: two"]
+
+
+def test_normalize_value_lists_leaves_other_terms_alone():
+    term = _incoming("Required", column="code", threshold_value="0")
+
+    with _catalog_general_types({("orders", "code"): "N"}) as select_general_types:
+        assert _normalize_value_lists([term], _VALUE_MATCH_TYPES, uuid4()) == []
+    assert term.parameters == {"threshold_value": "0"}
+    select_general_types.assert_not_called()

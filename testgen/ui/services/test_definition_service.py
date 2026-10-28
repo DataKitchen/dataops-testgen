@@ -52,6 +52,7 @@ def save_from_dialog(definition: TestDefinition, suite: TestSuite | TestSuiteMin
         if "custom_query" not in test_type.param_columns:
             definition.custom_query = None
         try:
+            definition.normalize_value_list()
             definition.validate(test_type)
         except InvalidTestDefinitionFields as error:
             return _describe_errors(error.errors, test_type)

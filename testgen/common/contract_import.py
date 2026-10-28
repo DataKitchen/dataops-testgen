@@ -34,10 +34,11 @@ from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
     table_group_qualifies_table_refs,
 )
-from testgen.common.enums import MANAGED_TEST_TYPES, SuiteType
+from testgen.common.enums import MANAGED_TEST_TYPES, VALUE_LIST_TEST_TYPES, SuiteType
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, FLAVOR_CODE_TO_LABEL, SqlFlavorCode
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import (
@@ -46,6 +47,7 @@ from testgen.common.models.test_definition import (
     InvalidTestDefinitionFields,
     TestDefinition,
     TestType,
+    stored_value_list,
 )
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.odcs.physical_types import TypeMatch, compare_physical_types
@@ -648,10 +650,11 @@ def prepare_import(
     declared_parameters = {code: test_type_parameters(test_type) for code, test_type in test_types.items()}
     baseline = _baseline_terms(suite, test_types) if current is not None else []
     catalog_tables = set(contract_document.catalog_table_names(table_group.id))
+    value_list_problems = _normalize_value_lists(split.terms, test_types, table_group.id)
     changes = plan_changes(
         split.terms, baseline, schema_name=table_group.table_group_schema, declared_parameters=declared_parameters
     )
-    if problems := _invalid_terms(changes, test_types, table_group.table_group_schema):
+    if problems := value_list_problems + _invalid_terms(changes, test_types, table_group.table_group_schema):
         raise InvalidContractDocumentError(problems)
 
     return ContractImportPlan(
@@ -668,6 +671,41 @@ def prepare_import(
     )
 
 
+def _term_label(
+    table_name: str, column_name: str | None, contract_term_id: str | None, test_type: TestType
+) -> str:
+    subject = f"{table_name}.{column_name}" if column_name else table_name
+    rule = f" rule {contract_term_id}" if contract_term_id else ""
+    return f"{subject}{rule} ({test_type.test_name_short})"
+
+
+def _normalize_value_lists(
+    terms: list[IncomingTerm], test_types: dict[str, TestType], table_groups_id: UUID
+) -> list[str]:
+    """Rewrite each value-list term's list as a test definition stores it, for the general type the
+    table group's catalog records for its column.
+
+    Returns each term whose list a test definition could not store, with the reason.
+    """
+    problems = []
+    general_types: dict[tuple[str, str], str | None] | None = None
+    for term in terms:
+        if term.test_type not in VALUE_LIST_TEST_TYPES or "baseline_value" not in term.parameters:
+            continue
+        if general_types is None:
+            general_types = DataColumnChars.select_general_types(table_groups_id)
+        try:
+            term.parameters["baseline_value"] = stored_value_list(
+                term.test_type,
+                term.parameters["baseline_value"],
+                general_types.get((term.table_name, term.column_name)),
+            )
+        except InvalidTestDefinitionFields as e:
+            label = _term_label(term.table_name, term.column_name, term.contract_term_id, test_types[term.test_type])
+            problems += [f"{label}: {field} {reason}" for field, reason in e.errors.items()]
+    return problems
+
+
 def _invalid_terms(changes: list[TermChange], test_types: dict[str, TestType], schema_name: str) -> list[str]:
     """Each term to create or update that a test definition could not store, with the reason."""
     problems = []
@@ -676,9 +714,7 @@ def _invalid_terms(changes: list[TermChange], test_types: dict[str, TestType], s
             continue
         test_type = test_types[change.test_type]
         values = _term_values(change.incoming, change.custom_metadata, test_types)
-        subject = f"{change.table_name}.{change.column_name}" if change.column_name else change.table_name
-        rule = f" rule {change.contract_term_id}" if change.contract_term_id else ""
-        label = f"{subject}{rule} ({test_type.test_name_short})"
+        label = _term_label(change.table_name, change.column_name, change.contract_term_id, test_type)
         try:
             TestDefinition(schema_name=schema_name, **values).validate(test_type)
         except InvalidTestDefinitionFields as e:

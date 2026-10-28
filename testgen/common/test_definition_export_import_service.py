@@ -29,9 +29,11 @@ from testgen.common.models.suite_version import SuiteVersion, VersionState
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import (
     NON_PUBLIC_TEST_TYPES,
+    InvalidTestDefinitionFields,
     TestDefinition,
     TestType,
     missing_required_fields,
+    stored_value_list,
     test_definition_errors,
 )
 from testgen.common.models.test_suite import TestSuite
@@ -659,6 +661,7 @@ def import_definitions(
     table_group = TableGroup.get(test_suite.table_groups_id)
     profiled_tables = set(DataTable.select_table_names(test_suite.table_groups_id, limit=None))
     profiled_columns = DataColumnChars.select_column_names(test_suite.table_groups_id)
+    general_types = DataColumnChars.select_general_types(test_suite.table_groups_id)
     contract_tables = writable_tables(test_suite)
 
     # --- Phase 1: Upfront validation ---
@@ -743,6 +746,16 @@ def import_definitions(
             continue
 
         test_type = test_types[td_import.test_type]
+        if target is None or "baseline_value" in td_import.model_fields_set:
+            try:
+                td_import.baseline_value = stored_value_list(
+                    td_import.test_type, td_import.baseline_value, general_types.get((table_name, column_name))
+                )
+            except InvalidTestDefinitionFields as error:
+                actions.append(
+                    _PlannedAction(ImportAction.skip, ImportReason.invalid_field, idx, td_import, target, error.errors)
+                )
+                continue
         value_of = partial(_value_as_saved, td_import, target)
         missing = missing_required_fields(test_type, value_of)
         # Generators store values in a non-public type's undeclared parameters, which the full rules reject.

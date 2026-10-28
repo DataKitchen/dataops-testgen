@@ -1,7 +1,7 @@
 import csv
 import io
 import re
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 
 def CleanSQL(strInput: str) -> str:
@@ -54,22 +54,52 @@ class NonNumericValueError(ValueError):
         self.value = value
 
 
+_NUMBER = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+
+
+def _parse_number(value: str) -> Decimal:
+    # Decimal also reads digit separators, non-ASCII digits, NaN, and Infinity
+    if not _NUMBER.fullmatch(value.strip()):
+        raise NonNumericValueError(value)
+    return Decimal(value.strip())
+
+
 def parse_numeric_values(values: list[str]) -> list[Decimal]:
     """Parse each value as a finite number, dropping values equal as numbers to an earlier one.
 
     Surrounding whitespace is ignored. Raises ``NonNumericValueError`` on the first value that is not a
     finite number.
     """
-    numbers: dict[Decimal, None] = {}
-    for value in values:
-        try:
-            number = Decimal(value.strip())
-        except InvalidOperation:
-            raise NonNumericValueError(value) from None
-        if not number.is_finite():
-            raise NonNumericValueError(value)
-        numbers.setdefault(number)
-    return list(numbers)
+    return list(dict.fromkeys(_parse_number(value) for value in values))
+
+
+def format_value_list(values: list[str]) -> str:
+    """Join ``values`` into a CSV list that ``parse_value_list`` reads back.
+
+    A value is double-quoted, with ``"`` doubled, only when it is empty, contains a comma, a double
+    quote or a line break, or has leading or trailing whitespace.
+    """
+    def quoted(value: str) -> str:
+        if value == "" or value != value.strip() or any(char in value for char in ',"\r\n'):
+            return '"' + value.replace('"', '""') + '"'
+        return value
+    return ",".join(quoted(value) for value in values)
+
+
+def normalize_value_list(value: str, numeric: bool) -> str:
+    """Rewrite a CSV list with each value kept once, quoted as ``format_value_list`` quotes it.
+
+    For a numeric list, values equal as numbers are one value: the first is kept, without surrounding
+    whitespace. Otherwise only identical strings are. Raises ``NonNumericValueError`` when a numeric list
+    holds a value that is not a finite number.
+    """
+    values = parse_value_list(value)
+    if numeric:
+        kept: dict[Decimal, str] = {}
+        for item in values:
+            kept.setdefault(_parse_number(item), item.strip())
+        return format_value_list(list(kept.values()))
+    return format_value_list(list(dict.fromkeys(values)))
 
 
 def concat_columns(columns: str, null_value: str):

@@ -36,8 +36,10 @@ from sqlalchemy.sql import visitors
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.expression import case, literal
 
+from testgen.common.clean_sql import NonNumericValueError, normalize_value_list
 from testgen.common.enums import (
     MANAGED_TEST_TYPES,
+    VALUE_LIST_TEST_TYPES,
     MonitorCalculation,
     MonitorType,
     OdcsDimension,
@@ -874,6 +876,25 @@ def test_definition_errors(test_type: TestType, value_of: Callable[[str], object
     return errors
 
 
+def stored_value_list(test_type: str, baseline_value: str | None, general_type: str | None) -> str | None:
+    """Return ``baseline_value`` as a test of ``test_type`` on a column of ``general_type`` stores it.
+
+    A value-list type's list is rewritten by ``normalize_value_list``, as numbers for a numeric column.
+    Any other value is returned unchanged.
+
+    Raises:
+        InvalidTestDefinitionFields: A numeric column's list holds a value that is not a number.
+    """
+    if test_type not in VALUE_LIST_TEST_TYPES or _is_blank(baseline_value):
+        return baseline_value
+    try:
+        return normalize_value_list(baseline_value, numeric=general_type == "N")
+    except NonNumericValueError as error:
+        raise InvalidTestDefinitionFields(
+            {"baseline_value": f"contains a value that is not a number: {error.value}"}
+        ) from error
+
+
 def _param_columns(test_type: TestType) -> list[str]:
     return [c.strip() for c in (test_type.default_parm_columns or "").split(",")]
 
@@ -1520,6 +1541,24 @@ class TestDefinition(Entity):
         if test_type.test_scope in ("custom", "referential"):
             fields = fields | {"impact_dimension"}
         return fields
+
+    def normalize_value_list(self) -> None:
+        """Rewrite ``baseline_value`` as ``stored_value_list`` stores it, for the general type the table
+        group's catalog records for the test's column.
+
+        Raises:
+            InvalidTestDefinitionFields: A numeric column's list holds a value that is not a number.
+        """
+        # data_column imports, through job_execution, models that import this one
+        from testgen.common.models.data_column import DataColumnChars
+
+        if self.test_type not in VALUE_LIST_TEST_TYPES or _is_blank(self.baseline_value):
+            return
+        self.baseline_value = stored_value_list(
+            self.test_type,
+            self.baseline_value,
+            DataColumnChars.general_type_of(self.table_groups_id, self.table_name, self.column_name),
+        )
 
     def validate(self, test_type: TestType) -> None:
         """Validate the current state against the given test type.
