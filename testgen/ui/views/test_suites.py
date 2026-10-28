@@ -29,7 +29,6 @@ from testgen.common.generation_set_service import (
 )
 from testgen.common.models import database_session, get_current_session, with_database_session
 from testgen.common.models.connection import Connection
-from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import TestRunNotificationSettings
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.suite_version import ContractState, VersionState, format_version
@@ -37,6 +36,7 @@ from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.odcs.servers import CustomServerReason
+from testgen.common.run_service import launch_run
 from testgen.common.value_hash import VALUE_HASH_TEST_TYPES
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
@@ -235,7 +235,7 @@ class TestSuitesPage(Page):
             show_link = session.current_page != "test-runs"
             try:
                 with database_session():
-                    JobExecution.submit(
+                    launch_run(
                         job_key="run-tests",
                         kwargs={
                             "test_suite_id": str(selected_id),

@@ -25,7 +25,6 @@ from testgen.common.models import database_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.data_table import DataTable
-from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
@@ -35,6 +34,7 @@ from testgen.common.pii_masking import (
     mask_profiling_pii,
 )
 from testgen.common.profile_frequency import format_frequent
+from testgen.common.run_service import launch_run
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -184,7 +184,7 @@ class DataCatalogPage(Page):
             show_link = session.current_page != "profiling-runs"
             try:
                 with database_session():
-                    JobExecution.submit(
+                    launch_run(
                         job_key="run-profile",
                         kwargs={"table_group_id": str(table_group["id"])},
                         source=JobSource.ui,

@@ -1,6 +1,7 @@
 import logging
 import typing
-from collections.abc import Callable, Iterable
+from collections import defaultdict
+from collections.abc import Iterable
 
 import streamlit as st
 
@@ -13,6 +14,7 @@ RUN_SCHEDULES_DIALOG_OPEN_COUNT_KEY = "pr:run_schedules_dialog_open_count"
 RUN_NOTIFICATIONS_DIALOG_OPEN_COUNT_KEY = "pr:run_notifications_dialog_open_count"
 
 import testgen.ui.services.form_service as fm
+from testgen.common.audit.runs import RunOperation, record_runs
 from testgen.common.enums import JobSource, JobStatus
 from testgen.common.models import database_session, get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
@@ -23,6 +25,7 @@ from testgen.common.models.notification_settings import (
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scheduler import RUN_PROFILE_JOB_KEY
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
+from testgen.common.run_service import launch_run, request_run_transition
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
@@ -118,7 +121,7 @@ class DataProfilingPage(Page):
             show_link = session.current_page != "profiling-runs"
             try:
                 with database_session():
-                    JobExecution.submit(
+                    launch_run(
                         job_key="run-profile",
                         kwargs={"table_group_id": str(table_group["id"])},
                         source=JobSource.ui,
@@ -286,39 +289,35 @@ class ProfilingRunNotificationSettingsDialog(NotificationSettingsDialogBase):
 
 @with_database_session
 def on_cancel_run(payload: dict) -> None:
-    _request_transition(payload, JobExecution.request_cancel, "Cancellation requested.", "This run cannot be canceled.")
+    _request_transition(payload, RunOperation.CANCELED, "Cancellation requested.", "This run cannot be canceled.")
 
 
 @with_database_session
 def on_pause_run(payload: dict) -> None:
-    _request_transition(payload, JobExecution.request_pause, "Pause requested.", "This run cannot be paused.")
+    _request_transition(payload, RunOperation.PAUSED, "Pause requested.", "This run cannot be paused.")
 
 
 @with_database_session
 def on_resume_run(payload: dict) -> None:
-    _request_transition(payload, JobExecution.request_resume, "Resume requested.", "This run cannot be resumed.")
+    _request_transition(payload, RunOperation.RESUMED, "Resume requested.", "This run cannot be resumed.")
 
 
-def _request_transition(
-    payload: dict,
-    transition: Callable[[JobExecution], bool],
-    confirmation: str,
-    refusal: str,
-) -> None:
+def _request_transition(payload: dict, operation: RunOperation, confirmation: str, refusal: str) -> None:
     """Ask a run to change state, and report back whichever way it went.
 
     The transition is guarded against the run's status in the database, so one that finished
     or was canceled between the page rendering and the click is refused rather than acted on,
-    and against the caller's permission, so hiding the control is not the only thing stopping
-    the event from arriving.
+    and against the caller's permission in the run's project, so hiding the control is not the
+    only thing stopping the event from arriving.
     """
-    if not session.auth.user_has_permission("edit"):
-        fm.reset_post_updates(str_message=f":red[{refusal}]", as_toast=True)
-        return
-
     job_execution_id = payload.get("job_execution_id")
     job_exec = JobExecution.get(job_execution_id) if job_execution_id else None
-    if job_exec and transition(job_exec):
+    if (
+        job_exec
+        and job_exec.job_key == RUN_PROFILE_JOB_KEY
+        and session.auth.user_has_permission("edit", job_exec.project_code)
+        and request_run_transition(job_exec, operation)
+    ):
         get_profiling_run_summaries.clear()
         get_project_summary.clear()
         fm.reset_post_updates(str_message=f":green[{confirmation}]", as_toast=True)
@@ -329,10 +328,16 @@ def _request_transition(
 @with_database_session
 def on_delete_runs(job_execution_ids: list[str]) -> None:
     try:
-        for je_id in job_execution_ids:
-            job_exec = JobExecution.get(je_id)
-            if not job_exec:
-                continue
+        jobs = [
+            job for je_id in job_execution_ids if (job := JobExecution.get(je_id)) and job.job_key == RUN_PROFILE_JOB_KEY
+        ]
+        if not all(session.auth.user_has_permission("edit", job.project_code) for job in jobs):
+            st.toast("You don't have permission to delete these profiling runs.", icon=":material/error:")
+            return
+        deleted_ids: dict[str, list[str]] = defaultdict(list)
+        for job_exec in jobs:
+            je_id = str(job_exec.id)
+            deleted_ids[job_exec.project_code].append(je_id)
             if job_exec.status in JobStatus.active():
                 job_exec.request_cancel()
             profiling_run = next(iter(select_profiling_runs_where(ProfilingRun.id == je_id)), None)
@@ -340,9 +345,12 @@ def on_delete_runs(job_execution_ids: list[str]) -> None:
                 ProfilingRun.cascade_delete([str(profiling_run.id)])
             else:
                 get_current_session().delete(job_exec)
+        for project_code, run_ids in deleted_ids.items():
+            record_runs(RunOperation.DELETED, RUN_PROFILE_JOB_KEY, project_code, run_ids)
         get_profiling_run_summaries.clear()
         get_project_summary.clear()
         Router().set_query_params({"page": 1})
     except Exception:
         LOG.exception("Failed to delete profiling runs")
+        get_current_session().rollback()
         st.toast("Unable to delete the selected profiling runs, try again.", icon=":material/error:")

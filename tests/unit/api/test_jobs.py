@@ -22,6 +22,7 @@ from testgen.api.jobs import (
 )
 from testgen.api.schemas import TestGenerationRequest, TestRunRequest
 from testgen.common import contract_service
+from testgen.common.audit.runs import RunOperation
 from testgen.common.contract_service import RunTarget
 from testgen.common.enums import JobKey, PublicJobKey, SuiteType
 from testgen.common.models.job_execution import JobExecution
@@ -75,15 +76,15 @@ def _mock_test_suite(**overrides):
 # --- submit_profiling ---
 
 
-@patch(f"{MODULE}.JobExecution")
-def test_submit_profiling_success(mock_je_cls):
+@patch(f"{MODULE}.launch_run")
+def test_submit_profiling_success(mock_launch):
     table_group = _mock_table_group()
     job = _mock_job(job_key="run-profile")
-    mock_je_cls.submit.return_value = job
+    mock_launch.return_value = job
 
     result = submit_profiling(table_group)
 
-    mock_je_cls.submit.assert_called_once_with(
+    mock_launch.assert_called_once_with(
         job_key="run-profile",
         kwargs={"table_group_id": str(table_group.id)},
         source="api",
@@ -96,15 +97,15 @@ def test_submit_profiling_success(mock_je_cls):
 # --- submit_test_run ---
 
 
-@patch(f"{MODULE}.JobExecution")
-def test_submit_test_run_success(mock_je_cls):
+@patch(f"{MODULE}.launch_run")
+def test_submit_test_run_success(mock_launch):
     test_suite = _mock_test_suite()
     job = _mock_job(job_key="run-tests")
-    mock_je_cls.submit.return_value = job
+    mock_launch.return_value = job
 
     result = submit_test_run(test_suite)
 
-    mock_je_cls.submit.assert_called_once_with(
+    mock_launch.assert_called_once_with(
         job_key="run-tests",
         kwargs={"test_suite_id": str(test_suite.id)},
         source="api",
@@ -115,14 +116,14 @@ def test_submit_test_run_success(mock_je_cls):
     assert result.id == job.id
 
 
-@patch(f"{MODULE}.JobExecution")
-def test_submit_test_run_passes_a_match_schema_override(mock_je_cls):
+@patch(f"{MODULE}.launch_run")
+def test_submit_test_run_passes_a_match_schema_override(mock_launch):
     test_suite = _mock_test_suite()
-    mock_je_cls.submit.return_value = _mock_job(job_key="run-tests")
+    mock_launch.return_value = _mock_job(job_key="run-tests")
 
     submit_test_run(test_suite, TestRunRequest(match_schema_name="reference_2026_09_10"))
 
-    mock_je_cls.submit.assert_called_once_with(
+    mock_launch.assert_called_once_with(
         job_key="run-tests",
         kwargs={"test_suite_id": str(test_suite.id), "match_schema_name": "reference_2026_09_10"},
         source="api",
@@ -133,37 +134,37 @@ def test_submit_test_run_passes_a_match_schema_override(mock_je_cls):
 
 
 @pytest.mark.parametrize("body", [None, TestRunRequest(), TestRunRequest(match_schema_name=None)])
-@patch(f"{MODULE}.JobExecution")
-def test_submit_test_run_omits_the_schema_key_when_not_given(mock_je_cls, body):
+@patch(f"{MODULE}.launch_run")
+def test_submit_test_run_omits_the_schema_key_when_not_given(mock_launch, body):
     """An absent match schema must not reach kwargs, or the handler would stop falling back to
     each definition's stored one."""
     test_suite = _mock_test_suite()
-    mock_je_cls.submit.return_value = _mock_job(job_key="run-tests")
+    mock_launch.return_value = _mock_job(job_key="run-tests")
 
     submit_test_run(test_suite, body)
 
-    assert mock_je_cls.submit.call_args.kwargs["kwargs"] == {"test_suite_id": str(test_suite.id)}
+    assert mock_launch.call_args.kwargs["kwargs"] == {"test_suite_id": str(test_suite.id)}
 
 
-@patch(f"{MODULE}.JobExecution")
-def test_submit_test_run_passes_caller_metadata(mock_je_cls):
+@patch(f"{MODULE}.launch_run")
+def test_submit_test_run_passes_caller_metadata(mock_launch):
     test_suite = _mock_test_suite()
-    mock_je_cls.submit.return_value = _mock_job(job_key="run-tests")
+    mock_launch.return_value = _mock_job(job_key="run-tests")
     metadata = {"url": "https://ci.example.com/runs/1", "system": "DataOps Automation"}
 
     submit_test_run(test_suite, TestRunRequest(metadata=metadata))
 
-    assert mock_je_cls.submit.call_args.kwargs["caller_metadata"] == metadata
+    assert mock_launch.call_args.kwargs["caller_metadata"] == metadata
 
 
 @pytest.mark.parametrize("body", [None, TestRunRequest()])
-@patch(f"{MODULE}.JobExecution")
-def test_submit_test_run_sends_no_metadata_when_none_given(mock_je_cls, body):
-    mock_je_cls.submit.return_value = _mock_job(job_key="run-tests")
+@patch(f"{MODULE}.launch_run")
+def test_submit_test_run_sends_no_metadata_when_none_given(mock_launch, body):
+    mock_launch.return_value = _mock_job(job_key="run-tests")
 
     submit_test_run(_mock_test_suite(), body)
 
-    assert mock_je_cls.submit.call_args.kwargs["caller_metadata"] is None
+    assert mock_launch.call_args.kwargs["caller_metadata"] is None
 
 
 @pytest.mark.parametrize(
@@ -378,23 +379,27 @@ def test_get_job_status_success():
 # --- cancel_job ---
 
 
-def test_cancel_job_success():
+@patch("testgen.common.run_service.record_run")
+def test_cancel_job_success(mock_record):
     job = _mock_job(status="cancel_requested")
     job.request_cancel.return_value = True
 
     result = cancel_job(job)
 
     job.request_cancel.assert_called_once()
+    mock_record.assert_called_once_with(RunOperation.CANCELED, job, "cancel_requested")
     assert result.id == job.id
 
 
-def test_cancel_job_invalid_transition():
+@patch("testgen.common.run_service.record_run")
+def test_cancel_job_invalid_transition(mock_record):
     job = _mock_job(status="completed")
     job.request_cancel.return_value = False
 
     with pytest.raises(HTTPException) as exc_info:
         cancel_job(job)
     assert exc_info.value.status_code == 409
+    mock_record.assert_not_called()
 
 
 # --- list_jobs ---
@@ -535,18 +540,18 @@ def test_list_jobs_rejects_internal_job_key(mock_je_cls, _mock_perm):
     assert body["detail"][0]["type"] == "enum"
 
 
-@patch(f"{MODULE}.JobExecution")
-def test_submit_test_run_passes_the_link_and_metadata_separately(mock_je_cls):
+@patch(f"{MODULE}.launch_run")
+def test_submit_test_run_passes_the_link_and_metadata_separately(mock_launch):
     """The link is its own field, so it reaches its own column rather than riding inside metadata."""
     test_suite = _mock_test_suite()
-    mock_je_cls.submit.return_value = _mock_job(job_key="run-tests")
+    mock_launch.return_value = _mock_job(job_key="run-tests")
 
     submit_test_run(
         test_suite,
         TestRunRequest(external_url="https://ci.example.com/runs/8891", metadata={"order_run_id": "8891"}),
     )
 
-    call = mock_je_cls.submit.call_args.kwargs
+    call = mock_launch.call_args.kwargs
     assert call["external_url"] == "https://ci.example.com/runs/8891"
     assert call["caller_metadata"] == {"order_run_id": "8891"}
 
@@ -558,11 +563,11 @@ def _run_contract(body=None, *, target=None, error=None):
     test_suite = _mock_test_suite(suite_type=SuiteType.CONTRACT)
     with (
         patch(f"{MODULE}.contract_service.run_target", return_value=target, side_effect=error) as run_target,
-        patch(f"{MODULE}.JobExecution") as mock_je_cls,
+        patch(f"{MODULE}.launch_run") as mock_launch,
     ):
-        mock_je_cls.submit.return_value = _mock_job(job_key="run-tests")
+        mock_launch.return_value = _mock_job(job_key="run-tests")
         result = submit_test_run(test_suite, body)
-    return result, mock_je_cls.submit, run_target
+    return result, mock_launch, run_target
 
 
 def test_submit_test_run_stamps_a_contract_run_with_its_version():
@@ -619,8 +624,8 @@ def test_submit_test_run_refuses_a_version_the_suite_does_not_hold(error, code):
 
 
 def test_submit_test_run_names_no_version_for_a_regular_suite():
-    with patch(f"{MODULE}.JobExecution") as mock_je_cls:
-        mock_je_cls.submit.return_value = _mock_job(job_key="run-tests")
+    with patch(f"{MODULE}.launch_run") as mock_launch:
+        mock_launch.return_value = _mock_job(job_key="run-tests")
         result = submit_test_run(_mock_test_suite(), None)
 
     assert (result.version, result.note) == (None, None)

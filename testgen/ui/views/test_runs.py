@@ -1,11 +1,13 @@
 import logging
 import typing
+from collections import defaultdict
 from collections.abc import Iterable
 from typing import Any
 
 import streamlit as st
 
 import testgen.ui.services.form_service as fm
+from testgen.common.audit.runs import RunOperation, record_runs
 from testgen.common.enums import TEST_SUITE_TYPES, JobSource, JobStatus, SuiteType
 from testgen.common.models import database_session, get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
@@ -17,6 +19,7 @@ from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
+from testgen.common.run_service import launch_run, request_run_transition
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
@@ -126,7 +129,7 @@ class TestRunsPage(Page):
             show_link = session.current_page != "test-runs"
             try:
                 with database_session():
-                    JobExecution.submit(
+                    launch_run(
                         job_key="run-tests",
                         kwargs={
                             "test_suite_id": str(selected_id),
@@ -314,12 +317,13 @@ class TestRunScheduleDialog(ScheduleDialog):
 @with_database_session
 def on_cancel_run(payload: dict) -> None:
     job_execution_id = payload.get("job_execution_id")
-    if not job_execution_id:
-        fm.reset_post_updates(str_message=":red[This run cannot be canceled.]", as_toast=True)
-        return
-
-    job_exec = JobExecution.get(job_execution_id)
-    if job_exec and job_exec.request_cancel():
+    job_exec = JobExecution.get(job_execution_id) if job_execution_id else None
+    if (
+        job_exec
+        and job_exec.job_key == RUN_TESTS_JOB_KEY
+        and session.auth.user_has_permission("edit", job_exec.project_code)
+        and request_run_transition(job_exec, RunOperation.CANCELED)
+    ):
         get_test_run_summaries.clear()
         get_project_summary.clear()
         fm.reset_post_updates(str_message=":green[Cancellation requested.]", as_toast=True)
@@ -330,10 +334,16 @@ def on_cancel_run(payload: dict) -> None:
 @with_database_session
 def on_delete_runs(job_execution_ids: list[str]) -> None:
     try:
-        for je_id in job_execution_ids:
-            job_exec = JobExecution.get(je_id)
-            if not job_exec:
-                continue
+        jobs = [
+            job for je_id in job_execution_ids if (job := JobExecution.get(je_id)) and job.job_key == RUN_TESTS_JOB_KEY
+        ]
+        if not all(session.auth.user_has_permission("edit", job.project_code) for job in jobs):
+            st.toast("You don't have permission to delete these test runs.", icon=":material/error:")
+            return
+        deleted_ids: dict[str, list[str]] = defaultdict(list)
+        for job_exec in jobs:
+            je_id = str(job_exec.id)
+            deleted_ids[job_exec.project_code].append(je_id)
             if job_exec.status in JobStatus.active():
                 job_exec.request_cancel()
             test_run = next(iter(select_test_runs_where(TestRun.id == je_id)), None)
@@ -341,9 +351,12 @@ def on_delete_runs(job_execution_ids: list[str]) -> None:
                 TestRun.cascade_delete([str(test_run.id)])
             else:
                 get_current_session().delete(job_exec)
+        for project_code, run_ids in deleted_ids.items():
+            record_runs(RunOperation.DELETED, RUN_TESTS_JOB_KEY, project_code, run_ids)
         get_test_run_summaries.clear()
         get_project_summary.clear()
         Router().set_query_params({"page": 1})
     except Exception:
         LOG.exception("Failed to delete test run")
+        get_current_session().rollback()
         st.toast("Something went wrong while deleting the test run.", icon=":material/error:")
