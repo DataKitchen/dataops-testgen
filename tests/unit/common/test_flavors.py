@@ -5,6 +5,8 @@ import re
 
 import pytest
 
+from testgen.common.clean_sql import NonNumericValueError
+from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.flavors import (
     FLAVOR_CODE_TO_FAMILY,
@@ -135,6 +137,80 @@ def test_string_literal_list_renders_null_when_empty():
 
 def test_string_literal_list_keeps_empty_and_comma_values():
     assert get_flavor_service("postgresql").string_literal_list(["", "a,b", " "]) == "'', 'a,b', ' '"
+
+
+# --- FlavorService.value_list_params ---------------------------------------
+
+
+def _column(general_type: str, column_type: str | None = None) -> ColumnChars:
+    return ColumnChars("s", "t", "c", general_type=general_type, column_type=column_type)
+
+
+def test_value_list_params_matches_a_numeric_column_by_value():
+    params = get_flavor_service("postgresql").value_list_params('"c"', _column("N"), ["1", "2.50", "1.0", "1e2"])
+    assert params == {
+        "VALUE_LIST_COLUMN": '"c"',
+        "VALUE_LIST_DISTINCT": '"c"',
+        "VALUE_LIST_LITERALS": "1, 2.50, 100",
+        "VALUE_LIST_CT": "3",
+        "VALUE_LIST_VALUE": '"c"',
+        "VALUE_LIST_ROWS": "SELECT 1 AS expected_value, 1 AS value_key"
+        " UNION ALL SELECT 2.50 AS expected_value, 2.50 AS value_key"
+        " UNION ALL SELECT 100 AS expected_value, 100 AS value_key",
+    }
+
+
+def test_value_list_params_rejects_a_non_numeric_value_for_a_numeric_column():
+    with pytest.raises(NonNumericValueError):
+        get_flavor_service("postgresql").value_list_params('"c"', _column("N"), ["1", "1); DROP TABLE t; --"])
+
+
+@pytest.mark.parametrize("column", [_column("A"), _column("D"), None])
+def test_value_list_params_matches_other_columns_exactly_by_text(column):
+    params = get_flavor_service("postgresql").value_list_params('"c"', column, ["a", "A", "a", "it's", ""])
+    assert params["VALUE_LIST_COLUMN"] == 'CAST("c" AS VARCHAR(1000)) COLLATE "C"'
+    assert params["VALUE_LIST_DISTINCT"] == params["VALUE_LIST_COLUMN"]
+    assert params["VALUE_LIST_VALUE"] == 'CAST("c" AS VARCHAR(1000))'
+    assert params["VALUE_LIST_LITERALS"] == "'a' COLLATE \"C\", 'A' COLLATE \"C\", 'it''s' COLLATE \"C\", '' COLLATE \"C\""
+    assert params["VALUE_LIST_CT"] == "4"
+
+
+@pytest.mark.parametrize("family", sorted(FLAVOR_FAMILIES))
+def test_value_list_params_compares_column_and_literals_in_one_form(family):
+    service = get_flavor_service(family)
+    params = service.value_list_params('"c"', _column("A"), ["x"])
+    assert params["VALUE_LIST_COLUMN"] == service.exact_text(service.value_list_text('"c"'))
+    assert params["VALUE_LIST_LITERALS"] == service.exact_text(service.string_literal("x"))
+
+
+def test_value_list_params_compares_bytes_on_mssql():
+    params = get_flavor_service("mssql").value_list_params('"c"', _column("A", "char(5)"), ["é "])
+    assert params["VALUE_LIST_COLUMN"] == 'CAST(CAST(RTRIM("c") AS NVARCHAR(MAX)) AS VARBINARY(MAX))'
+    assert params["VALUE_LIST_LITERALS"] == "CAST(N'é ' AS VARBINARY(MAX))"
+
+
+def test_value_list_params_leaves_out_the_empty_string_on_oracle():
+    params = get_flavor_service("oracle").value_list_params('"c"', _column("A"), ["", "a"])
+    assert params["VALUE_LIST_CT"] == "1"
+    assert params["VALUE_LIST_LITERALS"] == "NLSSORT('a', 'NLS_SORT=BINARY')"
+    assert params["VALUE_LIST_ROWS"] == (
+        "SELECT 'a' AS expected_value, NLSSORT('a', 'NLS_SORT=BINARY') AS value_key FROM DUAL"
+    )
+
+
+def test_value_list_params_selects_rows_from_dummy_on_sap_hana():
+    params = get_flavor_service("sap_hana").value_list_params('"c"', _column("N"), ["1", "2"])
+    assert params["VALUE_LIST_ROWS"] == (
+        "SELECT 1 AS expected_value, 1 AS value_key FROM DUMMY"
+        " UNION ALL SELECT 2 AS expected_value, 2 AS value_key FROM DUMMY"
+    )
+
+
+def test_value_list_params_renders_an_empty_list_as_matching_nothing():
+    params = get_flavor_service("oracle").value_list_params('"c"', _column("A"), [])
+    assert params["VALUE_LIST_LITERALS"] == "NULL"
+    assert params["VALUE_LIST_CT"] == "0"
+    assert params["VALUE_LIST_ROWS"] == "SELECT NULL AS expected_value, NULL AS value_key FROM DUAL WHERE 1 = 0"
 
 
 # --- Connection.effective_max_threads ---------------------------------------

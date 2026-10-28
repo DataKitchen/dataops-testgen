@@ -350,6 +350,10 @@ class DuckdbFlavorService(FlavorService):
 
     double_type = "DOUBLE"
 
+    def exact_text(self, text_expr: str) -> str:
+        # A collation on the column or a default_collation setting carries through a cast to VARCHAR
+        return f"ENCODE({text_expr})"
+
     def canonical_number(self, column_ref: str, is_float: bool) -> str:
         if is_float:
             # A direct cast loses digits above about 10^9, and a float's shortest text is not its exact value

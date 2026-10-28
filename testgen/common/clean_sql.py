@@ -1,6 +1,7 @@
 import csv
 import io
 import re
+from decimal import Decimal, InvalidOperation
 
 
 def CleanSQL(strInput: str) -> str:
@@ -43,6 +44,32 @@ def parse_value_list(value: str | None) -> list[str]:
     if not value:
         return []
     return [item for row in csv.reader(io.StringIO(value), skipinitialspace=True) for item in row]
+
+
+class NonNumericValueError(ValueError):
+    """A value in a list for a numeric column that does not parse as a number."""
+
+    def __init__(self, value: str):
+        super().__init__(f"List of Expected Values contains a value that is not a number: {value}.")
+        self.value = value
+
+
+def parse_numeric_values(values: list[str]) -> list[Decimal]:
+    """Parse each value as a finite number, dropping values equal as numbers to an earlier one.
+
+    Surrounding whitespace is ignored. Raises ``NonNumericValueError`` on the first value that is not a
+    finite number.
+    """
+    numbers: dict[Decimal, None] = {}
+    for value in values:
+        try:
+            number = Decimal(value.strip())
+        except InvalidOperation:
+            raise NonNumericValueError(value) from None
+        if not number.is_finite():
+            raise NonNumericValueError(value)
+        numbers.setdefault(number)
+    return list(numbers)
 
 
 def concat_columns(columns: str, null_value: str):

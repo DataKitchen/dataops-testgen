@@ -20,6 +20,9 @@ class BigqueryFlavorService(FlavorService):
     float_types = frozenset({"float64"})
     wide_decimal_type = "BIGNUMERIC"
 
+    def exact_text(self, text_expr: str) -> str:
+        return f"CAST({text_expr} AS BYTES)"
+
     def canonical_number(self, column_ref: str, is_float: bool) -> str:
         # ROUND of an INT64 returns a FLOAT64, so the value is widened first
         exact = f"CAST({column_ref} AS BIGNUMERIC)"

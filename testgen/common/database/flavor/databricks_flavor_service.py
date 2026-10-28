@@ -25,6 +25,9 @@ class DatabricksFlavorService(FlavorService):
     float_types = frozenset({"double", "float", "real"})
     double_type = "DOUBLE"
 
+    def exact_text(self, text_expr: str) -> str:
+        return f"CAST({text_expr} AS BINARY)"
+
     def canonical_number(self, column_ref: str, is_float: bool) -> str:
         if is_float:
             # A direct cast keeps only 17 significant digits. DIV returns a BIGINT; a decimal quotient

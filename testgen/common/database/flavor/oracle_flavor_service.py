@@ -26,6 +26,9 @@ class OracleFlavorService(FlavorService):
     row_limiting_clause = "fetch"
     test_query = "SELECT 1 FROM DUAL"
     url_scheme = "oracle"
+    # The empty string is stored as NULL
+    stores_empty_string = False
+    single_row_from = " FROM DUAL"
 
     # APPROX_PERCENTILE is version-gated (12c Release 2), so the probe decides; older instances stay exact.
     supports_approx_percentile = True
@@ -35,6 +38,9 @@ class OracleFlavorService(FlavorService):
     float_types = frozenset({"float", "binary_float", "binary_double"})
     double_type = "BINARY_DOUBLE"
     wide_decimal_type = "NUMBER(38,0)"
+
+    def exact_text(self, text_expr: str) -> str:
+        return f"NLSSORT({text_expr}, 'NLS_SORT=BINARY')"
 
     def canonical_text(self, column_ref: str, column: ColumnChars) -> str:
         text = super().canonical_text(column_ref, column)

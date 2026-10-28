@@ -51,6 +51,13 @@ class MssqlFlavorService(FlavorService):
             return f"RTRIM({column_ref})"
         return column_ref
 
+    def value_list_text(self, value_expr: str) -> str:
+        return f"CAST({value_expr} AS NVARCHAR(MAX))"
+
+    def exact_text(self, text_expr: str) -> str:
+        # Binary collations still ignore trailing spaces, so the bytes are compared instead
+        return f"CAST({text_expr} AS VARBINARY(MAX))"
+
     def canonical_text(self, column_ref: str, column: ColumnChars) -> str:
         text = super().canonical_text(column_ref, column)
         if column.general_type == "A":

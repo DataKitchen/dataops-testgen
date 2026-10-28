@@ -1,6 +1,15 @@
+from decimal import Decimal
+
 import pytest
 
-from testgen.common.clean_sql import CleanSQL, concat_columns, parse_value_list, strip_trailing_semicolons
+from testgen.common.clean_sql import (
+    CleanSQL,
+    NonNumericValueError,
+    concat_columns,
+    parse_numeric_values,
+    parse_value_list,
+    strip_trailing_semicolons,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -93,6 +102,29 @@ def test_concat_columns_none():
 )
 def test_parse_value_list(value, expected):
     assert parse_value_list(value) == expected
+
+
+# --- parse_numeric_values ---
+
+def test_parse_numeric_values_keeps_the_first_of_values_equal_as_numbers():
+    numbers = parse_numeric_values(["1.5", "2", "1.50", " 2.0 ", "-0.5", "1e2", "100"])
+    assert [str(number) for number in numbers] == ["1.5", "2", "-0.5", "1E+2"]
+
+
+def test_parse_numeric_values_accepts_an_empty_list():
+    assert parse_numeric_values([]) == []
+
+
+@pytest.mark.parametrize("value", ["a", "", "1,5", "NaN", "Infinity", "-inf", "0x10"])
+def test_parse_numeric_values_rejects_a_value_that_is_not_a_finite_number(value):
+    with pytest.raises(NonNumericValueError) as error:
+        parse_numeric_values(["1", value])
+    assert error.value.value == value
+    assert str(error.value) == f"List of Expected Values contains a value that is not a number: {value}."
+
+
+def test_parse_numeric_values_returns_decimals():
+    assert parse_numeric_values(["0.1"]) == [Decimal("0.1")]
 
 
 # --- strip_trailing_semicolons ---

@@ -51,6 +51,9 @@ class RedshiftFlavorService(FlavorService):
             return f"RTRIM({column_ref})"
         return column_ref
 
+    def exact_text(self, text_expr: str) -> str:
+        return f"COLLATE({text_expr}, 'case_sensitive')"
+
     def canonical_number(self, column_ref: str, is_float: bool) -> str:
         if is_float:
             # A direct cast is inexact for a large double. The quotient is cast back to a whole number:

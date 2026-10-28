@@ -8,6 +8,7 @@ from urllib.parse import quote_plus
 from sqlalchemy import create_engine as sqlalchemy_create_engine
 from sqlalchemy.engine.base import Connection, Engine
 
+from testgen.common.clean_sql import parse_numeric_values
 from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.database.file_declarations import FileDeclaration
 from testgen.common.encrypt import DecryptText
@@ -199,6 +200,10 @@ class FlavorService:
     escaped_left_bracket = "["
     escape_clause = ""
     varchar_type = "VARCHAR(1000)"
+    # Whether the engine keeps the empty string as a value distinct from NULL
+    stores_empty_string = True
+    # Appended to a SELECT that reads no table, on an engine that requires a FROM clause
+    single_row_from = ""
     ddf_table_ref = "table_name"
     row_limiting_clause: RowLimitingClause = "limit"
 
@@ -450,6 +455,71 @@ class FlavorService:
     def string_literal_list(self, values: list[str]) -> str:
         """Return ``values`` as a comma-separated list of SQL string literals, or ``NULL`` when empty."""
         return ", ".join(self.string_literal(value) for value in values) or "NULL"
+
+    def value_list_text(self, value_expr: str) -> str:
+        """Return the SQL expression that casts a value to the text a value list is matched against."""
+        return f"CAST({value_expr} AS {self.varchar_type})"
+
+    def exact_text(self, text_expr: str) -> str:
+        """Return a text expression in a form that compares, and counts as distinct, byte for byte.
+
+        Values that differ only in case, accent, or trailing spaces stay distinct whatever the collation
+        of the column or session. Applies to a column's text and to a string literal alike.
+        """
+        return text_expr
+
+    def value_list_params(self, column_ref: str, column: ColumnChars | None, values: list[str]) -> dict[str, str]:
+        """Return the template parameters that match a column against a list of expected values.
+
+        A numeric column is matched by value against the list as numbers; any other column, or one
+        missing from the catalog, is matched exactly by its text against the list as strings.
+
+        Args:
+            column_ref: The quoted column reference.
+            column: The column's catalog entry, if the catalog has it.
+            values: The expected values, as parsed from the stored list.
+
+        Returns:
+            ``VALUE_LIST_COLUMN``, the column in the form compared with the list;
+            ``VALUE_LIST_DISTINCT``, the column in the form counted as distinct;
+            ``VALUE_LIST_LITERALS``, the list as SQL literals in the compared form;
+            ``VALUE_LIST_CT``, the number of distinct values in the list the column can hold;
+            ``VALUE_LIST_VALUE``, the column as shown in source data; and ``VALUE_LIST_ROWS``, a row
+            source of the list with columns ``expected_value``, as shown, and ``value_key``, in the
+            compared form.
+
+        Raises:
+            NonNumericValueError: A value in the list for a numeric column is not a number.
+        """
+        if column and column.general_type == "N":
+            numeric_ref = self.numeric_value(column_ref, column.column_type)
+            numbers = [format(number, "f") for number in parse_numeric_values(values)]
+            column_forms = (numeric_ref, numeric_ref, numeric_ref)
+            literal_pairs = [(number, number) for number in numbers]
+        else:
+            text_ref = self.value_list_text(self.text_value(column_ref, column.column_type if column else None))
+            exact_ref = self.exact_text(text_ref)
+            strings = [
+                value for value in dict.fromkeys(values) if value or self.stores_empty_string
+            ]
+            column_forms = (exact_ref, exact_ref, text_ref)
+            literal_pairs = [
+                (self.string_literal(value), self.exact_text(self.string_literal(value))) for value in strings
+            ]
+
+        rows = " UNION ALL ".join(
+            f"SELECT {shown} AS expected_value, {key} AS value_key{self.single_row_from}"
+            for shown, key in literal_pairs
+        )
+        return {
+            "VALUE_LIST_COLUMN": column_forms[0],
+            "VALUE_LIST_DISTINCT": column_forms[1],
+            "VALUE_LIST_LITERALS": ", ".join(key for _, key in literal_pairs) or "NULL",
+            "VALUE_LIST_CT": str(len(literal_pairs)),
+            "VALUE_LIST_VALUE": column_forms[2],
+            "VALUE_LIST_ROWS": rows
+            or f"SELECT NULL AS expected_value, NULL AS value_key{self.single_row_from} WHERE 1 = 0",
+        }
 
     def get_table_ref(self, schema: str, table: str, sql_flavor_code: str) -> str:
         """Return a table reference for SQL queries, qualified where the flavor qualifies."""
