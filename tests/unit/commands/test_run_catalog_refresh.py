@@ -34,6 +34,9 @@ def test_setup_with_only_profiling_leaves_the_catalog_to_profiling(mock_submit, 
         kwargs={"table_group_id": str(table_group.id)},
         source=JobSource.ui,
         project_code="DEFAULT",
+        job_schedule_id=None,
+        external_url=None,
+        caller_metadata=None,
     )
     mock_record.assert_called_once_with(RunOperation.LAUNCHED, mock_submit.return_value)
 

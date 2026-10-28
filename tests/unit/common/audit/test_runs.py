@@ -7,9 +7,13 @@ from testgen.common.audit import recorder
 from testgen.common.audit.record import Actor
 from testgen.common.audit.recorder import AuditContext, bind
 from testgen.common.audit.runs import RunOperation, record_run, record_runs
-from testgen.common.enums import JobKey, JobSource
+from testgen.common.enums import JobKey, JobSource, PublicJobKey
 
 pytestmark = pytest.mark.unit
+
+STARTED_BY_USERS_BUT_NOT_RUNS = {
+    PublicJobKey.run_test_generation: "writes tests rather than producing a run",
+}
 
 
 @pytest.fixture(autouse=True)
@@ -101,3 +105,14 @@ def test_deleting_no_runs_records_nothing(audit_session, audit_log):
     audit_session.commit()
 
     assert audit_log.records() == []
+
+
+@pytest.mark.parametrize("operation", [RunOperation.LAUNCHED, RunOperation.CANCELED])
+@pytest.mark.parametrize("job_key", [key for key in PublicJobKey if key not in STARTED_BY_USERS_BUT_NOT_RUNS])
+def test_every_kind_of_run_users_can_start_records_its_launch_and_cancel(job_key, operation, audit_session, audit_log):
+    """Runs are audited when users can start them. A run kind made startable by users needs actions of its own."""
+    record_run(operation, _job(job_key))
+    audit_session.commit()
+
+    [entry] = audit_log.records()
+    assert entry["action"].endswith(f".{operation}")
