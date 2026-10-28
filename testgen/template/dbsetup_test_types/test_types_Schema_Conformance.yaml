@@ -43,14 +43,14 @@ test_types:
     sql_flavor: bigquery
     template: |-
       WITH declared AS (
-            SELECT prop ->> 'name' AS declared_column,
+            SELECT COALESCE(NULLIF(prop ->> 'physicalName', ''), prop ->> 'name') AS declared_column,
                   prop ->> 'physicalType' AS declared_physical,
                   prop ->> 'logicalType' AS declared_logical
             FROM {APP_SCHEMA_NAME}.suite_versions sv
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
@@ -112,14 +112,14 @@ test_types:
     sql_flavor: databricks
     template: |-
       WITH declared AS (
-            SELECT prop ->> 'name' AS declared_column,
+            SELECT COALESCE(NULLIF(prop ->> 'physicalName', ''), prop ->> 'name') AS declared_column,
                   prop ->> 'physicalType' AS declared_physical,
                   prop ->> 'logicalType' AS declared_logical
             FROM {APP_SCHEMA_NAME}.suite_versions sv
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
@@ -181,14 +181,14 @@ test_types:
     sql_flavor: mssql
     template: |-
       WITH declared AS (
-            SELECT prop ->> 'name' AS declared_column,
+            SELECT COALESCE(NULLIF(prop ->> 'physicalName', ''), prop ->> 'name') AS declared_column,
                   prop ->> 'physicalType' AS declared_physical,
                   prop ->> 'logicalType' AS declared_logical
             FROM {APP_SCHEMA_NAME}.suite_versions sv
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
@@ -250,14 +250,14 @@ test_types:
     sql_flavor: postgresql
     template: |-
       WITH declared AS (
-            SELECT prop ->> 'name' AS declared_column,
+            SELECT COALESCE(NULLIF(prop ->> 'physicalName', ''), prop ->> 'name') AS declared_column,
                   prop ->> 'physicalType' AS declared_physical,
                   prop ->> 'logicalType' AS declared_logical
             FROM {APP_SCHEMA_NAME}.suite_versions sv
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
@@ -319,14 +319,14 @@ test_types:
     sql_flavor: redshift
     template: |-
       WITH declared AS (
-            SELECT prop ->> 'name' AS declared_column,
+            SELECT COALESCE(NULLIF(prop ->> 'physicalName', ''), prop ->> 'name') AS declared_column,
                   prop ->> 'physicalType' AS declared_physical,
                   prop ->> 'logicalType' AS declared_logical
             FROM {APP_SCHEMA_NAME}.suite_versions sv
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
@@ -388,14 +388,14 @@ test_types:
     sql_flavor: redshift_spectrum
     template: |-
       WITH declared AS (
-            SELECT prop ->> 'name' AS declared_column,
+            SELECT COALESCE(NULLIF(prop ->> 'physicalName', ''), prop ->> 'name') AS declared_column,
                   prop ->> 'physicalType' AS declared_physical,
                   prop ->> 'logicalType' AS declared_logical
             FROM {APP_SCHEMA_NAME}.suite_versions sv
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
@@ -457,14 +457,14 @@ test_types:
     sql_flavor: snowflake
     template: |-
       WITH declared AS (
-            SELECT prop ->> 'name' AS declared_column,
+            SELECT COALESCE(NULLIF(prop ->> 'physicalName', ''), prop ->> 'name') AS declared_column,
                   prop ->> 'physicalType' AS declared_physical,
                   prop ->> 'logicalType' AS declared_logical
             FROM {APP_SCHEMA_NAME}.suite_versions sv
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
@@ -526,14 +526,14 @@ test_types:
     sql_flavor: oracle
     template: |-
       WITH declared AS (
-            SELECT prop ->> 'name' AS declared_column,
+            SELECT COALESCE(NULLIF(prop ->> 'physicalName', ''), prop ->> 'name') AS declared_column,
                   prop ->> 'physicalType' AS declared_physical,
                   prop ->> 'logicalType' AS declared_logical
             FROM {APP_SCHEMA_NAME}.suite_versions sv
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
@@ -595,14 +595,14 @@ test_types:
     sql_flavor: sap_hana
     template: |-
       WITH declared AS (
-            SELECT prop ->> 'name' AS declared_column,
+            SELECT COALESCE(NULLIF(prop ->> 'physicalName', ''), prop ->> 'name') AS declared_column,
                   prop ->> 'physicalType' AS declared_physical,
                   prop ->> 'logicalType' AS declared_logical
             FROM {APP_SCHEMA_NAME}.suite_versions sv
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
@@ -664,14 +664,14 @@ test_types:
     sql_flavor: salesforce_data360
     template: |-
       WITH declared AS (
-            SELECT prop ->> 'name' AS declared_column,
+            SELECT COALESCE(NULLIF(prop ->> 'physicalName', ''), prop ->> 'name') AS declared_column,
                   prop ->> 'physicalType' AS declared_physical,
                   prop ->> 'logicalType' AS declared_logical
             FROM {APP_SCHEMA_NAME}.suite_versions sv
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
@@ -733,14 +733,14 @@ test_types:
     sql_flavor: duckdb
     template: |-
       WITH declared AS (
-            SELECT prop ->> 'name' AS declared_column,
+            SELECT COALESCE(NULLIF(prop ->> 'physicalName', ''), prop ->> 'name') AS declared_column,
                   prop ->> 'physicalType' AS declared_physical,
                   prop ->> 'logicalType' AS declared_logical
             FROM {APP_SCHEMA_NAME}.suite_versions sv
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND tbl ->> 'name' = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (

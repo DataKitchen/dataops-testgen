@@ -937,3 +937,65 @@ def test_a_bound_that_is_not_a_finite_number_renders_as_a_rule(baseline):
     document = _render_with(version=version, terms=[term], test_types=_COLUMN_TYPES)
 
     assert [rule["type"] for rule in _all_rules(document)] == ["custom"]
+
+
+# --- physical names ---
+
+
+def test_terms_on_a_physical_table_and_column_land_on_the_nodes_that_name_them():
+    version = _version(metadata_document={"schema": [{"name": "orders", "physicalName": "tbl_orders", "properties": [
+        {"name": "total", "physicalName": "amt"},
+    ]}]})
+    terms = [
+        _term(test_type="Row_Ct", table_name="tbl_orders", column_name=None, threshold_value="10",
+              contract_term_id="term-row-ct"),
+        _term(table_name="tbl_orders", column_name="amt", threshold_value="2", contract_term_id="term-required"),
+    ]
+    test_types = {
+        "Row_Ct": _test_type("Row_Ct", test_scope="table"),
+        "Required": _test_type("Required", test_scope="column"),
+    }
+
+    rendered = _render_with(version=version, terms=terms, test_types=test_types)
+
+    table, = rendered["schema"]
+    prop, = table["properties"]
+    assert (table["name"], table["physicalName"]) == ("orders", "tbl_orders")
+    assert [rule["id"] for rule in table["quality"]] == ["term-row-ct"]
+    assert (prop["name"], prop["physicalName"]) == ("total", "amt")
+    assert [rule["id"] for rule in prop["quality"]] == ["term-required"]
+
+
+def test_a_declaration_lands_on_the_property_that_names_its_physical_column():
+    version = _declaring_version({"name": "total", "physicalName": "amt", "logicalType": "number"})
+    version.metadata_document["schema"][0]["physicalName"] = "tbl_orders"
+    term = _term(test_type="Max_Val", table_name="tbl_orders", column_name="amt", baseline_value="100",
+                 threshold_value="", contract_term_id="term-max")
+
+    document = _render_with(version=version, terms=[term], test_types=_COLUMN_TYPES)
+
+    assert _property_named(document, "total")["logicalTypeOptions"] == {"maximum": 100}
+    assert _all_rules(document) == []
+
+
+def test_a_term_on_a_logical_table_name_is_refused_when_the_table_declares_a_physical_name():
+    version = _version(metadata_document={"schema": [{"name": "orders", "physicalName": "tbl_orders"}]})
+    term = _term(test_type="Row_Ct", table_name="orders", column_name=None, threshold_value="10")
+
+    with pytest.raises(OrphanedTermError, match="names table 'orders'"):
+        _render_with(version=version, terms=[term], test_types={"Row_Ct": _test_type("Row_Ct", test_scope="table")})
+
+
+def test_a_dupe_rows_term_names_its_columns_by_their_property_names():
+    version = _version(metadata_document={"schema": [{"name": "orders", "physicalName": "tbl_orders", "properties": [
+        {"name": "order", "physicalName": "order_id"}, {"name": "line_no"},
+    ]}]})
+    term = _term(
+        test_type="Dupe_Rows", table_name="tbl_orders", column_name=None, groupby_names='"order_id", "line_no"',
+        contract_term_id="term-dupe",
+    )
+    test_types = {"Dupe_Rows": _test_type("Dupe_Rows", test_scope="table", dq_dimension="Uniqueness")}
+
+    document = _render_with(version=version, terms=[term], test_types=test_types)
+
+    assert document["schema"][0]["quality"][0]["arguments"] == {"properties": ["order", "line_no"]}

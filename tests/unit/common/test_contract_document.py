@@ -823,3 +823,51 @@ def test_a_type_change_without_profiling_drops_the_format_and_values_of_the_prev
     assert _profiled_values(zip_prop) is None
     assert code["logicalTypeOptions"] == {"format": "email"}
     assert _profiled_values(code) == {"minLength": 3}
+
+
+# --- physical names ---
+
+
+def test_a_table_or_column_is_identified_by_its_physical_name_when_it_declares_one():
+    assert contract_document.physical_name({"name": "orders", "physicalName": "tbl_orders"}) == "tbl_orders"
+    assert contract_document.physical_name({"name": "orders"}) == "orders"
+    assert contract_document.physical_name({"name": "orders", "physicalName": ""}) == "orders"
+    assert contract_document.physical_name({"physicalName": "tbl_orders"}) == "tbl_orders"
+    assert contract_document.physical_name({}) is None
+
+
+def test_the_declared_tables_are_their_physical_names():
+    document = {"schema": [{"name": "orders", "physicalName": "tbl_orders"}, {"name": "customers"}]}
+    assert contract_document.declared_tables(document) == ["tbl_orders", "customers"]
+
+
+def test_refreshing_a_table_declared_by_physical_name_refreshes_it_in_place():
+    document = {"schema": [{"name": "orders", "physicalName": "tbl_orders", "properties": [
+        {"name": "identifier", "physicalName": "id", "businessName": "Order id"},
+    ]}]}
+    with (
+        patch.object(contract_document, "catalog_columns", return_value=[_column("id", "integer", "ID-Unique")]),
+        patch.object(contract_document, "_catalog_table", return_value=None),
+    ):
+        contract_document.refresh_tables(document, _table_group(), ["tbl_orders"])
+
+    table, = document["schema"]
+    prop, = table["properties"]
+    assert (table["name"], table["physicalName"]) == ("orders", "tbl_orders")
+    assert (prop["name"], prop["physicalName"], prop["businessName"]) == ("identifier", "id", "Order id")
+    assert prop["logicalType"] == "integer"
+    assert prop["primaryKey"] is True
+
+
+def test_profiled_values_follow_the_physical_names():
+    document = {"schema": [{"name": "orders", "physicalName": "tbl_orders", "properties": [
+        {"name": "total", "physicalName": "amt", "logicalType": "number"},
+    ]}]}
+    session = MagicMock()
+    session.scalar.return_value = None
+    session.scalars.return_value = [_profile("tbl_orders", "amt", min_value=1.0, max_value=9.0)]
+    session.execute.return_value = []
+    with patch.object(contract_document, "get_current_session", return_value=session):
+        contract_document.fill_profiled_values(document, uuid4(), uuid4(), ["tbl_orders"])
+
+    assert _profiled_values(document["schema"][0]["properties"][0]) == {"minimum": 1, "maximum": 9}

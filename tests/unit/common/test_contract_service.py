@@ -368,9 +368,12 @@ def test_discarding_the_contracts_only_version_is_refused():
 _RULE_TEST_TYPES = {
     code: TestType(
         test_type=code, default_parm_columns=columns, test_name_short=code.replace("_", " "),
-        test_scope="table" if code == "Row_Ct" else "column",
+        test_scope="table" if code in ("Row_Ct", "Dupe_Rows") else "column",
     )
-    for code, columns in {"Row_Ct": "threshold_value", "Required": "threshold_value", "Max_Val": "baseline_value,threshold_value"}.items()
+    for code, columns in {
+        "Row_Ct": "threshold_value", "Required": "threshold_value", "Max_Val": "baseline_value,threshold_value",
+        "Dupe_Rows": "groupby_names,skip_errors",
+    }.items()
 }
 
 
@@ -1479,3 +1482,54 @@ def test_generation_lands_in_the_draft_or_the_one_the_job_opens_without_opening_
         assert contract_service.generation_destination(suite) == number
 
     resolve_writable.assert_not_called()
+
+
+# --- physical names ---
+
+
+def test_a_declaration_is_compared_with_the_tests_on_its_physical_column():
+    stored = _metadata()
+    stored["schema"][0]["physicalName"] = "tbl_orders"
+    stored["schema"][0]["properties"][0].update(physicalName="amt", logicalTypeOptions={"maximum": 100})
+    document = copy.deepcopy(stored)
+    document["schema"][0]["properties"][0]["logicalTypeOptions"] = {"maximum": 200}
+    term = TestDefinition(
+        test_type="Max_Val", table_name="tbl_orders", column_name="amt", threshold_value="0", baseline_value="100"
+    )
+    with _save_stubs(stored, terms=[term]) as (suite, _, _calls):
+        saved = contract_service.save_metadata_document(suite, document)
+
+    assert saved.overridden_declarations == ["tbl_orders.amt: Max Val"]
+    assert saved.untested_declarations == []
+
+
+def test_removing_a_table_finds_its_descriptor_by_physical_name():
+    suite = _suite()
+    draft = SuiteVersion(
+        id=uuid4(), test_suite_id=suite.id, version=2,
+        metadata_document={"schema": [{"name": "orders", "physicalName": "tbl_orders"}, {"name": "customers"}]},
+    )
+    with (
+        patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
+        patch.object(SuiteVersion, "get", return_value=draft),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+    ):
+        contract_service.remove_table(suite, "tbl_orders")
+
+    assert [d["name"] for d in draft.metadata_document["schema"]] == ["customers"]
+
+
+def test_a_rule_naming_its_physically_named_column_by_property_name_is_refused_as_checkable():
+    stored = _metadata()
+    stored["schema"][0]["properties"][0]["physicalName"] = "amt"
+    document = copy.deepcopy(stored)
+    document["schema"][0]["properties"][0]["quality"] = [{
+        "id": "amount-dupes", "metric": "duplicateValues", "unit": "rows", "mustBeLessOrEqualTo": 0,
+        "arguments": {"properties": ["amount"]},
+    }]
+    with _save_stubs(stored) as (suite, _, _), pytest.raises(contract_service.CheckableRuleError) as raised:
+        contract_service.save_metadata_document(suite, document)
+
+    assert raised.value.problems == [
+        "$.schema[0].properties[0].quality[0]: orders.amt: amount-dupes is checked by the Dupe Rows test type."
+    ]

@@ -53,3 +53,12 @@ def test_check_refuses_a_table_the_contract_does_not_declare():
     assert exc_info.value.table_name == "customers"
     assert exc_info.value.declared == ["orders", "payments"]
     assert str(exc_info.value) == "Contract sales does not declare table customers."
+
+
+def test_a_table_declared_by_physical_name_is_writable_by_that_name():
+    document = {"schema": [{"name": "orders", "physicalName": "tbl_orders"}]}
+    with patch(f"{MODULE}.SuiteVersion") as suite_version:
+        suite_version.draft_for.return_value = MagicMock(metadata_document=document)
+        check_table_declared(_contract(), "tbl_orders")
+        with pytest.raises(UndeclaredTableError):
+            check_table_declared(_contract(), "orders")

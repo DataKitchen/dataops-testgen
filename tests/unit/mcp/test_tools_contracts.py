@@ -700,6 +700,29 @@ def test_metadata_narrows_to_one_column_inside_its_table(db_session_mock):
     assert "**Filters:** table `orders`, column `amount`" in out
 
 
+_PHYSICAL_DOCUMENT = {
+    "apiVersion": ODCS_API_VERSION, "kind": ODCS_KIND, "id": "orders-contract", "version": "4.0.0",
+    "schema": [
+        {"name": "orders", "physicalName": "tbl_orders", "properties": [
+            {"name": "total", "physicalName": "amt", "logicalType": "number"}, {"name": "placed_at"},
+        ]},
+        {"name": "customers", "properties": [{"name": "email", "logicalType": "string"}]},
+    ],
+}
+
+
+@pytest.mark.parametrize(("table_name", "column_name"), [("tbl_orders", "amt"), ("orders", "total")])
+def test_metadata_narrows_to_a_column_by_its_name_or_its_physical_name(db_session_mock, table_name, column_name):
+    out, _ = _read_metadata(
+        _contract(), _draft(document=_PHYSICAL_DOCUMENT), table_name=table_name, column_name=column_name
+    )
+
+    assert _narrowed(out) == {"schema": [{
+        "name": "orders", "physicalName": "tbl_orders",
+        "properties": [{"name": "total", "physicalName": "amt", "logicalType": "number"}],
+    }]}
+
+
 @pytest.mark.parametrize(
     "kwargs, message",
     [
@@ -713,6 +736,18 @@ def test_metadata_narrows_to_one_column_inside_its_table(db_session_mock):
 def test_metadata_narrowing_errors_name_what_exists(db_session_mock, kwargs, message):
     with pytest.raises(MCPUserError, match=re.escape(message)):
         _read_metadata(_contract(), _draft(document=_WIDE_DOCUMENT), **kwargs)
+
+
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        ({"table_name": "invoices"}, "Its tables are `orders` (`tbl_orders`), `customers`."),
+        ({"table_name": "orders", "column_name": "email"}, "Its columns are `total` (`amt`), `placed_at`."),
+    ],
+)
+def test_metadata_narrowing_errors_name_the_physical_names_they_accept(db_session_mock, kwargs, message):
+    with pytest.raises(MCPUserError, match=re.escape(message)):
+        _read_metadata(_contract(), _draft(document=_PHYSICAL_DOCUMENT), **kwargs)
 
 
 # --- update_contract_metadata ---
