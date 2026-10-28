@@ -434,3 +434,50 @@ def test_a_described_term_carries_its_description_as_its_name(round_trip):
     )
     assert declared["name"] == "No negative refunds"
     assert [rule["name"] for rule in properties["c_required_described"]["quality"]] == ["Few missing names"]
+
+
+def test_a_physically_named_export_imported_into_its_own_draft_plans_no_changes():
+    terms = [
+        TestDefinition(test_type="Required", schema_name="sales", table_name="tbl_orders", column_name="email_addr",
+                       contract_term_id="term-required", threshold_value="3"),
+        TestDefinition(test_type="Row_Ct", schema_name="sales", table_name="tbl_orders", column_name=None,
+                       contract_term_id="term-rows", threshold_value="10"),
+        TestDefinition(test_type="Dupe_Rows", schema_name="sales", table_name="tbl_orders", column_name=None,
+                       contract_term_id="term-dupes", groupby_names='"email_addr", "placed"', skip_errors=0),
+    ]
+    version = _version()
+    version.metadata_document["schema"] = [{"name": "orders", "physicalName": "tbl_orders", "properties": [
+        {"name": "email", "physicalName": "email_addr", "logicalType": "string"}, {"name": "placed"},
+    ]}]
+    test_types = {code: _test_type(code) for code in _CATALOGUE}
+    with (
+        patch.object(render, "_terms_for_version", return_value=terms),
+        patch.object(render, "_test_types_for", return_value=test_types),
+        patch.object(render, "_table_group_for", return_value=TableGroup(id=uuid4(), connection_id=1)),
+        patch.object(render, "_flavor_code_for", return_value="postgresql"),
+        patch.object(render, "_conditions_for", return_value={}),
+        patch.object(render, "_column_types_for", return_value={}),
+    ):
+        document = render_document(version)
+    declared_parameters = {code: parameters_of(test_type) for code, test_type in test_types.items()}
+    parameter_columns = {name for names in declared_parameters.values() for name in names}
+    baseline = [
+        _BaselineTerm(
+            id=uuid4(), test_type=term.test_type, schema_name=term.schema_name, table_name=term.table_name,
+            column_name=term.column_name, contract_term_id=term.contract_term_id,
+            values={name: getattr(term, name, None) for name in parameter_columns},
+            custom_metadata=term.custom_metadata, test_description=term.test_description,
+        )
+        for term in terms
+    ]
+
+    exported = yaml.safe_load(serialize_document(document))
+    split = split_document(exported, test_types, flavor=SqlFlavorCode.POSTGRESQL, qualify_tables=True)
+    changes = plan_changes(split.terms, baseline, schema_name="sales", declared_parameters=declared_parameters)
+
+    table, = exported["schema"]
+    assert (table["name"], table["physicalName"]) == ("orders", "tbl_orders")
+    assert (table["properties"][0]["name"], table["properties"][0]["physicalName"]) == ("email", "email_addr")
+    assert table["quality"][-1]["arguments"] == {"properties": ["email", "placed"]}
+    assert sorted(change.contract_term_id for change in changes) == ["term-dupes", "term-required", "term-rows"]
+    assert [change.contract_term_id for change in changes if change.action is not ImportAction.skip] == []

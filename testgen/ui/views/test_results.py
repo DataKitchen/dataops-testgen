@@ -29,6 +29,7 @@ from testgen.common.models.test_definition import (
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.common.pii_masking import get_pii_columns, mask_profiling_pii
 from testgen.common.test_result_disposition_service import (
+    DispositionUpdate,
     coerce_ui_disposition,
     set_test_results_disposition,
 )
@@ -318,7 +319,7 @@ class TestResultsPage(Page):
             test_result_ids = payload.get("test_result_ids", [])
             disposition = payload.get("status", "No Decision")
             if test_result_ids:
-                update_result_disposition(test_result_ids, disposition)
+                _toast_contract_drafts(update_result_disposition(test_result_ids, disposition))
                 st.cache_data.clear()
 
         @with_database_session
@@ -341,7 +342,7 @@ class TestResultsPage(Page):
                 flagged=filter_flagged,
             )
             if all_ids:
-                update_result_disposition(all_ids, disposition)
+                _toast_contract_drafts(update_result_disposition(all_ids, disposition))
                 st.cache_data.clear()
 
         @with_database_session
@@ -1034,5 +1035,10 @@ def get_report_file_data(update_progress, tr_data, mask_pii: bool = False) -> FI
 def update_result_disposition(
     test_result_ids: list[str],
     disposition: str,
-) -> None:
-    set_test_results_disposition(test_result_ids, coerce_ui_disposition(disposition))
+) -> DispositionUpdate:
+    return set_test_results_disposition(test_result_ids, coerce_ui_disposition(disposition))
+
+
+def _toast_contract_drafts(update: DispositionUpdate) -> None:
+    for change in update.contract_drafts:
+        st.toast(change.notice(), icon=":material/info:")

@@ -10,6 +10,7 @@ import pytest
 from testgen.common.enums import JobStatus, SuiteType
 from testgen.common.models.suite_version import FrozenVersionError, RemovedInDraftError, UnmatchedInDraftError
 from testgen.common.models.test_run import TestRunSummary
+from testgen.common.test_result_disposition_service import ContractDraftChange, DispositionUpdate
 from testgen.ui.views import test_results as view
 from testgen.ui.views.test_results import CONTRACT_VERSION_MESSAGE, TestResultsPage
 
@@ -151,3 +152,52 @@ def test_adding_a_note_looks_the_test_up_in_any_contract_version():
 
     lookup.assert_called_once_with("td", suite_types=view.TEST_SUITE_TYPES)
     add_note.assert_called_once()
+
+
+@pytest.mark.parametrize(("test_count", "notice"), [
+    (1, "The test is muted in draft v4 of the contract Orders. The active version keeps running it until the draft "
+        "is frozen."),
+    (3, "The 3 tests are muted in draft v4 of the contract Orders. The active version keeps running them until the "
+        "draft is frozen."),
+])
+def test_a_disposition_landing_on_a_contract_draft_is_told_in_a_toast(test_count, notice):
+    handlers = _render(SuiteType.CONTRACT)
+    update = DispositionUpdate(
+        matched=test_count, passed_skipped=0,
+        contract_drafts=(ContractDraftChange("Orders", 4, test_count, muted=True),),
+    )
+    with (
+        patch.object(view, "st") as st_mock,
+        patch.object(view, "set_test_results_disposition", return_value=update),
+    ):
+        handlers["on_DispositionChanged_change"]({"test_result_ids": ["tr"], "status": "Inactive"})
+
+    st_mock.toast.assert_called_once()
+    assert st_mock.toast.call_args.args[0] == notice
+
+
+def test_muting_all_filtered_results_tells_the_contract_draft_in_a_toast():
+    handlers = _render(SuiteType.CONTRACT)
+    update = DispositionUpdate(
+        matched=1, passed_skipped=0, contract_drafts=(ContractDraftChange("Orders", 4, 1, muted=False),),
+    )
+    with (
+        patch.object(view, "st") as st_mock,
+        patch.object(view.test_result_queries, "get_test_result_ids", return_value=["tr"]),
+        patch.object(view, "set_test_results_disposition", return_value=update),
+    ):
+        handlers["on_DispositionAll_change"]({"filters": {}, "status": "Confirmed"})
+
+    assert st_mock.toast.call_args.args[0].startswith("The test is unmuted in draft v4 of the contract Orders.")
+
+
+def test_a_disposition_that_lands_on_no_contract_draft_shows_no_toast():
+    handlers = _render(SuiteType.REGULAR)
+    with (
+        patch.object(view, "st") as st_mock,
+        patch.object(view, "set_test_results_disposition", return_value=DispositionUpdate(matched=1, passed_skipped=0)),
+    ):
+        handlers["on_DispositionChanged_change"]({"test_result_ids": ["tr"], "status": "Inactive"})
+
+    st_mock.toast.assert_not_called()
+    st_mock.cache_data.clear.assert_called_once()

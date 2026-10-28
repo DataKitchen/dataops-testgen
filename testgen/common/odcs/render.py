@@ -15,6 +15,7 @@ from uuid import UUID
 
 from sqlalchemy import select, text
 
+from testgen.common.contract_document import physical_column_names, physical_name
 from testgen.common.enums import MANAGED_TEST_TYPES
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, SqlFlavorCode
 from testgen.common.models import get_current_session
@@ -36,6 +37,7 @@ from testgen.common.odcs.quality_rules import (
     lov_values,
     project_rule,
     property_declaration,
+    rename_argument_columns,
     rule_scope,
     rule_shape,
     synthesized_marker,
@@ -189,7 +191,7 @@ def _attach_to_property(
     unmatched subject would mint its own duplicate property instead of reusing the first one.
     """
     properties = table.setdefault("properties", [])
-    prop = next((candidate for candidate in properties if candidate.get("name") == subject), None)
+    prop = next((candidate for candidate in properties if physical_name(candidate) == subject), None)
     if prop is None:
         slug = _measure_property_name(subject)
         if slug in synthesized_names:
@@ -269,7 +271,7 @@ def _declared_property(
     name = _property_name(term, test_type)
     if name in synthesized_names:
         return None
-    return next((prop for prop in table.get("properties", []) if prop.get("name") == name), None)
+    return next((prop for prop in table.get("properties", []) if physical_name(prop) == name), None)
 
 
 def _declare(prop: dict[str, Any], declaration: dict[str, Any], claimed: dict[tuple[str, ...], Any]) -> bool:
@@ -325,7 +327,9 @@ def render_document(
     ``contract_name``, when given, is the document's ``name``.
 
     A term renders as a declaration when ``property_declaration`` finds one on its declared
-    column that no earlier term contradicts (``_declare``), otherwise as a quality rule.
+    column that no earlier term contradicts (``_declare``), otherwise as a quality rule. A term lands
+    on the table and column whose ``physical_name`` it names, and a rule's arguments name columns by
+    their property names.
 
     Returns a new document; the version's own ``metadata_document`` is never mutated. Raises
     ``OrphanedTermError`` if a term names a table the document does not declare, names a test
@@ -347,7 +351,7 @@ def render_document(
         return document
 
     test_types = _test_types_for({term.test_type for term in terms})
-    tables_by_name = {table["name"]: table for table in document.get("schema", [])}
+    tables_by_name = {physical_name(table): table for table in document.get("schema", [])}
     for term in terms:
         if term.table_name not in tables_by_name:
             raise OrphanedTermError(
@@ -405,6 +409,9 @@ def render_document(
             condition=conditions.get(term.test_type),
             column_type=column_types.get((term.table_name, term.column_name)),
             logical_type=logical_type,
+        )
+        rule = rename_argument_columns(
+            rule, {column: name for name, column in physical_column_names(table).items()}
         )
         prop = _attach_rule(table, term, test_type, rule, synthesized_names)
         if prop is not None and term.test_type == "LOV_Match":
