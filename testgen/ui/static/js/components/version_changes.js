@@ -12,7 +12,6 @@
  * @property {string} column
  * @property {string} test_type
  * @property {FieldChange[]} fields
- * @property {string[]} omitted
  *
  * @typedef RuleChanges
  * @type {object}
@@ -114,7 +113,6 @@ const RuleTable = (/** @type RuleChanges */ rules) => {
                     span({ class: 'text-secondary' }, '  →  '),
                     span(field.after),
                 )),
-                row.omitted.length ? span({ class: 'text-secondary' }, `Omitted: ${row.omitted.join(', ')}`) : '',
             ),
         };
     });

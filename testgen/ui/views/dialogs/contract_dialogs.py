@@ -152,7 +152,7 @@ def contract_props(
         source, target = int(payload["source"]), int(payload["target"])
         state["comparison"] = contract_history_service.version_comparison(suite, source, target)
         state["changes"] = contract_history_service.version_changes(
-            suite, source, target, hide_source_data=not session.auth.user_has_permission("view_pii"),
+            suite, source, target, mask_pii=not session.auth.user_has_permission("view_pii"),
         )
         _set_state(suite, _Dialog.HISTORY, state)
 

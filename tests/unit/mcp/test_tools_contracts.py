@@ -872,6 +872,12 @@ def _term(term_id, **fields):
     )
 
 
+def _pii_perms(view_pii):
+    perms = MagicMock()
+    perms.has_permission.side_effect = lambda permission, _code: permission != "view_pii" or view_pii
+    return perms
+
+
 def _diff(suite, source, target, before, after, **kwargs):
     terms = {source.id: {term.contract_term_id: term for term in before}, target.id: {term.contract_term_id: term for term in after}}
     with (
@@ -883,6 +889,8 @@ def _diff(suite, source, target, before, after, **kwargs):
         patch("testgen.common.contract_comparison._terms_by_identity", side_effect=lambda version_id: terms[version_id]),
         patch(f"{MODULE}._test_type_labels", return_value={"Required": "Required Entry", "Max_Val": "Maximum Value"}),
         patch(f"{MODULE}.mcp_source_data_protected", return_value=kwargs.pop("protected", False)),
+        patch(f"{MODULE}.get_project_permissions", return_value=_pii_perms(kwargs.pop("view_pii", True))),
+        patch("testgen.common.contract_comparison.get_pii_columns", return_value=kwargs.pop("pii_columns", set())),
     ):
         return diff_contract_versions(test_suite_id=str(suite.id), from_version=source.version, **kwargs)
 
@@ -951,6 +959,37 @@ def test_a_diff_hides_calibration_values_under_protection(db_session_mock):
 
     assert "120" not in out
     assert "**Omitted Fields:** baseline_value" in out
+
+
+def _pii_diff(**kwargs):
+    target = _draft(4, document={"name": "Orders", "schema": [{"name": "orders"}]})
+    return _diff(
+        _contract(), _frozen(3), target,
+        [_term("max-amount", test_type="Max_Val", baseline_value="100", severity="Fail")],
+        [_term("max-amount", test_type="Max_Val", baseline_value="120", severity="Warning", last_auto_gen_date=_LATER)],
+        **kwargs,
+    )
+
+
+def test_a_diff_redacts_calibration_values_of_a_pii_column_for_a_caller_without_view_pii(db_session_mock):
+    out = _pii_diff(view_pii=False, pii_columns={"amount"})
+
+    assert "100" not in out and "120" not in out
+    assert "**PII Redacted Fields:** baseline_value" in out
+    assert "| `severity` | Fail | Warning |" in out
+
+
+def test_a_diff_shows_calibration_values_of_a_pii_column_to_a_caller_with_view_pii(db_session_mock):
+    out = _pii_diff(view_pii=True, pii_columns={"amount"})
+
+    assert "| `baseline_value` | 100 | 120 |" in out
+    assert "PII Redacted" not in out
+
+
+def test_a_diff_shows_calibration_values_of_a_column_that_is_not_pii(db_session_mock):
+    out = _pii_diff(view_pii=False, pii_columns={"email"})
+
+    assert "| `baseline_value` | 100 | 120 |" in out
 
 
 def test_a_diff_of_a_version_with_itself_is_refused(db_session_mock):

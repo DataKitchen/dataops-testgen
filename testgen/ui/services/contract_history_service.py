@@ -2,6 +2,7 @@
 
 import json
 import re
+from collections.abc import Collection
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -12,8 +13,8 @@ from testgen.common import contract_comparison, contract_service
 from testgen.common.contract_comparison import (
     DocumentChange,
     DocumentChangeKind,
-    HiddenValue,
     ItemName,
+    PiiRedactedValue,
     TermChange,
     TermChangeKind,
 )
@@ -22,7 +23,7 @@ from testgen.common.models import get_current_session
 from testgen.common.models.suite_version import SuiteVersion, format_version, version_state
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_suite import TestSuite
-from testgen.common.source_value_fields import CALIBRATION_SHAPED_PARAM_COLUMNS
+from testgen.common.pii_masking import PII_REDACTED
 from testgen.ui.services.contract_import_service import IMPORT_PREVIEW_ROW_LIMIT
 
 _VERSION_LIMIT = 1000
@@ -119,12 +120,12 @@ def version_comparison(suite: TestSuite, source: int, target: int) -> dict[str, 
 
 
 
-def version_changes(suite: TestSuite, source: int, target: int, hide_source_data: bool) -> dict[str, Any]:
+def version_changes(suite: TestSuite, source: int, target: int, mask_pii: bool) -> dict[str, Any]:
     """What differs between two versions of the contract, quality rule by rule and in its metadata.
 
     :param source: the version number compared from
     :param target: the version number compared to
-    :param hide_source_data: whether values that can carry source data are left out
+    :param mask_pii: whether values of PII columns that can carry source data are redacted
     :return: the rows of both halves, or the reason a version could not be found
     """
     result: dict[str, Any] = {"source": source, "target": target, "error": None, "rules": None, "metadata": None}
@@ -134,8 +135,11 @@ def version_changes(suite: TestSuite, source: int, target: int, hide_source_data
     except ValueError as e:
         result["error"] = str(e)
         return result
-    result["rules"] = rule_changes(source_version.id, target_version.id, hide_source_data=hide_source_data)
-    result["metadata"] = metadata_changes(source_version, target_version, suite, hide_source_data=hide_source_data)
+    pii_columns = (
+        contract_comparison.pii_columns(suite, source_version, target_version) if mask_pii else frozenset()
+    )
+    result["rules"] = rule_changes(source_version.id, target_version.id, pii_columns=pii_columns)
+    result["metadata"] = metadata_changes(source_version, target_version, suite, pii_columns=pii_columns)
     return result
 
 _RULE_CHANGE_ORDER = {
@@ -161,12 +165,12 @@ _FIELD_LABELS = {
 _NO_VALUE = "—"
 
 
-def rule_changes(source_id: UUID, target_id: UUID, hide_source_data: bool) -> dict[str, Any]:
+def rule_changes(source_id: UUID, target_id: UUID, pii_columns: Collection[tuple[str, str]]) -> dict[str, Any]:
     """The quality rules that differ between two versions, as rows for the Changes view.
 
     :param source_id: the id of the version compared from
     :param target_id: the id of the version compared to
-    :param hide_source_data: whether fields that can carry source data are left out of each row
+    :param pii_columns: the ``(table, column)`` pairs whose values that can carry source data are redacted
     :return: a summary of the counts, the rows (removals, then changes, then additions), and the empty state
     """
     changes = sorted(
@@ -180,7 +184,7 @@ def rule_changes(source_id: UUID, target_id: UUID, hide_source_data: bool) -> di
     counts = [(added, "added"), (removed, "removed"), (len(changes) - added - removed, "changed")]
     return {
         "summary": " · ".join(f"{count} {noun}" for count, noun in counts if count) or None,
-        "rows": [_rule_row(change, test_types, hide_source_data) for change in changes[:IMPORT_PREVIEW_ROW_LIMIT]],
+        "rows": [_rule_row(change, test_types, pii_columns) for change in changes[:IMPORT_PREVIEW_ROW_LIMIT]],
         "total_rows": len(changes),
         "truncated": len(changes) > IMPORT_PREVIEW_ROW_LIMIT,
         "empty_state": None if changes else "No quality rules changed.",
@@ -194,7 +198,9 @@ def _test_types(codes: set[str]) -> dict[str, TestType]:
     return {row.test_type: row for row in rows}
 
 
-def _rule_row(change: TermChange, test_types: dict[str, TestType], hide_source_data: bool) -> dict[str, Any]:
+def _rule_row(
+    change: TermChange, test_types: dict[str, TestType], pii_columns: Collection[tuple[str, str]]
+) -> dict[str, Any]:
     term = change.term
     test_type = test_types.get(term.test_type)
     prompts = {column: prompt for column, prompt, _ in test_type.param_fields} if test_type else {}
@@ -202,8 +208,12 @@ def _rule_row(change: TermChange, test_types: dict[str, TestType], hide_source_d
     def label(field: str) -> str:
         return prompts.get(field) or _FIELD_LABELS.get(field) or field.replace("_", " ").capitalize()
 
+    redacted = contract_comparison.pii_redacted_fields(change, pii_columns)
+
     def value(field: str, side: Any) -> str:
         raw = getattr(side, field)
+        if field in redacted:
+            return PII_REDACTED
         if field == "test_type":
             return _short_name(raw, test_types)
         if raw is None or raw == "":
@@ -212,7 +222,6 @@ def _rule_row(change: TermChange, test_types: dict[str, TestType], hide_source_d
             return "Yes" if raw else "No"
         return str(raw)
 
-    omitted = [field for field in change.fields if hide_source_data and field in CALIBRATION_SHAPED_PARAM_COLUMNS]
     return {
         "change": change.kind.value,
         "table": term.table_name,
@@ -221,9 +230,7 @@ def _rule_row(change: TermChange, test_types: dict[str, TestType], hide_source_d
         "fields": [
             {"label": label(field), "before": value(field, change.before), "after": value(field, change.after)}
             for field in change.fields
-            if field not in omitted
         ],
-        "omitted": [label(field) for field in omitted],
     }
 
 
@@ -252,18 +259,20 @@ _CONTAINER_KEYS = frozenset({"properties", "members"})
 
 
 def metadata_changes(
-    source: SuiteVersion, target: SuiteVersion, suite: TestSuite, hide_source_data: bool
+    source: SuiteVersion, target: SuiteVersion, suite: TestSuite, pii_columns: Collection[tuple[str, str]]
 ) -> dict[str, Any]:
     """What differs between two versions' metadata documents, as rows for the Changes view.
 
     :param source: the version compared from
     :param target: the version compared to
     :param suite: the contract both versions belong to
-    :param hide_source_data: whether values that can carry source data are shown as hidden
+    :param pii_columns: the ``(table, column)`` pairs whose values that can carry source data are redacted
     :return: a summary of the count, one row per change with its section, field and both values, ordered by
         section, and the empty state
     """
-    changes = contract_comparison.version_document_changes(source, target, suite, hide_source_data)
+    changes = contract_comparison.version_document_changes(
+        source, target, suite, hide_source_data=False, pii_columns=pii_columns
+    )
     rows = sorted((_metadata_row(change) for change in changes), key=lambda row: _SECTION_ORDER.index(row["section"]))
     return {
         "summary": f"{len(changes)} changed" if changes else None,
@@ -297,8 +306,8 @@ def _metadata_value(value: Any, kind: DocumentChangeKind) -> str:
         return _NO_VALUE
     if isinstance(value, dict | list) and kind is not DocumentChangeKind.CHANGED:
         return kind.value
-    if _holds_hidden(value):
-        return "Hidden"
+    if _holds_redacted(value):
+        return PII_REDACTED
     if isinstance(value, bool):
         return "Yes" if value else "No"
     if isinstance(value, dict | list):
@@ -306,11 +315,11 @@ def _metadata_value(value: Any, kind: DocumentChangeKind) -> str:
     return str(value)
 
 
-def _holds_hidden(value: Any) -> bool:
-    if isinstance(value, HiddenValue):
+def _holds_redacted(value: Any) -> bool:
+    if isinstance(value, PiiRedactedValue):
         return True
     if isinstance(value, dict):
-        return any(_holds_hidden(item) for item in value.values())
+        return any(_holds_redacted(item) for item in value.values())
     if isinstance(value, list):
-        return any(_holds_hidden(item) for item in value)
+        return any(_holds_redacted(item) for item in value)
     return False

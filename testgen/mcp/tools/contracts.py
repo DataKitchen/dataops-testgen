@@ -47,7 +47,7 @@ from testgen.common.source_value_fields import (
 )
 from testgen.common.test_definition_export_import_service import ImportAction
 from testgen.mcp.exceptions import MCPUserError
-from testgen.mcp.permissions import get_mcp_username, mcp_permission
+from testgen.mcp.permissions import get_mcp_username, get_project_permissions, mcp_permission
 from testgen.mcp.services.source_data_protection import mcp_source_data_only, mcp_source_data_protected
 from testgen.mcp.tools.common import (
     DocGroup,
@@ -555,6 +555,9 @@ def diff_contract_versions(
     Lists the tests added, removed, or changed between the two versions. Each changed test shows the
     fields that differ, and whether test generation rewrote it, someone edited it, or both. The
     first page also lists what changed in the metadata document, by path.
+
+    Without permission to view PII, a test on a PII column names the changed fields that can carry
+    values from the data, without their values.
     """
     validate_page(page)
     validate_limit(limit, 100)
@@ -573,6 +576,11 @@ def diff_contract_versions(
     page_changes = changes[(page - 1) * limit : page * limit]
     labels = _test_type_labels({change.term.test_type for change in page_changes})
     hide_source_data = mcp_source_data_protected()
+    pii_columns = (
+        frozenset()
+        if get_project_permissions().has_permission("view_pii", suite.project_code)
+        else contract_comparison.pii_columns(suite, source, target)
+    )
 
     doc = MdDoc()
     doc.heading(1, f"Contract `{suite.test_suite}`: {_version_label(source, suite)} to {_version_label(target, suite)}")
@@ -610,7 +618,10 @@ def diff_contract_versions(
                 continue
             doc.heading(3, f"{change.kind.value}: {MdDoc.code(change.term.contract_term_id or str(change.term.id))}")
             hidden = [field for field in change.fields if hide_source_data and field in CALIBRATION_SHAPED_PARAM_COLUMNS]
-            shown = [field for field in change.fields if field not in hidden]
+            redacted = [
+                field for field in contract_comparison.pii_redacted_fields(change, pii_columns) if field not in hidden
+            ]
+            shown = [field for field in change.fields if field not in hidden and field not in redacted]
             render_diff_table(
                 doc,
                 {field: getattr(change.before, field) for field in shown},
@@ -620,6 +631,8 @@ def diff_contract_versions(
             )
             if hidden:
                 doc.field("Omitted Fields", ", ".join(hidden))
+            if redacted:
+                doc.field("PII Redacted Fields", ", ".join(redacted))
         if footer := format_page_footer(len(changes), page, limit):
             doc.text(footer)
     return doc.render()
