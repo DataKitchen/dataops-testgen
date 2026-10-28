@@ -10,12 +10,13 @@ from testgen.common import read_template_sql_file
 from testgen.common.clean_sql import concat_columns, null_if_empty, parse_value_list, strip_trailing_semicolons
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import (
+    FinalParam,
     fetch_dict_from_db,
     get_flavor_service,
     get_tg_schema,
     replace_params,
 )
-from testgen.common.enums import MonitorCalculation, SuiteType, TestScope
+from testgen.common.enums import VALUE_LIST_TEST_TYPES, MonitorCalculation, SuiteType, TestScope
 from testgen.common.freshness_service import (
     count_excluded_minutes,
     effective_exclude_weekends,
@@ -34,8 +35,7 @@ from testgen.common.read_file import replace_templated_functions
 from testgen.utils import to_sql_timestamp
 
 # Separates the measures of the CAT tests batched into one aggregate query. parse_cat_results splits
-# on it and indexes positionally, so it must be a sequence no measure can contain. That ruled out '|':
-# LOV_All's measure is itself a pipe-joined list of the column's distinct values.
+# on it and indexes positionally, so it must be a sequence no measure can contain.
 MEASURE_SEPARATOR = "~^~"
 
 
@@ -464,11 +464,20 @@ class TestExecutionSQL:
             # After every user-supplied parameter, since any of them may contain {DATA_SCHEMA}
             params["DATA_SCHEMA"] = test_def.schema_name
 
-            # These two go last, so their values are never expanded by a later substitution
-            params["BASELINE_VALUE_LIST"] = self.flavor_service.string_literal_list(
-                parse_value_list(test_def.baseline_value)
+            # Substituted last, in one pass, so placeholder text in a listed value is never expanded
+            params["BASELINE_VALUE_LIST"] = FinalParam(
+                self.flavor_service.string_literal_list(parse_value_list(test_def.baseline_value))
             )
-            params["BASELINE_VALUE_LITERAL"] = self.flavor_service.string_literal_or_null(test_def.baseline_value)
+            params["BASELINE_VALUE_LITERAL"] = FinalParam(
+                self.flavor_service.string_literal_or_null(test_def.baseline_value)
+            )
+            if test_def.test_type in VALUE_LIST_TEST_TYPES:
+                value_list_params = self.flavor_service.value_list_params(
+                    f"{quote}{test_def.column_name or ''}{quote}",
+                    test_def.column_chars,
+                    parse_value_list(test_def.baseline_value),
+                )
+                params.update({key: FinalParam(value) for key, value in value_list_params.items()})
 
         return params
 

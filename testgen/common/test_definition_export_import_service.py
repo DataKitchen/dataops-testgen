@@ -231,7 +231,8 @@ class TestDefinitionExport(BaseModel):
         default=None,
         description="Tests that compare against a baseline value only. The expected value, list, or pattern, "
         "depending on the test type: e.g. the constant for `Constant`, the earliest date for `Match_Min_Date`, the "
-        "expected values in the form `('Val1','Val2')` for `LOV_Match`, or the pattern for `Pattern_Match`.",
+        "expected values as a comma-separated list for `LOV_Match` and `LOV_All`, or the pattern for "
+        "`Pattern_Match`.",
     )
     baseline_value_ct: str | None = Field(
         default=None,

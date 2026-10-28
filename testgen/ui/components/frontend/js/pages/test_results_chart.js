@@ -69,9 +69,9 @@ const TestResultsChart = (/** @type Properties */ props) => {
         let maxY = null;
         let minThreshold = null;
         let maxThreshold = null;
-        // *_numeric is NULL when the stored measure is not a number (LOV_All's pipe-joined
-        // value list). Skip those rather than feed them to Math.min/max, which would
-        // coerce null to 0 and drag the axis to the origin.
+        // *_numeric is NULL when the stored measure is not a number (a Value Match All
+        // result that stored its pipe-joined value list). Skip those rather than feed them
+        // to Math.min/max, which would coerce null to 0 and drag the axis to the origin.
         for (const item of data) {
             const measure = item.result_measure_numeric;
             const threshold = item.threshold_value_numeric;

@@ -3,6 +3,7 @@ from typing import Annotated
 
 from pydantic import Field
 
+from testgen.common.clean_sql import NonNumericValueError
 from testgen.common.data_catalog_service import fetch_table_sample
 from testgen.common.database.table_group_service import schema_label_for_table_group
 from testgen.common.models import with_database_session
@@ -139,7 +140,10 @@ def get_source_data_query(
     if test_definition_id:
         context = _resolve_test_definition_context(test_definition_id, reference_date)
         entity_label, entity_id = "Test Definition", test_definition_id
-        query = build_test_result_query(context, limit)
+        try:
+            query = build_test_result_query(context, limit)
+        except NonNumericValueError as error:
+            raise MCPUserError(str(error)) from error
     else:
         context = _resolve_hygiene_context(issue_id)
         entity_label, entity_id = "Hygiene Issue", issue_id

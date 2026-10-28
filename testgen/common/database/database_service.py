@@ -460,9 +460,19 @@ def apply_params(query: str, params: dict[str, Any]) -> str:
     return query
 
 
+class FinalParam(str):
+    """A parameter value that ``replace_params`` substitutes after every other value, in a single pass, so
+    placeholder text inside it is never expanded."""
+
+
 def replace_params(query: str, params: dict[str, Any]) -> str:
+    final = {key: value for key, value in params.items() if isinstance(value, FinalParam)}
     for key, value in params.items():
-        query = query.replace(f"{{{key}}}", "" if value is None else str(value))
+        if key not in final:
+            query = query.replace(f"{{{key}}}", "" if value is None else str(value))
+    if final:
+        pattern = re.compile("|".join(re.escape(f"{{{key}}}") for key in final))
+        query = pattern.sub(lambda match: final[match.group(0)[1:-1]], query)
     return query
 
 
