@@ -21,7 +21,6 @@ from testgen.common.enums import MANAGED_TEST_TYPES, JobSource, SuiteType
 from testgen.common.flavors import TableGroupSchemaLabel, table_group_schema_label
 from testgen.common.generation_set_service import CONTRACT_GENERATION_SET, MONITOR_GENERATION_SET
 from testgen.common.models import database_session, get_current_session, with_database_session
-from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
 from testgen.common.models.suite_version import FrozenVersionError, RemovedInDraftError
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
@@ -39,6 +38,7 @@ from testgen.common.models.test_definition import (
 )
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.pii_masking import get_pii_columns, mask_profiling_pii
+from testgen.common.run_service import launch_run
 from testgen.common.test_definition_export_import_service import (
     IMPORT_ACTION_LABELS,
     ImportAction,
@@ -689,7 +689,7 @@ class TestDefinitionsPage(Page):
             message = run_started_message(test_suite.suite_type, selected_name)
             show_link = session.current_page != "test-runs"
             try:
-                JobExecution.submit(
+                launch_run(
                     job_key="run-tests",
                     kwargs={
                         "test_suite_id": str(selected_id),

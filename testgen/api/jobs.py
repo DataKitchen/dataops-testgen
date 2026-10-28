@@ -32,6 +32,7 @@ from testgen.commands.test_generation import (
     unprofiled_regeneration_note,
 )
 from testgen.common import contract_service
+from testgen.common.audit.runs import RunOperation
 from testgen.common.enums import (
     TEST_SUITE_TYPES,
     JobKey,
@@ -46,6 +47,7 @@ from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.suite_version import VersionState, format_version
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.run_service import launch_run, request_run_transition
 from testgen.common.test_definition_export_import_service import ContractVersion
 
 _error_responses = {
@@ -63,7 +65,7 @@ router = APIRouter(tags=["Jobs"], dependencies=[Depends(db_session, scope="funct
 )
 def submit_profiling(table_group: TableGroup = resolve_table_group("edit")):  # noqa: B008
     """Profiles the table group's tables, as its table filters or file declarations select them."""
-    job = JobExecution.submit(
+    job = launch_run(
         job_key=JobKey.run_profile,
         kwargs={"table_group_id": str(table_group.id)},
         source=JobSource.api,
@@ -113,7 +115,7 @@ def submit_test_run(
     if target is not None:
         kwargs["version_id"] = str(target.version.id)
 
-    job = JobExecution.submit(
+    job = launch_run(
         job_key=JobKey.run_tests,
         kwargs=kwargs,
         source=JobSource.api,
@@ -220,7 +222,7 @@ def cancel_job(job: JobExecution = resolve_job("edit")):  # noqa: B008
 
     The returned `status` is `cancel_requested` until the job stops, then `canceled`.
     """
-    if not job.request_cancel():
+    if not request_run_transition(job, RunOperation.CANCELED):
         raise api_error(409, "invalid_status_transition", f"Cannot cancel job in '{job.status}' status")
     return JobResponse.model_validate(job, from_attributes=True)
 

@@ -52,6 +52,14 @@ class AuditAction(StrEnum):
     SCORECARD_CREATED = "scorecard.created"
     SCORECARD_UPDATED = "scorecard.updated"
     SCORECARD_DELETED = "scorecard.deleted"
+    PROFILING_RUN_LAUNCHED = "profiling_run.launched"
+    PROFILING_RUN_PAUSED = "profiling_run.paused"
+    PROFILING_RUN_RESUMED = "profiling_run.resumed"
+    PROFILING_RUN_CANCELED = "profiling_run.canceled"
+    PROFILING_RUN_DELETED = "profiling_run.deleted"
+    TEST_RUN_LAUNCHED = "test_run.launched"
+    TEST_RUN_CANCELED = "test_run.canceled"
+    TEST_RUN_DELETED = "test_run.deleted"
 
 
 class AuditTargetType(StrEnum):
@@ -73,6 +81,8 @@ class AuditTargetType(StrEnum):
     NOTIFICATION = "notification"
     NOTIFICATION_DESTINATION = "notification_destination"
     SCORECARD = "scorecard"
+    PROFILING_RUN = "profiling_run"
+    TEST_RUN = "test_run"
 
 
 CHANGE_ACTIONS = frozenset({

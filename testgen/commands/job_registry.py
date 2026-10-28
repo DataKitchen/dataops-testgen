@@ -45,9 +45,9 @@ class JobConfig:
     `scheduler_source` is the value the scheduler tags `JobExecution.source`
     with when it spawns this job key — ``"scheduler"`` for user-facing jobs,
     ``"system"`` for system-internal jobs (e.g., retention cleanup). Read
-    only by the scheduler; direct `JobExecution.submit(source=...)` callers
-    (UI, follow-up enqueues, CLI) set their own source independently and do
-    not consult this field.
+    only by the scheduler; callers that queue a job themselves (UI, follow-up
+    enqueues, CLI) set their own source independently and do not consult this
+    field.
     """
 
     handler: Callable

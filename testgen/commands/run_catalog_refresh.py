@@ -4,6 +4,8 @@ from uuid import UUID
 
 from testgen.commands.run_refresh_data_chars import run_data_chars_refresh
 from testgen.commands.test_generation import run_monitor_generation
+from testgen.common.audit.record import Actor
+from testgen.common.audit.recorder import AuditContext, bind, current_context
 from testgen.common.database.database_service import set_target_db_params
 from testgen.common.enums import JobKey, JobSource
 from testgen.common.job_context import job_context
@@ -11,7 +13,9 @@ from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.table_group import TableGroup
+from testgen.common.models.user import User
 from testgen.common.monitor_service import INITIAL_MONITOR_TYPES
+from testgen.common.run_service import launch_run
 
 LOG = logging.getLogger("testgen")
 
@@ -31,7 +35,7 @@ def submit_table_group_setup(
     """
     if run_profiling and not monitor_suite_id:
         # Profiling refreshes the catalog itself.
-        JobExecution.submit(
+        launch_run(
             job_key=JobKey.run_profile,
             kwargs={"table_group_id": str(table_group.id)},
             source=source,
@@ -39,24 +43,32 @@ def submit_table_group_setup(
         )
         return
 
+    requester = current_context().actor if run_profiling else None
     JobExecution.submit(
         job_key=JobKey.refresh_data_catalog,
         kwargs={
             "table_group_id": str(table_group.id),
             "monitor_suite_id": str(monitor_suite_id) if monitor_suite_id else None,
             "run_profiling": run_profiling,
+            **({"requested_by": str(requester.id)} if requester and requester.id else {}),
         },
         source=source,
         project_code=table_group.project_code,
     )
 
 
-def run_catalog_refresh(table_group_id: str, monitor_suite_id: str | None = None, run_profiling: bool = False) -> None:
+def run_catalog_refresh(
+    table_group_id: str,
+    monitor_suite_id: str | None = None,
+    run_profiling: bool = False,
+    requested_by: str | None = None,
+) -> None:
     """Refresh a table group's data catalog, then run the setup steps that read it.
 
     :param table_group_id: Table group whose catalog is refreshed.
     :param monitor_suite_id: Monitor suite to generate the initial monitors for once the catalog is written.
     :param run_profiling: Submit a profiling run for the table group after the other steps.
+    :param requested_by: Id of the user who asked for the setup, to whom the profiling run's launch is attributed.
     :raises Exception: The first error from the refresh or the monitor generation, re-raised once the other steps
         have run.
     """
@@ -87,13 +99,22 @@ def run_catalog_refresh(table_group_id: str, monitor_suite_id: str | None = None
             first_error = first_error or error
 
     if run_profiling:
-        JobExecution.submit(
+        source = job_context.get().source
+        bind(AuditContext(source=source, actor=_requester(requested_by)))
+        launch_run(
             job_key=JobKey.run_profile,
             kwargs={"table_group_id": table_group_id},
-            source=job_context.get().source,
+            source=source,
             project_code=table_group.project_code,
         )
         get_current_session().commit()
 
     if first_error:
         raise first_error
+
+
+def _requester(user_id: str | None) -> Actor | None:
+    if not user_id:
+        return None
+    user = get_current_session().get(User, UUID(user_id))
+    return Actor.of(user) if user else Actor(id=UUID(user_id), username=None)

@@ -60,6 +60,12 @@ def set_context_resolver(resolver: Callable[[], AuditContext | None]) -> None:
     _context_resolver = resolver
 
 
+@never_raises(lambda: _SYSTEM_CONTEXT)
+def current_context() -> AuditContext:
+    """The context a record made now on the current session is attributed to."""
+    return _context_of(get_current_session())
+
+
 @never_raises()
 def record(
     action: AuditAction,

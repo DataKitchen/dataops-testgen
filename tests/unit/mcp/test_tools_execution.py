@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 
+from testgen.common.audit.runs import RunOperation
 from testgen.common.enums import SuiteType
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_definition import TestDefinition
@@ -142,9 +143,10 @@ def test_running_a_version_of_a_regular_suite_is_refused(db_session_mock):
 # --- run_tests --------------------------------------------------------------
 
 
-@patch("testgen.mcp.tools.execution.JobExecution")
+@patch("testgen.common.run_service.record_run")
+@patch("testgen.common.run_service.JobExecution")
 @patch("testgen.mcp.tools.common.TestSuite")
-def test_run_tests_submits_job(mock_suite_cls, mock_job_exec, db_session_mock):
+def test_run_tests_submits_job(mock_suite_cls, mock_job_exec, mock_record, db_session_mock):
     suite_id = uuid4()
     suite = _mock_test_suite(suite_id=suite_id)
     mock_suite_cls.get.return_value = suite
@@ -161,6 +163,7 @@ def test_run_tests_submits_job(mock_suite_cls, mock_job_exec, db_session_mock):
     assert call_kwargs["kwargs"] == {"test_suite_id": str(suite_id)}
     assert call_kwargs["source"] == "mcp"
     assert call_kwargs["project_code"] == "demo"
+    mock_record.assert_called_once_with(RunOperation.LAUNCHED, submitted)
 
     assert "Test run submitted for `Quality Suite`" in result
     assert str(submitted.id) in result
@@ -175,7 +178,7 @@ def test_run_tests_invalid_uuid(db_session_mock):
         run_tests("not-a-uuid")
 
 
-@patch("testgen.mcp.tools.execution.JobExecution")
+@patch("testgen.common.run_service.JobExecution")
 @patch("testgen.mcp.tools.common.TestSuite")
 def test_run_tests_passes_a_match_schema_override(mock_suite_cls, mock_job_exec, db_session_mock):
     suite_id = uuid4()
@@ -192,7 +195,7 @@ def test_run_tests_passes_a_match_schema_override(mock_suite_cls, mock_job_exec,
     }
 
 
-@patch("testgen.mcp.tools.execution.JobExecution")
+@patch("testgen.common.run_service.JobExecution")
 @patch("testgen.mcp.tools.common.TestSuite")
 def test_run_tests_passes_caller_metadata(mock_suite_cls, mock_job_exec, db_session_mock):
     suite_id = uuid4()
@@ -208,7 +211,7 @@ def test_run_tests_passes_caller_metadata(mock_suite_cls, mock_job_exec, db_sess
     }
 
 
-@patch("testgen.mcp.tools.execution.JobExecution")
+@patch("testgen.common.run_service.JobExecution")
 @patch("testgen.mcp.tools.common.TestSuite")
 def test_run_tests_rejects_metadata_that_is_not_an_object(mock_suite_cls, mock_job_exec, db_session_mock):
     suite_id = uuid4()
@@ -222,7 +225,7 @@ def test_run_tests_rejects_metadata_that_is_not_an_object(mock_suite_cls, mock_j
     mock_job_exec.submit.assert_not_called()
 
 
-@patch("testgen.mcp.tools.execution.JobExecution")
+@patch("testgen.common.run_service.JobExecution")
 @patch("testgen.mcp.tools.common.TestSuite")
 def test_run_tests_rejects_a_schema_that_would_end_the_quoting(
     mock_suite_cls, mock_job_exec, db_session_mock
@@ -240,7 +243,7 @@ def test_run_tests_rejects_a_schema_that_would_end_the_quoting(
     mock_job_exec.submit.assert_not_called()
 
 
-@patch("testgen.mcp.tools.execution.JobExecution")
+@patch("testgen.common.run_service.JobExecution")
 @patch("testgen.mcp.tools.common.TestSuite")
 def test_run_tests_suite_not_found_or_inaccessible(mock_suite_cls, mock_job_exec, db_session_mock):
     """Unknown UUID, monitor suite, and forbidden project all collapse to the same SQL-side
@@ -257,9 +260,10 @@ def test_run_tests_suite_not_found_or_inaccessible(mock_suite_cls, mock_job_exec
 # --- run_profiling ----------------------------------------------------------
 
 
-@patch("testgen.mcp.tools.execution.JobExecution")
+@patch("testgen.common.run_service.record_run")
+@patch("testgen.common.run_service.JobExecution")
 @patch("testgen.mcp.tools.common.TableGroup")
-def test_run_profiling_submits_job(mock_tg_cls, mock_job_exec, db_session_mock):
+def test_run_profiling_submits_job(mock_tg_cls, mock_job_exec, mock_record, db_session_mock):
     group_id = uuid4()
     tg = _mock_table_group(group_id=group_id)
     mock_tg_cls.get.return_value = tg
@@ -275,6 +279,7 @@ def test_run_profiling_submits_job(mock_tg_cls, mock_job_exec, db_session_mock):
     assert call_kwargs["kwargs"] == {"table_group_id": str(group_id)}
     assert call_kwargs["source"] == "mcp"
     assert call_kwargs["project_code"] == "demo"
+    mock_record.assert_called_once_with(RunOperation.LAUNCHED, submitted)
 
     assert "Profiling run submitted for `core_tables`" in result
     assert str(submitted.id) in result
@@ -289,7 +294,7 @@ def test_run_profiling_invalid_uuid(db_session_mock):
         run_profiling("not-a-uuid")
 
 
-@patch("testgen.mcp.tools.execution.JobExecution")
+@patch("testgen.common.run_service.JobExecution")
 @patch("testgen.mcp.tools.common.TableGroup")
 def test_run_profiling_table_group_not_found_or_inaccessible(mock_tg_cls, mock_job_exec, db_session_mock):
     mock_tg_cls.get.return_value = None
@@ -596,7 +601,8 @@ def test_cancel_test_run_not_found_or_inaccessible(db_session_mock):
             cancel_test_run(str(uuid4()))
 
 
-def test_cancel_test_run_terminal_status(db_session_mock):
+@patch("testgen.common.run_service.record_run")
+def test_cancel_test_run_terminal_status(mock_record, db_session_mock):
     job = _mock_job(status="completed", request_cancel_returns=False)
 
     from testgen.mcp.tools.execution import cancel_test_run
@@ -604,9 +610,11 @@ def test_cancel_test_run_terminal_status(db_session_mock):
     with _patch_job_lookup(job):
         with pytest.raises(MCPUserError, match=r"Cannot cancel.*current status is Completed"):
             cancel_test_run(str(uuid4()))
+    mock_record.assert_not_called()
 
 
-def test_cancel_test_run_success(db_session_mock):
+@patch("testgen.common.run_service.record_run")
+def test_cancel_test_run_success(mock_record, db_session_mock):
     job_id = uuid4()
     job = _mock_job(job_id=job_id, status="pending")
 
@@ -620,6 +628,8 @@ def test_cancel_test_run_success(db_session_mock):
 
     with _patch_job_lookup(job):
         result = cancel_test_run(str(job_id))
+
+    mock_record.assert_called_once_with(RunOperation.CANCELED, job, "pending")
 
     assert "Test run cancellation requested" in result
     assert str(job_id) in result
@@ -670,7 +680,8 @@ def test_cancel_profiling_run_not_found_or_inaccessible(db_session_mock):
             cancel_profiling_run(str(uuid4()))
 
 
-def test_cancel_profiling_run_terminal_status(db_session_mock):
+@patch("testgen.common.run_service.record_run")
+def test_cancel_profiling_run_terminal_status(mock_record, db_session_mock):
     job = _mock_job(status="error", request_cancel_returns=False)
 
     from testgen.mcp.tools.execution import cancel_profiling_run
@@ -678,9 +689,11 @@ def test_cancel_profiling_run_terminal_status(db_session_mock):
     with _patch_job_lookup(job):
         with pytest.raises(MCPUserError, match=r"Cannot cancel.*current status is Error"):
             cancel_profiling_run(str(uuid4()))
+    mock_record.assert_not_called()
 
 
-def test_cancel_profiling_run_success(db_session_mock):
+@patch("testgen.common.run_service.record_run")
+def test_cancel_profiling_run_success(mock_record, db_session_mock):
     job_id = uuid4()
     job = _mock_job(job_id=job_id, status="running")
 
@@ -694,6 +707,8 @@ def test_cancel_profiling_run_success(db_session_mock):
 
     with _patch_job_lookup(job):
         result = cancel_profiling_run(str(job_id))
+
+    mock_record.assert_called_once_with(RunOperation.CANCELED, job, "running")
 
     assert "Profiling run cancellation requested" in result
     assert str(job_id) in result

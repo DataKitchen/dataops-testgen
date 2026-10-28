@@ -25,12 +25,12 @@ from testgen.common.database.table_group_service import (
 from testgen.common.enums import JobSource
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
-from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import ProfilingRunNotificationSettings
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal, default_profiling_masks
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.monitor_service import enable_monitoring
+from testgen.common.run_service import launch_run
 from testgen.common.sampling_requirements import sampled_profile_gaps
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
@@ -158,7 +158,7 @@ class TableGroupsPage(Page):
             message = f"Profiling run started for table group '{table_group['table_groups_name']}'."
             show_link = session.current_page != "profiling-runs"
             try:
-                JobExecution.submit(
+                launch_run(
                     job_key="run-profile",
                     kwargs={"table_group_id": str(table_group["id"])},
                     source=JobSource.ui,

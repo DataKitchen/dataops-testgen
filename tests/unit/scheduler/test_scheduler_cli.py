@@ -106,6 +106,45 @@ def test_job_start_tags_source_from_job_config(scheduler_instance, job_data):
     assert added.source == "system"
 
 
+@pytest.mark.parametrize(("job_key", "action"), [
+    (JobKey.run_profile, "profiling_run.launched"),
+    (JobKey.run_tests, "test_run.launched"),
+])
+def test_a_scheduled_run_is_recorded_with_its_schedule_and_no_actor(
+    job_key, action, scheduler_instance, audit_session, audit_log
+):
+    schedule_id = uuid4()
+    cli_job = CliJob(
+        cron_expr="0 * * * *", cron_tz="UTC", key=job_key, kwargs={}, project_code="DEMO",
+        job_schedule_id=schedule_id, delayed_policy=DelayedPolicy.SKIP,
+    )
+    submitted = JobExecution(id=uuid4(), job_key=job_key, project_code="DEMO")
+
+    with patch("testgen.scheduler.cli_scheduler.JobExecution.submit", return_value=submitted):
+        scheduler_instance.start_job(cli_job, datetime.now(UTC))
+    audit_session.commit()
+
+    [entry] = audit_log.records()
+    assert entry["action"] == action
+    assert entry["targets"] == [str(submitted.id)]
+    assert (entry["source"], entry["actor_id"], entry["actor_username"]) == ("scheduler", None, None)
+    assert (entry["cause_type"], entry["cause_id"]) == ("schedule", str(schedule_id))
+
+
+def test_a_scheduled_job_that_is_not_a_run_is_not_recorded(scheduler_instance, audit_session, audit_log):
+    cli_job = CliJob(
+        cron_expr="0 * * * *", cron_tz="UTC", key=JobKey.run_data_cleanup, kwargs={}, project_code="DEMO",
+        job_schedule_id=uuid4(), delayed_policy=DelayedPolicy.SKIP,
+    )
+    submitted = JobExecution(id=uuid4(), job_key=JobKey.run_data_cleanup, project_code="DEMO")
+
+    with patch("testgen.scheduler.cli_scheduler.JobExecution.submit", return_value=submitted):
+        scheduler_instance.start_job(cli_job, datetime.now(UTC))
+    audit_session.commit()
+
+    assert audit_log.records() == []
+
+
 def test_shutdown_no_jobs(scheduler_instance):
     with (
         patch.object(scheduler_instance, "start") as start_mock,

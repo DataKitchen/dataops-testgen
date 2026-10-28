@@ -10,9 +10,12 @@ from uuid import UUID
 
 from testgen.commands.job_registry import JOB_DISPATCH, run_final_callbacks
 from testgen.commands.run_upgrade_db_config import is_db_revision_up_to_date
+from testgen.common.audit.actions import AuditTargetType
+from testgen.common.audit.recorder import AuditContext, bind
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import JobSchedule
+from testgen.common.run_service import launch_run
 from testgen.scheduler.base import DelayedPolicy, Job, Scheduler
 from testgen.scheduler.job_executor import JobExecutor
 
@@ -71,10 +74,12 @@ class CliScheduler(Scheduler):
     @with_database_session
     def start_job(self, job: CliJob, triggering_time: datetime) -> None:
         LOG.info("Submitting job '%s' due '%s'", job.key, triggering_time)
-        JobExecution.submit(
+        source = JOB_DISPATCH[job.key].scheduler_source
+        bind(AuditContext(source=source, cause_type=AuditTargetType.SCHEDULE, cause_id=str(job.job_schedule_id)))
+        launch_run(
             job_key=job.key,
             kwargs=job.kwargs,
-            source=JOB_DISPATCH[job.key].scheduler_source,
+            source=source,
             project_code=job.project_code,
             job_schedule_id=job.job_schedule_id,
         )
