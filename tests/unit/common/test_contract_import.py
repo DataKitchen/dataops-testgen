@@ -598,11 +598,11 @@ def test_a_key_match_prefers_the_active_term_to_its_muted_twin(muted_threshold):
 @pytest.mark.parametrize(
     ("stored", "incoming", "same"),
     [
-        ("(1,2,3)", "('1','2','3')", True),
-        ("('Y', 'N')", "('Y','N')", True),
-        ("( 'Y' ,'N' )", "('Y','N')", True),
-        ("('Y','N')", "('N','Y')", False),
-        ("('Y','N')", "('Y','N','U')", False),
+        ("1,2,3", "1, 2, 3", True),
+        ("Y,N", "Y, N", True),
+        ('"a,b",c', '"a,b", c', True),
+        ("Y,N", "N,Y", False),
+        ("Y,N", "Y,N,U", False),
     ],
 )
 def test_a_list_of_values_compares_by_its_values(stored, incoming, same):

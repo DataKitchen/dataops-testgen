@@ -468,7 +468,7 @@ def test_a_list_of_values_term_declares_the_columns_enum_as_well_as_its_rule():
     )
     term = _term(
         test_type="LOV_Match", column_name="status", table_name="orders",
-        baseline_value="('Y','N')", threshold_value="0", contract_term_id="term-lov",
+        baseline_value="Y,N", threshold_value="0", contract_term_id="term-lov",
     )
     test_types = {"LOV_Match": _test_type("LOV_Match", test_scope="column", dq_dimension="Validity")}
 
@@ -492,7 +492,7 @@ def test_a_stored_enum_gives_way_to_the_list_of_values_term():
     )
     term = _term(
         test_type="LOV_Match", column_name="status", table_name="orders",
-        baseline_value="('Y','N')", threshold_value="0", contract_term_id="term-lov",
+        baseline_value="Y,N", threshold_value="0", contract_term_id="term-lov",
     )
     test_types = {"LOV_Match": _test_type("LOV_Match", test_scope="column", dq_dimension="Validity")}
 
@@ -510,7 +510,7 @@ def test_a_second_list_of_values_term_keeps_the_first_terms_enum():
             test_type="LOV_Match", column_name="status", table_name="orders",
             baseline_value=values, threshold_value="0", contract_term_id=term_id,
         )
-        for term_id, values in (("term-lov-a", "('Y','N')"), ("term-lov-b", "('X')"))
+        for term_id, values in (("term-lov-a", "Y,N"), ("term-lov-b", "X"))
     ]
     test_types = {"LOV_Match": _test_type("LOV_Match", test_scope="column", dq_dimension="Validity")}
 
@@ -628,7 +628,7 @@ def test_a_rendered_document_with_several_tables_and_both_rule_scopes_validates(
         _term(test_type="Row_Ct", column_name=None, table_name="orders", threshold_value="10", contract_term_id="term-row-ct"),
         _term(
             test_type="LOV_Match", column_name="status", table_name="orders",
-            baseline_value="('Y','N')", threshold_value="0", contract_term_id="term-lov",
+            baseline_value="Y,N", threshold_value="0", contract_term_id="term-lov",
         ),
         _term(
             test_type="Avg_Shift", column_name="SUM(total_amount)", table_name="orders",

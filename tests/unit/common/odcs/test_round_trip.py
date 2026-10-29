@@ -22,7 +22,6 @@ from testgen.common.odcs.quality_rules import (
     RuleScope,
     _groupby_columns,
     is_declaration_marker,
-    lov_values,
     resolve_declarations,
     resolve_rule,
 )
@@ -82,9 +81,9 @@ _TERMS: list[tuple[str, str | None, str | None, dict]] = [
      {"baseline_ct": "1000", "baseline_value_ct": "950", "threshold_value": "0.05"}),
     ("Row_Ct", None, None, {"threshold_value": "100"}),
     ("Dupe_Rows", "c_dupe", "string", {"groupby_names": '"c_dupe"', "skip_errors": 2}),
-    ("LOV_Match", "c_lov", "string", {"baseline_value": "('Y','N','it''s')", "threshold_value": "0"}),
-    ("LOV_Match", "c_lov_numbers", "integer", {"baseline_value": "(1,2,3)", "threshold_value": "0"}),
-    ("LOV_Match", "c_lov_spaced", "string", {"baseline_value": "('Y', 'N')", "threshold_value": "0"}),
+    ("LOV_Match", "c_lov", "string", {"baseline_value": "Y,N,it's,\"a,b\"", "threshold_value": "0"}),
+    ("LOV_Match", "c_lov_numbers", "integer", {"baseline_value": "1,2,3", "threshold_value": "0"}),
+    ("LOV_Match", "c_lov_spaced", "string", {"baseline_value": "Y, N", "threshold_value": "0"}),
     ("Pattern_Match", "c_pattern", "string", {"baseline_value": "[A-Z]{3}", "threshold_value": "1"}),
     ("Required_No_Placeholder", "c_rnp", "string", {"baseline_value": '"",N/A,"a,b"', "threshold_value": "0"}),
     ("Email_Format", "c_email", "string", {"threshold_value": "2"}),
@@ -205,9 +204,7 @@ def _declared_parameters(term: TestDefinition) -> dict:
 
 
 def _comparable(test_type: str, name: str, value: object) -> object:
-    if name == "baseline_value" and test_type == "LOV_Match":
-        return lov_values(value)
-    if name == "baseline_value" and test_type == "Required_No_Placeholder":
+    if name == "baseline_value" and test_type in ("LOV_Match", "LOV_All", "Required_No_Placeholder"):
         return parse_value_list(value)
     if name == "groupby_names":
         return _groupby_columns(SimpleNamespace(groupby_names=value))

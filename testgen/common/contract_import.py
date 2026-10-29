@@ -22,6 +22,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from testgen.commands.test_generation import reconcile_contract_conformance
 from testgen.common import contract_document
+from testgen.common.clean_sql import parse_value_list
 from testgen.common.contract_rules import (
     RuleResolver,
     all_test_types,
@@ -58,7 +59,6 @@ from testgen.common.odcs.quality_rules import (
     drop_generated_metadata,
     is_declaration_marker,
     is_synthesized_property,
-    lov_values,
     mark_unverifiable,
     names_one_column,
     resolve_declarations,
@@ -520,17 +520,20 @@ def _parameter_values(test_type: str, parameters: dict[str, Any], declared_param
     }
     if "threshold_value" in values and values["threshold_value"] is None:
         values["threshold_value"] = "0"
-    if test_type == "LOV_Match" and values.get("baseline_value"):
-        # A list of values compares by the values it holds, so ``(1,2,3)`` and ``('Y', 'N')`` equal
-        # the quoted, comma-only literal the document's values read back as.
-        values["baseline_value"] = lov_values(values["baseline_value"]) or values["baseline_value"]
+    if test_type in VALUE_LIST_TEST_TYPES and values.get("baseline_value"):
+        # A list compares by the values it holds, so ``a, b`` equals the ``a,b`` the document reads back as.
+        values["baseline_value"] = parse_value_list(values["baseline_value"])
     return values
 
 
 _MIDNIGHT = re.compile(r"^(\d{4}-\d{2}-\d{2})[ T]00:00:00(\.0+)?$")
 _DECIMAL = re.compile(r"^-?(0|[1-9]\d*)\.\d+$")
 # Parameters whose value is text even when it reads as a decimal number.
-_TEXT_PARAMETERS = frozenset({("Pattern_Match", "baseline_value"), ("Required_No_Placeholder", "baseline_value")})
+_TEXT_PARAMETERS = frozenset({
+    ("Pattern_Match", "baseline_value"),
+    ("Required_No_Placeholder", "baseline_value"),
+    *((test_type, "baseline_value") for test_type in VALUE_LIST_TEST_TYPES),
+})
 
 
 def _comparable(value: Any, numeric: bool = True) -> str | None:
