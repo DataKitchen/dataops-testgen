@@ -64,7 +64,6 @@ def report_profiling_run(job_exec: JobExecution) -> None:
     connection = Connection.get(profiling_run.connection_id)
     properties = {
         "source": job_exec.source.upper(),
-        "username": job_exec.kwargs.get("username"),
         "sql_flavor": connection.sql_flavor_code if connection else None,
         "sampling": table_group.profile_use_sampling if table_group else None,
         "table_count": profiling_run.table_ct or 0,
@@ -74,7 +73,7 @@ def report_profiling_run(job_exec: JobExecution) -> None:
     # A run a restart ended was active until the restart, so its total includes the downtime.
     if job_exec.error_message != RESTARTED_MESSAGE:
         properties["run_duration"] = run_duration_seconds(job_exec.active_seconds, job_exec.status)
-    MixpanelService().send_event("run-profiling", **properties)
+    MixpanelService().send_event("run-profiling", username=job_exec.kwargs.get("username"), **properties)
 
 
 @with_database_session
