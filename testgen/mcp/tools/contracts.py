@@ -4,24 +4,21 @@ discarding versions, and importing an ODCS document."""
 import copy
 import hashlib
 import hmac
-import json
 import re
 import secrets
-from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Annotated, Any
-from uuid import UUID
 
 import yaml
 from pydantic import Field
 from sqlalchemy import select
-from sqlalchemy.types import TypeDecorator
 
 from testgen import settings
-from testgen.common import contract_creation, contract_import, contract_service
+from testgen.common import contract_comparison, contract_creation, contract_import, contract_service
 from testgen.common.audit.test_suites import record_contract_created
 from testgen.common.auth import get_jwt_signing_key
+from testgen.common.contract_comparison import TermChangeKind
 from testgen.common.contract_document import PROFILED_VALUES
 from testgen.common.contract_import import (
     ContractIdentityError,
@@ -31,19 +28,27 @@ from testgen.common.contract_import import (
 )
 from testgen.common.contract_service import CheckableRuleError, InvalidContractDocumentError, OwnedFieldError
 from testgen.common.database.test_suite_service import validate_test_suite_fields
-from testgen.common.enums import JOB_STATUS_LABEL, MANAGED_TEST_TYPES, SuiteType
+from testgen.common.enums import JOB_STATUS_LABEL, SuiteType
 from testgen.common.flavors import SqlFlavorCode
 from testgen.common.merge_patch import apply_merge_patch
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.suite_version import SuiteVersion, VersionState, format_version, version_state
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestDefinition, TestType
+from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.odcs.quality_rules import CONVERSION_PROPERTIES
+from testgen.common.source_value_fields import (
+    CALIBRATION_SHAPED_PARAM_COLUMNS,
+    SOURCE_VALUE_PROPERTY_FIELDS,
+    SOURCE_VALUE_RULE_FIELDS,
+    SOURCE_VALUE_TYPE_OPTIONS,
+    hidden_slots,
+    value_digest,
+)
 from testgen.common.test_definition_export_import_service import ImportAction
 from testgen.mcp.exceptions import MCPUserError
-from testgen.mcp.permissions import get_mcp_username, mcp_permission
+from testgen.mcp.permissions import get_mcp_username, get_project_permissions, mcp_permission
 from testgen.mcp.services.source_data_protection import mcp_source_data_only, mcp_source_data_protected
 from testgen.mcp.tools.common import (
     DocGroup,
@@ -59,7 +64,6 @@ from testgen.mcp.tools.common import (
     validate_page,
 )
 from testgen.mcp.tools.markdown import MdDoc, format_datetime
-from testgen.mcp.tools.test_definitions import CALIBRATION_SHAPED_PARAM_COLUMNS
 
 _DOC_GROUP = DocGroup.CONTRACTS
 
@@ -125,88 +129,19 @@ class _DocumentChunk:
         doc.code_block(self.pieces[self.number - 1], language="yaml")
 
 
-# Document fields that can carry values from the source data: a column's value bounds, profiled
-# value bounds, examples and allowed values, and a quality rule's thresholds, arguments,
-# implementation and recorded baselines. A value a person typed cannot be told apart from one taken from the data, so
-# under source-data protection each is hidden uniformly. A rule's query is shown, as a test's
-# custom query is.
-_SOURCE_VALUE_TYPE_OPTIONS = frozenset({"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"})
-_SOURCE_VALUE_RULE_FIELDS = frozenset({
-    "mustBe",
-    "mustNotBe",
-    "mustBeGreaterThan",
-    "mustBeGreaterOrEqualTo",
-    "mustBeLessThan",
-    "mustBeLessOrEqualTo",
-    "mustBeBetween",
-    "mustNotBeBetween",
-    "arguments",
-    "implementation",
-})
-_SOURCE_VALUE_PROPERTY_FIELDS = frozenset({"examples", "enum"})
 _HIDDEN_FIELDS = (
-    "`logicalTypeOptions` " + ", ".join(f"`{key}`" for key in sorted(_SOURCE_VALUE_TYPE_OPTIONS)),
-    f"`{PROFILED_VALUES}` " + ", ".join(f"`{key}`" for key in sorted(_SOURCE_VALUE_TYPE_OPTIONS)),
-    ", ".join(f"`{key}`" for key in sorted(_SOURCE_VALUE_PROPERTY_FIELDS)),
-    "quality rule " + ", ".join(f"`{key}`" for key in sorted(_SOURCE_VALUE_RULE_FIELDS)),
+    "`logicalTypeOptions` " + ", ".join(f"`{key}`" for key in sorted(SOURCE_VALUE_TYPE_OPTIONS)),
+    f"`{PROFILED_VALUES}` " + ", ".join(f"`{key}`" for key in sorted(SOURCE_VALUE_TYPE_OPTIONS)),
+    ", ".join(f"`{key}`" for key in sorted(SOURCE_VALUE_PROPERTY_FIELDS)),
+    "quality rule " + ", ".join(f"`{key}`" for key in sorted(SOURCE_VALUE_RULE_FIELDS)),
     "quality rule `testgen` " + ", ".join(f"`{key}`" for key in sorted(CONVERSION_PROPERTIES)),
 )
 _PLACEHOLDER = re.compile(r"<hidden:([0-9a-f]{16})\.([0-9a-f]{16})>")
 _NOT_FOUND = object()
 
 
-@dataclass(frozen=True)
-class _HiddenSlot:
-    container: dict
-    key: str
-    path: str
-
-
-def _hidden_slots(node: Any, path: str = "$", in_quality: bool = False) -> Iterator[_HiddenSlot]:
-    """Each field of a metadata document node that can carry source-data values: ``examples``,
-    ``enum``, the value bounds of ``logicalTypeOptions`` and ``profiledValues``, and quality-rule
-    thresholds, arguments, implementations and ``testgen`` baseline properties."""
-    if isinstance(node, list):
-        for index, item in enumerate(node):
-            yield from _hidden_slots(item, f"{path}[{index}]", in_quality)
-        return
-    if not isinstance(node, dict):
-        return
-    for key, value in node.items():
-        child = f"{path}.{key}"
-        if key in _SOURCE_VALUE_PROPERTY_FIELDS or (in_quality and key in _SOURCE_VALUE_RULE_FIELDS):
-            yield _HiddenSlot(node, key, child)
-            continue
-        if key == "logicalTypeOptions" and isinstance(value, dict):
-            yield from _bound_slots(value, child)
-        elif key == "customProperties" and isinstance(value, list):
-            for index, entry in enumerate(value):
-                if (
-                    isinstance(entry, dict) and entry.get("property") == PROFILED_VALUES
-                    and isinstance(entry.get("value"), dict)
-                ):
-                    yield from _bound_slots(entry["value"], f"{child}[{index}].value")
-                elif (
-                    in_quality and isinstance(entry, dict) and entry.get("vendor") == "testgen"
-                    and entry.get("property") in CONVERSION_PROPERTIES and "value" in entry
-                ):
-                    yield _HiddenSlot(entry, "value", f"{child}[{index}].value")
-        yield from _hidden_slots(value, child, in_quality=key == "quality")
-
-
-def _bound_slots(options: dict, path: str) -> Iterator[_HiddenSlot]:
-    for option in options:
-        if option in _SOURCE_VALUE_TYPE_OPTIONS:
-            yield _HiddenSlot(options, option, f"{path}.{option}")
-
-
 def _placeholder_key() -> bytes:
     return hmac.new(get_jwt_signing_key(), b"contract-hidden-values", hashlib.sha256).digest()
-
-
-def _value_digest(key: bytes, salt: str, value: Any) -> str:
-    canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()
-    return hmac.new(key, salt.encode() + b"\0" + canonical, hashlib.sha256).hexdigest()[:16]
 
 
 def _placeholder(key: bytes, value: Any) -> str:
@@ -217,24 +152,15 @@ def _placeholder(key: bytes, value: Any) -> str:
     nor compared with another one.
     """
     salt = secrets.token_hex(8)
-    return f"<hidden:{salt}.{_value_digest(key, salt, value)}>"
+    return f"<hidden:{salt}.{value_digest(key, salt, value)}>"
 
 
 def _with_placeholders(node: Any) -> Any:
     """A copy of a metadata document node with each value that can carry source data replaced by a placeholder."""
     key = _placeholder_key()
     masked = copy.deepcopy(node)
-    for slot in list(_hidden_slots(masked)):
+    for slot in list(hidden_slots(masked)):
         slot.container[slot.key] = _placeholder(key, slot.container[slot.key])
-    return masked
-
-
-def _with_comparable_digests(node: Any, key: bytes) -> Any:
-    """A copy of a metadata document node with each value that can carry source data replaced by
-    an unsalted digest under ``key``, so equal values stay equal for a comparison."""
-    masked = copy.deepcopy(node)
-    for slot in list(_hidden_slots(masked)):
-        slot.container[slot.key] = _value_digest(key, "", slot.container[slot.key])
     return masked
 
 
@@ -248,16 +174,16 @@ def _resolve_placeholders(document: Any, stored: Any) -> Any:
     ``stored`` holds.
     """
     key: bytes | None = None
-    stored_values = [slot.container[slot.key] for slot in _hidden_slots(stored)]
+    stored_values = [slot.container[slot.key] for slot in hidden_slots(stored)]
     resolved = copy.deepcopy(document)
     stale = []
-    for slot in list(_hidden_slots(resolved)):
+    for slot in list(hidden_slots(resolved)):
         value = slot.container[slot.key]
         if isinstance(value, str) and (match := _PLACEHOLDER.fullmatch(value)):
             salt, digest = match.groups()
             key = key or _placeholder_key()
             found = next(
-                (stored for stored in stored_values if hmac.compare_digest(_value_digest(key, salt, stored), digest)),
+                (stored for stored in stored_values if hmac.compare_digest(value_digest(key, salt, stored), digest)),
                 _NOT_FOUND,
             )
             if found is _NOT_FOUND:
@@ -281,7 +207,7 @@ def _resolve_placeholders(document: Any, stored: Any) -> Any:
 
 def _blank_placeholder_slots(document: Any) -> Any:
     blanked = copy.deepcopy(document)
-    for slot in list(_hidden_slots(blanked)):
+    for slot in list(hidden_slots(blanked)):
         if isinstance(slot.container[slot.key], str) and _PLACEHOLDER.fullmatch(slot.container[slot.key]):
             slot.container[slot.key] = None
     return blanked
@@ -568,7 +494,11 @@ def update_contract_metadata(
     doc.heading(1, f"Contract `{suite.test_suite}` metadata updated")
     doc.field("Version", format_version(version.version, VersionState.DRAFT))
     doc.field("Mode", parsed_mode.value)
-    _render_document_changes(doc, before, version.metadata_document or {}, hide_source_data, heading="Changes")
+    _render_document_changes(
+        doc,
+        contract_comparison.document_changes(before, version.metadata_document or {}, hide_source_data),
+        heading="Changes",
+    )
     if saved.unverifiable_rules:
         doc.heading(2, f"Stored as unverifiable ({len(saved.unverifiable_rules)})")
         doc.text(
@@ -609,39 +539,6 @@ def _problem_lines(problems: list[str], hide_source_data: bool) -> list[str]:
     ]
 
 
-# Columns a term's diff compares: what the term checks and how, never bookkeeping.
-_TERM_DIFF_FIELDS = (
-    "test_type", "schema_name", "table_name", "column_name", "test_description", "test_active", "severity",
-    "skip_errors", "baseline_ct", "baseline_unique_ct", "baseline_value", "baseline_value_ct", "threshold_value",
-    "baseline_sum", "baseline_avg", "baseline_sd", "lower_tolerance", "upper_tolerance", "subset_condition",
-    "groupby_names", "having_condition", "window_date_column", "window_days", "match_schema_name",
-    "match_table_name", "match_column_names", "match_subset_condition", "match_groupby_names",
-    "match_having_condition", "history_calculation", "history_calculation_upper", "history_lookback",
-    "custom_query", "lock_refresh", "impact_dimension", "external_url", "custom_metadata",
-)
-
-
-class TermChangeKind(StrEnum):
-    ADDED = "Added"
-    REMOVED = "Removed"
-    EDITED = "Edited"
-    REGENERATED = "Regenerated"
-    REGENERATED_AND_EDITED = "Regenerated and edited"
-    CHANGED = "Changed"
-
-
-@dataclass(frozen=True)
-class _TermChange:
-    kind: TermChangeKind
-    before: TestDefinition | None
-    after: TestDefinition | None
-    fields: list[str]
-
-    @property
-    def term(self) -> TestDefinition:
-        return self.after or self.before
-
-
 @with_database_session
 @mcp_permission("view")
 def diff_contract_versions(
@@ -659,6 +556,9 @@ def diff_contract_versions(
     Lists the tests added, removed, or changed between the two versions. Each changed test shows the
     fields that differ, and whether test generation rewrote it, someone edited it, or both. The
     first page also lists what changed in the metadata document, by path.
+
+    Without permission to view PII, a test on a PII column names the changed fields that can carry
+    values from the data, without their values.
     """
     validate_page(page)
     validate_limit(limit, 100)
@@ -672,11 +572,16 @@ def diff_contract_versions(
     if target.id == source.id:
         raise MCPUserError(f"`from_version` and `to_version` are both v{source.version}. Pick two different versions.")
 
-    changes = _term_changes(source.id, target.id)
+    changes = contract_comparison.term_changes(source.id, target.id)
     counts = {kind: sum(1 for change in changes if change.kind is kind) for kind in TermChangeKind}
     page_changes = changes[(page - 1) * limit : page * limit]
     labels = _test_type_labels({change.term.test_type for change in page_changes})
     hide_source_data = mcp_source_data_protected()
+    pii_columns = (
+        frozenset()
+        if get_project_permissions().has_permission("view_pii", suite.project_code)
+        else contract_comparison.pii_columns(suite, source, target)
+    )
 
     doc = MdDoc()
     doc.heading(1, f"Contract `{suite.test_suite}`: {_version_label(source, suite)} to {_version_label(target, suite)}")
@@ -687,10 +592,7 @@ def diff_contract_versions(
         doc.text("No test changed.")
     if page == 1:
         _render_document_changes(
-            doc,
-            contract_service.document_with_contract_name(source, suite),
-            contract_service.document_with_contract_name(target, suite),
-            hide_source_data,
+            doc, contract_comparison.version_document_changes(source, target, suite, hide_source_data)
         )
 
     if changes and not page_changes:
@@ -717,7 +619,10 @@ def diff_contract_versions(
                 continue
             doc.heading(3, f"{change.kind.value}: {MdDoc.code(change.term.contract_term_id or str(change.term.id))}")
             hidden = [field for field in change.fields if hide_source_data and field in CALIBRATION_SHAPED_PARAM_COLUMNS]
-            shown = [field for field in change.fields if field not in hidden]
+            redacted = [
+                field for field in contract_comparison.pii_redacted_fields(change, pii_columns) if field not in hidden
+            ]
+            shown = [field for field in change.fields if field not in hidden and field not in redacted]
             render_diff_table(
                 doc,
                 {field: getattr(change.before, field) for field in shown},
@@ -727,6 +632,8 @@ def diff_contract_versions(
             )
             if hidden:
                 doc.field("Omitted Fields", ", ".join(hidden))
+            if redacted:
+                doc.field("PII Redacted Fields", ", ".join(redacted))
         if footer := format_page_footer(len(changes), page, limit):
             doc.text(footer)
     return doc.render()
@@ -737,109 +644,14 @@ def _version_label(version: SuiteVersion, suite: TestSuite) -> str:
     return format_version(version.version, version_state(version.frozen_at, is_active))
 
 
-def _term_changes(source_id: UUID, target_id: UUID) -> list[_TermChange]:
-    """Every test that differs between two versions, matched by rule ID, in table, column and test type order."""
-    before = _terms_by_identity(source_id)
-    after = _terms_by_identity(target_id)
-    changes = []
-    for key in before.keys() | after.keys():
-        old, new = before.get(key), after.get(key)
-        if old is None:
-            changes.append(_TermChange(TermChangeKind.ADDED, None, new, []))
-        elif new is None:
-            changes.append(_TermChange(TermChangeKind.REMOVED, old, None, []))
-        elif fields := [field for field in _TERM_DIFF_FIELDS if _stored_value(old, field) != _stored_value(new, field)]:
-            regenerated = new.last_auto_gen_date != old.last_auto_gen_date
-            edited = new.last_manual_update != old.last_manual_update
-            kind = (
-                TermChangeKind.REGENERATED_AND_EDITED if regenerated and edited
-                else TermChangeKind.REGENERATED if regenerated
-                else TermChangeKind.EDITED if edited
-                else TermChangeKind.CHANGED
-            )
-            changes.append(_TermChange(kind, old, new, fields))
-    return sorted(
-        changes,
-        key=lambda change: (
-            change.term.table_name or "", change.term.column_name or "", change.term.test_type,
-            change.term.contract_term_id or "",
-        ),
-    )
-
-
-def _stored_value(term: TestDefinition, field: str) -> Any:
-    """``term``'s ``field`` as its column stores it, so values the column stores alike compare equal.
-
-    An empty integer is stored as 0 when a test is written through the model, and as NULL when
-    generation writes it, so a copied test would otherwise differ from the one it was copied from.
-    """
-    value = getattr(term, field)
-    column_type = TestDefinition.__table__.c[field].type
-    return column_type.process_bind_param(value, None) if isinstance(column_type, TypeDecorator) else value
-
-
-def _terms_by_identity(version_id: UUID) -> dict[str, TestDefinition]:
-    rows = get_current_session().scalars(
-        select(TestDefinition).where(
-            TestDefinition.version_id == version_id,
-            TestDefinition.test_type.not_in(MANAGED_TEST_TYPES),
-        )
-    ).all()
-    # A row without a rule ID is keyed by its own id, which no other version shares.
-    return {row.contract_term_id or str(row.id): row for row in rows}
-
-
 def _render_document_changes(
-    doc: MdDoc, before: dict[str, Any], after: dict[str, Any], hide_source_data: bool, heading: str = "Metadata document"
+    doc: MdDoc, changes: list[contract_comparison.DocumentChange], heading: str = "Metadata document"
 ) -> None:
-    if hide_source_data:
-        key = secrets.token_bytes(32)
-        before, after = _with_comparable_digests(before, key), _with_comparable_digests(after, key)
-    changes = _document_changes(before, after, "$")
     doc.heading(2, heading)
     if not changes:
         doc.text("No change.")
         return
-    doc.table(["Path", "Change"], [[path, kind] for path, kind in changes], code=[0])
-
-
-def _document_changes(before: Any, after: Any, path: str) -> list[tuple[str, str]]:
-    """Each path at which ``after`` differs from ``before``: added, removed or changed.
-
-    Objects are compared key by key, and lists of named objects (tables, columns) item by name, as
-    ``schema[orders]``; any other list that differs is reported changed as a whole.
-    """
-    if before == after:
-        return []
-    if isinstance(before, dict) and isinstance(after, dict):
-        return _keyed_changes(before, after, lambda key: f"{path}.{key}")
-    if _is_named_list(before) and _is_named_list(after):
-        return _keyed_changes(
-            {item["name"]: item for item in before},
-            {item["name"]: item for item in after},
-            lambda name: f"{path}[{name}]",
-        )
-    return [(path, "Changed")]
-
-
-def _keyed_changes(before: dict, after: dict, child_path: Callable[[str], str]) -> list[tuple[str, str]]:
-    changes = []
-    for key in [*before, *(key for key in after if key not in before)]:
-        if key not in after:
-            changes.append((child_path(key), "Removed"))
-        elif key not in before:
-            changes.append((child_path(key), "Added"))
-        else:
-            changes += _document_changes(before[key], after[key], child_path(key))
-    return changes
-
-
-def _is_named_list(value: Any) -> bool:
-    return (
-        isinstance(value, list)
-        and all(isinstance(item, dict) and isinstance(item.get("name"), str) for item in value)
-        and len({item["name"] for item in value}) == len(value)
-    )
+    doc.table(["Path", "Change"], [[change.path, change.kind.value] for change in changes], code=[0])
 
 
 @with_database_session

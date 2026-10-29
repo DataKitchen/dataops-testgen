@@ -44,6 +44,7 @@
  * @property {string?} compare_disabled_reason
  * @property {{source: number, target: number}?} open_comparison - opens the dialog on this comparison
  * @property {Comparison?} comparison
+ * @property {import('./version_changes.js').Changes?} changes
  *
  * @typedef Properties
  * @type {object}
@@ -61,8 +62,10 @@ import { Button } from './button.js';
 import { CodeDiff } from './code_diff.js';
 import { Dialog } from './dialog.js';
 import { Link } from './link.js';
+import { SegmentedControl } from './segmented_control.js';
 import { Select } from './select.js';
 import { Spinner } from './spinner.js';
+import { VersionChanges } from './version_changes.js';
 
 const { div, span } = van.tags;
 
@@ -72,6 +75,7 @@ const VersionHistoryDialog = (/** @type Properties */ props) => {
     const data = van.state(null);
     const selected = van.state(null);
     const pair = van.state(null);
+    const view = van.state('changes');
 
     van.derive(() => {
         const raw = getValue(props.data) ?? null;
@@ -80,6 +84,7 @@ const VersionHistoryDialog = (/** @type Properties */ props) => {
         open.val = !!raw;
         if (opening) {
             selected.val = raw.versions[0]?.version ?? null;
+            view.val = 'changes';
             pair.val = raw.open_comparison ?? null;
             if (pair.rawVal) {
                 props.onCompare(pair.rawVal.source, pair.rawVal.target);
@@ -106,7 +111,7 @@ const VersionHistoryDialog = (/** @type Properties */ props) => {
             if (!open.val) {
                 return '';
             }
-            return pair.val ? ComparisonView(props, data, pair, compare) : ListView(props, data, selected, compare);
+            return pair.val ? ComparisonView(props, data, pair, view, compare) : ListView(props, data, selected, compare);
         },
     );
 };
@@ -187,7 +192,7 @@ const RunsValue = (props, runs, projectCode) => {
     );
 };
 
-const ComparisonView = (props, data, pair, compare) => {
+const ComparisonView = (props, data, pair, view, compare) => {
     const d = data.rawVal;
     const current = pair.rawVal;
     return div(
@@ -217,12 +222,26 @@ const ComparisonView = (props, data, pair, compare) => {
                 style: 'min-width: 160px',
                 onChange: (value) => value !== current.target && compare(current.source, value),
             }),
+            span({ class: 'fx-flex' }),
+            SegmentedControl({
+                options: [{ label: 'Changes', value: 'changes' }, { label: 'Document', value: 'document' }],
+                value: view,
+                onChange: (value) => view.val = value,
+            }),
         ),
         () => {
             const comparison = data.val?.comparison;
-            const ready = comparison && comparison.source === current.source && comparison.target === current.target;
-            if (!ready) {
+            const changes = data.val?.changes;
+            const matches = (result) => result && result.source === current.source && result.target === current.target;
+            if (!matches(comparison) || !matches(changes)) {
                 return div({ class: 'flex-row fx-justify-center p-4' }, Spinner({}));
+            }
+            if (view.val === 'changes') {
+                return VersionChanges({
+                    changes,
+                    sourceLabel: comparison.source_label ?? `v${current.source}`,
+                    targetLabel: comparison.target_label ?? `v${current.target}`,
+                });
             }
             if (comparison.error) {
                 return Alert({ type: 'error', icon: 'error' }, span(comparison.error));

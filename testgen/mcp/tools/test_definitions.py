@@ -44,6 +44,7 @@ from testgen.common.models.test_definition import (
 )
 from testgen.common.models.test_result import TestResult
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.source_value_fields import CALIBRATION_SHAPED_PARAM_COLUMNS
 from testgen.common.test_definition_export_import_service import (
     IMPORT_ACTION_LABELS,
     ImportAction,
@@ -538,25 +539,6 @@ def delete_test_note(
     doc.field("Author", author)
     doc.field("Date", created_at)
     return doc.render()
-
-
-# Threshold- and tolerance-shaped columns on TestDefinition that hold values
-# derived from source-data profiling. The storage layer does not distinguish
-# user-set from calibrated for these fields (a `threshold_value` can be a
-# regex the user typed OR a numeric threshold calibrated by profiling), so
-# under source-data protection they are dropped uniformly.
-CALIBRATION_SHAPED_PARAM_COLUMNS: frozenset[str] = frozenset({
-    "baseline_ct",
-    "baseline_unique_ct",
-    "baseline_value",
-    "baseline_value_ct",
-    "threshold_value",
-    "baseline_sum",
-    "baseline_avg",
-    "baseline_sd",
-    "lower_tolerance",
-    "upper_tolerance",
-})
 
 
 def _append_parameters_section(doc: MdDoc, td: TestDefinitionSummary, qualifies: bool) -> None:
