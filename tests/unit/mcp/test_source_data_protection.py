@@ -272,6 +272,7 @@ class Test_source_only_tool_gating:
         ("testgen.mcp.tools.source_data", "get_source_data"),
         ("testgen.mcp.tools.source_data", "get_source_data_query"),
         ("testgen.mcp.tools.source_data", "get_table_sample"),
+        ("testgen.mcp.tools.source_data", "get_current_values"),
         ("testgen.mcp.tools.profiling", "get_column_frequent_values"),
         ("testgen.mcp.tools.profiling", "get_column_patterns"),
         ("testgen.mcp.tools.test_definitions", "validate_custom_test"),

@@ -7,11 +7,13 @@ the Streamlit UI and the MCP tools so they share one code path.
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
 import pandas as pd
 
+from testgen.common.clean_sql import format_value_list
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.flavor_service import FlavorService
 from testgen.common.models.connection import Connection
@@ -40,6 +42,22 @@ class TableSampleResult:
     message: str | None = None
     df: pd.DataFrame | None = None
     pii_redacted: bool = False
+
+
+CURRENT_VALUES_MAX_COUNT = 100
+# The width of test_definitions.baseline_value
+CURRENT_VALUES_MAX_LENGTH = 1000
+CURRENT_VALUES_TOO_MANY_MESSAGE = "This column has more than 100 distinct values, which is too many for this test."
+CURRENT_VALUES_PII_MESSAGE = "This column holds PII, which you do not have permission to view."
+CURRENT_VALUES_EMPTY_MESSAGE = "This column holds no values."
+CURRENT_VALUES_ERROR_MESSAGE = "The column's values could not be loaded."
+
+
+@dataclass
+class CurrentValuesResult:
+    status: Literal["OK", "TOO_MANY", "PII", "ND", "ERR"]
+    message: str | None = None
+    value_list: str | None = None
 
 
 def render_create_table_script(
@@ -136,6 +154,72 @@ def fetch_table_sample(
         pii_columns = get_pii_columns(str(table_group_id), table_name)
         pii_redacted = mask_source_data_pii(df, pii_columns)
     return TableSampleResult("OK", df=df, pii_redacted=pii_redacted)
+
+
+def fetch_current_values(
+    connection: Connection,
+    table_group_id: UUID,
+    schema_name: str,
+    table_name: str,
+    column_name: str,
+    *,
+    can_view_pii: bool,
+) -> CurrentValuesResult:
+    """Read a column's distinct values from the source table as a list of expected values.
+
+    Values are distinct as the value-list tests compare them: numbers by value, other values exactly by
+    their text. NULLs are left out. The list is sorted and formatted as ``format_value_list`` stores it.
+
+    Returns:
+        ``OK`` with the list; ``TOO_MANY`` when the column holds more than ``CURRENT_VALUES_MAX_COUNT``
+        values or the list would not fit ``CURRENT_VALUES_MAX_LENGTH`` characters; ``PII`` for a PII
+        column when ``can_view_pii`` is false; ``ND`` when the column holds no values; ``ERR`` when the
+        query fails.
+    """
+    if not can_view_pii and column_name.lower() in {
+        name.lower() for name in get_pii_columns(str(table_group_id), table_name)
+    }:
+        return CurrentValuesResult("PII", message=CURRENT_VALUES_PII_MESSAGE)
+
+    flavor_service = get_flavor_service(connection.sql_flavor)
+    column = next(
+        (
+            chars
+            for chars in DataTable.list_column_chars(table_group_id, DataColumnChars.table_name == table_name)
+            if chars.column_name == column_name
+        ),
+        None,
+    )
+    column_ref = f"{flavor_service.quote_character}{column_name}{flavor_service.quote_character}"
+    params = flavor_service.value_list_params(column_ref, column, [])
+    prefix, suffix = flavor_service.row_limit_clauses(CURRENT_VALUES_MAX_COUNT + 1)
+    table_ref = flavor_service.get_table_ref(schema_name, table_name, connection.sql_flavor_code)
+    query = (
+        f"SELECT {prefix} MIN({params['VALUE_LIST_VALUE']}) AS value FROM {table_ref}"
+        f" WHERE {column_ref} IS NOT NULL GROUP BY {params['VALUE_LIST_DISTINCT']} {suffix}"
+    )
+
+    try:
+        rows = fetch_from_target_db(connection, query, table_group=TableGroup.get(table_group_id))
+    except Exception:
+        LOG.exception("Current values fetch encountered an error.")
+        return CurrentValuesResult("ERR", message=CURRENT_VALUES_ERROR_MESSAGE)
+
+    values = [row[0] for row in rows]
+    if not values:
+        return CurrentValuesResult("ND", message=CURRENT_VALUES_EMPTY_MESSAGE)
+    if len(values) > CURRENT_VALUES_MAX_COUNT:
+        return CurrentValuesResult("TOO_MANY", message=CURRENT_VALUES_TOO_MANY_MESSAGE)
+
+    if column and column.general_type == "N":
+        numbers = sorted(Decimal(str(value)) for value in values)
+        texts = [format(number, "f") for number in numbers]
+    else:
+        texts = sorted(str(value) for value in values)
+    value_list = format_value_list(texts)
+    if len(value_list) > CURRENT_VALUES_MAX_LENGTH:
+        return CurrentValuesResult("TOO_MANY", message=CURRENT_VALUES_TOO_MANY_MESSAGE)
+    return CurrentValuesResult("OK", value_list=value_list)
 
 
 def validate_metadata_fields(fields: Mapping[str, Any]) -> list[str]:
