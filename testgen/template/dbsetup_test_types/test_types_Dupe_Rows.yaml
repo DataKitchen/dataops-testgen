@@ -52,7 +52,6 @@ test_types:
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) AS record_ct
       FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
-      WHERE {SUBSET_CONDITION}
       GROUP BY {GROUPBY_NAMES}
       HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -66,7 +65,6 @@ test_types:
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -80,7 +78,6 @@ test_types:
     lookup_query: |-
       SELECT TOP {LIMIT} {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}, BINARY_CHECKSUM({GROUPBY_NAMES})
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -93,7 +90,6 @@ test_types:
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -107,7 +103,6 @@ test_types:
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -121,7 +116,6 @@ test_types:
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -135,7 +129,6 @@ test_types:
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -149,7 +142,6 @@ test_types:
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -163,7 +155,6 @@ test_types:
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -177,7 +168,6 @@ test_types:
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM "{TABLE_NAME}"
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -191,7 +181,6 @@ test_types:
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -219,7 +208,6 @@ test_types:
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test;
@@ -244,7 +232,6 @@ test_types:
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test;
@@ -269,7 +256,6 @@ test_types:
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
-                 WHERE {SUBSET_CONDITION}
                -- Checksum is added because string column grouping is case insensitive
                GROUP BY {GROUPBY_NAMES}, BINARY_CHECKSUM({GROUPBY_NAMES})
                HAVING COUNT(*) > 1
@@ -295,7 +281,6 @@ test_types:
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test;
@@ -320,7 +305,6 @@ test_types:
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test;
@@ -345,7 +329,6 @@ test_types:
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test;
@@ -370,7 +353,6 @@ test_types:
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test;
@@ -395,7 +377,6 @@ test_types:
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test
@@ -420,7 +401,6 @@ test_types:
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test
@@ -445,7 +425,6 @@ test_types:
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM {QUOTE}{TABLE_NAME}{QUOTE}
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test;
@@ -470,7 +449,6 @@ test_types:
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
-                 WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test;

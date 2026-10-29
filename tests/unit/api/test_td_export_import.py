@@ -989,6 +989,10 @@ class Test_import_validation:
                 "column", {"custom_query": "SELECT 1"}, ImportReason.invalid_field, {"custom_query"}, id="custom_query",
             ),
             pytest.param(
+                "column", {"subset_condition": "status = 'X'"}, ImportReason.invalid_field, {"subset_condition"},
+                id="subset_condition",
+            ),
+            pytest.param(
                 "column", {"subset_condition": "x" * 501}, ImportReason.invalid_field, {"subset_condition"},
                 id="too_long",
             ),
