@@ -9,6 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from testgen.common.audit.actions import AuditAction
+
 pytestmark = pytest.mark.unit
 
 MODULE = "testgen.ui.views.connections"
@@ -122,3 +124,46 @@ def test_wizard_skips_monitoring_when_not_requested():
     mock_enable = _save_via_wizard(_monitor_suite(generate=False))
 
     mock_enable.assert_not_called()
+
+
+def test_wizard_records_each_object_it_creates():
+    from testgen.common.models import _current_session_wrapper
+    from testgen.ui import session as session_module
+
+    _current_session_wrapper.value = MagicMock()
+    payload = {
+        **_payload(_monitor_suite()),
+        "standard_test_suite": {"generate": True, "name": "Sales Tests", "schedule": "0 6 * * *", "timezone": "UTC"},
+    }
+    monitor_suite = MagicMock()
+    try:
+        with (
+            patch.object(session_module, "st", MagicMock(session_state={})),
+            patch(f"{MODULE}.enable_monitoring", return_value=(monitor_suite, 0)),
+            patch(f"{MODULE}.TableGroup") as table_group_cls,
+            patch(f"{MODULE}.TestSuite") as test_suite_cls,
+            patch(f"{MODULE}.JobSchedule") as schedule_cls,
+            patch(f"{MODULE}.save_new_table_group") as save_new_table_group,
+            patch(f"{MODULE}.submit_table_group_setup"),
+            patch(f"{MODULE}.record_table_group_created") as record_table_group,
+            patch(f"{MODULE}.record_monitoring_enabled") as record_monitoring,
+            patch(f"{MODULE}.record") as record,
+            patch(f"{MODULE}.table_group_queries") as mock_queries,
+            patch(f"{MODULE}.session"),
+        ):
+            mock_queries.get_table_group_preview.return_value = None
+            from testgen.ui.views.connections import ConnectionsPage
+
+            page = ConnectionsPage.__new__(ConnectionsPage)
+            _, handlers = page.setup_data_configuration(PROJECT_CODE, CONNECTION_ID)
+            handlers["on_SaveTableGroupClicked_change"](payload)
+            page.setup_data_configuration(PROJECT_CODE, CONNECTION_ID)
+    finally:
+        _current_session_wrapper.value = None
+
+    record_table_group.assert_called_once_with(table_group_cls.return_value, save_new_table_group.return_value)
+    assert record.call_args_list == [
+        ((AuditAction.TEST_SUITE_CREATED, test_suite_cls.return_value),),
+        ((AuditAction.SCHEDULE_CREATED, schedule_cls.return_value),),
+    ]
+    record_monitoring.assert_called_once_with(monitor_suite)

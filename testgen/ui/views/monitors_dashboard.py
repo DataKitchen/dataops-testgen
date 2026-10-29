@@ -6,6 +6,11 @@ from typing import Any, ClassVar, Literal, cast
 
 import streamlit as st
 
+from testgen.common.audit.monitors import (
+    record_monitoring_deleted,
+    record_monitoring_enabled,
+    record_monitoring_updated,
+)
 from testgen.common.cron_service import get_cron_sample
 from testgen.common.custom_test_validation import validate_aggregate_expression
 from testgen.common.enums import JobKey, JobSource, MonitorCalculation, MonitorType, SuiteType
@@ -466,6 +471,7 @@ def build_edit_monitor_settings_data(
                 cron_tz=schedule_config["cron_tz"],
                 active=schedule_config["active"],
             )
+            record_monitoring_updated(monitor_suite, cast(JobSchedule, schedule))
         else:
             new_monitor_suite, _ = enable_monitoring(
                 get_table_group(table_group.id),
@@ -475,6 +481,7 @@ def build_edit_monitor_settings_data(
                 active=schedule_config["active"],
                 generate_monitors=False,
             )
+            record_monitoring_enabled(new_monitor_suite)
             JobExecution.submit(
                 job_key=JobKey.run_monitor_generation,
                 kwargs={"monitor_suite_id": str(new_monitor_suite.id), "monitors": INITIAL_MONITOR_TYPES},
@@ -509,6 +516,7 @@ def delete_monitor_suite(table_group: TableGroupMinimal) -> None:
     try:
         monitor_suite = get_test_suite(table_group.monitor_test_suite_id)
         disable_monitoring(monitor_suite)
+        record_monitoring_deleted(monitor_suite)
         st.cache_data.clear()
     except Exception:
         LOG.exception("Failed to delete monitor suite")

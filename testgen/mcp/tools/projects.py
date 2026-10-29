@@ -11,6 +11,7 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
+from testgen.common.audit.projects import record_project_updated
 from testgen.common.enums import JobKey, JobSource
 from testgen.common.models import with_database_session
 from testgen.common.models.job_execution import JobExecution
@@ -197,9 +198,10 @@ def update_project(
     project.save()
 
     # Schedule side effects: only touch JobSchedule when a retention-related arg was supplied.
+    retention_schedule = None
     if schedule_supplied:
         if effective_enabled:
-            JobSchedule.upsert_for_retention(
+            retention_schedule = JobSchedule.upsert_for_retention(
                 project_code=project_code,
                 retention_days=effective_days,  # type: ignore[arg-type]
                 cron_expr=effective_cron_expr,  # type: ignore[arg-type]
@@ -207,6 +209,7 @@ def update_project(
             )
         else:
             JobSchedule.delete_for_retention(project_code)
+    record_project_updated(project, retention_schedule)
 
     # Weights side effect: submit a background recalculation job, same as the UI.
     if use_dq_score_weights is not None and use_dq_score_weights != weights_were:

@@ -19,6 +19,39 @@ class AuditAction(StrEnum):
     OAUTH_CLIENT_AUTHORIZED = "oauth_client.authorized"
     OAUTH_CLIENT_ACCESS_REVOKED = "oauth_client.access_revoked"
     SETTING_UPDATED = "setting.updated"
+    PROJECT_CREATED = "project.created"
+    PROJECT_UPDATED = "project.updated"
+    PROJECT_DELETED = "project.deleted"
+    CONNECTION_CREATED = "connection.created"
+    CONNECTION_UPDATED = "connection.updated"
+    CONNECTION_DELETED = "connection.deleted"
+    TABLE_GROUP_CREATED = "table_group.created"
+    TABLE_GROUP_UPDATED = "table_group.updated"
+    TABLE_GROUP_DELETED = "table_group.deleted"
+    TEST_SUITE_CREATED = "test_suite.created"
+    TEST_SUITE_UPDATED = "test_suite.updated"
+    TEST_SUITE_DELETED = "test_suite.deleted"
+    MONITOR_SUITE_CREATED = "monitor_suite.created"
+    MONITOR_SUITE_UPDATED = "monitor_suite.updated"
+    MONITOR_SUITE_PAUSED = "monitor_suite.paused"
+    MONITOR_SUITE_RESUMED = "monitor_suite.resumed"
+    MONITOR_SUITE_DELETED = "monitor_suite.deleted"
+    SCHEDULE_CREATED = "schedule.created"
+    SCHEDULE_UPDATED = "schedule.updated"
+    SCHEDULE_PAUSED = "schedule.paused"
+    SCHEDULE_RESUMED = "schedule.resumed"
+    SCHEDULE_DELETED = "schedule.deleted"
+    NOTIFICATION_CREATED = "notification.created"
+    NOTIFICATION_UPDATED = "notification.updated"
+    NOTIFICATION_PAUSED = "notification.paused"
+    NOTIFICATION_RESUMED = "notification.resumed"
+    NOTIFICATION_DELETED = "notification.deleted"
+    NOTIFICATION_DESTINATION_CREATED = "notification_destination.created"
+    NOTIFICATION_DESTINATION_UPDATED = "notification_destination.updated"
+    NOTIFICATION_DESTINATION_DELETED = "notification_destination.deleted"
+    SCORECARD_CREATED = "scorecard.created"
+    SCORECARD_UPDATED = "scorecard.updated"
+    SCORECARD_DELETED = "scorecard.deleted"
     PROFILING_RUN_LAUNCHED = "profiling_run.launched"
     PROFILING_RUN_PAUSED = "profiling_run.paused"
     PROFILING_RUN_RESUMED = "profiling_run.resumed"
@@ -37,9 +70,19 @@ class AuditTargetType(StrEnum):
     ACCESS_TOKEN = "access_token"  # noqa: S105
     OAUTH_CLIENT = "oauth_client"
     SETTING = "setting"
+    PROJECT_INFO = "project.info"
+    PROJECT_OBSERVABILITY = "project.observability"
+    PROJECT_RETENTION = "project.retention"
+    CONNECTION = "connection"
+    TABLE_GROUP = "table_group"
+    TEST_SUITE = "test_suite"
+    MONITOR_SUITE = "monitor_suite"
+    SCHEDULE = "schedule"
+    NOTIFICATION = "notification"
+    NOTIFICATION_DESTINATION = "notification_destination"
+    SCORECARD = "scorecard"
     PROFILING_RUN = "profiling_run"
     TEST_RUN = "test_run"
-    SCHEDULE = "schedule"
 
 
 CHANGE_ACTIONS = frozenset({
@@ -48,6 +91,15 @@ CHANGE_ACTIONS = frozenset({
     AuditAction.USER_ADMIN_REVOKED,
     AuditAction.PROJECT_MEMBER_ROLE_CHANGED,
     AuditAction.SETTING_UPDATED,
+    AuditAction.PROJECT_UPDATED,
+    AuditAction.CONNECTION_UPDATED,
+    AuditAction.TABLE_GROUP_UPDATED,
+    AuditAction.TEST_SUITE_UPDATED,
+    AuditAction.MONITOR_SUITE_UPDATED,
+    AuditAction.SCHEDULE_UPDATED,
+    AuditAction.NOTIFICATION_UPDATED,
+    AuditAction.NOTIFICATION_DESTINATION_UPDATED,
+    AuditAction.SCORECARD_UPDATED,
 })
 """Actions recorded only when a field changed."""
 

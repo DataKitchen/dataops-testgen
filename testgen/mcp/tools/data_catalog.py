@@ -3,6 +3,8 @@ from typing import Annotated
 
 from pydantic import Field
 
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record
 from testgen.common.data_catalog_service import (
     TAG_FIELDS,
     apply_column_metadata,
@@ -75,6 +77,8 @@ def update_catalog_metadata(
     autoflag_notices: list[str] = []
     for entry in flag_writes.values():
         disabled = disable_autoflags(entry["tg"], wrote_cde=entry["cde"], wrote_pii=entry["pii"])
+        if disabled:
+            record(AuditAction.TABLE_GROUP_UPDATED, entry["tg"])
         for flag in disabled:
             autoflag_notices.append(
                 f"Auto-disabled {flag} on table group `{entry['tg'].table_groups_name}` to preserve manual marks."

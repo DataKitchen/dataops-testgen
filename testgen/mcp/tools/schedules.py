@@ -7,6 +7,8 @@ from typing import Annotated
 from pydantic import Field
 from sqlalchemy import select
 
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record, record_update
 from testgen.common.cron_service import describe_cron, normalize_cron, validate_schedule
 from testgen.common.enums import JOB_STATUS_LABEL, JobKey
 from testgen.common.models import get_current_session, with_database_session
@@ -206,7 +208,7 @@ def create_profiling_schedule(
         active=active,
     )
     sched.save()
-    get_current_session().flush()  # populate the default-generated id before rendering
+    record(AuditAction.SCHEDULE_CREATED, sched)
 
     doc = MdDoc()
     doc.heading(1, f"Profiling schedule created for `{table_group.table_groups_name}`")
@@ -243,7 +245,7 @@ def create_test_run_schedule(
         active=active,
     )
     sched.save()
-    get_current_session().flush()  # populate the default-generated id before rendering
+    record(AuditAction.SCHEDULE_CREATED, sched)
 
     doc = MdDoc()
     doc.heading(1, f"Test run schedule created for `{suite.test_suite}`")
@@ -296,6 +298,13 @@ def update_schedule(
         return report_no_change(doc)
 
     sched.save()
+    record_update(
+        sched,
+        AuditAction.SCHEDULE_UPDATED,
+        switch="active",
+        on=AuditAction.SCHEDULE_RESUMED,
+        off=AuditAction.SCHEDULE_PAUSED,
+    )
     doc.table(["Field", "Before", "After"], [list(c) for c in changes])
     return doc.render()
 
@@ -309,6 +318,7 @@ def delete_schedule(
     Past executions remain accessible via ``list_test_runs`` / ``list_profiling_runs``.
     """
     sched = resolve_schedule(schedule_id)
+    record(AuditAction.SCHEDULE_DELETED, sched)
     JobSchedule.delete(sched.id)
 
     doc = MdDoc()

@@ -31,6 +31,9 @@ from testgen.api.schemas import (
     TableGroupUpdateRequest,
     TableGroupUpdateResponse,
 )
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record
+from testgen.common.audit.table_groups import record_table_group_created
 from testgen.common.database.table_group_service import (
     SchemaMoveRefused,
     apply_table_group_flavor_rules,
@@ -38,6 +41,7 @@ from testgen.common.database.table_group_service import (
     catalog_membership,
     is_duplicate_name_error,
     move_table_group_schema,
+    save_new_table_group,
     update_catalog_for_edit,
     validate_table_group_fields,
     validate_table_naming,
@@ -191,13 +195,14 @@ def create_table_group(
         raise api_errors(400, "invalid_table_group", errors)
 
     try:
-        table_group.save(add_scorecard_definition=body.add_scorecard)
+        scorecard = save_new_table_group(table_group, add_scorecard=body.add_scorecard)
     except IntegrityError as err:
         if is_duplicate_name_error(err):
             raise api_error(
                 409, "duplicate_table_group_name", "A table group with this name already exists in the project."
             ) from err
         raise
+    record_table_group_created(table_group, scorecard)
 
     catalog_error = write_table_group_catalog(table_group, connection)
     get_current_session().refresh(table_group)
@@ -355,6 +360,7 @@ def update_table_group(
                     _REFUSAL_STATUS.get(refusal.reason, 422), refusal.reason, refusal.message
                 ) from refusal
         table_group.save()
+        record(AuditAction.TABLE_GROUP_UPDATED, table_group)
     except IntegrityError as err:
         if is_duplicate_name_error(err):
             raise api_error(
@@ -402,3 +408,4 @@ def delete_table_group(table_group: TableGroup = resolve_table_group("edit")) ->
             "job_in_flight",
             "A job for this table group is still running. Wait for it to finish, then try again.",
         )
+    record(AuditAction.TABLE_GROUP_DELETED, table_group)

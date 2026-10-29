@@ -15,11 +15,13 @@ from testgen.api.deps import db_session, get_authorized_user
 from testgen.api.schemas import CatalogTags, TableGroupCreate
 from testgen.api.table_groups import get_table_group, list_table_groups, router
 from testgen.common.database.table_group_service import DeleteBlocker, SchemaMove, SchemaMoveRefused
+from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.table_group import TableGroup
 
 pytestmark = pytest.mark.unit
 
 MODULE = "testgen.api.table_groups"
+SERVICE_MODULE = "testgen.common.database.table_group_service"
 RULES_MODULE = "testgen.common.database.table_group_service"
 NOW = datetime(2026, 9, 15, 12, 0, tzinfo=UTC)
 TG_ID = uuid4()
@@ -500,6 +502,7 @@ def _post(body: dict, *, permitted: bool = True, connection=CONNECTION, refresh=
         patch("testgen.api.deps.Connection") as mock_conn_cls,
         patch("testgen.api.deps.has_project_permission", return_value=permitted) as mock_perm,
         patch.object(TableGroup, "save", autospec=True, side_effect=_assign_id) as mock_save,
+        patch.object(ScoreDefinition, "save", autospec=True),
         patch(f"{MODULE}.get_current_session") as mock_session,
     ):
         mock_conn_cls.get.return_value = connection
@@ -547,7 +550,8 @@ def test_create_table_group_reports_a_catalog_it_could_not_read(catalog_write):
 
 
 def test_create_table_group_applies_model_defaults_to_omitted_fields():
-    resp, mock_save, _ = _post({"table_group_name": "client_42", "schema_name": "client_42"})
+    with patch(f"{SERVICE_MODULE}.ScoreDefinition") as scorecards:
+        resp, _, _ = _post({"table_group_name": "client_42", "schema_name": "client_42"})
 
     body = resp.json()
     assert body["profile_id_column_mask"] == "%_id"
@@ -563,7 +567,7 @@ def test_create_table_group_applies_model_defaults_to_omitted_fields():
     assert body["include_in_dashboard"] is True
     assert body["include_masks"] == ["%"]
     assert body["exclude_masks"] == ["tmp%"]
-    assert mock_save.call_args.kwargs == {"add_scorecard_definition": True}
+    scorecards.from_table_group.return_value.save.assert_called_once()
 
 
 def test_create_table_group_keeps_masks_sent_empty():
@@ -605,7 +609,8 @@ def test_create_table_group_rejects_an_unknown_catalog_tag():
 
 
 def test_create_table_group_applies_every_supplied_field():
-    resp, mock_save, _ = _post({
+    with patch(f"{SERVICE_MODULE}.ScoreDefinition") as scorecards:
+        resp, mock_save, _ = _post({
         "table_group_name": "client_42",
         "schema_name": "client_42",
         "description": "Client 42 onboarding",
@@ -635,7 +640,7 @@ def test_create_table_group_applies_every_supplied_field():
     assert saved.data_source == "Snowflake"
     assert saved.business_domain == "Claims"
     assert saved.source_system is None
-    assert mock_save.call_args.kwargs == {"add_scorecard_definition": False}
+    scorecards.from_table_group.assert_not_called()
 
     body = resp.json()
     assert body["description"] == "Client 42 onboarding"

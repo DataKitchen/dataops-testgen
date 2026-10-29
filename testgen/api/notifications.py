@@ -52,6 +52,8 @@ from testgen.api.schemas import (
     WebhookDestinationResponse,
     WebhookDestinationUpdate,
 )
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record, record_switch, record_update
 from testgen.common.enums import TEST_SUITE_TYPES, SuiteType
 from testgen.common.models import get_current_session
 from testgen.common.models.notification_destinations import (
@@ -182,6 +184,7 @@ def create_destination(
             )
     except NotificationSettingsValidationError as exc:
         raise api_error(400, "invalid_destination", str(exc)) from exc
+    record(AuditAction.NOTIFICATION_DESTINATION_CREATED, destination)
     return _dest_to_response(destination, 0)
 
 
@@ -242,6 +245,7 @@ def update_destination(
         destination.save()
     except NotificationSettingsValidationError as exc:
         raise api_error(400, "invalid_destination", str(exc)) from exc
+    record(AuditAction.NOTIFICATION_DESTINATION_UPDATED, destination)
     return _dest_to_response(destination, _rule_counts([destination]).get(destination.id, 0))
 
 
@@ -258,6 +262,7 @@ def delete_destination(
     """
     rule_count = _rule_counts([destination]).get(destination.id, 0)
     destination_id = destination.id
+    record(AuditAction.NOTIFICATION_DESTINATION_DELETED, destination)
     destination.delete()
     return DestinationDeleteResponse(id=destination_id, deleted_rule_count=rule_count)
 
@@ -358,6 +363,7 @@ def create_rule(
             )
     except NotificationSettingsValidationError as exc:
         raise api_error(400, "invalid_rule", str(exc)) from exc
+    record(AuditAction.NOTIFICATION_CREATED, rule)
     return _rule_to_response(rule)
 
 
@@ -455,6 +461,13 @@ def update_rule(
         rule.save()
     except NotificationSettingsValidationError as exc:
         raise api_error(400, "invalid_rule", str(exc)) from exc
+    record_update(
+        rule,
+        AuditAction.NOTIFICATION_UPDATED,
+        switch="enabled",
+        on=AuditAction.NOTIFICATION_RESUMED,
+        off=AuditAction.NOTIFICATION_PAUSED,
+    )
     return _rule_to_response(rule)
 
 
@@ -467,6 +480,7 @@ def delete_rule(
     rule: NotificationSettings = resolve_notification_rule("edit"),  # noqa: B008
 ) -> None:
     """Deletes the rule only. The destination it sends to is kept."""
+    record(AuditAction.NOTIFICATION_DELETED, rule)
     rule.delete()
     return None
 
@@ -500,6 +514,7 @@ def resume_rule(
 def _set_rule_enabled(rule: NotificationSettings, enabled: bool) -> RuleResponse:
     rule.enabled = enabled
     rule.save()
+    record_switch(rule, "enabled", on=AuditAction.NOTIFICATION_RESUMED, off=AuditAction.NOTIFICATION_PAUSED)
     return _rule_to_response(rule)
 
 

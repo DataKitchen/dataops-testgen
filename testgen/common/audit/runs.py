@@ -3,6 +3,7 @@ from enum import StrEnum
 
 from testgen.common.audit.actions import AuditAction, AuditTargetType
 from testgen.common.audit.recorder import record
+from testgen.common.audit.safety import never_raises
 from testgen.common.enums import JobKey
 from testgen.common.models.job_execution import JobExecution
 
@@ -32,6 +33,7 @@ _ACTIONS: dict[tuple[str, RunOperation], AuditAction] = {
 }
 
 
+@never_raises()
 def record_run(operation: RunOperation, job: JobExecution, previous_status: str | None = None) -> None:
     """Record ``operation`` on the run ``job`` executes. A job that is not a profiling or test run records nothing.
 
@@ -43,6 +45,7 @@ def record_run(operation: RunOperation, job: JobExecution, previous_status: str 
     record_runs(operation, job.job_key, job.project_code, [job.id])
 
 
+@never_raises()
 def record_runs(operation: RunOperation, job_key: str, project_code: str, run_ids: Collection[object]) -> None:
     """Record ``operation`` on several runs of one kind, as a single record.
 

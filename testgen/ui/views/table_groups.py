@@ -7,6 +7,10 @@ import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
 from testgen.commands.run_catalog_refresh import submit_table_group_setup
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.monitors import record_monitoring_enabled
+from testgen.common.audit.recorder import record
+from testgen.common.audit.table_groups import record_table_group_created
 from testgen.common.database.table_group_service import (
     DeleteBlocker,
     SchemaMoveRefused,
@@ -15,6 +19,7 @@ from testgen.common.database.table_group_service import (
     cascade_delete_table_group,
     catalog_membership,
     move_table_group_schema,
+    save_new_table_group,
     schema_label_for_table_group,
 )
 from testgen.common.enums import JobSource
@@ -396,7 +401,8 @@ class TableGroupsPage(Page):
             success = True
             if is_table_group_verified():
                 try:
-                    table_group.save(add_scorecard_definition)
+                    scorecard = save_new_table_group(table_group, add_scorecard=add_scorecard_definition)
+                    record_table_group_created(table_group, scorecard)
 
                     standard_test_suite_data = get_standard_test_suite_data() or {}
                     if standard_test_suite_data.get("generate"):
@@ -412,14 +418,17 @@ class TableGroupsPage(Page):
                             predict_min_lookback=0,
                         )
                         standard_test_suite.save()
+                        record(AuditAction.TEST_SUITE_CREATED, standard_test_suite)
 
-                        JobSchedule(
+                        test_run_schedule = JobSchedule(
                             project_code=project_code,
                             key=RUN_TESTS_JOB_KEY,
                             cron_expr=standard_test_suite_data["schedule"],
                             cron_tz=standard_test_suite_data["timezone"],
                             kwargs={"test_suite_id": str(standard_test_suite.id)},
-                        ).save()
+                        )
+                        test_run_schedule.save()
+                        record(AuditAction.SCHEDULE_CREATED, test_run_schedule)
 
                     monitor_test_suite_data = get_monitor_test_suite_data() or {}
                     if monitor_test_suite_data.get("generate"):
@@ -438,6 +447,7 @@ class TableGroupsPage(Page):
                             },
                             generate_monitors=False,
                         )
+                        record_monitoring_enabled(monitor_test_suite)
 
                     if standard_test_suite or monitor_test_suite:
                         table_group.default_test_suite_id = standard_test_suite.id if standard_test_suite else None
@@ -537,10 +547,9 @@ class TableGroupsPage(Page):
 
         edit_tg_data = get_edit_tg()
         can_view_pii = session.auth.user_has_permission("view_pii")
-        add_scorecard_definition = False
         for key, value in edit_tg_data.items():
             if key == "add_scorecard_definition":
-                add_scorecard_definition = value
+                continue
             elif key == "profile_flag_pii" and not can_view_pii:
                 # Users without view_pii cannot change the PII flag — keep the stored value.
                 continue
@@ -578,7 +587,8 @@ class TableGroupsPage(Page):
                         # already written the new one onto it.
                         table_group.table_group_schema = original_schema
                         move = move_table_group_schema(table_group, moving_to)
-                    table_group.save(add_scorecard_definition)
+                    table_group.save()
+                    record(AuditAction.TABLE_GROUP_UPDATED, table_group)
                 except SchemaMoveRefused as refusal:
                     table_group.table_group_schema = original_schema
                     result = {"success": False, "message": refusal.message}
@@ -674,6 +684,8 @@ class TableGroupsPage(Page):
                 icon=":material/error:",
             )
         else:
+            if table_group:
+                record(AuditAction.TABLE_GROUP_DELETED, table_group)
             select_table_groups_minimal_where.clear()
             st.toast(f"Table Group {table_group_name} has been deleted.", icon=":material/check:")
         st.session_state.pop("tg_delete_dialog", None)

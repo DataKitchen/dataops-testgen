@@ -7,6 +7,7 @@ import streamlit as st
 from sqlalchemy import select
 
 from testgen.commands.run_observability_exporter import test_observability_exporter
+from testgen.common.audit.projects import record_project_updated
 from testgen.common.enums import JobKey, JobSource, JobStatus
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
@@ -232,8 +233,9 @@ class ProjectSettingsPage(Page):
         get_project.clear()
         select_projects_where.clear()
 
+        retention_schedule = None
         if retention_enabled:
-            JobSchedule.upsert_for_retention(
+            retention_schedule = JobSchedule.upsert_for_retention(
                 project_code=project_code,
                 retention_days=retention_days,
                 cron_expr=edited_project.get("retention_cron_expr") or DEFAULT_DATA_CLEANUP_CRON,
@@ -241,6 +243,7 @@ class ProjectSettingsPage(Page):
             )
         else:
             JobSchedule.delete_for_retention(project_code)
+        record_project_updated(self.project, retention_schedule)
 
         if weights_changed:
             JobExecution.submit(

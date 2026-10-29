@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import Field
 
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record, record_update
 from testgen.common.models import with_database_session
 from testgen.common.models.notification_settings import (
     MonitorNotificationTrigger,
@@ -293,6 +295,7 @@ def create_notification(
             **addressing,
         )
 
+    record(AuditAction.NOTIFICATION_CREATED, notif)
     return _render_created(notif)
 
 
@@ -661,6 +664,13 @@ def update_notification(
     # so it reloads against the FK just written; reading it first returns the
     # destination the rule had on entry, which renders as the new one.
     notif.save()
+    record_update(
+        notif,
+        AuditAction.NOTIFICATION_UPDATED,
+        switch="enabled",
+        on=AuditAction.NOTIFICATION_RESUMED,
+        off=AuditAction.NOTIFICATION_PAUSED,
+    )
     after = {attr: _snapshot_attr(notif, attr) for attr in pending}
 
     rows = [[_DIFF_LABELS[attr], before[attr], after[attr]] for attr in pending]
@@ -923,6 +933,7 @@ def delete_notification(
     doc.field("Project", notif.project_code, code=True)
     _render_scope_fields(doc, notif)
 
+    record(AuditAction.NOTIFICATION_DELETED, notif)
     notif.delete()
 
     return doc.render()

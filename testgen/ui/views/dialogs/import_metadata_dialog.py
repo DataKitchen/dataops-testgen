@@ -4,6 +4,8 @@ import logging
 
 import pandas as pd
 
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record
 from testgen.common.data_catalog_service import apply_column_metadata, apply_table_metadata, disable_autoflags
 from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.data_table import DataTable
@@ -339,6 +341,7 @@ def _disable_autoflags(table_group_id: str, metadata_columns: list[str]) -> None
     )
     if disabled:
         table_group.save()
+        record(AuditAction.TABLE_GROUP_UPDATED, table_group)
 
 
 def _build_metadata_fields(row: dict, metadata_columns: list[str], is_column: bool = False) -> dict:

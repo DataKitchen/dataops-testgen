@@ -4,6 +4,8 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.notification_destinations import (
     DestinationType,
@@ -78,11 +80,12 @@ def _serialize(destination: NotificationDestination, rule_count: int) -> dict:
 def add_destination(project_code: str, payload: dict) -> None:
     destination_type = payload.get("destination_type")
     if destination_type == DestinationType.email:
-        EmailDestination.create(
+        destination = EmailDestination.create(
             project_code=project_code,
             name=(payload.get("name") or "").strip(),
             recipients=payload.get("recipients") or [],
         )
+        record(AuditAction.NOTIFICATION_DESTINATION_CREATED, destination)
         return
     if destination_type == DestinationType.webhook:
         webhook_type = _parse_webhook_type(payload.get("webhook_type"))
@@ -90,7 +93,7 @@ def add_destination(project_code: str, payload: dict) -> None:
         # payload still carries whatever they last held. Passing those through would
         # fail validation naming fields that are no longer on screen.
         is_generic = webhook_type is WebhookType.generic
-        WebhookDestination.create(
+        destination = WebhookDestination.create(
             project_code=project_code,
             name=(payload.get("name") or "").strip(),
             webhook_type=webhook_type,
@@ -98,6 +101,7 @@ def add_destination(project_code: str, payload: dict) -> None:
             auth_header_name=((payload.get("auth_header_name") or "").strip() or None) if is_generic else None,
             auth_header_value=((payload.get("auth_header_value") or "").strip() or None) if is_generic else None,
         )
+        record(AuditAction.NOTIFICATION_DESTINATION_CREATED, destination)
         return
     raise ValueError(messages.unsupported_destination_type(destination_type))
 
@@ -148,11 +152,13 @@ def edit_destination(project_code: str, payload: dict) -> None:
             auth_header_value = payload.get("auth_header_value") or ""
             destination.auth_header_value = auth_header_value.strip() or None
     destination.save()
+    record(AuditAction.NOTIFICATION_DESTINATION_UPDATED, destination)
 
 
 @with_database_session
 def delete_destination(project_code: str, destination_id: str) -> None:
     destination = _get_owned(project_code, destination_id)
+    record(AuditAction.NOTIFICATION_DESTINATION_DELETED, destination)
     destination.delete()
 
 

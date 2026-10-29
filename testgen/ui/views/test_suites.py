@@ -12,6 +12,9 @@ from testgen.commands.test_generation import (
     resolve_generation_profile_run,
     run_test_generation_and_report,
 )
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record
+from testgen.common.audit.test_suites import record_contract_created
 from testgen.common.contract_creation import create_contract, create_contract_from_import
 from testgen.common.contract_document import catalog_table_names
 from testgen.common.contract_import import prepare_import
@@ -529,6 +532,7 @@ def save_test_suite_form(data: dict) -> None:
         setattr(test_suite, attr, value)
     test_suite.deactivate_invalid_tests = data.get("deactivate_invalid_tests", test_suite.deactivate_invalid_tests)
     test_suite.save()
+    record(AuditAction.TEST_SUITE_UPDATED, test_suite)
     st.session_state.pop("ts_form_dialog:result", None)
     st.session_state.pop(EDIT_DIALOG_KEY, None)
     get_test_suite_summaries.clear()
@@ -557,6 +561,8 @@ def execute_ts_delete(test_suite_id: str) -> None:
     if TestRun.has_active_job_for(TestSuite, test_suite_id):
         st.toast(f"This {noun} is in use by a running process and cannot be deleted.", icon=":material/error:")
     else:
+        if test_suite := TestSuite.get(test_suite_id):
+            record(AuditAction.TEST_SUITE_DELETED, test_suite)
         TestSuite.cascade_delete([test_suite_id])
         st.toast(f"{noun} {test_suite_name} has been deleted.", icon=":material/check:")
     st.session_state.pop("ts_delete_dialog", None)
@@ -724,6 +730,7 @@ def add_test_suite_confirmed(payload: dict) -> None:
 
 def _add_test_suite(suite: TestSuite, tests: dict) -> list[dict]:
     suite.save()
+    record(AuditAction.TEST_SUITE_CREATED, suite)
     get_current_session().commit()
     rows = [_row(WizardRowIcon.SUCCESS, f"Test suite {suite.test_suite} created.")]
     if not tests.get("generate"):
@@ -752,6 +759,7 @@ def _add_test_suite(suite: TestSuite, tests: dict) -> list[dict]:
 def _add_contract_from_tables(suite: TestSuite, table_group: TableGroup, table_names: list[str]) -> list[dict]:
     connection = Connection.get(table_group.connection_id)
     created = create_contract(suite, table_group, connection, table_names)
+    record_contract_created(created.suite)
     generation = created.generation
     name = created.suite.test_suite
     not_in_catalog = generation.tables_not_in_catalog if generation else []
@@ -797,6 +805,7 @@ def _add_contract_from_file(suite: TestSuite, table_group: TableGroup, content: 
     connection = Connection.get(table_group.connection_id)
     plan = prepare_import(content, table_group, connection, None)
     created = create_contract_from_import(suite, table_group, connection, plan)
+    record_contract_created(created.suite)
     text = f"Contract {created.suite.test_suite} created{_with_tests(created.suite.id)}."
     if unverifiable := len(plan.unverifiable_rules):
         text += f" {unverifiable} {'rule cannot' if unverifiable == 1 else 'rules cannot'} be verified."

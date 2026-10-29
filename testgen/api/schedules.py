@@ -25,6 +25,8 @@ from testgen.api.schemas import (
     ScheduleListResponse,
     ScheduleResponse,
 )
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record
 from testgen.common.cron_service import describe_cron, normalize_cron, validate_schedule
 from testgen.common.enums import TEST_SUITE_TYPES, JobKey
 from testgen.common.models import get_current_session
@@ -136,6 +138,7 @@ def _create(project_code: str, key: JobKey, kwargs: dict[str, str], body: Schedu
                 409, "duplicate_schedule", "An identical schedule already exists for this table group or test suite."
             ) from err
         raise
+    record(AuditAction.SCHEDULE_CREATED, schedule)
     session.refresh(schedule)
     return _to_response(schedule)
 

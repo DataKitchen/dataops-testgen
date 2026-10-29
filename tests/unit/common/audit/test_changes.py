@@ -1,12 +1,13 @@
+import enum
 import pickle  # noqa: S403
 
 import pytest
-from sqlalchemy import Boolean, Column, Integer, String, create_engine, update
+from sqlalchemy import Boolean, Column, Enum, Integer, String, create_engine, update
 from sqlalchemy.orm import DeclarativeBase
 
 from testgen.common.audit.actions import AuditAction
 from testgen.common.audit.fields import SECRET_INFO_KEY, AuditFields, declaration_errors
-from testgen.common.audit.recorder import record
+from testgen.common.audit.recorder import changes_of, record, record_switch, record_update
 from testgen.common.models import Session, bound_session
 from testgen.common.models.custom_types import NullIfEmptyString
 
@@ -15,6 +16,11 @@ pytestmark = pytest.mark.unit
 
 class _Base(DeclarativeBase):
     pass
+
+
+class Size(enum.Enum):
+    small = "S"
+    large = "L"
 
 
 class Widget(_Base):
@@ -27,12 +33,13 @@ class Widget(_Base):
     password = Column(String, info={SECRET_INFO_KEY: True})
     undeclared = Column(String)
     project = Column(String)
+    size = Column(Enum(Size))
 
     __audit__ = AuditFields(
         target_type="widget",
         name="name",
         project="project",
-        values=("name", "email", "enabled"),
+        values=("name", "email", "enabled", "size"),
         withheld=("password",),
     )
 
@@ -304,3 +311,78 @@ def test_declaration_errors_name_missing_columns_and_secrets_with_values():
     assert declaration_errors(Widget) == []
     assert declaration_errors(LeakyWidget) == ["password holds a secret and can only be withheld"]
     assert declaration_errors(MisdeclaredWidget) == ["missing is not a column"]
+
+
+def test_enum_values_are_reported_by_value(session, audit_log):
+    widget = session.get(Widget, 1)
+    widget.size = Size.large
+    _save(session, widget)
+
+    record(AuditAction.USER_UPDATED, widget)
+    session.commit()
+
+    assert audit_log.records()[0]["changes"] == {"size": {"from": None, "to": "L"}}
+
+
+def test_changes_of_reports_and_consumes_the_subjects_changes(session, audit_log):
+    widget = session.get(Widget, 1)
+    widget.name = "renamed"
+    widget.enabled = True
+    _save(session, widget)
+
+    assert changes_of(widget, only=("name",)) == {"name": {"from": "first", "to": "renamed"}}
+    record(AuditAction.USER_UPDATED, widget)
+    session.commit()
+
+    assert audit_log.records()[0]["changes"] == {"enabled": {"from": False, "to": True}}
+
+
+def test_changes_of_a_subject_with_no_declaration_is_empty(session, caplog):
+    assert changes_of(object()) == {}
+    assert "Audit changes_of failed" in caplog.text
+
+
+@pytest.mark.parametrize(("enabled", "action"), [(True, "schedule.resumed"), (False, None)])
+def test_record_switch_records_the_new_state_without_changes(session, audit_log, enabled, action):
+    widget = session.get(Widget, 1)
+    widget.enabled = enabled
+    _save(session, widget)
+
+    record_switch(widget, "enabled", on=AuditAction.SCHEDULE_RESUMED, off=AuditAction.SCHEDULE_PAUSED)
+    session.commit()
+
+    assert [(entry["action"], entry["changes"]) for entry in audit_log.records()] == (
+        [(action, {})] if action else []
+    )
+
+
+def test_record_switch_records_the_off_action(session, audit_log):
+    widget = session.get(Widget, 1)
+    widget.enabled = True
+    _save(session, widget)
+    session.commit()
+
+    widget.enabled = False
+    _save(session, widget)
+    record_switch(widget, "enabled", on=AuditAction.SCHEDULE_RESUMED, off=AuditAction.SCHEDULE_PAUSED)
+    session.commit()
+
+    assert [entry["action"] for entry in audit_log.records()] == ["schedule.paused"]
+
+
+def test_record_update_separates_the_switch_from_the_other_changes(session, audit_log):
+    widget = session.get(Widget, 1)
+    widget.name = "renamed"
+    widget.enabled = True
+    _save(session, widget)
+
+    record_update(
+        widget, AuditAction.USER_UPDATED, switch="enabled",
+        on=AuditAction.SCHEDULE_RESUMED, off=AuditAction.SCHEDULE_PAUSED,
+    )
+    session.commit()
+
+    assert [(entry["action"], entry["changes"]) for entry in audit_log.records()] == [
+        ("user.updated", {"name": {"from": "first", "to": "renamed"}}),
+        ("schedule.resumed", {}),
+    ]

@@ -39,6 +39,9 @@ from testgen.api.schemas import (
 )
 from testgen.commands.test_generation import resolve_generation_profile_run
 from testgen.common import contract_creation, contract_document, contract_service
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record
+from testgen.common.audit.test_suites import record_contract_created
 from testgen.common.database.test_suite_service import validate_test_suite_fields
 from testgen.common.enums import TEST_SUITE_TYPES, SuiteType
 from testgen.common.models import get_current_session
@@ -154,6 +157,7 @@ def create_test_suite(
         return _create_contract(test_suite, table_group, body.table_names)
 
     test_suite.save()
+    record(AuditAction.TEST_SUITE_CREATED, test_suite)
     if body.set_as_default:
         table_group.default_test_suite_id = test_suite.id
         table_group.save()
@@ -188,6 +192,7 @@ def _create_contract(
     created = contract_creation.create_contract(
         test_suite, table_group, Connection.get(table_group.connection_id), table_names
     )
+    record_contract_created(created.suite)
     get_current_session().refresh(test_suite)
     generation = None
     if created.generation is not None:

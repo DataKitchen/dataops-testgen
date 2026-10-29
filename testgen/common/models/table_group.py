@@ -10,6 +10,8 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
 from testgen import settings
+from testgen.common.audit.actions import AuditTargetType
+from testgen.common.audit.fields import AuditFields
 from testgen.common.enums import MonitorType
 from testgen.common.flavors import table_group_schema_label
 from testgen.common.models import get_current_session
@@ -22,7 +24,6 @@ from testgen.common.models.monitor import (
     parse_schema_event,
     parse_value_event,
 )
-from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_suite import TestSuite
 from testgen.utils import dict_from_kv, is_uuid4
@@ -378,6 +379,20 @@ class TableGroup(Entity):
     last_complete_profile_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
     dq_score_profiling: float = Column(Float)
     dq_score_testing: float = Column(Float)
+
+    __audit__ = AuditFields(
+        target_type=AuditTargetType.TABLE_GROUP,
+        name="table_groups_name",
+        project="project_code",
+        values=(
+            "table_groups_name", "connection_id", "table_group_schema", "file_declarations", "profiling_table_set",
+            "profiling_include_mask", "profiling_exclude_mask", "profile_id_column_mask", "profile_sk_column_mask",
+            "profile_use_sampling", "profile_sample_percent", "profile_sample_min_count", "profiling_delay_days",
+            "profile_flag_cdes", "profile_flag_pii", "profile_exclude_xde", "profile_table_comparison",
+            "include_in_dashboard", "description", "data_source", "source_system", "source_process", "data_location",
+            "business_domain", "stakeholder_group", "transform_level", "data_product", "data_classification",
+        ),
+    )
 
     _default_order_by = (asc(func.lower(table_groups_name)),)
     _minimal_columns = TableGroupMinimal.__annotations__.keys()
@@ -1315,7 +1330,7 @@ class TableGroup(Entity):
         db_session.execute(text(query), params)
         cls.delete_where(cls.id.in_(ids))
 
-    def save(self, add_scorecard_definition: bool = False) -> None:
+    def save(self) -> None:
         if self.id:
             values = {
                 column.key: getattr(self, column.key, None)
@@ -1327,8 +1342,6 @@ class TableGroup(Entity):
             db_session.execute(query)
         else:
             super().save()
-            if add_scorecard_definition:
-                ScoreDefinition.from_table_group(self).save()
 
 
 # ``YNString`` columns store raw "Y"/"N" strings as their default but expose

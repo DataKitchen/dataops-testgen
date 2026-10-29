@@ -34,6 +34,8 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import aliased, attributes, joinedload, relationship
 
 from testgen.common import read_template_sql_file
+from testgen.common.audit.actions import AuditTargetType
+from testgen.common.audit.fields import AuditFields
 from testgen.common.models import Base, database_session, get_current_session
 from testgen.utils import is_uuid4
 
@@ -103,6 +105,13 @@ class ScoreDefinition(Base):
     cde_score: bool = Column(Boolean, default=False, nullable=False)
     category: ScoreCategory | None = Column(Enum(ScoreCategory), nullable=True)
 
+    __audit__ = AuditFields(
+        target_type=AuditTargetType.SCORECARD,
+        name="name",
+        project="project_code",
+        values=("name", "total_score", "cde_score", "category"),
+    )
+
     # Note: avoid `Mapped[...]`-style or `Iterable[...]` annotations on these —
     # with DeclarativeBase + `__allow_unmapped__=True`, they confuse SA's
     # uselist inference and cause `self.results` to be treated as a scalar.
@@ -143,6 +152,7 @@ class ScoreDefinition(Base):
         definition.category = ScoreCategory.impact_dimension
         definition.criteria = ScoreDefinitionCriteria(
             operand="AND",
+            group_by_field=True,
             filters=[
                 ScoreDefinitionFilter(field="table_groups_name", value=table_group.table_groups_name),
             ],

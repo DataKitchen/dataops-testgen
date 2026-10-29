@@ -7,6 +7,9 @@ import pandas as pd
 import streamlit as st
 
 from testgen.commands.run_refresh_score_cards_results import save_and_refresh_score_definition
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record
+from testgen.common.audit.scorecards import scorecard_changes
 from testgen.common.enums import JobSource
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
@@ -388,7 +391,11 @@ def save_score_definition(_) -> None:
         ],
         group_by_field=not filter_by_columns,
     )
+    changes = scorecard_changes(score_definition)
     save_and_refresh_score_definition(score_definition, is_new=is_new, source=JobSource.ui)
+    record(
+        AuditAction.SCORECARD_CREATED if is_new else AuditAction.SCORECARD_UPDATED, score_definition, changes=changes
+    )
     get_all_score_cards.clear()
 
     Router().set_query_params({

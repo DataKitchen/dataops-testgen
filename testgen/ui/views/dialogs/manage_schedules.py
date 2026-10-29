@@ -7,6 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from testgen.common import date_service
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record, record_switch
 from testgen.common.models import Session, with_database_session
 from testgen.common.models.scheduler import JobSchedule
 from testgen.ui.session import session
@@ -75,15 +77,15 @@ class ScheduleDialog:
         }
 
     def on_delete(self, item: dict) -> None:
-        with_database_session(lambda: JobSchedule.delete(item["id"]))()
+        _delete_schedule(item["id"])
         st.session_state.pop(RESULT_KEY, None)
 
     def on_pause(self, item: dict) -> None:
-        with_database_session(lambda: JobSchedule.update_active(item["id"], False))()
+        _set_schedule_active(item["id"], False)
         st.session_state.pop(RESULT_KEY, None)
 
     def on_resume(self, item: dict) -> None:
-        with_database_session(lambda: JobSchedule.update_active(item["id"], True))()
+        _set_schedule_active(item["id"], True)
         st.session_state.pop(RESULT_KEY, None)
 
     def on_cron_sample(self, payload: dict) -> None:
@@ -107,7 +109,7 @@ class ScheduleDialog:
                     active=True,
                     kwargs=self.get_job_arguments(arg_value),
                 )
-                with_database_session(sched_model.save)()
+                with_database_session(_add_schedule)(sched_model)
                 st.session_state[RESULT_KEY] = {"success": True, "message": "Schedule added"}
             else:
                 st.session_state[RESULT_KEY] = {"success": False, "message": "Complete all the fields before adding the schedule"}
@@ -121,3 +123,23 @@ class ScheduleDialog:
     def clear_state(self) -> None:
         st.session_state.pop(RESULT_KEY, None)
         st.session_state.pop(CRON_SAMPLE_KEY, None)
+
+
+def _add_schedule(schedule: JobSchedule) -> None:
+    schedule.save()
+    record(AuditAction.SCHEDULE_CREATED, schedule)
+
+
+@with_database_session
+def _delete_schedule(schedule_id: str) -> None:
+    if schedule := JobSchedule.get(JobSchedule.id == schedule_id):
+        record(AuditAction.SCHEDULE_DELETED, schedule)
+    JobSchedule.delete(schedule_id)
+
+
+@with_database_session
+def _set_schedule_active(schedule_id: str, active: bool) -> None:
+    if schedule := JobSchedule.get(JobSchedule.id == schedule_id):
+        schedule.active = active
+        schedule.save()
+        record_switch(schedule, "active", on=AuditAction.SCHEDULE_RESUMED, off=AuditAction.SCHEDULE_PAUSED)

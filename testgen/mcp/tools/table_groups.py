@@ -12,12 +12,16 @@ from typing import Annotated, Any
 from pydantic import Field, field_validator
 from sqlalchemy.exc import IntegrityError
 
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record
+from testgen.common.audit.table_groups import record_table_group_created
 from testgen.common.database.table_group_service import (
     SchemaMoveRefused,
     apply_table_group_flavor_rules,
     catalog_membership,
     is_duplicate_name_error,
     move_table_group_schema,
+    save_new_table_group,
     update_catalog_for_edit,
     validate_table_group_fields,
     validate_table_naming,
@@ -439,10 +443,11 @@ def create_table_group(
         _raise_validation_error(errors, "Table group creation rejected. No changes saved.")
 
     try:
-        table_group.save(add_scorecard_definition=add_scorecard)
+        scorecard = save_new_table_group(table_group, add_scorecard=add_scorecard)
     except IntegrityError as err:
         _maybe_raise_duplicate_name(err)
         raise
+    record_table_group_created(table_group, scorecard)
 
     catalog_error = write_table_group_catalog(table_group, connection)
     return _render_created_table_group(table_group, connection, catalog_error)
@@ -666,6 +671,7 @@ def update_table_group(
     except IntegrityError as err:
         _maybe_raise_duplicate_name(err)
         raise
+    record(AuditAction.TABLE_GROUP_UPDATED, table_group)
 
     catalog_error = update_catalog_for_edit(table_group, membership_before, move, connection)
     if move:

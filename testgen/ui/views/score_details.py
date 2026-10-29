@@ -7,6 +7,8 @@ from typing import Any, ClassVar
 import pandas as pd
 import streamlit as st
 
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import record
 from testgen.common.enums import JobKey, JobSource
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
@@ -242,6 +244,7 @@ def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
 @with_database_session
 def delete_score_card(definition_id: str) -> None:
     score_definition = ScoreDefinition.get(definition_id)
+    record(AuditAction.SCORECARD_DELETED, score_definition)
     score_definition.delete()
     get_all_score_cards.clear()
     Router().queue_navigation("quality-dashboard", {"project_code": score_definition.project_code})

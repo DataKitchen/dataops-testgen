@@ -16,6 +16,7 @@ from sqlalchemy import select
 
 from testgen import settings
 from testgen.common import contract_comparison, contract_creation, contract_import, contract_service
+from testgen.common.audit.test_suites import record_contract_created
 from testgen.common.auth import get_jwt_signing_key
 from testgen.common.contract_comparison import TermChangeKind
 from testgen.common.contract_document import PROFILED_VALUES
@@ -875,6 +876,7 @@ def import_contract(
     if parsed_mode is ContractImportMode.APPLY:
         if creating:
             created = contract_creation.create_contract_from_import(suite, table_group, connection, plan)
+            record_contract_created(created.suite)
             version_id, conformance_failed = created.version_id, created.conformance_failed
         else:
             applied = contract_import.apply_import(plan, suite, table_group, SqlFlavorCode(connection.sql_flavor_code))
