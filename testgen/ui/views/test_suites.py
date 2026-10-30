@@ -51,7 +51,7 @@ from testgen.ui.services.contract_import_service import (
     import_preview,
     read_contract_file,
 )
-from testgen.ui.services.contract_run_service import run_test_suite_options
+from testgen.ui.services.contract_run_service import run_list_args, run_test_suite_options
 from testgen.ui.services.query_cache import (
     get_contract_states,
     get_project_summary,
@@ -233,6 +233,7 @@ class TestSuitesPage(Page):
             selected_id = data.get("test_suite_id")
             selected_name = data.get("test_suite_name")
             success = True
+            list_args = {}
             suite_type = next((ts.suite_type for ts in test_suites if str(ts.id) == str(selected_id)), None)
             message = run_started_message(suite_type, selected_name)
             show_link = session.current_page != "test-runs"
@@ -247,11 +248,14 @@ class TestSuitesPage(Page):
                         source=JobSource.ui,
                         project_code=project_code,
                     )
+                    list_args = run_list_args(selected_id, data.get("version_id"))
             except Exception as error:
                 success = False
                 message = f"Test run could not be started: {error!s}."
                 show_link = False
-            st.session_state[RUN_TESTS_RESULT_KEY] = {"success": success, "message": message, "show_link": show_link}
+            st.session_state[RUN_TESTS_RESULT_KEY] = {
+                "success": success, "message": message, "show_link": show_link, "list_args": list_args,
+            }
             if success and not show_link:
                 st.cache_data.clear()
                 st.session_state.pop(RUN_TESTS_DIALOG_KEY, None)
@@ -259,9 +263,9 @@ class TestSuitesPage(Page):
 
         def on_go_to_test_runs(payload: dict) -> None:
             st.session_state.pop(RUN_TESTS_DIALOG_KEY, None)
-            st.session_state.pop(RUN_TESTS_RESULT_KEY, None)
+            result = st.session_state.pop(RUN_TESTS_RESULT_KEY, None) or {}
             st.cache_data.clear()
-            Router().queue_navigation(to="test-runs", with_args=payload)
+            Router().queue_navigation(to="test-runs", with_args={**payload, **result.get("list_args", {})})
 
         def on_run_tests_dialog_closed(*_) -> None:
             st.session_state.pop(RUN_TESTS_DIALOG_KEY, None)
