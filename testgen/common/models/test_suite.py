@@ -57,6 +57,19 @@ class TestSuiteMinimal(EntityMinimal):
 
 
 @dataclass(frozen=True)
+class SuiteDeletionCounts:
+    """What deleting a test suite removes with it."""
+
+    test_definitions: int
+    notes: int
+    test_runs: int
+    test_results: int
+    schedules: int
+    notification_settings: int
+    contract_versions: int
+
+
+@dataclass(frozen=True)
 class TestDefinitionStats:
     """Aggregate test-definition counts for a test suite."""
 
@@ -392,6 +405,31 @@ class TestSuite(Entity):
         params = {"test_suite_ids": tuple(ids)}
         dependency_count = get_current_session().execute(text(query), params).rowcount
         return dependency_count > 0
+
+    @classmethod
+    def deletion_counts(cls, test_suite_id: UUID | str) -> SuiteDeletionCounts:
+        """Count the rows ``cascade_delete`` removes with the suite, across every version of its tests.
+
+        :param test_suite_id: The suite to count for.
+        :returns: The counts, by kind of row.
+        """
+        query = """
+        SELECT
+            (SELECT COUNT(*) FROM test_definitions WHERE test_suite_id = :test_suite_id) AS test_definitions,
+            (SELECT COUNT(*) FROM test_definition_notes n
+                JOIN test_definitions d ON d.id = n.test_definition_id
+                WHERE d.test_suite_id = :test_suite_id) AS notes,
+            (SELECT COUNT(*) FROM test_runs WHERE test_suite_id = :test_suite_id) AS test_runs,
+            (SELECT COUNT(*) FROM test_results WHERE test_suite_id = :test_suite_id) AS test_results,
+            (SELECT COUNT(*) FROM job_schedules
+                WHERE (kwargs->>'test_suite_id')::UUID = :test_suite_id) AS schedules,
+            (SELECT COUNT(*) FROM notification_settings
+                WHERE test_suite_id = :test_suite_id) AS notification_settings,
+            (SELECT COUNT(*) FROM suite_versions
+                WHERE test_suite_id = :test_suite_id AND frozen_at IS NOT NULL) AS contract_versions
+        """
+        row = get_current_session().execute(text(query), {"test_suite_id": str(test_suite_id)}).mappings().one()
+        return SuiteDeletionCounts(**{key: int(value) for key, value in row.items()})
 
     @classmethod
     def cascade_delete(cls, ids: list[str]) -> None:

@@ -5,6 +5,7 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass
+from enum import StrEnum
 
 from mcp.server.fastmcp import Context
 from mcp.shared.exceptions import McpError
@@ -25,8 +26,15 @@ class _Confirmation(BaseModel):
 @dataclass(frozen=True, slots=True)
 class _PendingConfirmation:
     operation_id: str
+    scope: str | None
     username: str | None
     expires_at: float
+
+
+class _Redemption(StrEnum):
+    CONFIRMED = "confirmed"
+    CHANGED = "changed"
+    REFUSED = "refused"
 
 
 _pending: dict[str, _PendingConfirmation] = {}
@@ -38,22 +46,32 @@ def _drop_expired(now: float) -> None:
         del _pending[token]
 
 
-def _issue_token(operation_id: str) -> str:
+def _issue_token(operation_id: str, scope: str | None) -> str:
     now = time.monotonic()
     token = secrets.token_urlsafe(16)
     with _pending_lock:
         _drop_expired(now)
-        _pending[token] = _PendingConfirmation(operation_id, get_mcp_username(), now + TOKEN_TTL_SECONDS)
+        _pending[token] = _PendingConfirmation(operation_id, scope, get_mcp_username(), now + TOKEN_TTL_SECONDS)
     return token
 
 
-def _redeem_token(token: str, operation_id: str) -> bool:
-    """Consume ``token``; whether it was live and issued to this user for this operation."""
+def _redeem_token(token: str, operation_id: str, scope: str | None) -> _Redemption:
+    """Consume ``token``, and say whether it confirms this operation.
+
+    A live token of this user that was issued for a different operation within the same ``scope`` reads as
+    ``CHANGED``: the request acts on the same thing, but what it would remove is no longer what was confirmed.
+    """
     now = time.monotonic()
     with _pending_lock:
         _drop_expired(now)
         pending = _pending.pop(token, None)
-    return pending is not None and pending.operation_id == operation_id and pending.username == get_mcp_username()
+    if pending is None or pending.username != get_mcp_username():
+        return _Redemption.REFUSED
+    if pending.operation_id == operation_id:
+        return _Redemption.CONFIRMED
+    if scope is not None and pending.scope == scope:
+        return _Redemption.CHANGED
+    return _Redemption.REFUSED
 
 
 def _supports_form_elicitation(ctx: Context) -> bool:
@@ -77,6 +95,7 @@ async def confirm_destructive_action(
     prompt: str,
     counts: dict[str, int],
     confirmation_token: str | None = None,
+    scope: str | None = None,
 ) -> None:
     """Return once the user has confirmed the operation; raise ``MCPUserError`` otherwise.
 
@@ -86,6 +105,9 @@ async def confirm_destructive_action(
         prompt: The question put to the user, naming what is deleted.
         counts: Entity label to the number of rows the operation removes. Zero counts are left out.
         confirmation_token: A token issued by an earlier call for the same operation.
+        scope: Identifies what the operation acts on, apart from what it would remove. A token issued within the
+            same scope for a different operation is refused as a change in what the request would remove, rather
+            than as an unknown token.
 
     A supplied token is redeemed: it works once, for the user and operation it was issued
     for, within ``TOKEN_TTL_SECONDS``. Without one, the user is asked through elicitation when
@@ -94,7 +116,13 @@ async def confirm_destructive_action(
     assistant: it rules out a delete in a single call, but not an assistant that skips asking.
     """
     if confirmation_token is not None:
-        if not _redeem_token(confirmation_token, operation_id):
+        redemption = _redeem_token(confirmation_token, operation_id, scope)
+        if redemption == _Redemption.CHANGED:
+            raise MCPUserError(
+                "Nothing was deleted. What this request would delete changed after the user was asked to confirm "
+                "it. Call again without `confirmation_token` to show the user what it would delete now."
+            )
+        if redemption == _Redemption.REFUSED:
             raise MCPUserError(
                 "Nothing was deleted. The confirmation token is invalid, expired, already used, or was issued "
                 "for a different request. Call again without `confirmation_token` to get a new one."
@@ -117,7 +145,7 @@ async def confirm_destructive_action(
                 return
             raise MCPUserError("The user did not confirm. Nothing was deleted.")
 
-    token = _issue_token(operation_id)
+    token = _issue_token(operation_id, scope)
     raise MCPUserError(
         f"Confirmation required. Nothing was deleted.\n\n{message}\n\n"
         "Show this to the user and ask whether to go ahead. If they confirm, call this tool again with the "

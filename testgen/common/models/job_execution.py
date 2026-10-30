@@ -400,23 +400,25 @@ class JobExecution(Base):
         cls,
         *clauses: ColumnElement[bool],
         project_code: str,
-        job_key: str,
         kwargs_match: dict[str, str | list[str]],
+        job_key: str | None = None,
         statuses: list[JobStatus] | None = None,
     ) -> list[Self]:
         """Find JE rows whose ``kwargs`` JSONB matches the given (key, value) pairs.
 
         Values may be a single string or a list of strings (which becomes an ``IN`` filter).
+        Rows of any job key match when ``job_key`` is omitted.
         Additional caller-supplied WHERE expressions may be passed as ``*clauses``.
         Defaults to active (non-terminal) statuses.
         """
         statuses = statuses or list(JobStatus.active())
         query = select(cls).where(
             cls.project_code == project_code,
-            cls.job_key == job_key,
             cls.status.in_(statuses),
             *clauses,
         )
+        if job_key is not None:
+            query = query.where(cls.job_key == job_key)
         for k, v in kwargs_match.items():
             if isinstance(v, list):
                 if not v:
