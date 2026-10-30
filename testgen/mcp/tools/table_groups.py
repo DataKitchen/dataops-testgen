@@ -1,4 +1,4 @@
-"""MCP tools for table groups — create, update, append tables, preview.
+"""MCP tools for table groups — create, update, append tables, preview, delete.
 
 Each tool gates on the ``edit`` permission. Validation and target-DB
 introspection are delegated to ``testgen.common.database.table_group_service``
@@ -7,8 +7,12 @@ so the rules and SQL paths stay in one place.
 
 from __future__ import annotations
 
+import hashlib
+from dataclasses import astuple, dataclass
 from typing import Annotated, Any
+from uuid import UUID
 
+from mcp.server.fastmcp import Context
 from pydantic import Field, field_validator
 from sqlalchemy.exc import IntegrityError
 
@@ -18,7 +22,9 @@ from testgen.common.audit.table_groups import record_table_group_created
 from testgen.common.database.table_group_service import (
     SchemaMoveRefused,
     apply_table_group_flavor_rules,
+    cascade_delete_table_group,
     catalog_membership,
+    delete_blockers,
     is_duplicate_name_error,
     move_table_group_schema,
     save_new_table_group,
@@ -30,13 +36,15 @@ from testgen.common.database.table_group_service import (
 from testgen.common.database.table_group_service import (
     preview_table_group as preview_table_group_service,
 )
-from testgen.common.enums import FileFormat
+from testgen.common.enums import JOB_STATUS_LABEL, FileFormat, JobKey, JobStatus
 from testgen.common.file_declaration_schema import FileDeclarationSpec
 from testgen.common.flavors import declares_files, table_group_schema_label
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.data_table import CATALOG_TAG_LABELS
-from testgen.common.models.table_group import TableGroup, table_group_defaults
+from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.table_group import TableGroup, TableGroupDeletionCounts, table_group_defaults
+from testgen.mcp.confirmation import confirm_destructive_action
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
@@ -54,6 +62,7 @@ from testgen.mcp.tools.common import (
     validate_page,
 )
 from testgen.mcp.tools.markdown import MdDoc, format_boolean
+from testgen.mcp.workers import run_on_worker_thread
 from testgen.utils import friendly_score
 
 _DOC_GROUP = DocGroup.MANAGE
@@ -1072,3 +1081,148 @@ def _render_created_table_group(
         )
 
     return doc.render()
+
+
+# ---------------------------------------------------------------------------
+# Delete
+# ---------------------------------------------------------------------------
+
+_JOB_LABELS = {
+    JobKey.run_profile: "profiling run",
+    JobKey.refresh_data_catalog: "data catalog refresh",
+    JobKey.run_tests: "test run",
+    JobKey.run_test_generation: "test generation",
+    JobKey.run_monitors: "monitor run",
+    JobKey.run_monitor_generation: "monitor generation",
+    JobKey.refresh_run_scores: "score refresh",
+}
+
+_DELETION_LABELS = {
+    "test_suites": "Test suites",
+    "contracts": "Contracts",
+    "monitor_suites": "Monitor suites",
+    "test_definitions": "Test definitions",
+    "monitors": "Monitors",
+    "notes": "Notes",
+    "test_runs": "Test runs",
+    "test_results": "Test results",
+    "monitor_runs": "Monitor runs",
+    "monitor_results": "Monitor results",
+    "profiling_runs": "Profiling runs",
+    "profile_results": "Profile results",
+    "hygiene_issues": "Hygiene issues",
+    "catalog_tables": "Data catalog tables",
+    "catalog_columns": "Data catalog columns",
+    "schema_changes": "Schema change history entries",
+    "schedules": "Schedules",
+    "notification_settings": "Notification settings",
+    "contract_versions": "Frozen contract versions",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class _TableGroupDeletePlan:
+    table_group_id: UUID
+    name: str
+    counts: TableGroupDeletionCounts
+
+    @property
+    def operation_id(self) -> str:
+        """Identifies the table group and the counts the user is shown, so a token does not confirm other counts."""
+        digest = hashlib.sha256(repr(astuple(self.counts)).encode()).hexdigest()
+        return f"delete_table_group:{self.table_group_id}:{digest}"
+
+
+def _labelled_deletion_counts(counts: TableGroupDeletionCounts) -> dict[str, int]:
+    return {label: getattr(counts, field) for field, label in _DELETION_LABELS.items()}
+
+
+def _blocked_by(table_group: TableGroup, jobs: list[JobExecution]) -> MCPUserError:
+    """The refusal naming every job that keeps the table group from being deleted."""
+    if not jobs:
+        return MCPUserError(
+            f"Nothing was deleted. A job for table group `{table_group.table_groups_name}` or its test suites was "
+            "queued or running when the delete ran. Try again."
+        )
+    listed = ", ".join(
+        f"{_JOB_LABELS.get(job.job_key, job.job_key)} `{job.id}` ({JOB_STATUS_LABEL.get(job.status, job.status)})"
+        for job in jobs
+    )
+    message = (
+        f"Nothing was deleted. Jobs for table group `{table_group.table_groups_name}` or its test suites are "
+        f"queued or running: {listed}. Cancel them (a test run with `cancel_test_run`, a profiling run with "
+        "`cancel_profiling_run`) or let them finish, then try again."
+    )
+    if any(job.status == JobStatus.CANCEL_REQUESTED for job in jobs):
+        message += " A job whose cancellation was requested blocks the delete until the cancellation completes."
+    return MCPUserError(message)
+
+
+@with_database_session
+@mcp_permission("edit")
+def _plan_table_group_deletion(table_group_id: str) -> _TableGroupDeletePlan:
+    """Resolve the table group, refuse while a job blocks its delete, and count what deleting it removes."""
+    table_group = resolve_table_group(table_group_id)
+    if jobs := delete_blockers(table_group):
+        raise _blocked_by(table_group, jobs)
+    return _TableGroupDeletePlan(
+        table_group.id, table_group.table_groups_name, TableGroup.deletion_counts(table_group.id)
+    )
+
+
+@with_database_session
+@mcp_permission("edit")
+def _delete_planned_table_group(plan: _TableGroupDeletePlan, table_group_id: str) -> str:
+    """Delete the table group, provided it still holds what ``plan`` counted, and render what went."""
+    table_group = resolve_table_group(table_group_id)
+    if jobs := delete_blockers(table_group):
+        raise _blocked_by(table_group, jobs)
+    if TableGroup.deletion_counts(table_group.id) != plan.counts:
+        raise MCPUserError(
+            f"What table group `{plan.name}` holds changed while the request waited for confirmation. Nothing was "
+            "deleted. Call `delete_table_group` again to confirm what it holds now."
+        )
+    if cascade_delete_table_group(table_group):
+        raise _blocked_by(table_group, delete_blockers(table_group))
+    record(AuditAction.TABLE_GROUP_DELETED, table_group)
+
+    doc = MdDoc()
+    doc.heading(1, f"Deleted table group `{plan.name}`")
+    for label, count in _labelled_deletion_counts(plan.counts).items():
+        if count:
+            doc.field(label, count)
+    return doc.render()
+
+
+async def delete_table_group(
+    ctx: Context,
+    table_group_id: Annotated[str, Field(description="UUID of the table group to delete, e.g. from `list_table_groups`.")],
+    confirmation_token: Annotated[
+        str | None,
+        Field(
+            description="Token from an earlier `delete_table_group` call that asked for confirmation. Show the "
+            "user what that call said it would delete, and pass the token, with the same `table_group_id`, "
+            "only after the user has explicitly agreed. Never pass it on your own judgment.",
+        ),
+    ] = None,
+) -> str:
+    """Delete a table group with everything in it, once the user confirms.
+
+    The user is shown what goes and must confirm before anything is removed: every test suite
+    and contract in the table group with their test definitions in every version, notes, runs,
+    results, schedules, and notification settings; its monitor suite with its monitors, runs, and
+    results; its profiling runs and results, hygiene issues, data catalog, and schema change
+    history; and its own schedules and notification settings. Scorecards are kept. Refused while
+    a job for the table group or one of its test suites is queued or running; data catalog
+    refreshes that have not started are canceled instead.
+    """
+    plan = await run_on_worker_thread(_plan_table_group_deletion, table_group_id)
+    await confirm_destructive_action(
+        ctx,
+        operation_id=plan.operation_id,
+        prompt=f"Delete table group `{plan.name}` and everything in it?",
+        counts=_labelled_deletion_counts(plan.counts),
+        confirmation_token=confirmation_token,
+        scope=f"delete_table_group:{plan.table_group_id}",
+    )
+    return await run_on_worker_thread(_delete_planned_table_group, plan, table_group_id)

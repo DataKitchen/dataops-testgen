@@ -1,13 +1,20 @@
-"""Tests for the MCP table-group CRUD tools — create / update / preview."""
+"""Tests for the MCP table-group CRUD tools — create / update / preview / delete."""
 
-from unittest.mock import MagicMock, patch
+import asyncio
+import re
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from mcp.types import ElicitationCapability
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
-from testgen.common.database.table_group_service import SchemaMove, SchemaMoveRefused
+from testgen.common.audit.actions import AuditAction
+from testgen.common.database.table_group_service import DeleteBlocker, SchemaMove, SchemaMoveRefused
+from testgen.common.enums import JobKey, JobStatus
+from testgen.common.models.table_group import TableGroupDeletionCounts
+from testgen.mcp import confirmation
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
@@ -1837,3 +1844,268 @@ def test_a_declaration_read_error_is_withheld_under_source_data_protection(
     assert "claims" in output
     assert "123-45-6789" not in output
     assert "withheld by the source-data protection policy" in output
+
+
+# ---------------------------------------------------------------------------
+# delete_table_group
+# ---------------------------------------------------------------------------
+
+
+def _deletion_counts(**overrides) -> TableGroupDeletionCounts:
+    values = {
+        "test_suites": 2, "contracts": 1, "monitor_suites": 1, "test_definitions": 30, "monitors": 6,
+        "notes": 2, "test_runs": 9, "test_results": 120, "monitor_runs": 48, "monitor_results": 288,
+        "profiling_runs": 3, "profile_results": 450,
+        "hygiene_issues": 12, "catalog_tables": 15, "catalog_columns": 140, "schema_changes": 20,
+        "schedules": 2, "notification_settings": 1, "contract_versions": 2,
+    }
+    return TableGroupDeletionCounts(**{**values, **overrides})
+
+
+def _confirming_ctx(action: str = "accept") -> MagicMock:
+    """An MCP context whose client supports elicitation and whose user answers with ``action``."""
+    ctx = MagicMock()
+    ctx.session.client_params.capabilities.elicitation = ElicitationCapability()
+    ctx.elicit = AsyncMock(return_value=MagicMock(action=action, data=MagicMock(confirm=True)))
+    return ctx
+
+
+def _no_elicitation_ctx() -> MagicMock:
+    ctx = MagicMock()
+    ctx.session.client_params.capabilities.elicitation = None
+    return ctx
+
+
+def _job(job_key: JobKey, status: JobStatus) -> MagicMock:
+    return MagicMock(id=uuid4(), job_key=job_key, status=status)
+
+
+@pytest.fixture
+def no_pending_tokens():
+    confirmation._pending.clear()
+    yield
+    confirmation._pending.clear()
+
+
+@pytest.fixture
+def deletable_table_group():
+    """A table group nothing blocks, with the counts above, and the shared delete recorded."""
+    table_group = _mock_table_group(table_groups_name="sales")
+    with (
+        patch(f"{MODULE}.resolve_table_group", return_value=table_group),
+        patch(f"{MODULE}.delete_blockers", return_value=[]) as blockers,
+        patch(f"{MODULE}.TableGroup.deletion_counts", return_value=_deletion_counts()) as counts,
+        patch(f"{MODULE}.cascade_delete_table_group", return_value=None) as delete,
+        patch(f"{MODULE}.record") as audit,
+    ):
+        yield MagicMock(table_group=table_group, blockers=blockers, counts=counts, delete=delete, audit=audit)
+
+
+def _delete_group(ctx, table_group_id, **kwargs) -> str:
+    from testgen.mcp.tools.table_groups import delete_table_group
+
+    with _patch_perms():
+        return asyncio.run(delete_table_group(ctx, table_group_id, **kwargs))
+
+
+def test_delete_table_group_asks_with_everything_it_removes_monitors_and_catalog_named(
+    deletable_table_group, db_session_mock
+):
+    ctx = _confirming_ctx()
+
+    result = _delete_group(ctx, str(deletable_table_group.table_group.id))
+
+    message = ctx.elicit.await_args.args[0]
+    assert message.startswith("Delete table group `sales` and everything in it?")
+    for line in (
+        "- Test suites: 2", "- Contracts: 1", "- Monitor suites: 1", "- Test definitions: 30", "- Monitors: 6",
+        "- Test runs: 9", "- Test results: 120", "- Monitor runs: 48", "- Monitor results: 288",
+        "- Profile results: 450", "- Hygiene issues: 12", "- Data catalog tables: 15", "- Data catalog columns: 140",
+        "- Schema change history entries: 20", "- Frozen contract versions: 2",
+    ):
+        assert line in message
+    deletable_table_group.delete.assert_called_once_with(deletable_table_group.table_group)
+    assert "# Deleted table group `sales`" in result
+    assert "Monitors:** 6" in result
+
+
+def test_delete_table_group_leaves_out_kinds_it_has_none_of(deletable_table_group, db_session_mock):
+    deletable_table_group.counts.return_value = _deletion_counts(
+        monitor_suites=0, monitors=0, monitor_runs=0, monitor_results=0, contracts=0, contract_versions=0
+    )
+    ctx = _confirming_ctx()
+
+    _delete_group(ctx, str(deletable_table_group.table_group.id))
+
+    message = ctx.elicit.await_args.args[0]
+    assert "Monitor" not in message and "Contract" not in message
+
+
+def test_delete_table_group_deletes_nothing_when_the_user_declines(deletable_table_group, db_session_mock):
+    with pytest.raises(MCPUserError, match="did not confirm"):
+        _delete_group(_confirming_ctx(action="decline"), str(deletable_table_group.table_group.id))
+
+    deletable_table_group.delete.assert_not_called()
+
+
+def test_delete_table_group_refuses_while_a_job_blocks_it_without_asking(deletable_table_group, db_session_mock):
+    profiling = _job(JobKey.run_profile, JobStatus.RUNNING)
+    monitors = _job(JobKey.run_monitor_generation, JobStatus.PENDING)
+    deletable_table_group.blockers.return_value = [profiling, monitors]
+    ctx = _confirming_ctx()
+
+    with pytest.raises(MCPUserError) as refused:
+        _delete_group(ctx, str(deletable_table_group.table_group.id))
+
+    message = str(refused.value)
+    assert message.startswith("Nothing was deleted.")
+    assert f"profiling run `{profiling.id}` (Running)" in message
+    assert f"monitor generation `{monitors.id}` (Pending)" in message
+    assert "`cancel_profiling_run`" in message and "`cancel_test_run`" in message
+    ctx.elicit.assert_not_awaited()
+    deletable_table_group.delete.assert_not_called()
+
+
+def test_delete_table_group_says_a_job_being_canceled_blocks_until_its_cancellation_completes(
+    deletable_table_group, db_session_mock
+):
+    deletable_table_group.blockers.return_value = [_job(JobKey.run_tests, JobStatus.CANCEL_REQUESTED)]
+
+    with pytest.raises(MCPUserError, match="blocks the delete until the cancellation completes"):
+        _delete_group(_confirming_ctx(), str(deletable_table_group.table_group.id))
+
+
+def test_delete_table_group_refuses_a_job_that_started_while_asking(deletable_table_group, db_session_mock):
+    started = _job(JobKey.run_tests, JobStatus.RUNNING)
+    deletable_table_group.blockers.side_effect = [[], [started]]
+
+    with pytest.raises(MCPUserError, match=f"test run `{started.id}`"):
+        _delete_group(_confirming_ctx(), str(deletable_table_group.table_group.id))
+
+    deletable_table_group.delete.assert_not_called()
+
+
+def test_delete_table_group_reports_a_job_the_shared_delete_found_at_the_last_moment(
+    deletable_table_group, db_session_mock
+):
+    """The shared delete rechecks under a lock; a refusal from it names the job like any other."""
+    late = _job(JobKey.refresh_data_catalog, JobStatus.RUNNING)
+    deletable_table_group.blockers.side_effect = [[], [], [late]]
+    deletable_table_group.delete.return_value = DeleteBlocker.CATALOG_REFRESH
+
+    with pytest.raises(MCPUserError, match=f"data catalog refresh `{late.id}`"):
+        _delete_group(_confirming_ctx(), str(deletable_table_group.table_group.id))
+
+
+def test_delete_table_group_deletes_nothing_when_its_contents_changed_while_asking(
+    deletable_table_group, db_session_mock
+):
+    deletable_table_group.counts.side_effect = [_deletion_counts(), _deletion_counts(profile_results=900)]
+
+    with pytest.raises(MCPUserError, match="changed while the request waited for confirmation"):
+        _delete_group(_confirming_ctx(), str(deletable_table_group.table_group.id))
+
+    deletable_table_group.delete.assert_not_called()
+
+
+@pytest.mark.usefixtures("no_pending_tokens")
+def test_delete_table_group_without_elicitation_deletes_on_the_second_call_with_the_token(
+    deletable_table_group, db_session_mock
+):
+    group_id = str(deletable_table_group.table_group.id)
+
+    with pytest.raises(MCPUserError, match="Confirmation required") as asked:
+        _delete_group(_no_elicitation_ctx(), group_id)
+    deletable_table_group.delete.assert_not_called()
+
+    token = re.search(r"`confirmation_token` set to `([^`]+)`", str(asked.value)).group(1)
+    result = _delete_group(_no_elicitation_ctx(), group_id, confirmation_token=token)
+
+    assert "# Deleted table group `sales`" in result
+    deletable_table_group.delete.assert_called_once()
+
+
+@pytest.mark.usefixtures("no_pending_tokens")
+def test_delete_table_group_token_does_not_confirm_counts_the_user_was_not_shown(
+    deletable_table_group, db_session_mock
+):
+    """A profiling run that lands between the two calls changes what goes; the token covers what was shown."""
+    shown, grown = _deletion_counts(), _deletion_counts(profiling_runs=4, profile_results=600)
+    deletable_table_group.counts.side_effect = [shown, grown, grown]
+    group_id = str(deletable_table_group.table_group.id)
+
+    with pytest.raises(MCPUserError) as asked:
+        _delete_group(_no_elicitation_ctx(), group_id)
+    token = re.search(r"`confirmation_token` set to `([^`]+)`", str(asked.value)).group(1)
+
+    with pytest.raises(MCPUserError, match="What this request would delete changed after the user was asked"):
+        _delete_group(_no_elicitation_ctx(), group_id, confirmation_token=token)
+
+    deletable_table_group.delete.assert_not_called()
+
+
+@patch(f"{MODULE}.cascade_delete_table_group")
+@patch(f"{MODULE}.resolve_table_group")
+def test_delete_table_group_hides_whether_an_inaccessible_group_exists(mock_resolve, mock_delete, db_session_mock):
+    mock_resolve.side_effect = MCPResourceNotAccessible("Table group", "abc")
+    ctx = _confirming_ctx()
+
+    with pytest.raises(MCPResourceNotAccessible, match="not found or not accessible"):
+        _delete_group(ctx, "abc")
+
+    ctx.elicit.assert_not_awaited()
+    mock_delete.assert_not_called()
+
+
+@patch(f"{MODULE}.cascade_delete_table_group")
+def test_delete_table_group_requires_edit(mock_delete, db_session_mock):
+    """role_c lacks edit (per conftest matrix)."""
+    from testgen.mcp.tools.table_groups import delete_table_group
+
+    ctx = _confirming_ctx()
+    with _patch_perms(memberships={"demo": "role_c"}), pytest.raises(MCPPermissionDenied):
+        asyncio.run(delete_table_group(ctx, str(uuid4())))
+
+    ctx.elicit.assert_not_awaited()
+    mock_delete.assert_not_called()
+
+
+def test_delete_table_group_names_a_score_refresh_by_its_kind(deletable_table_group, db_session_mock):
+    refresh = _job(JobKey.refresh_run_scores, JobStatus.PENDING)
+    deletable_table_group.blockers.return_value = [refresh]
+
+    with pytest.raises(MCPUserError, match=f"score refresh `{refresh.id}` \\(Pending\\)"):
+        _delete_group(_confirming_ctx(), str(deletable_table_group.table_group.id))
+
+
+def test_delete_table_group_refused_by_a_job_that_has_since_finished_says_so_without_a_list(
+    deletable_table_group, db_session_mock
+):
+    deletable_table_group.blockers.side_effect = [[], [], []]
+    deletable_table_group.delete.return_value = DeleteBlocker.JOB
+
+    with pytest.raises(MCPUserError, match=r"^Nothing was deleted\. A job for table group `sales` .* Try again\.$"):
+        _delete_group(_confirming_ctx(), str(deletable_table_group.table_group.id))
+
+
+def test_delete_table_group_records_the_delete_in_the_audit_trail_once_it_went(deletable_table_group, db_session_mock):
+    """As the UI's and the REST API's deletes do, after the shared delete reports success."""
+    _delete_group(_confirming_ctx(), str(deletable_table_group.table_group.id))
+
+    deletable_table_group.audit.assert_called_once_with(AuditAction.TABLE_GROUP_DELETED, deletable_table_group.table_group)
+
+
+def test_delete_table_group_records_nothing_when_the_user_declines(deletable_table_group, db_session_mock):
+    with pytest.raises(MCPUserError):
+        _delete_group(_confirming_ctx(action="decline"), str(deletable_table_group.table_group.id))
+
+    deletable_table_group.audit.assert_not_called()
+
+
+def test_delete_table_group_records_nothing_when_the_shared_delete_refuses(deletable_table_group, db_session_mock):
+    deletable_table_group.delete.return_value = DeleteBlocker.JOB
+
+    with pytest.raises(MCPUserError, match="Nothing was deleted"):
+        _delete_group(_confirming_ctx(), str(deletable_table_group.table_group.id))
+
+    deletable_table_group.audit.assert_not_called()

@@ -429,6 +429,14 @@ class JobExecution(Base):
         query = query.order_by(cls.created_at.desc())
         return list(get_current_session().scalars(query).all())
 
+    @staticmethod
+    def has_started(status: JobStatus, claimed_at: datetime | None) -> bool:
+        """Whether a non-terminal job with this status and claim time has started, or may yet.
+
+        A job canceled before any worker claimed it will never run, so it counts as not started.
+        """
+        return status not in JobStatus.claimable() and not (status == JobStatus.CANCEL_REQUESTED and claimed_at is None)
+
     @classmethod
     def cancel_queued_catalog_refreshes(cls, entity_cls: type[Entity], *entity_ids: str | UUID) -> bool:
         """Cancel the catalog refreshes that have not started for the given table groups, or for
@@ -458,11 +466,7 @@ class JobExecution(Base):
             )
             .with_for_update()
         ).all()
-        # A refresh canceled before any worker claimed it will never run, so it blocks nothing.
-        if any(
-            status not in JobStatus.claimable() and not (status == JobStatus.CANCEL_REQUESTED and claimed_at is None)
-            for _, status, claimed_at in refreshes
-        ):
+        if any(cls.has_started(status, claimed_at) for _, status, claimed_at in refreshes):
             return False
         if queued := [job_id for job_id, status, _ in refreshes if status in JobStatus.claimable()]:
             cls._transition_bulk_where(JobStatus.CANCEL_REQUESTED, cls.id.in_(queued))
