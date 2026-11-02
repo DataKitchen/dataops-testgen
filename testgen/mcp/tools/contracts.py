@@ -460,8 +460,9 @@ def update_contract_metadata(
 
     A quality rule that a test type checks is refused: add it as a test with `create_test`. A rule
     no test type checks is saved marked unverifiable, and is exported with the contract but not
-    run. `apiVersion`, `kind`, `id`, and `version` cannot be changed, and `name` is the contract's
-    name: rename the contract with `update_test_suite`. A change that would make the document
+    run. `apiVersion`, `kind`, `id`, `version`, and `status` cannot be changed, and `name` is the
+    contract's name: rename the contract with `update_test_suite`. `status` follows the version: `draft`,
+    `active`, or `deprecated` once a later version is frozen. A change that would make the document
     invalid is refused with the path of each problem, and nothing is saved.
 
     Under source-data protection, send each `<hidden:…>` placeholder back to keep its value.
