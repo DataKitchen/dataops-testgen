@@ -4,6 +4,7 @@ from enum import StrEnum
 from uuid import UUID
 
 import streamlit as st
+from sqlalchemy.exc import IntegrityError
 
 from testgen.commands.run_observability_exporter import export_test_results
 from testgen.commands.test_generation import (
@@ -18,7 +19,11 @@ from testgen.common.audit.test_suites import record_contract_created
 from testgen.common.contract_creation import create_contract, create_contract_from_import
 from testgen.common.contract_document import catalog_table_names
 from testgen.common.contract_import import prepare_import
-from testgen.common.database.test_suite_service import validate_test_suite_fields
+from testgen.common.database.test_suite_service import (
+    duplicate_name_message,
+    is_duplicate_name_error,
+    validate_test_suite_fields,
+)
 from testgen.common.enums import TEST_SUITE_TYPES, JobSource, RegenerationGroup, SuiteType
 from testgen.common.flavors import FLAVOR_CODE_TO_LABEL
 from testgen.common.generation_set_service import (
@@ -531,7 +536,15 @@ def save_test_suite_form(data: dict) -> None:
     for attr, value in values.items():
         setattr(test_suite, attr, value)
     test_suite.deactivate_invalid_tests = data.get("deactivate_invalid_tests", test_suite.deactivate_invalid_tests)
-    test_suite.save()
+    name = test_suite.test_suite
+    try:
+        test_suite.save()
+    except IntegrityError as err:
+        if not is_duplicate_name_error(err):
+            raise
+        get_current_session().rollback()
+        st.session_state["ts_form_dialog:result"] = {"success": False, "message": duplicate_name_message(name)}
+        return
     record(AuditAction.TEST_SUITE_UPDATED, test_suite)
     st.session_state.pop("ts_form_dialog:result", None)
     st.session_state.pop(EDIT_DIALOG_KEY, None)
@@ -716,12 +729,13 @@ def add_test_suite_confirmed(payload: dict) -> None:
                 rows = _add_contract_from_file(suite, table_group, file["content"])
             else:
                 rows = _add_contract_from_tables(suite, table_group, tests.get("table_names") or [])
-    except Exception:
-        LOG.exception("Adding a test suite failed")
-        st.session_state[WIZARD_RESULT_KEY] = {
-            "success": False,
-            "message": "Something went wrong while adding the test suite.",
-        }
+    except Exception as err:
+        if isinstance(err, IntegrityError) and is_duplicate_name_error(err):
+            message = duplicate_name_message((payload.get("test_suite") or "").strip())
+        else:
+            LOG.exception("Adding a test suite failed")
+            message = "Something went wrong while adding the test suite."
+        st.session_state[WIZARD_RESULT_KEY] = {"success": False, "message": message}
         return
     st.cache_data.clear()
     st.session_state[WIZARD_RESULT_KEY] = {"success": True, "rows": rows}

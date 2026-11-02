@@ -22,6 +22,7 @@ from testgen.common.database.table_group_service import (
     save_new_table_group,
     schema_label_for_table_group,
 )
+from testgen.common.database.test_suite_service import duplicate_name_message, is_duplicate_name_error
 from testgen.common.enums import JobSource
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
@@ -479,6 +480,8 @@ class TableGroupsPage(Page):
                     success = False
                     if "table_groups_name_unique" in str(error.orig):
                         message = "A Table Group with the same name already exists."
+                    elif is_duplicate_name_error(error):
+                        message = duplicate_name_message(standard_test_suite_data["name"].strip())
                     else:
                         message = "Something went wrong while creating the table group."
                         LOG.exception(message)

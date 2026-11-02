@@ -932,6 +932,10 @@ CREATE UNIQUE INDEX uix_ts_id
 CREATE INDEX ix_ts_con
    ON test_suites(connection_id);
 
+CREATE UNIQUE INDEX test_suites_name_unique
+   ON test_suites (project_code, test_suite)
+   WHERE suite_type IN ('regular', 'contract');
+
 CREATE UNIQUE INDEX idx_ts_last_run
   ON test_suites (last_complete_test_run_id)
   WHERE last_complete_test_run_id IS NOT NULL;
