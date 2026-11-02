@@ -320,7 +320,7 @@ def _fetch_current_values(rows, general_type="A", pii_columns=(), can_view_pii=T
     connection = MagicMock(sql_flavor="postgresql", sql_flavor_code="postgresql")
     catalog = [ColumnChars("demo", "orders", "status", general_type=general_type, column_type="varchar(10)")]
     with (
-        patch(f"{MODULE}.fetch_from_target_db", return_value=[(value,) for value in rows]) as fetch,
+        patch(f"{MODULE}.fetch_from_target_db", return_value=[{"LISTED_VALUE": value} for value in rows]) as fetch,
         patch(f"{MODULE}.DataTable.list_column_chars", return_value=catalog),
         patch(f"{MODULE}.get_pii_columns", return_value=list(pii_columns)),
         patch(f"{MODULE}.TableGroup"),
@@ -334,7 +334,7 @@ def test_current_values_are_read_distinct_in_the_compared_form():
 
     assert result == CurrentValuesResult("OK", value_list='"",A,a,"a,b",b')
     assert fetch.call_args.args[1] == (
-        'SELECT  MIN(CAST("status" AS VARCHAR(1000))) AS value FROM "demo"."orders" WHERE "status" IS NOT NULL'
+        'SELECT  MIN(CAST("status" AS VARCHAR(1000))) AS listed_value FROM "demo"."orders" WHERE "status" IS NOT NULL'
         ' GROUP BY CAST("status" AS VARCHAR(1000)) COLLATE "C" LIMIT 101'
     )
 

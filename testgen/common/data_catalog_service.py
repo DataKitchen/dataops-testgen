@@ -195,7 +195,7 @@ def fetch_current_values(
     prefix, suffix = flavor_service.row_limit_clauses(CURRENT_VALUES_MAX_COUNT + 1)
     table_ref = flavor_service.get_table_ref(schema_name, table_name, connection.sql_flavor_code)
     query = (
-        f"SELECT {prefix} MIN({params['VALUE_LIST_VALUE']}) AS value FROM {table_ref}"
+        f"SELECT {prefix} MIN({params['VALUE_LIST_VALUE']}) AS listed_value FROM {table_ref}"
         f" WHERE {column_ref} IS NOT NULL GROUP BY {params['VALUE_LIST_DISTINCT']} {suffix}"
     )
 
@@ -205,7 +205,8 @@ def fetch_current_values(
         LOG.exception("Current values fetch encountered an error.")
         return CurrentValuesResult("ERR", message=CURRENT_VALUES_ERROR_MESSAGE)
 
-    values = [row[0] for row in rows]
+    # Read by position: some flavors return an unquoted alias in upper case
+    values = [next(iter(row.values())) for row in rows]
     if not values:
         return CurrentValuesResult("ND", message=CURRENT_VALUES_EMPTY_MESSAGE)
     if len(values) > CURRENT_VALUES_MAX_COUNT:
