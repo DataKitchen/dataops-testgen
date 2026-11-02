@@ -3,13 +3,15 @@ from io import BytesIO
 
 import pandas as pd
 import streamlit as st
+from sqlalchemy import text
 
 import testgen.ui.queries.profiling_queries as profiling_queries
 from testgen.common import date_service
+from testgen.common.audit.findings import record_issue_dispositions
 from testgen.common.database.table_group_service import schema_label_for_table_group
 from testgen.common.enums import JobKey, JobSource
 from testgen.common.mixpanel_service import MixpanelService
-from testgen.common.models import with_database_session
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.pii_masking import get_pii_columns, mask_hygiene_detail, mask_profiling_pii
@@ -26,7 +28,6 @@ from testgen.ui.navigation.router import Router
 from testgen.ui.pdf.hygiene_issue_report import create_report
 from testgen.ui.queries.profiling_queries import get_profiling_anomalies
 from testgen.ui.queries.source_data_queries import get_hygiene_issue_source_data, get_hygiene_issue_source_query
-from testgen.ui.services.database_service import execute_db_query
 from testgen.ui.services.query_cache import get_profiling_run_minimal
 from testgen.ui.session import session
 from testgen.utils import friendly_score, make_json_safe
@@ -542,8 +543,8 @@ def _update_anomaly_disposition(
     ids: list[str],
     disposition: typing.Literal["Confirmed", "Dismissed", "Inactive", "No Decision"],
 ) -> None:
-    execute_db_query(
-        """
+    updated = get_current_session().execute(
+        text("""
         WITH selects
             AS (SELECT UNNEST(ARRAY [:anomaly_result_ids]) AS selected_id)
         UPDATE profile_anomaly_results
@@ -551,10 +552,14 @@ def _update_anomaly_disposition(
         FROM profile_anomaly_results r
         INNER JOIN selects s
             ON (r.id = s.selected_id::UUID)
-        WHERE r.id = profile_anomaly_results.id;
-        """,
+        WHERE r.id = profile_anomaly_results.id
+        RETURNING r.id, r.disposition;
+        """),
         {
             "anomaly_result_ids": ids,
             "disposition": disposition,
-        }
+        },
+    )
+    record_issue_dispositions(
+        {row.id: row.disposition for row in updated}, None if disposition == "No Decision" else disposition
     )

@@ -11,6 +11,17 @@ import streamlit as st
 from sqlalchemy import and_, asc, case, desc, func, or_, tuple_
 
 from testgen.common import date_service
+from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.recorder import stored_values
+from testgen.common.audit.test_definitions import (
+    describe_tests,
+    record_import,
+    record_status_changed,
+    record_test_saved,
+    record_tests,
+    record_tests_deleted,
+    record_tests_moved,
+)
 from testgen.common.custom_test_validation import validate_custom_query, validate_metric_query
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.database.table_group_service import (
@@ -493,7 +504,12 @@ class TestDefinitionsPage(Page):
             apply_test_definition_flavor_rules(
                 definition, table_group, qualifies_table_refs=qualifies_table_refs_with_schema
             )
-            return save_from_dialog(definition, test_suite)
+            created = definition.id is None
+            stored = None if created else stored_values(TestDefinition, definition.id)
+            if error := save_from_dialog(definition, test_suite):
+                return error
+            record_test_saved(definition, created=created, stored=stored)
+            return None
 
         @with_database_session
         def on_add_test_saved(test_def: dict) -> None:
@@ -528,10 +544,13 @@ class TestDefinitionsPage(Page):
         def on_delete_confirmed(payload: dict) -> None:
             ids = payload.get("ids", [])
             try:
+                # Named after the draft opens: a contract's delete removes its draft's copies.
+                deleted = describe_tests(TestDefinition.writable_ids(ids))
                 TestDefinition.delete_where(TestDefinition.id.in_(ids))
             except REFUSED_WRITE_ERRORS as error:
                 refuse_write(error, TD_DELETE_DIALOG_KEY)
                 return
+            record_tests_deleted(deleted)
             st.cache_data.clear()
             follow_contract_draft()
             st.session_state.pop(TD_DELETE_DIALOG_KEY, None)
@@ -541,10 +560,11 @@ class TestDefinitionsPage(Page):
         def on_unlock_confirmed(payload: dict) -> None:
             ids = payload.get("ids", [])
             try:
-                TestDefinition.set_status_attribute("lock_refresh", ids, False)
+                unlocked = TestDefinition.set_status_attribute("lock_refresh", ids, False)
             except REFUSED_WRITE_ERRORS as error:
                 refuse_write(error, TD_UNLOCK_DIALOG_KEY)
                 return
+            record_status_changed("lock_refresh", False, unlocked)
             st.cache_data.clear()
             follow_contract_draft()
             st.session_state.pop(TD_UNLOCK_DIALOG_KEY, None)
@@ -557,10 +577,11 @@ class TestDefinitionsPage(Page):
             if not ids:
                 return
             try:
-                TestDefinition.set_status_attribute(attribute, ids, value)
+                changed = TestDefinition.set_status_attribute(attribute, ids, value)
             except REFUSED_WRITE_ERRORS as error:
                 refuse_write(error)
                 return
+            record_status_changed(attribute, value, changed)
             st.cache_data.clear()
             follow_contract_draft()
 
@@ -590,9 +611,10 @@ class TestDefinitionsPage(Page):
                 return
             overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
             try:
+                overwritten = describe_tests(TestDefinition.writable_ids(overwrite_ids))
                 if overwrite_ids:
                     TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
-                TestDefinition.copy(
+                copied = TestDefinition.copy(
                     ids,
                     target_tg_id,
                     target_ts_id,
@@ -604,6 +626,8 @@ class TestDefinitionsPage(Page):
             except REFUSED_WRITE_ERRORS as error:
                 refuse_write(error, TD_COPY_MOVE_DIALOG_KEY, TD_COPY_MOVE_COLLISION_KEY)
                 return
+            record_tests_deleted(overwritten)
+            record_tests(AuditAction.TEST_DEFINITION_CREATED, describe_tests(copied))
             st.cache_data.clear()
             get_test_suite_columns.clear()
             st.session_state.pop(TD_COPY_MOVE_DIALOG_KEY, None)
@@ -625,9 +649,11 @@ class TestDefinitionsPage(Page):
                 return
             overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
             try:
+                overwritten = describe_tests(TestDefinition.writable_ids(overwrite_ids))
+                moving = describe_tests(TestDefinition.writable_ids(ids))
                 if overwrite_ids:
                     TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
-                TestDefinition.move(
+                moved = TestDefinition.move(
                     ids,
                     target_tg_id,
                     target_ts_id,
@@ -639,6 +665,8 @@ class TestDefinitionsPage(Page):
             except REFUSED_WRITE_ERRORS as error:
                 refuse_write(error, TD_COPY_MOVE_DIALOG_KEY, TD_COPY_MOVE_COLLISION_KEY)
                 return
+            record_tests_deleted(overwritten)
+            record_tests_moved(moving, moved, target_ts_id, target_tg_id, target_table, target_col)
             st.cache_data.clear()
             follow_contract_draft()
             get_test_suite_columns.clear()
@@ -1169,7 +1197,9 @@ def _run_import(test_suite: TestSuite, content: str, policy: dict) -> dict:
         # a partially applied import.
         with database_session():
             payload = ImportPayload.model_validate_json(base64.b64decode(content.split(",", 1)[1]))
-            response = import_definitions(test_suite, _import_config(policy, ImportMode.apply), payload)
+            config = _import_config(policy, ImportMode.apply)
+            response = import_definitions(test_suite, config, payload)
+            record_import(test_suite, config, response)
     except InvalidImportPayload as e:
         return {"success": False, "message": str(e)}
     except Exception:

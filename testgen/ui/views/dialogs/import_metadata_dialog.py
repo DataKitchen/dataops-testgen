@@ -5,6 +5,7 @@ import logging
 import pandas as pd
 
 from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.catalog import record_catalog_changes
 from testgen.common.audit.recorder import record
 from testgen.common.data_catalog_service import apply_column_metadata, apply_table_metadata, disable_autoflags
 from testgen.common.models.data_column import DataColumnChars
@@ -305,6 +306,7 @@ def apply_metadata_import(preview: dict, table_group_id: str | None = None) -> d
     metadata_columns = preview["metadata_columns"]
     table_count = 0
     column_count = 0
+    imported: list[DataTable | DataColumnChars] = []
 
     for row in preview.get("table_rows", []):
         fields = _build_metadata_fields(row, metadata_columns, is_column=False)
@@ -314,6 +316,7 @@ def apply_metadata_import(preview: dict, table_group_id: str | None = None) -> d
         if table is None:
             continue
         apply_table_metadata(table, fields)
+        imported.append(table)
         table_count += 1
 
     for row in preview.get("column_rows", []):
@@ -324,8 +327,10 @@ def apply_metadata_import(preview: dict, table_group_id: str | None = None) -> d
         if column is None:
             continue
         apply_column_metadata(column, fields)
+        imported.append(column)
         column_count += 1
 
+    record_catalog_changes(imported)
     if table_group_id:
         _disable_autoflags(table_group_id, metadata_columns)
 

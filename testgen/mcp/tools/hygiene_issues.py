@@ -6,6 +6,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.functions import func
 
+from testgen.common.audit.findings import record_issue_dispositions
 from testgen.common.database.table_group_service import schema_label_for_table_group
 from testgen.common.enums import Disposition, IssueLikelihood, PiiRisk
 from testgen.common.models import with_database_session
@@ -240,6 +241,7 @@ def update_hygiene_issue(
     """Update the disposition of a hygiene issue (confirm, dismiss, or mute)."""
     db_disposition = parse_disposition(disposition)
     issue = resolve_hygiene_issue(issue_id)
+    record_issue_dispositions({issue.id: issue.disposition}, db_disposition)
     issue.disposition = db_disposition
 
     doc = MdDoc()
