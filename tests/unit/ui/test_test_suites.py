@@ -114,6 +114,27 @@ def test_edit_applies_the_form_to_the_stored_suite(session_state):
 
 
 @pytest.mark.usefixtures("db_session_mock")
+def test_edit_renames_the_stored_suite(session_state):
+    stored = MagicMock(test_suite="Orders")
+    with patch.object(view, "get_test_suite", return_value=stored):
+        view.save_test_suite_form(_form(test_suite_id=str(uuid4()), test_suite="Sales Orders"))
+
+    assert stored.test_suite == "Sales Orders"
+    stored.save.assert_called_once()
+
+
+@pytest.mark.usefixtures("db_session_mock")
+def test_a_saved_edit_drops_every_cached_read(session_state):
+    with (
+        patch.object(view, "get_test_suite", return_value=MagicMock(test_suite="Orders")),
+        patch.object(view.st.cache_data, "clear") as clear,
+    ):
+        view.save_test_suite_form(_form(test_suite_id=str(uuid4()), test_suite="Sales Orders"))
+
+    clear.assert_called_once_with()
+
+
+@pytest.mark.usefixtures("db_session_mock")
 def test_editing_a_contract_keeps_its_deactivation_setting(session_state):
     stored = MagicMock(test_suite="Orders", deactivate_invalid_tests=True)
     form = _form(test_suite_id=str(uuid4()), suite_type="contract")
@@ -463,6 +484,17 @@ def test_a_test_suite_without_generation_is_saved_and_reports_skipped(session_st
         {"icon": "success", "text": "Test suite Orders created.", "link": None},
         {"icon": "skipped", "text": "Tests: skipped. Generate them later on the Test Suites page.", "link": None},
     ]
+
+
+@pytest.mark.usefixtures("db_session_mock")
+def test_the_wizard_saves_the_name_without_surrounding_spaces(session_state):
+    with (
+        patch.object(view.TableGroup, "get", return_value=_table_group()),
+        patch.object(TestSuite, "save", autospec=True, side_effect=_saved) as save,
+    ):
+        view.add_test_suite_confirmed(_wizard(test_suite=" Orders  "))
+
+    assert save.call_args.args[0].test_suite == "Orders"
 
 
 @pytest.mark.usefixtures("db_session_mock")
