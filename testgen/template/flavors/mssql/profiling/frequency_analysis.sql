@@ -10,19 +10,19 @@ WITH target_table AS (
     SELECT {COL_VALUE} AS "{COL_NAME}" FROM "{DATA_SCHEMA}"."{DATA_TABLE}" {TABLE_HINT}
 -- TG-ENDIF
     ),
--- Values that differ only in case or trailing spaces group together under the collation, so each group is
--- written as its least member by binary value: which member a GROUP BY returns is not defined
+-- Grouped by binary value: under the collation, values that differ only in case or trailing spaces would
+-- group together, and a list of expected values built from them would leave the others out
 ranked_vals
 AS
     (SELECT CAST(MIN(CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX)) AS val,
             COUNT(*) AS  ct,
-            ROW_NUMBER() OVER (ORDER BY CASE WHEN "{COL_NAME}" > ' ' THEN 0 ELSE 1 END, COUNT(*) DESC,
+            ROW_NUMBER() OVER (ORDER BY CASE WHEN MIN("{COL_NAME}") > ' ' THEN 0 ELSE 1 END, COUNT(*) DESC,
                                         CAST(MIN(CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX))
                                             COLLATE Latin1_General_100_BIN2) AS rn,
             SUM(COUNT_BIG(*)) OVER () AS sample_value_ct
      FROM target_table
      WHERE "{COL_NAME}" IS NOT NULL
-     GROUP BY "{COL_NAME}"
+     GROUP BY CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX))
     ),
 grouped_vals
 AS (
