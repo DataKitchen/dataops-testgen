@@ -100,6 +100,14 @@ def test_concat_columns_none():
         ("it's", ["it's"]),
         ("a\\b", ["a\\b"]),
         ('" "," x"', [" ", " x"]),
+        ("A , B", ["A", "B"]),
+        (' a ,"b " , "c" ', ["a", "b ", "c"]),
+        ("\t tab \t,x", ["tab", "x"]),
+        ("a,,b", ["a", "", "b"]),
+        ("a,", ["a", ""]),
+        ("a\n\nb", ["a", "b"]),
+        ('"line\nbreak",x', ["line\nbreak", "x"]),
+        ('say "hi"', ['say "hi"']),
     ],
 )
 def test_parse_value_list(value, expected):

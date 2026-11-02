@@ -1082,3 +1082,17 @@ def test_normalize_value_lists_leaves_other_terms_alone():
         assert _normalize_value_lists([term], _VALUE_MATCH_TYPES, uuid4()) == []
     assert term.parameters == {"threshold_value": "0"}
     select_general_types.assert_not_called()
+
+
+def test_normalize_value_lists_refuses_only_the_empty_string_where_it_is_stored_as_null():
+    term = _incoming("LOV_All", column="code", term_id="r2", baseline_value='""')
+
+    with _catalog_general_types({("orders", "code"): "A"}):
+        problems = _normalize_value_lists(
+            [term], {"LOV_All": TestType(test_type="LOV_All", test_name_short="Value Match All")}, uuid4(), lambda: False
+        )
+
+    assert problems == [
+        "orders.code rule r2 (Value Match All): baseline_value on Oracle the empty string is NULL, "
+        "so the list must hold at least one other value"
+    ]

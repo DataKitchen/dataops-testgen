@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from functools import partial
 from itertools import zip_longest
 from typing import ClassVar, Literal
 from uuid import UUID, uuid4
@@ -36,7 +37,8 @@ from sqlalchemy.sql import visitors
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.expression import case, literal
 
-from testgen.common.clean_sql import NonNumericValueError, normalize_value_list
+from testgen.common.clean_sql import NonNumericValueError, normalize_value_list, parse_value_list
+from testgen.common.database.database_service import get_flavor_service
 from testgen.common.enums import (
     MANAGED_TEST_TYPES,
     VALUE_LIST_TEST_TYPES,
@@ -876,23 +878,48 @@ def test_definition_errors(test_type: TestType, value_of: Callable[[str], object
     return errors
 
 
-def stored_value_list(test_type: str, baseline_value: str | None, general_type: str | None) -> str | None:
+def stores_empty_string(table_groups_id: UUID | None) -> bool:
+    """Whether the database a table group's connection reaches keeps the empty string apart from NULL."""
+    # connection imports, through table_group and monitor, this module
+    from testgen.common.models.connection import Connection
+
+    connection = Connection.get_by_table_group(table_groups_id) if table_groups_id else None
+    return get_flavor_service(connection.sql_flavor).stores_empty_string if connection else True
+
+
+def stored_value_list(
+    test_type: str,
+    baseline_value: str | None,
+    general_type: str | None,
+    empty_string_stored: Callable[[], bool] = lambda: True,
+) -> str | None:
     """Return ``baseline_value`` as a test of ``test_type`` on a column of ``general_type`` stores it.
 
     A value-list type's list is rewritten by ``normalize_value_list``, as numbers for a numeric column.
     Any other value is returned unchanged.
 
+    Args:
+        empty_string_stored: Returns whether the column's database keeps the empty string apart from NULL,
+            called only for a list holding nothing else. When it does not, the list is refused, since it
+            would match nothing.
+
     Raises:
-        InvalidTestDefinitionFields: A numeric column's list holds a value that is not a number.
+        InvalidTestDefinitionFields: A numeric column's list holds a value that is not a number, or the
+            list holds only the empty string where the database stores it as NULL.
     """
     if test_type not in VALUE_LIST_TEST_TYPES or _is_blank(baseline_value):
         return baseline_value
     try:
-        return normalize_value_list(baseline_value, numeric=general_type == "N")
+        value_list = normalize_value_list(baseline_value, numeric=general_type == "N")
     except NonNumericValueError as error:
         raise InvalidTestDefinitionFields(
             {"baseline_value": f"contains a value that is not a number: {error.value}"}
         ) from error
+    if not any(parse_value_list(value_list)) and not empty_string_stored():
+        raise InvalidTestDefinitionFields(
+            {"baseline_value": "on Oracle the empty string is NULL, so the list must hold at least one other value"}
+        )
+    return value_list
 
 
 def _param_columns(test_type: TestType) -> list[str]:
@@ -1547,7 +1574,7 @@ class TestDefinition(Entity):
         group's catalog records for the test's column.
 
         Raises:
-            InvalidTestDefinitionFields: A numeric column's list holds a value that is not a number.
+            InvalidTestDefinitionFields: As ``stored_value_list`` raises it.
         """
         # data_column imports, through job_execution, models that import this one
         from testgen.common.models.data_column import DataColumnChars
@@ -1558,6 +1585,7 @@ class TestDefinition(Entity):
             self.test_type,
             self.baseline_value,
             DataColumnChars.general_type_of(self.table_groups_id, self.table_name, self.column_name),
+            partial(stores_empty_string, self.table_groups_id),
         )
 
     def validate(self, test_type: TestType) -> None:

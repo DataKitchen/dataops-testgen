@@ -160,6 +160,15 @@ def test_value_list_params_matches_a_numeric_column_by_value():
     }
 
 
+def test_value_list_params_writes_exact_numbers_on_bigquery():
+    params = get_flavor_service("bigquery").value_list_params("`c`", _column("N"), ["1", "0.1234567890123"])
+    assert params["VALUE_LIST_LITERALS"] == "BIGNUMERIC '1', BIGNUMERIC '0.1234567890123'"
+    assert params["VALUE_LIST_ROWS"] == (
+        "SELECT BIGNUMERIC '1' AS expected_value, BIGNUMERIC '1' AS value_key"
+        " UNION ALL SELECT BIGNUMERIC '0.1234567890123' AS expected_value, BIGNUMERIC '0.1234567890123' AS value_key"
+    )
+
+
 def test_value_list_params_rejects_a_non_numeric_value_for_a_numeric_column():
     with pytest.raises(NonNumericValueError):
         get_flavor_service("postgresql").value_list_params('"c"', _column("N"), ["1", "1); DROP TABLE t; --"])

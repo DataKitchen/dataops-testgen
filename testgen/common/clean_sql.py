@@ -1,5 +1,3 @@
-import csv
-import io
 import re
 from decimal import Decimal
 
@@ -35,15 +33,33 @@ def strip_trailing_semicolons(sql: str | None) -> str | None:
     return re.sub(r"[\s;]+$", "", sql) if sql else sql
 
 
+# One list value and the separator after it: a value in double quotes, or an unquoted value
+# trimmed of the whitespace around it
+_LIST_ITEM = re.compile(r'[^\S\r\n]*(?:"((?:[^"]|"")*)"[^\S\r\n]*|([^,\r\n]*?)[^\S\r\n]*)(,|\r\n|\r|\n|\Z)')
+
+
 def parse_value_list(value: str | None) -> list[str]:
     """Split a list parameter stored as CSV into its values.
 
-    Follows Python ``csv`` quoting: ``""`` is the empty string and ``"a,b"`` is one value holding a
-    comma. Whitespace after a delimiter is dropped; quote a value to keep leading whitespace.
+    ``""`` is the empty string, and a value in double quotes may hold a comma, a line break, or
+    ``""`` for one double quote. An unquoted value is trimmed of the whitespace around it; quote a
+    value to keep it. A line break separates values as a comma does, and a blank line holds none.
     """
     if not value:
         return []
-    return [item for row in csv.reader(io.StringIO(value), skipinitialspace=True) for item in row]
+    values: list[str] = []
+    position, line_start = 0, True
+    while True:
+        match = _LIST_ITEM.match(value, position)
+        quoted, unquoted, separator = match.groups()
+        if quoted is not None:
+            values.append(quoted.replace('""', '"'))
+        elif unquoted or separator == "," or not line_start:
+            values.append(unquoted)
+        if not separator:
+            return values
+        line_start = separator != ","
+        position = match.end()
 
 
 class NonNumericValueError(ValueError):

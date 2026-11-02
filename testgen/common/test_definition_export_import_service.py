@@ -34,6 +34,7 @@ from testgen.common.models.test_definition import (
     TestType,
     missing_required_fields,
     stored_value_list,
+    stores_empty_string,
     test_definition_errors,
 )
 from testgen.common.models.test_suite import TestSuite
@@ -662,6 +663,7 @@ def import_definitions(
     profiled_tables = set(DataTable.select_table_names(test_suite.table_groups_id, limit=None))
     profiled_columns = DataColumnChars.select_column_names(test_suite.table_groups_id)
     general_types = DataColumnChars.select_general_types(test_suite.table_groups_id)
+    empty_string_stored = partial(stores_empty_string, test_suite.table_groups_id)
     contract_tables = writable_tables(test_suite)
 
     # --- Phase 1: Upfront validation ---
@@ -749,7 +751,10 @@ def import_definitions(
         if target is None or "baseline_value" in td_import.model_fields_set:
             try:
                 td_import.baseline_value = stored_value_list(
-                    td_import.test_type, td_import.baseline_value, general_types.get((table_name, column_name))
+                    td_import.test_type,
+                    td_import.baseline_value,
+                    general_types.get((table_name, column_name)),
+                    empty_string_stored,
                 )
             except InvalidTestDefinitionFields as error:
                 actions.append(

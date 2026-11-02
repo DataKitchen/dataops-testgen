@@ -10,6 +10,7 @@ first (``prepare_import``, which writes nothing) and applied only on request (``
 import copy
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -31,6 +32,7 @@ from testgen.common.contract_rules import (
     rule_label,
 )
 from testgen.common.contract_service import InvalidContractDocumentError, resolve_write_target
+from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
     table_group_qualifies_table_refs,
@@ -653,7 +655,9 @@ def prepare_import(
     declared_parameters = {code: test_type_parameters(test_type) for code, test_type in test_types.items()}
     baseline = _baseline_terms(suite, test_types) if current is not None else []
     catalog_tables = set(contract_document.catalog_table_names(table_group.id))
-    value_list_problems = _normalize_value_lists(split.terms, test_types, table_group.id)
+    value_list_problems = _normalize_value_lists(
+        split.terms, test_types, table_group.id, lambda: get_flavor_service(connection.sql_flavor).stores_empty_string
+    )
     changes = plan_changes(
         split.terms, baseline, schema_name=table_group.table_group_schema, declared_parameters=declared_parameters
     )
@@ -683,10 +687,13 @@ def _term_label(
 
 
 def _normalize_value_lists(
-    terms: list[IncomingTerm], test_types: dict[str, TestType], table_groups_id: UUID
+    terms: list[IncomingTerm],
+    test_types: dict[str, TestType],
+    table_groups_id: UUID,
+    empty_string_stored: Callable[[], bool] = lambda: True,
 ) -> list[str]:
     """Rewrite each value-list term's list as a test definition stores it, for the general type the
-    table group's catalog records for its column.
+    table group's catalog records for its column and whether its database keeps the empty string.
 
     Returns each term whose list a test definition could not store, with the reason.
     """
@@ -702,6 +709,7 @@ def _normalize_value_lists(
                 term.test_type,
                 term.parameters["baseline_value"],
                 general_types.get((term.table_name, term.column_name)),
+                empty_string_stored,
             )
         except InvalidTestDefinitionFields as e:
             label = _term_label(term.table_name, term.column_name, term.contract_term_id, test_types[term.test_type])

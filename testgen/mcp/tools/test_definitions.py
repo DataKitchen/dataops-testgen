@@ -3,6 +3,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from functools import partial
 from typing import Annotated, NoReturn
 from uuid import UUID
 
@@ -43,6 +44,7 @@ from testgen.common.models.test_definition import (
     TestDefinitionSummary,
     TestType,
     stored_value_list,
+    stores_empty_string,
 )
 from testgen.common.models.test_result import TestResult
 from testgen.common.models.test_suite import TestSuite
@@ -865,7 +867,9 @@ def update_test(
             td.table_groups_id, fields.get("table_name", td.table_name), fields.get("column_name", td.column_name)
         )
         try:
-            fields["baseline_value"] = stored_value_list(td.test_type, fields["baseline_value"], general_type)
+            fields["baseline_value"] = stored_value_list(
+                td.test_type, fields["baseline_value"], general_type, partial(stores_empty_string, td.table_groups_id)
+            )
         except InvalidTestDefinitionFields as e:
             _raise_validation_errors(e, "Update rejected. No changes saved.")
 

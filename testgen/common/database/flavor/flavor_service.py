@@ -456,6 +456,10 @@ class FlavorService:
         """Return ``values`` as a comma-separated list of SQL string literals, or ``NULL`` when empty."""
         return ", ".join(self.string_literal(value) for value in values) or "NULL"
 
+    def number_literal(self, number: str) -> str:
+        """Return a number, written as plain decimal digits, as a SQL literal that compares exactly."""
+        return number
+
     def value_list_text(self, value_expr: str) -> str:
         """Return the SQL expression that casts a value to the text a value list is matched against."""
         return f"CAST({value_expr} AS {self.varchar_type})"
@@ -493,7 +497,7 @@ class FlavorService:
         """
         if column and column.general_type == "N":
             numeric_ref = self.numeric_value(column_ref, column.column_type)
-            numbers = [format(number, "f") for number in parse_numeric_values(values)]
+            numbers = [self.number_literal(format(number, "f")) for number in parse_numeric_values(values)]
             column_forms = (numeric_ref, numeric_ref, numeric_ref)
             literal_pairs = [(number, number) for number in numbers]
         else:
