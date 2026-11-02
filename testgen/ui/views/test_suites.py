@@ -516,7 +516,7 @@ def generate_tests_confirmed(data: dict) -> None:
 @with_database_session
 def save_test_suite_form(data: dict) -> None:
     values = {key: data.get(key, default) for key, default in _FORM_DEFAULTS.items()}
-    values["test_suite"] = (data.get("test_suite") or "").strip()
+    values["test_suite"] = data.get("test_suite")
     # Validated on a detached copy, so a rejected edit never touches the stored suite.
     candidate = TestSuite(
         deactivate_invalid_tests=data.get("deactivate_invalid_tests", False),
@@ -683,8 +683,7 @@ def add_test_suite_confirmed(payload: dict) -> None:
     values = {key: payload.get(key, default) for key, default in _FORM_DEFAULTS.items()}
     if suite_type is SuiteType.REGULAR:
         values["deactivate_invalid_tests"] = payload.get("deactivate_invalid_tests", False)
-    name = (payload.get("test_suite") or "").strip()
-    candidate = TestSuite(test_suite=name, **values)
+    candidate = TestSuite(test_suite=payload.get("test_suite"), **values)
     if errors := validate_test_suite_fields(candidate, field_names=_form_field_labels(suite_type), quote_fields=False):
         st.session_state[WIZARD_RESULT_KEY] = {"success": False, "message": " ".join(errors)}
         return
@@ -707,7 +706,7 @@ def add_test_suite_confirmed(payload: dict) -> None:
                 project_code=table_group.project_code,
                 connection_id=table_group.connection_id,
                 table_groups_id=table_group.id,
-                test_suite=name,
+                test_suite=payload.get("test_suite"),
                 suite_type=suite_type.value,
                 **values,
             )
