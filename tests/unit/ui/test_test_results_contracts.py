@@ -110,7 +110,7 @@ def _summary(**overrides) -> TestRunSummary:
         "completed_at": started, "active_seconds": 252.0, "error_message": None, "progress": [],
         "table_groups_name": "sales_tables", "test_suite": "orders_contract", "project_code": "DEFAULT",
         "project_name": "Demo", "test_ct": 142, "passed_ct": 142, "warning_ct": 0, "failed_ct": 0,
-        "error_ct": 0, "log_ct": 0, "dismissed_ct": 0, "dq_score_testing": 98.4, "total_count": 1,
+        "error_ct": 0, "log_ct": 0, "dismissed_ct": 0, "dq_score_testing": 98.4,
         "test_starttime": started.replace(tzinfo=None),
     }
     fields.update(overrides)

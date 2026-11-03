@@ -34,6 +34,12 @@
  * @property {string?} dq_score_testing
  * @property {string?} version_caption
  *
+ * @typedef VersionToggle
+ * @type {object}
+ * @property {boolean} visible
+ * @property {boolean} checked
+ * @property {number} hidden_count
+ *
  * @typedef Permissions
  * @type {object}
  * @property {boolean} can_edit
@@ -43,6 +49,7 @@
  * @property {ProjectSummary} project_summary
  * @property {TestRun[]} test_runs
  * @property {number} total_count
+ * @property {VersionToggle} version_toggle
  * @property {number} page
  * @property {number} page_size
  * @property {FilterOption[]} table_group_options
@@ -61,6 +68,7 @@ import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js
 import { formatTimestamp, formatDurationSeconds, DISABLED_ACTION_TEXT } from '/app/static/js/display_utils.js';
 import { Checkbox } from '/app/static/js/components/checkbox.js';
 import { Select } from '/app/static/js/components/select.js';
+import { Toggle } from '/app/static/js/components/toggle.js';
 import { Paginator } from '/app/static/js/components/paginator.js';
 import { EMPTY_STATE_MESSAGE, EmptyState } from '/app/static/js/components/empty_state.js';
 import { Icon } from '/app/static/js/components/icon.js';
@@ -241,7 +249,12 @@ const TestRuns = (/** @type Properties */ props) => {
                 )
                 : div(
                     { class: 'pt-7 text-secondary', style: 'text-align: center;' },
-                    'No test runs found matching filters',
+                    () => {
+                        const versionToggle = getValue(props.version_toggle);
+                        return versionToggle?.visible && !versionToggle.checked && versionToggle.hidden_count > 0
+                            ? 'No runs of active versions'
+                            : 'No test runs found matching filters';
+                    },
                 ),
             )
             : ConditionalEmptyState(projectSummary, userCanEdit, emit);
@@ -348,7 +361,7 @@ const Toolbar = (
     return div(
         { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-4 fx-gap-4 fx-flex-wrap' },
         div(
-            { class: 'flex-row fx-gap-3' },
+            { class: 'flex-row fx-align-flex-end fx-gap-3' },
             () => Select({
                 label: 'Table Group',
                 value: getValue(props.table_group_options)?.find((op) => op.selected)?.value ?? null,
@@ -365,6 +378,17 @@ const Toolbar = (
                 style: 'font-size: 14px;',
                 onChange: (value) => emit('FilterApplied', { payload: { test_suite_id: value } }),
             }),
+            () => getValue(props.version_toggle)?.visible
+                ? div(
+                    { class: 'mb-2' },
+                    Toggle({
+                        name: 'show-all-versions',
+                        label: 'Show runs of all versions',
+                        checked: getValue(props.version_toggle).checked,
+                        onChange: (checked) => emit('FilterApplied', { payload: { all_versions: checked ? 'true' : null } }),
+                    }),
+                )
+                : '',
         ),
         div(
             { class: 'flex-row fx-gap-3' },
