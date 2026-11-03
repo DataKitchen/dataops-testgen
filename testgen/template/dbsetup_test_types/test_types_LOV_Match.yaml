@@ -145,10 +145,11 @@ test_types:
     sql_flavor: bigquery
     lookup_type: null
     lookup_query: |-
-      SELECT MIN({VALUE_LIST_VALUE}) AS `{COLUMN_NAME}`, COUNT(*) AS count
+      SELECT listed_value AS `{COLUMN_NAME}`, mismatch_ct AS count FROM (SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct
       FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) AND CAST(`{COLUMN_NAME}` AS {VARCHAR_TYPE}) <> ''
       GROUP BY {VALUE_LIST_DISTINCT}
+      ) mismatches
       LIMIT {LIMIT};
     error_type: Test Results
   - id: '1311'
@@ -157,7 +158,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT MIN({VALUE_LIST_VALUE}) AS `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) AND CAST(`{COLUMN_NAME}` AS {VARCHAR_TYPE}) <> '' GROUP BY {VALUE_LIST_DISTINCT} LIMIT {LIMIT};
+      SELECT listed_value AS `{COLUMN_NAME}`, mismatch_ct AS count FROM (SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) AND CAST(`{COLUMN_NAME}` AS {VARCHAR_TYPE}) <> '' GROUP BY {VALUE_LIST_DISTINCT}) mismatches LIMIT {LIMIT};
     error_type: Test Results
   - id: '1153'
     test_id: '1019'
@@ -165,7 +166,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP {LIMIT} MIN({VALUE_LIST_VALUE}) AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) AND CAST("{COLUMN_NAME}" AS {VARCHAR_TYPE}) <> '' GROUP BY {VALUE_LIST_DISTINCT} ;
+      SELECT TOP {LIMIT} listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) AND CAST("{COLUMN_NAME}" AS {VARCHAR_TYPE}) <> '' GROUP BY {VALUE_LIST_DISTINCT}) mismatches ;
     error_type: Test Results
   - id: '1096'
     test_id: '1019'
@@ -173,7 +174,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT MIN({VALUE_LIST_VALUE}) AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) AND CAST("{COLUMN_NAME}" AS {VARCHAR_TYPE}) <> '' GROUP BY {VALUE_LIST_DISTINCT} LIMIT {LIMIT};
+      SELECT listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) AND CAST("{COLUMN_NAME}" AS {VARCHAR_TYPE}) <> '' GROUP BY {VALUE_LIST_DISTINCT}) mismatches LIMIT {LIMIT};
     error_type: Test Results
   - id: '1014'
     test_id: '1019'
@@ -181,7 +182,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT MIN({VALUE_LIST_VALUE}) AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) AND CAST("{COLUMN_NAME}" AS {VARCHAR_TYPE}) <> '' GROUP BY {VALUE_LIST_DISTINCT} LIMIT {LIMIT};
+      SELECT listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) AND CAST("{COLUMN_NAME}" AS {VARCHAR_TYPE}) <> '' GROUP BY {VALUE_LIST_DISTINCT}) mismatches LIMIT {LIMIT};
     error_type: Test Results
   - id: '1414'
     test_id: '1019'
@@ -189,7 +190,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT MIN({VALUE_LIST_VALUE}) AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) AND CAST("{COLUMN_NAME}" AS {VARCHAR_TYPE}) <> '' GROUP BY {VALUE_LIST_DISTINCT} LIMIT {LIMIT};
+      SELECT listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) AND CAST("{COLUMN_NAME}" AS {VARCHAR_TYPE}) <> '' GROUP BY {VALUE_LIST_DISTINCT}) mismatches LIMIT {LIMIT};
     error_type: Test Results
   - id: '1210'
     test_id: '1019'
@@ -197,7 +198,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT MIN({VALUE_LIST_VALUE}) AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) AND CAST("{COLUMN_NAME}" AS VARCHAR) <> '' GROUP BY {VALUE_LIST_DISTINCT} LIMIT {LIMIT};
+      SELECT listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) AND CAST("{COLUMN_NAME}" AS VARCHAR) <> '' GROUP BY {VALUE_LIST_DISTINCT}) mismatches LIMIT {LIMIT};
     error_type: Test Results
   - id: '8014'
     test_id: '1019'
@@ -205,7 +206,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT MIN({VALUE_LIST_VALUE}) AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL AND {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) GROUP BY {VALUE_LIST_DISTINCT} FETCH FIRST {LIMIT} ROWS ONLY
+      SELECT listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL AND {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) GROUP BY {VALUE_LIST_DISTINCT}) mismatches FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Test Results
   - id: '8014'
     test_id: '1019'
@@ -213,7 +214,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT MIN({VALUE_LIST_VALUE}) AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL AND {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) GROUP BY {VALUE_LIST_DISTINCT} LIMIT {LIMIT}
+      SELECT listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL AND {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) GROUP BY {VALUE_LIST_DISTINCT}) mismatches LIMIT {LIMIT}
     error_type: Test Results
   - id: '10021'
     test_id: 1019
@@ -221,7 +222,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT MIN({VALUE_LIST_VALUE}) AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) AND CAST("{COLUMN_NAME}" AS VARCHAR) <> '' GROUP BY {VALUE_LIST_DISTINCT} LIMIT {LIMIT};
+      SELECT listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct FROM "{TABLE_NAME}" WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) AND CAST("{COLUMN_NAME}" AS VARCHAR) <> '' GROUP BY {VALUE_LIST_DISTINCT}) mismatches LIMIT {LIMIT};
     error_type: Test Results
   - id: '11044'
     test_id: '1019'
@@ -229,6 +230,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT MIN({VALUE_LIST_VALUE}) AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) AND CAST("{COLUMN_NAME}" AS {VARCHAR_TYPE}) <> '' GROUP BY {VALUE_LIST_DISTINCT} LIMIT {LIMIT};
+      SELECT listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) AND CAST("{COLUMN_NAME}" AS {VARCHAR_TYPE}) <> '' GROUP BY {VALUE_LIST_DISTINCT}) mismatches LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []
