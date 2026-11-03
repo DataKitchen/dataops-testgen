@@ -26,7 +26,7 @@ AS
     ),
 grouped_vals
 AS (
-    SELECT CASE WHEN rn <= 10 THEN val END AS top_val, ct, rn, sample_value_ct
+    SELECT CASE WHEN rn <= 10 THEN val END AS top_val, CASE WHEN rn <= 10 THEN rn END AS top_rn, ct, rn, sample_value_ct
     FROM ranked_vals
     WHERE val > ' '
     ),
@@ -74,14 +74,15 @@ AS (
            END AS distinct_value_hash
     FROM hash_bytes
     )
-SELECT top_val AS value,
+SELECT MIN(top_val) AS value,
        SUM(ct) AS value_ct,
        MIN(rn) AS value_rank,
        CASE WHEN MIN(rn) > 10 THEN COUNT(*) END AS other_distinct_ct,
        MAX(sample_value_ct) AS sample_value_ct,
        (SELECT distinct_value_hash FROM value_hash) AS distinct_value_hash
 FROM grouped_vals
-GROUP BY top_val
+-- By rank, not by value: grouping the text would merge the binary-distinct values again
+GROUP BY top_rn
 ORDER BY 3;
 
 -- Convert function has style = 2 : The characters 0x aren't added to the left of the converted result for style 2.
