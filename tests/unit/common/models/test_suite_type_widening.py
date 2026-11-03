@@ -17,6 +17,7 @@ from testgen.common.models.test_suite import TestSuite
 pytestmark = pytest.mark.unit
 
 BOTH = (SuiteType.REGULAR, SuiteType.CONTRACT)
+RUN_IDS = (uuid4(), uuid4())
 
 
 @pytest.fixture
@@ -97,45 +98,48 @@ def test_suite_summary_widens_on_request_and_selects_the_type(session_mock):
     assert "suites.suite_type," in sql
 
 
-def test_run_summary_defaults_to_regular_and_keeps_pending_runs(session_mock):
-    TestRun.select_summary(project_code="demo")
-    sql = str(session_mock.execute.call_args.args[0])
-    assert "(ts.suite_type IN :suite_types OR ts.id IS NULL)" in sql
-    assert session_mock.execute.call_args.args[1]["suite_types"] == ("regular",)
+def _run_summary_sql(**kwargs) -> str:
+    with patch.object(TestRun, "_paginate", return_value=([], 0)) as paginate:
+        TestRun.select_summary(**kwargs)
+    return _compiled(paginate.call_args.args[0])
 
 
-def test_run_summary_widens_on_request(session_mock):
-    TestRun.select_summary(project_code="demo", suite_types=BOTH)
-    assert session_mock.execute.call_args.args[1]["suite_types"] == ("regular", "contract")
+def test_run_summary_defaults_to_regular_and_keeps_pending_runs():
+    sql = _run_summary_sql(project_code="demo")
+    assert "(test_suites.suite_type IN ('regular') OR test_suites.id IS NULL)" in sql
 
 
-def test_run_summary_can_narrow_to_one_version_and_selects_version_columns(session_mock):
+def test_run_summary_widens_on_request():
+    sql = _run_summary_sql(project_code="demo", suite_types=BOTH)
+    assert "test_suites.suite_type IN ('regular', 'contract')" in sql
+
+
+def test_run_summary_can_narrow_to_one_version_and_selects_version_columns():
     version_id = uuid4()
-    TestRun.select_summary(test_suite_id=str(uuid4()), version_id=version_id)
-    sql = " ".join(str(session_mock.execute.call_args.args[0]).split())
-    assert "AND tr.version_id = :version_id" in sql
-    assert "sv.version AS version_number" in sql
-    assert "LEFT JOIN suite_versions sv ON sv.id = tr.version_id AND sv.test_suite_id IS NOT NULL" in sql
-    assert session_mock.execute.call_args.args[1]["version_id"] == str(version_id)
+    sql = _run_summary_sql(test_suite_id=str(uuid4()), version_id=version_id)
+    assert f"test_runs.version_id = '{version_id}'" in sql
+    assert "suite_versions_1.version AS version_number" in sql
+    assert (
+        "LEFT OUTER JOIN suite_versions AS suite_versions_1 ON suite_versions_1.id = test_runs.version_id"
+        " AND suite_versions_1.test_suite_id IS NOT NULL"
+    ) in sql
 
 
 @pytest.mark.parametrize(
     ("kwargs", "results_filter"),
     [
-        ({"test_run_ids": [uuid4(), uuid4()]}, "FROM test_results WHERE test_run_id IN :test_run_ids GROUP BY"),
-        ({"job_execution_id": uuid4()}, "FROM test_results WHERE test_run_id = :job_execution_id GROUP BY"),
+        ({"test_run_ids": [RUN_IDS[0], RUN_IDS[1]]}, f"WHERE test_results.test_run_id IN ('{RUN_IDS[0]}', '{RUN_IDS[1]}') GROUP BY"),
+        ({"job_execution_id": RUN_IDS[0]}, f"WHERE test_results.test_run_id = '{RUN_IDS[0]}' GROUP BY"),
         ({"project_code": "demo"}, "FROM test_results GROUP BY"),
     ],
     ids=["by-run-ids", "by-job", "unfiltered"],
 )
-def test_run_summary_counts_only_the_runs_it_reads(session_mock, kwargs, results_filter):
-    TestRun.select_summary(**kwargs)
-    assert results_filter in " ".join(str(session_mock.execute.call_args.args[0]).split())
+def test_run_summary_counts_only_the_runs_it_reads(kwargs, results_filter):
+    assert results_filter in _run_summary_sql(**kwargs)
 
 
-def test_run_summary_without_a_version_does_not_narrow(session_mock):
-    TestRun.select_summary(project_code="demo")
-    assert ":version_id" not in " ".join(str(session_mock.execute.call_args.args[0]).split())
+def test_run_summary_without_a_version_does_not_narrow():
+    assert "test_runs.version_id =" not in _run_summary_sql(project_code="demo")
 
 
 def test_get_for_project_reads_any_version_of_a_contract_only_when_contracts_are_requested(session_mock):
