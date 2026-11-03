@@ -520,9 +520,9 @@ def generate_tests_confirmed(data: dict) -> None:
 @with_database_session
 def save_test_suite_form(data: dict) -> None:
     values = {key: data.get(key, default) for key, default in _FORM_DEFAULTS.items()}
+    values["test_suite"] = data.get("test_suite")
     # Validated on a detached copy, so a rejected edit never touches the stored suite.
     candidate = TestSuite(
-        test_suite=data.get("test_suite"),
         deactivate_invalid_tests=data.get("deactivate_invalid_tests", False),
         **values,
     )
@@ -539,8 +539,7 @@ def save_test_suite_form(data: dict) -> None:
     record(AuditAction.TEST_SUITE_UPDATED, test_suite)
     st.session_state.pop("ts_form_dialog:result", None)
     st.session_state.pop(EDIT_DIALOG_KEY, None)
-    get_test_suite_summaries.clear()
-    get_project_summary.clear()
+    st.cache_data.clear()
     st.toast("Changes have been saved successfully.", icon=":material/check:")
 
 

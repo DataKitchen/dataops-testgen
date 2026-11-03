@@ -80,9 +80,16 @@ const TestSuites = (/** @type Properties */ props) => {
     };
     const saveDisabled = van.derive(() => !formValidity.testSuiteName.val || !formValidity.tableGroupId.val);
 
+    // Loaded once per opening, so a rerun that brings back a save error keeps what the user typed.
+    let formLoadedFor = null;
     van.derive(() => {
         const info = formDialogInfo.val;
-        if (!info?.open) return;
+        if (!info?.open) {
+            formLoadedFor = null;
+            return;
+        }
+        if (formLoadedFor === info.test_suite_id) return;
+        formLoadedFor = info.test_suite_id;
         const v = info.initial_values ?? {};
         formState.suiteType.val = v.suite_type ?? 'regular';
         formState.testSuiteName.val = v.test_suite ?? '';
@@ -382,6 +389,7 @@ const TestSuites = (/** @type Properties */ props) => {
                         validity: formValidity,
                         tableGroups: info.table_groups ?? [],
                         mode: 'edit',
+                        savedName: info.initial_values?.test_suite,
                     }),
                     formResult
                         ? Alert({ type: formResult.success ? 'success' : 'error' }, formResult.message)
