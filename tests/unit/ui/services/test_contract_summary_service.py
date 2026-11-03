@@ -25,7 +25,7 @@ def _run(status: JobStatus = JobStatus.COMPLETED) -> TestRunSummary:
         created_at=STARTED, started_at=STARTED, completed_at=STARTED, active_seconds=60.0, error_message=None,
         progress=[], table_groups_name="sales_tables", test_suite="orders_contract", project_code="demo",
         project_name="Demo", test_ct=142, passed_ct=130, warning_ct=4, failed_ct=6, error_ct=1, log_ct=1,
-        dismissed_ct=0, dq_score_testing=None, total_count=1, version_number=3, version_frozen_at=FROZEN,
+        dismissed_ct=0, dq_score_testing=None, version_number=3, version_frozen_at=FROZEN,
         active_version_number=3, test_starttime=STARTED.replace(tzinfo=None),
     )
 

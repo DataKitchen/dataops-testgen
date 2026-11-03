@@ -1,6 +1,9 @@
 """The Test Runs list and the results page show regular suites and contracts, never monitor suites."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -8,7 +11,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.enums import TEST_SUITE_TYPES, JobStatus, SuiteType
-from testgen.common.models.test_run import TestRunSummary
+from testgen.common.models.test_run import RunVersionScope, TestRunSummary
 from testgen.ui.services import query_cache
 from testgen.ui.views import test_runs as runs_view
 from testgen.ui.views.test_results import TestResultsPage
@@ -43,6 +46,13 @@ def test_the_runs_list_reads_regular_and_contract_runs():
 
     assert set(select_summary.call_args.kwargs["suite_types"]) == {SuiteType.REGULAR, SuiteType.CONTRACT}
     assert SuiteType.MONITOR not in select_summary.call_args.kwargs["suite_types"]
+
+
+def test_the_version_scope_reads_regular_and_contract_runs():
+    with patch.object(query_cache.TestRun, "select_version_scope", return_value=RunVersionScope(False, 0)) as scope:
+        query_cache.get_test_run_version_scope("DEFAULT", None, None)
+
+    assert set(scope.call_args.kwargs["suite_types"]) == {SuiteType.REGULAR, SuiteType.CONTRACT}
 
 
 def test_the_runs_page_suite_filter_lists_contracts_and_excludes_monitors():
@@ -114,23 +124,46 @@ def test_the_run_started_message_names_what_ran(suite_type, message):
     assert runs_view.run_started_message(suite_type, "orders") == message
 
 
-def _runs_list_items(summary: TestRunSummary) -> list[dict]:
+NO_CONTRACT = RunVersionScope(False, 0)
+
+
+@contextmanager
+def _rendered(*, summaries=(), scope=NO_CONTRACT, test_suites=(), **render_kwargs) -> Iterator:
     page = TestRunsPage.__new__(TestRunsPage)
     with (
         patch.object(runs_view, "testgen") as testgen_mock,
         patch.object(runs_view, "st") as st_mock,
         patch.object(runs_view, "get_project_summary"),
-        patch.object(runs_view, "get_test_run_summaries", return_value=([summary], 1)),
+        patch.object(
+            runs_view, "get_test_run_summaries", return_value=(list(summaries), len(summaries))
+        ) as get_summaries,
+        patch.object(runs_view, "get_test_run_version_scope", return_value=scope) as get_scope,
         patch.object(runs_view, "select_table_groups_minimal_where", return_value=[]),
-        patch.object(runs_view, "select_test_suites_minimal_where", return_value=[]),
+        patch.object(runs_view, "select_test_suites_minimal_where", return_value=list(test_suites)),
         patch.object(runs_view, "TestRunScheduleDialog"),
         patch.object(runs_view, "TestRunNotificationSettingsDialog"),
-        patch.object(runs_view, "session"),
+        patch.object(runs_view, "session") as ui_session,
+        patch.object(runs_view, "database_session"),
+        patch.object(runs_view, "launch_run"),
+        patch.object(runs_view, "run_list_args") as list_args,
+        patch.object(runs_view, "Router") as router,
     ):
         st_mock.query_params = {}
         st_mock.session_state = {}
-        page.render(project_code="DEFAULT")
-    return testgen_mock.test_runs_widget.call_args.kwargs["data"]["test_runs"]
+        ui_session.current_page = "test-runs"
+        page.render(project_code="DEFAULT", **render_kwargs)
+        yield SimpleNamespace(
+            widget=testgen_mock.test_runs_widget.call_args.kwargs,
+            get_summaries=get_summaries,
+            get_scope=get_scope,
+            run_list_args=list_args,
+            set_query_params=router.return_value.set_query_params,
+        )
+
+
+def _runs_list_items(summary: TestRunSummary) -> list[dict]:
+    with _rendered(summaries=[summary]) as rendered:
+        return rendered.widget["data"]["test_runs"]
 
 
 def _summary(**overrides) -> TestRunSummary:
@@ -141,7 +174,7 @@ def _summary(**overrides) -> TestRunSummary:
         "completed_at": started, "active_seconds": 280.0, "error_message": None, "progress": [],
         "table_groups_name": "sales_tables", "test_suite": "orders_contract", "project_code": "DEFAULT",
         "project_name": "Demo", "test_ct": 147, "passed_ct": 147, "warning_ct": 0, "failed_ct": 0,
-        "error_ct": 0, "log_ct": 0, "dismissed_ct": 0, "dq_score_testing": None, "total_count": 1,
+        "error_ct": 0, "log_ct": 0, "dismissed_ct": 0, "dq_score_testing": None,
         "test_starttime": started.replace(tzinfo=None),
     }
     fields.update(overrides)
@@ -156,3 +189,78 @@ def test_the_runs_list_sends_a_contract_runs_version_caption():
 def test_the_runs_list_sends_no_caption_for_a_regular_run():
     items = _runs_list_items(_summary(test_suite="nightly_checks"))
     assert items[0]["version_caption"] is None
+
+
+# -- Runs of every version ----------------------------------------------------
+
+TABLE_GROUP_ID = uuid4()
+CONTRACT = SimpleNamespace(
+    id=uuid4(), test_suite="orders_contract", suite_type=SuiteType.CONTRACT, table_groups_id=TABLE_GROUP_ID
+)
+REGULAR = SimpleNamespace(
+    id=uuid4(), test_suite="nightly_checks", suite_type=SuiteType.REGULAR, table_groups_id=TABLE_GROUP_ID
+)
+
+
+@pytest.mark.parametrize(("all_versions", "expected"), [(None, False), ("true", True)])
+def test_the_list_reads_runs_of_every_version_only_when_the_url_asks(all_versions, expected):
+    with _rendered(all_versions=all_versions) as rendered:
+        pass
+
+    assert rendered.get_summaries.call_args.kwargs["all_versions"] is expected
+
+
+def test_the_scope_is_read_for_the_selected_filters_when_they_hold_a_contract():
+    with _rendered(
+        test_suites=[CONTRACT, REGULAR], table_group_id=str(TABLE_GROUP_ID), test_suite_id=str(CONTRACT.id)
+    ) as rendered:
+        pass
+
+    assert rendered.get_scope.call_args.args == ("DEFAULT", str(TABLE_GROUP_ID), str(CONTRACT.id))
+
+
+@pytest.mark.parametrize(
+    "filters",
+    [{}, {"test_suite_id": str(REGULAR.id)}, {"table_group_id": str(uuid4())}],
+    ids=["no-contract-in-the-project", "a-regular-suite-selected", "another-table-group-selected"],
+)
+def test_the_scope_is_not_read_when_the_filters_hold_no_contract(filters):
+    suites = [REGULAR] if not filters else [CONTRACT, REGULAR]
+    with _rendered(test_suites=suites, scope=RunVersionScope(True, 5), **filters) as rendered:
+        pass
+
+    rendered.get_scope.assert_not_called()
+    assert rendered.widget["data"]["version_toggle"]["visible"] is False
+
+
+@pytest.mark.parametrize(
+    ("scope", "all_versions", "toggle"),
+    [
+        (RunVersionScope(True, 3), None, {"visible": True, "checked": False, "hidden_count": 3}),
+        (RunVersionScope(True, 0), "true", {"visible": True, "checked": True, "hidden_count": 0}),
+        (RunVersionScope(False, 0), None, {"visible": False, "checked": False, "hidden_count": 0}),
+    ],
+)
+def test_the_widget_gets_the_version_toggle(scope, all_versions, toggle):
+    with _rendered(test_suites=[CONTRACT], scope=scope, all_versions=all_versions) as rendered:
+        pass
+
+    assert rendered.widget["data"]["version_toggle"] == toggle
+
+
+@pytest.mark.parametrize(
+    ("version_id", "list_args"),
+    [(None, {}), ("draft-id", {"all_versions": "true"})],
+    ids=["listed-by-default", "hidden-by-default"],
+)
+def test_starting_a_run_lists_it_where_it_shows(version_id, list_args):
+    with _rendered(test_suites=[CONTRACT, REGULAR]) as rendered:
+        rendered.run_list_args.return_value = list_args
+        rendered.widget["on_RunTestsConfirmed_change"]({
+            "test_suite_id": str(CONTRACT.id),
+            "test_suite_name": CONTRACT.test_suite,
+            **({"version_id": version_id} if version_id else {}),
+        })
+
+    rendered.run_list_args.assert_called_once_with(str(CONTRACT.id), version_id)
+    assert rendered.set_query_params.call_args.args[0] == {"page": 1, **list_args}
