@@ -4,7 +4,11 @@ from collections.abc import Iterable
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import func, literal, select
+from sqlalchemy.dialects import postgresql
+
 from testgen.common.enums import SuiteType
+from testgen.common.models import get_current_session
 from testgen.common.models.suite_version import (
     ContractState,
     SuiteVersion,
@@ -15,6 +19,20 @@ from testgen.common.models.suite_version import (
 from testgen.common.models.test_run import TestRunSummary
 
 PREVIEW_NOTE = "A preview does not count as the contract's status."
+
+
+def run_list_args(test_suite_id: UUID | str, version_id: UUID | str | None) -> dict[str, str]:
+    """The Test Runs URL args that list a run of the suite started now: every version when the default list,
+    which shows only runs of the version in force, would hide it.
+
+    :param version_id: the version the run was started for; None for the one a run of the suite checks by default
+    """
+    uuid_type = postgresql.UUID(as_uuid=True)
+    checked_version = func.coalesce(
+        literal(version_id, uuid_type), SuiteVersion.for_run(literal(test_suite_id, uuid_type))
+    )
+    in_force = get_current_session().scalar(select(SuiteVersion.in_force_at(checked_version, func.now())))
+    return {} if in_force else {"all_versions": "true"}
 
 
 def run_version_caption(run: TestRunSummary) -> str | None:

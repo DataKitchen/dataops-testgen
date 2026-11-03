@@ -315,7 +315,7 @@ def _run_summary(**overrides) -> TestRunSummary:
         "active_seconds": 5.0, "error_message": None, "progress": [], "table_groups_name": "client_42",
         "test_suite": "Orders", "project_code": "demo", "project_name": "Demo", "test_ct": 6, "passed_ct": 4,
         "warning_ct": 1, "failed_ct": 1, "error_ct": 0, "log_ct": 0, "dismissed_ct": 0,
-        "dq_score_testing": None, "total_count": 1,
+        "dq_score_testing": None,
     }
     return TestRunSummary(**{**fields, **overrides})
 

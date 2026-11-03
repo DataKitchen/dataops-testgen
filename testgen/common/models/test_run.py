@@ -1,16 +1,32 @@
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import UTC, datetime
 from typing import ClassVar, Literal, NamedTuple, Self, TypedDict
 from uuid import UUID
 
-from sqlalchemy import BigInteger, Column, Float, ForeignKey, Integer, delete, desc, func, select, text
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    Float,
+    ForeignKey,
+    Integer,
+    Subquery,
+    and_,
+    delete,
+    desc,
+    exists,
+    func,
+    literal,
+    literal_column,
+    or_,
+    select,
+)
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import foreign, relationship
+from sqlalchemy.orm import aliased, foreign, relationship
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import case
 
-from testgen.common.enums import JOB_STATUS_LABEL, JobStatus, SuiteType
+from testgen.common.enums import JOB_STATUS_LABEL, JobKey, JobStatus, SuiteType
 from testgen.common.models import database_session, get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.entity import Entity, EntityMinimal
@@ -107,7 +123,6 @@ class TestRunSummary(EntityMinimal):
     log_ct: int | None
     dismissed_ct: int | None
     dq_score_testing: float | None
-    total_count: int
     version_number: int | None = None
     version_frozen_at: datetime | None = None
     active_version_number: int | None = None
@@ -179,6 +194,11 @@ class TestRunMonitorSummary(EntityMinimal):
 class LatestTestRun(NamedTuple):
     id: str
     run_time: datetime
+
+
+class RunVersionScope(NamedTuple):
+    has_contract: bool
+    hidden_count: int
 
 
 class TestRun(Entity):
@@ -300,24 +320,11 @@ class TestRun(Entity):
         before the run started did not."""
         if self.version_id is None:
             return True
-        session = get_current_session()
-        version = session.execute(
-            select(SuiteVersion.version, SuiteVersion.frozen_at, SuiteVersion.test_suite_id)
-            .where(SuiteVersion.id == self.version_id)
-        ).first()
-        if version is None:
-            return False
-        if version.test_suite_id is None:
-            return True
-        in_force_at_start = session.scalar(
-            select(func.max(SuiteVersion.version)).where(
-                SuiteVersion.test_suite_id == version.test_suite_id,
-                SuiteVersion.frozen_at <= (self.test_starttime or datetime.now(UTC)).replace(tzinfo=UTC),
-            )
-        )
-        return RunVersion(
-            version.version, version.frozen_at, None, self.test_starttime, in_force_at_start
-        ).checked_version_in_force
+        started_at = (self.test_starttime or datetime.now(UTC)).replace(tzinfo=UTC)
+        return get_current_session().scalar(select(SuiteVersion.in_force_at(
+            literal(self.version_id, postgresql.UUID(as_uuid=True)),
+            literal(started_at, postgresql.TIMESTAMP(timezone=True)),
+        )))
 
     @property
     def ct_by_status(self):
@@ -344,7 +351,66 @@ class TestRun(Entity):
         *,
         suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
         version_id: UUID | str | None = None,
+        all_versions: bool = True,
     ) -> tuple[list[TestRunSummary], int]:
+        """The run-tests jobs matching the filters, queued or not, newest first.
+
+        :param all_versions: when False, only runs of the version in force when they started, and
+            queued runs of the version in force now
+        """
+        runs = cls._summary_rows(
+            project_code, table_group_id, test_suite_id, test_run_ids, job_execution_id, schedule_id, statuses,
+            suite_types, version_id,
+        )
+        if runs is None:
+            return [], 0
+        query = (
+            select(*(runs.c[field.name] for field in fields(TestRunSummary)))
+            .where(*([] if all_versions else [SuiteVersion.in_force_at(runs.c.checked_version, runs.c.checked_at)]))
+            .order_by(runs.c.created_at.desc(), runs.c.job_execution_id)
+        )
+        return cls._paginate(query, page=page, limit=page_size, data_class=TestRunSummary)
+
+    @classmethod
+    def select_version_scope(
+        cls,
+        project_code: str,
+        table_group_id: str | None = None,
+        test_suite_id: str | None = None,
+        *,
+        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+    ) -> RunVersionScope:
+        """Whether the runs the filters select include a contract's, and how many of them
+        ``select_summary(all_versions=False)`` leaves out.
+        """
+        runs = cls._summary_rows(project_code, table_group_id, test_suite_id, None, None, None, None, suite_types, None)
+        if runs is None:
+            return RunVersionScope(False, 0)
+        has_contract, hidden_count = get_current_session().execute(
+            select(
+                func.coalesce(func.bool_or(runs.c.suite_type == SuiteType.CONTRACT), False),
+                func.count().filter(~SuiteVersion.in_force_at(runs.c.checked_version, runs.c.checked_at)),
+            )
+        ).one()
+        return RunVersionScope(has_contract, hidden_count)
+
+    @classmethod
+    def _summary_rows(
+        cls,
+        project_code: str | None,
+        table_group_id: str | None,
+        test_suite_id: str | None,
+        test_run_ids: list[str | UUID] | None,
+        job_execution_id: str | UUID | None,
+        schedule_id: str | None,
+        statuses: list[JobStatus] | None,
+        suite_types: Sequence[SuiteType],
+        version_id: UUID | str | None,
+    ) -> Subquery | None:
+        """The run-tests jobs matching the filters as a subquery: the ``TestRunSummary`` columns, ``suite_type``,
+        and ``checked_version`` / ``checked_at``, the version a run checks and when it started. None when an id
+        filter is not a valid id.
+        """
         if (
             (table_group_id and not is_uuid4(table_group_id))
             or (test_suite_id and not is_uuid4(test_suite_id))
@@ -352,110 +418,111 @@ class TestRun(Entity):
             or (job_execution_id and not is_uuid4(job_execution_id))
             or (schedule_id and not is_uuid4(schedule_id))
         ):
-            return [], 0
+            return None
 
-        # A test run shares its job's id. Postgres does not reliably push the outer filters into the grouped CTE.
-        results_filter = ""
-        if test_run_ids:
-            results_filter = "WHERE test_run_id IN :test_run_ids"
-        elif job_execution_id:
-            results_filter = "WHERE test_run_id = :job_execution_id"
-
-        # Pending JEs (no tr row) surface in project-scope queries — the LEFT JOIN to
-        # test_suites yields a NULL ts row that the ``ts.id IS NULL`` clause lets through —
-        # but not in suite/TG-scoped queries, since the WHERE filter requires ts to match.
-        query = f"""
-        WITH run_results AS (
-            SELECT test_run_id,
-                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
-                    AND result_status = 'Passed' THEN 1 ELSE 0 END) AS passed_ct,
-                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
-                    AND result_status = 'Warning' THEN 1 ELSE 0 END) AS warning_ct,
-                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
-                    AND result_status = 'Failed' THEN 1 ELSE 0 END) AS failed_ct,
-                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
-                    AND result_status = 'Error' THEN 1 ELSE 0 END) AS error_ct,
-                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
-                    AND result_status = 'Log' THEN 1 ELSE 0 END) AS log_ct,
-                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') IN ('Dismissed', 'Inactive')
-                    THEN 1 ELSE 0 END) AS dismissed_ct
-            FROM test_results
-            {results_filter}
-            GROUP BY test_run_id
+        confirmed = func.coalesce(TestResult.disposition, "Confirmed") == "Confirmed"
+        results = select(
+            TestResult.test_run_id,
+            *(
+                func.count().filter(confirmed, TestResult.status == status).label(f"{status.value.lower()}_ct")
+                for status in TestResultStatus
+            ),
+            func.count()
+            .filter(func.coalesce(TestResult.disposition, "Confirmed").in_(("Dismissed", "Inactive")))
+            .label("dismissed_ct"),
         )
-        SELECT
-            je.id AS job_execution_id,
-            tr.id AS test_run_id,
-            je.job_schedule_id,
-            je.status,
-            je.created_at,
-            je.started_at,
-            je.completed_at,
-            je.active_seconds,
-            je.error_message,
-            COALESCE(tr.progress, '[]'::jsonb) AS progress,
-            tg.table_groups_name,
-            ts.test_suite,
-            je.project_code,
-            p.project_name,
-            tr.test_ct,
-            rr.passed_ct,
-            rr.warning_ct,
-            rr.failed_ct,
-            rr.error_ct,
-            rr.log_ct,
-            rr.dismissed_ct,
-            tr.dq_score_test_run AS dq_score_testing,
-            COUNT(*) OVER() AS total_count,
-            sv.version AS version_number,
-            sv.frozen_at AS version_frozen_at,
-            (SELECT MAX(av.version) FROM suite_versions av
-                WHERE av.test_suite_id = ts.id AND av.frozen_at IS NOT NULL) AS active_version_number,
-            tr.test_starttime,
-            -- test_starttime is stored as UTC without a zone.
-            (SELECT MAX(fv.version) FROM suite_versions fv
-                WHERE fv.test_suite_id = ts.id
-                    AND fv.frozen_at <= tr.test_starttime AT TIME ZONE 'UTC') AS version_in_force_at_start,
-            (tr.version_id IS NOT NULL
-                AND NOT EXISTS (SELECT 1 FROM suite_versions dv WHERE dv.id = tr.version_id)) AS version_discarded
-        FROM job_executions je
-            LEFT JOIN test_runs tr ON tr.id = je.id
-            LEFT JOIN suite_versions sv ON sv.id = tr.version_id AND sv.test_suite_id IS NOT NULL
-            LEFT JOIN test_suites ts ON ts.id = tr.test_suite_id
-            LEFT JOIN table_groups tg ON tg.id = ts.table_groups_id
-            LEFT JOIN projects p ON p.project_code = je.project_code
-            LEFT JOIN run_results rr ON rr.test_run_id = tr.id
-        WHERE je.job_key = 'run-tests'
-            AND (ts.suite_type IN :suite_types OR ts.id IS NULL)
-            {" AND je.project_code = :project_code" if project_code else ""}
-            {" AND ts.table_groups_id = :table_group_id" if table_group_id else ""}
-            {" AND ts.id = :test_suite_id" if test_suite_id else ""}
-            {" AND tr.id IN :test_run_ids" if test_run_ids else ""}
-            {" AND tr.version_id = :version_id" if version_id else ""}
-            {" AND je.id = :job_execution_id" if job_execution_id else ""}
-            {" AND je.job_schedule_id = :schedule_id" if schedule_id else ""}
-            {" AND je.status IN :statuses" if statuses else ""}
-        ORDER BY je.created_at DESC
-        LIMIT :limit OFFSET :offset;
-        """
-        params = {
-            "project_code": project_code,
-            "suite_types": tuple(t.value for t in suite_types),
-            "table_group_id": table_group_id,
-            "test_suite_id": test_suite_id,
-            "test_run_ids": tuple(test_run_ids or []),
-            "version_id": str(version_id) if version_id else None,
-            "job_execution_id": str(job_execution_id) if job_execution_id else None,
-            "schedule_id": schedule_id,
-            "statuses": tuple(statuses) if statuses else (),
-            "limit": page_size,
-            "offset": (page - 1) * page_size,
-        }
-        db_session = get_current_session()
-        results = db_session.execute(text(query), params).mappings().all()
-        items = [TestRunSummary(**row) for row in results]
-        total = items[0].total_count if items else 0
-        return items, total
+        # A test run shares its job's id. Postgres does not reliably push the outer filters into the grouped CTE.
+        if test_run_ids:
+            results = results.where(TestResult.test_run_id.in_(test_run_ids))
+        elif job_execution_id:
+            results = results.where(TestResult.test_run_id == job_execution_id)
+        run_results = results.group_by(TestResult.test_run_id).cte("run_results")
+
+        # A queued job has no test run yet: its kwargs name the suite and, optionally, the version it will check.
+        queued_suite_id = JobExecution.kwargs["test_suite_id"].astext.cast(postgresql.UUID(as_uuid=True))
+        queued_version_id = JobExecution.kwargs["version_id"].astext.cast(postgresql.UUID(as_uuid=True))
+        started = cls.id.is_not(None)
+        # A job that ended without creating its test run is judged once, as of when it was started or queued.
+        ended = JobExecution.status.in_(JobStatus.terminal())
+        # test_starttime is stored as UTC without a zone.
+        starttime = func.timezone("UTC", cls.test_starttime)
+        run_version, active, in_force, discarded = (aliased(SuiteVersion) for _ in range(4))
+
+        query = (
+            select(
+                JobExecution.id.label("job_execution_id"),
+                cls.id.label("test_run_id"),
+                JobExecution.job_schedule_id,
+                JobExecution.status,
+                JobExecution.created_at,
+                JobExecution.started_at,
+                JobExecution.completed_at,
+                JobExecution.active_seconds,
+                JobExecution.error_message,
+                func.coalesce(cls.progress, literal_column("'[]'::jsonb", postgresql.JSONB)).label("progress"),
+                TableGroup.table_groups_name,
+                TestSuite.test_suite,
+                TestSuite.suite_type,
+                JobExecution.project_code,
+                Project.project_name,
+                cls.test_ct,
+                run_results.c.passed_ct,
+                run_results.c.warning_ct,
+                run_results.c.failed_ct,
+                run_results.c.error_ct,
+                run_results.c.log_ct,
+                run_results.c.dismissed_ct,
+                cls.dq_score_test_run.label("dq_score_testing"),
+                run_version.version.label("version_number"),
+                run_version.frozen_at.label("version_frozen_at"),
+                select(func.max(active.version))
+                .where(active.test_suite_id == TestSuite.id, active.frozen_at.is_not(None))
+                .scalar_subquery()
+                .label("active_version_number"),
+                cls.test_starttime,
+                select(func.max(in_force.version))
+                .where(in_force.test_suite_id == TestSuite.id, in_force.frozen_at <= starttime)
+                .scalar_subquery()
+                .label("version_in_force_at_start"),
+                and_(cls.version_id.is_not(None), ~exists().where(discarded.id == cls.version_id)).label(
+                    "version_discarded"
+                ),
+                case(
+                    (started, cls.version_id),
+                    (ended, queued_version_id),
+                    else_=func.coalesce(queued_version_id, SuiteVersion.for_run(TestSuite.id)),
+                ).label("checked_version"),
+                case(
+                    (started, starttime),
+                    (ended, func.coalesce(JobExecution.started_at, JobExecution.created_at)),
+                    else_=func.now(),
+                ).label("checked_at"),
+            )
+            .select_from(JobExecution)
+            .outerjoin(cls, cls.id == JobExecution.id)
+            .outerjoin(run_version, and_(run_version.id == cls.version_id, run_version.test_suite_id.is_not(None)))
+            .outerjoin(TestSuite, TestSuite.id == func.coalesce(cls.test_suite_id, queued_suite_id))
+            .outerjoin(TableGroup, TableGroup.id == TestSuite.table_groups_id)
+            .outerjoin(Project, Project.project_code == JobExecution.project_code)
+            .outerjoin(run_results, run_results.c.test_run_id == cls.id)
+            .where(
+                JobExecution.job_key == JobKey.run_tests,
+                or_(TestSuite.suite_type.in_(suite_types), TestSuite.id.is_(None)),
+            )
+        )
+        for value, clause in (
+            (project_code, JobExecution.project_code == project_code),
+            (table_group_id, TestSuite.table_groups_id == table_group_id),
+            (test_suite_id, TestSuite.id == test_suite_id),
+            (test_run_ids, cls.id.in_(test_run_ids or [])),
+            (version_id, cls.version_id == version_id),
+            (job_execution_id, JobExecution.id == job_execution_id),
+            (schedule_id, JobExecution.job_schedule_id == schedule_id),
+            (statuses, JobExecution.status.in_(statuses or [])),
+        ):
+            if value:
+                query = query.where(clause)
+        return query.subquery("runs")
 
     def get_monitoring_summary(self, table_name: str | None = None) -> TestRunMonitorSummary:
         freshness_anomalies = func.sum(case(
