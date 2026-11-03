@@ -598,12 +598,9 @@ class DuckdbFlavorService(FlavorService):
             if not base_path:
                 raise DuckdbConnectionError("This connection has no storage location configured.")
             self._register_storage_secret(connection, store, params)
-            # Named like a spill directory, so the startup sweep removes one a killed run left behind.
-            run_cache_directory = TEMP_DIRECTORY / f"{os.getpid()}-{uuid4().hex}"
-            connection.info[_RUN_CACHE_DIRECTORY_KEY] = run_cache_directory
             # The trailing slash keeps a sibling that shares the prefix, such as data-archive
             # beside data, outside the allow-list.
-            allowed = [f"{base_path}/", f"{run_cache_directory}/"]
+            allowed = [f"{base_path}/"]
         else:
             if not base_path:
                 raise DuckdbConnectionError("This connection has no base path configured.")
@@ -611,7 +608,10 @@ class DuckdbFlavorService(FlavorService):
                 raise DuckdbConnectionError(f"The base path was not found. {container_path_note()}".rstrip())
             allowed = [base_path]
 
-        self._confine_reads(connection, allowed)
+        # Named like a spill directory, so the startup sweep removes one a killed run left behind.
+        run_cache_directory = TEMP_DIRECTORY / f"{os.getpid()}-{uuid4().hex}"
+        connection.info[_RUN_CACHE_DIRECTORY_KEY] = run_cache_directory
+        self._confine_reads(connection, [*allowed, f"{run_cache_directory}/"])
         connection.info[_DECLARATION_FAILURES_KEY] = self.build_declaration_views(
             connection,
             base_path,
@@ -666,7 +666,7 @@ class DuckdbFlavorService(FlavorService):
         return connection.info.get(_DECLARATION_FAILURES_KEY, {})
 
     def caches_tables(self, sql_flavor_code: str) -> bool:
-        return object_storage.store_for(sql_flavor_code) is not None
+        return declares_files(sql_flavor_code)
 
     def cache_tables(
         self,
@@ -675,12 +675,12 @@ class DuckdbFlavorService(FlavorService):
         declarations: list[FileDeclaration],
         table_names: Iterable[str],
     ) -> None:
-        """Copy the named declarations from object storage into a local database and repoint their views.
+        """Copy the named declarations into a local database and repoint their views.
 
-        Every later query on this connection reads the copy, so the object is downloaded once. A
-        Parquet declaration is left on storage, since a query reads only the columns and row groups
-        it needs. A declaration that fails to copy keeps reading from storage, and a failure to write
-        the copy stops copying the rest.
+        Every later query on this connection reads the copy, so each file is read and parsed once. A
+        Parquet declaration is left in place, since a query reads only the columns and row groups it
+        needs. A declaration that fails to copy keeps reading its files, and a failure to write the
+        copy stops copying the rest.
         """
         run_cache_directory: Path | None = connection.info.get(_RUN_CACHE_DIRECTORY_KEY)
         table_group_schema = fixed_table_group_schema(params.sql_flavor_code)
@@ -712,7 +712,7 @@ class DuckdbFlavorService(FlavorService):
             except Exception as error:
                 connection.rollback()
                 self._disable_run_cache(connection)
-                LOG.warning(f"Tables are read from storage, because no local copy could be set up: {error}")
+                LOG.warning(f"Tables are read in place, because no local copy could be set up: {error}")
                 return
             connection.info[_RUN_CACHE_TABLES_KEY] = cached
 
@@ -736,13 +736,13 @@ class DuckdbFlavorService(FlavorService):
                     self._drop_copy(connection, copy)
                 driver_error = getattr(error, "orig", error)
                 LOG.warning(
-                    f"Declaration {declaration.name} could not be copied locally, so it is read from storage: "
+                    f"Declaration {declaration.name} could not be copied locally, so it is read in place: "
                     f"{error_message(driver_error)}"
                 )
                 if _is_write_failure(driver_error):
                     # Most likely a full disk, which every later copy would hit too.
                     if skipped := [remaining.name for remaining in to_copy[position + 1:]]:
-                        LOG.warning(f"Declarations not copied locally, so read from storage: {', '.join(skipped)}")
+                        LOG.warning(f"Declarations not copied locally, so read in place: {', '.join(skipped)}")
                     # With nothing copied yet, the cache holds only the failed partial write, so deleting it frees
                     # that space for spilling queries.
                     if not cached:

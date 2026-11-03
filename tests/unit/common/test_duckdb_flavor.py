@@ -1266,7 +1266,7 @@ def test_reads_are_confined_to_the_base_path(data_directory):
     engine, connection = open_files_connection(service, files_params(data_directory))
     outside = data_directory.parent / "outside" / "secret.csv"
     try:
-        with pytest.raises(SQLAlchemyError, match="Permission Error"):
+        with pytest.raises(SQLAlchemyError, match="disabled by configuration"):
             connection.execute(text(f"SELECT * FROM read_csv('{outside}')")).fetchall()
     finally:
         connection.close()
@@ -1751,22 +1751,25 @@ def test_the_attached_database_still_needs_its_schema(customer_database):
         engine.dispose()
 
 
-# --- The run cache an object-storage connection keeps ---
+# --- The run cache a file data source keeps ---
 
 
-@pytest.fixture
-def storage_connection(data_directory, monkeypatch):
-    """A connection that takes the object-storage path in ``init``, reading the local data directory."""
-    class LocalStore:
-        def base_location(self, parameters):
-            return parameters["base_path"]
+@pytest.fixture(params=["local", "object_storage"])
+def storage_connection(request, data_directory, monkeypatch):
+    """A file data source over the local data directory, opened through ``init``'s local or object-storage path."""
+    if request.param == "object_storage":
+        class LocalStore:
+            def base_location(self, parameters):
+                return parameters["base_path"]
 
-        def storage_error_message(self, _parameters, error):
-            return str(error).splitlines()[0]
+            def storage_error_message(self, _parameters, error):
+                return str(error).splitlines()[0]
 
-    store = LocalStore()
-    monkeypatch.setattr(duckdb_flavor_service.object_storage, "store_for", lambda code: store if code == "files" else None)
-    monkeypatch.setattr(DuckdbFlavorService, "_register_storage_secret", lambda *_args: None)
+        store = LocalStore()
+        monkeypatch.setattr(
+            duckdb_flavor_service.object_storage, "store_for", lambda code: store if code == "files" else None
+        )
+        monkeypatch.setattr(DuckdbFlavorService, "_register_storage_secret", lambda *_args: None)
     service = DuckdbFlavorService()
     params = files_params(data_directory)
     declarations = [
@@ -1853,7 +1856,7 @@ def test_a_copy_that_cannot_be_written_stops_the_rest(storage_connection, caplog
 
     assert _reads_source(connection, "claims")
     assert _reads_source(connection, "notes")
-    assert "not copied locally, so read from storage: notes" in caplog.text
+    assert "not copied locally, so read in place: notes" in caplog.text
     assert duckdb_flavor_service._RUN_CACHE_DIRECTORY_KEY not in connection.info
     assert not cache_directory.exists()
     assert "Could not detach" not in caplog.text
@@ -1901,15 +1904,31 @@ def test_the_copies_are_named_like_a_spill_directory(storage_connection):
     assert duckdb_flavor_service._SPILL_DIRECTORY_PATTERN.fullmatch(cache_directory.name)
 
 
-def test_a_connection_that_reads_files_in_place_copies_nothing(data_directory):
+def test_a_database_file_connection_copies_nothing(customer_database):
+    service = DuckdbFlavorService()
+    params = connection_params(customer_database)
+    engine = service.create_engine(params)
+    connection = engine.connect()
+    try:
+        service.init(connection, resolve_connection_params(params), [])
+        assert not service.caches_tables("duckdb")
+        assert duckdb_flavor_service._RUN_CACHE_DIRECTORY_KEY not in connection.info
+    finally:
+        connection.close()
+        engine.dispose()
+
+
+def test_a_local_files_connection_still_cannot_read_outside_its_base_path(data_directory):
     service = DuckdbFlavorService()
     params = files_params(data_directory)
     declarations = [{"name": "claims", "uri": "claims_*.csv", "format": "csv"}]
     engine, connection = open_files_connection(service, params, declarations)
     try:
-        assert not service.caches_tables("files")
         service.cache_tables(connection, resolve_connection_params(params), parse_file_declarations(declarations), ["claims"])
-        assert _reads_source(connection, "claims")
+        assert not _reads_source(connection, "claims")
+        outside = data_directory.parent / "outside" / "secret.csv"
+        with pytest.raises(SQLAlchemyError, match="disabled by configuration"):
+            connection.execute(text(f"SELECT * FROM read_csv('{outside}')")).fetchall()
     finally:
         connection.close()
         engine.dispose()
@@ -1940,8 +1959,8 @@ def test_a_cache_database_that_cannot_be_attached_leaves_every_table_on_storage(
     assert "no local copy could be set up" in caplog.text
 
 
-@pytest.mark.parametrize("code", ["s3", "azure_blob"])
-def test_object_storage_connections_cache_their_tables(code):
+@pytest.mark.parametrize("code", ["files", "s3", "azure_blob"])
+def test_file_data_sources_cache_their_tables(code):
     assert DuckdbFlavorService().caches_tables(code)
 
 
