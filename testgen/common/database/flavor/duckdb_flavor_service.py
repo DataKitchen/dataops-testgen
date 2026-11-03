@@ -145,6 +145,91 @@ def expand_path(value: str | None) -> str:
 _REMOTE_URL = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
 
 
+# What the process keeps outside DuckDB's own memory accounting: the interpreter, TestGen, and
+# allocations DuckDB does not count against its limit. DuckDB's default limit, 80% of memory,
+# leaves too little of a small container for these once a run fills DuckDB's share.
+_MEMORY_HEADROOM_BYTES = 1 << 30
+_MEMORY_HEADROOM_FRACTION = 0.2
+_CGROUP_ROOT = Path("/sys/fs/cgroup")
+_PROC_SELF_CGROUP = Path("/proc/self/cgroup")
+
+
+def _cgroup_files(v2_file: str, v1_controller: str, v1_file: str) -> list[Path]:
+    """A cgroup setting's files in this process's cgroup and each of its ancestors, cgroup v2 and v1 alike.
+
+    The process's path comes from ``/proc/self/cgroup``. Where the cgroup filesystem is mounted with
+    the process's own cgroup at its root, that path does not exist below the mount and the root
+    holds the value instead, so the root is always read too.
+    """
+    try:
+        lines = _PROC_SELF_CGROUP.read_text().splitlines()
+    except OSError:
+        return []
+    candidates: list[Path] = []
+    for line in lines:
+        if line.count(":") < 2:
+            continue
+        _, controllers, cgroup_path = line.split(":", 2)
+        if controllers == "":
+            base, name = _CGROUP_ROOT, v2_file
+        elif v1_controller in controllers.split(","):
+            base, name = _CGROUP_ROOT / controllers, v1_file
+        else:
+            continue
+        directory = base / cgroup_path.strip("/")
+        candidates.extend(parent / name for parent in [directory, *directory.parents] if parent.is_relative_to(base))
+    return [candidate for candidate in dict.fromkeys(candidates) if candidate.is_file()]
+
+
+def _read(path: Path) -> str:
+    with contextlib.suppress(OSError):
+        return path.read_text().strip()
+    return ""
+
+
+def _machine_memory_bytes() -> int | None:
+    with contextlib.suppress(ValueError, OSError, AttributeError):
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    return None
+
+
+def container_memory_bytes() -> int | None:
+    """The tightest memory limit on this process's cgroup, or None when it has none."""
+    machine = _machine_memory_bytes()
+    limits = [
+        int(value)
+        for path in _cgroup_files("memory.max", "memory", "memory.limit_in_bytes")
+        # cgroup v1 reports "no limit" as a number near the maximum of a 64-bit counter.
+        if (value := _read(path)).isdigit() and (machine is None or int(value) < machine)
+    ]
+    return min(limits, default=None)
+
+
+def available_cpus() -> int:
+    """The CPUs this process may run on, capped by its cgroup's CPU quota."""
+    if hasattr(os, "process_cpu_count"):
+        cpus = os.process_cpu_count() or 1
+    elif hasattr(os, "sched_getaffinity"):
+        cpus = len(os.sched_getaffinity(0)) or 1
+    else:
+        cpus = os.cpu_count() or 1
+    quotas = []
+    for path in _cgroup_files("cpu.max", "cpu", "cpu.cfs_quota_us"):
+        quota, _, period = _read(path).partition(" ")
+        if path.name == "cpu.cfs_quota_us":
+            period = _read(path.with_name("cpu.cfs_period_us"))
+        if quota.isdigit() and period.isdigit() and int(period) > 0:
+            quotas.append(-(-int(quota) // int(period)))
+    return max(1, min([cpus, *quotas]))
+
+
+def duckdb_memory_limit(available: int | None) -> str | None:
+    """DuckDB's memory limit for this process, leaving room for what DuckDB does not account for."""
+    if not available:
+        return None
+    headroom = max(_MEMORY_HEADROOM_BYTES, int(available * _MEMORY_HEADROOM_FRACTION))
+    return f"{max(available - headroom, available // 4) // (1 << 20)}MiB"
+
 def _require_absolute_path(value: str | None, label: str) -> None:
     """Raise ``ValueError`` unless ``value`` names an absolute path once ``~`` is expanded.
 
@@ -458,7 +543,12 @@ class DuckdbFlavorService(FlavorService):
             # SECRET run once external access is closed, which it otherwise refuses because it
             # reads the persistent secret directory, a dot-directory in the home directory.
             "allow_persistent_secrets": False,
+            # DuckDB counts the machine's cores, not the ones the process may use.
+            "threads": available_cpus(),
         }
+        # Outside a memory-limited container, DuckDB's own default applies.
+        if memory_limit := duckdb_memory_limit(container_memory_bytes()):
+            config["memory_limit"] = memory_limit
         if settings.DUCKDB_EXTENSION_DIRECTORY:
             config["extension_directory"] = settings.DUCKDB_EXTENSION_DIRECTORY
         return {"config": config}
