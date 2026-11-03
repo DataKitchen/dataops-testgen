@@ -44,3 +44,11 @@ def test_deactivates_invalid_tests_follows_the_setting_for_regular_suites_only(s
     suite = TestSuite(suite_type=suite_type, deactivate_invalid_tests=setting)
 
     assert suite.deactivates_invalid_tests is expected
+
+
+def test_a_name_is_stored_without_surrounding_whitespace():
+    suite = TestSuite(test_suite="  Orders \t")
+    assert suite.test_suite == "Orders"
+
+    suite.test_suite = " Sales Orders "
+    assert suite.test_suite == "Sales Orders"
