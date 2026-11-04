@@ -569,7 +569,7 @@ defaults to: 5
 JOB_PAUSE_CHECK_INTERVAL: int = int(getenv("TG_JOB_PAUSE_CHECK_INTERVAL", "5"))
 """
 Seconds a running job caches the answer to "have I been asked to stop" before asking the
-database again. Bounds how long a job takes to notice the request.
+database again. Bounds how long a job takes to notice a pause, interrupt, or cancel request.
 
 from env variable: 'TG_JOB_PAUSE_CHECK_INTERVAL'
 defaults to: 5
@@ -582,6 +582,17 @@ the runtime's stop grace period, or the container is killed mid-wait and jobs th
 stopped cleanly are cut instead. A job that outlives this is left for the next start to settle.
 
 from env variable: 'TG_JOB_SHUTDOWN_TIMEOUT'
+defaults to: 60
+"""
+
+JOB_CANCEL_TIMEOUT: int = int(getenv("TG_JOB_CANCEL_TIMEOUT", "60"))
+"""
+Seconds the scheduler gives a canceled job to stop on its own before it terminates the job's
+process. A job stops at its next step or query boundary and cancels its running queries, so it
+normally stops well within this; one that does not is terminated, and killed if it still has not
+exited after TG_JOB_TERMINATE_TIMEOUT.
+
+from env variable: 'TG_JOB_CANCEL_TIMEOUT'
 defaults to: 60
 """
 
@@ -599,7 +610,8 @@ defaults to: 1
 
 JOB_TERMINATE_TIMEOUT: int = int(getenv("TG_JOB_TERMINATE_TIMEOUT", "10"))
 """
-Seconds a canceled job's process is given to exit after SIGTERM before it is killed.
+Seconds a job's process is given to exit after SIGTERM before it is killed. The scheduler
+terminates a canceled job only once TG_JOB_CANCEL_TIMEOUT has passed.
 A job process that installs no handler is terminated by the signal itself, so this bounds the
 cases that do: a handler that runs cleanup, or a process the kernel cannot deliver to promptly.
 
