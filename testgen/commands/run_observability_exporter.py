@@ -326,8 +326,6 @@ def run_observability_exporter(project_code, test_suite):
     )
     if not test_suites:
         raise click.ClickException(f"Project {project_code} has no test suite named {test_suite}.")
-    if len(test_suites) > 1:
-        raise click.ClickException(f"Project {project_code} has {len(test_suites)} test suites named {test_suite}.")
     qty_of_exported_events = export_test_results(test_suites[0].id)
     click.echo(f"{qty_of_exported_events} events have been exported.")
 

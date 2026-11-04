@@ -3,8 +3,13 @@
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
-from testgen.common.database.test_suite_service import validate_test_suite_fields
+from testgen.common.database.test_suite_service import (
+    duplicate_name_message,
+    is_duplicate_name_error,
+    validate_test_suite_fields,
+)
 from testgen.common.enums import SuiteType
 from testgen.common.models.test_suite import TestSuite
 
@@ -128,3 +133,15 @@ def test_validate_can_leave_field_names_unquoted():
     )
 
     assert errors == ["Test Suite Name is required."]
+
+
+def test_is_duplicate_name_error_recognizes_only_the_name_index():
+    def error(constraint: str) -> IntegrityError:
+        return IntegrityError("INSERT", {}, Exception(f'violates unique constraint "{constraint}"'))
+
+    assert is_duplicate_name_error(error("test_suites_name_unique"))
+    assert not is_duplicate_name_error(error("table_groups_name_unique"))
+
+
+def test_duplicate_name_message_names_the_suite():
+    assert duplicate_name_message("Orders") == "A test suite or contract named Orders already exists in this project."

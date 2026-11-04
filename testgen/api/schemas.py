@@ -1825,8 +1825,8 @@ class TestSuiteCreate(BaseModel):
     """A test suite to create under a table group.
 
     Omitted optional fields, and fields sent as `null`, take the default shown.
-    Unknown fields are rejected. Test suite names need not be unique, so repeating a
-    create makes a second suite with the same name.
+    Unknown fields are rejected. A name another test suite or contract in the project holds
+    is rejected.
     """
 
     model_config = ConfigDict(extra="forbid")

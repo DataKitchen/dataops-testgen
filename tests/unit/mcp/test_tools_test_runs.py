@@ -495,17 +495,6 @@ def test_list_test_runs_with_a_version_requires_a_suite(db_session_mock):
         list_test_runs(project_code="demo", version=3)
 
 
-@patch("testgen.mcp.tools.test_runs.TestSuite")
-def test_list_test_runs_refuses_a_name_shared_by_several_suites(mock_suite, db_session_mock):
-    first, second = uuid4(), uuid4()
-    mock_suite.select_minimal_where.return_value = [MagicMock(id=first), MagicMock(id=second)]
-
-    from testgen.mcp.tools.test_runs import list_test_runs
-
-    with pytest.raises(MCPUserError, match=f"2 test suites .* `{first}`, `{second}`. Filter by `test_suite_id`"):
-        list_test_runs(project_code="demo", test_suite="Orders")
-
-
 @patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
 @patch("testgen.mcp.tools.test_runs.JobExecution")
 @patch("testgen.mcp.tools.test_runs.resolve_contract_version")
