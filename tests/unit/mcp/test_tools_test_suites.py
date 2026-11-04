@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 from mcp.types import ElicitationCapability
+from sqlalchemy.exc import IntegrityError
 
 from testgen.commands.test_generation import ContractGenerationResult
 from testgen.common.audit.actions import AuditAction
@@ -1084,3 +1085,70 @@ def test_delete_test_suite_records_nothing_when_nothing_is_deleted(deletable_sui
         _delete_suite(_confirming_ctx(action="decline"), str(deletable_suite.suite.id))
 
     deletable_suite.audit.assert_not_called()
+
+
+def _duplicate_name() -> IntegrityError:
+    return IntegrityError("INSERT", {}, Exception('violates unique constraint "test_suites_name_unique"'))
+
+
+@patch(f"{MODULE}.record")
+@patch(f"{MODULE}.TestSuite")
+@patch(f"{MODULE}.resolve_table_group")
+def test_create_test_suite_refuses_a_name_another_suite_in_the_project_holds(
+    mock_resolve, mock_suite_cls, mock_record, db_session_mock
+):
+    mock_resolve.return_value = _mock_table_group()
+    mock_suite_cls.return_value = _mock_test_suite(test_suite="Sales Tests")
+    db_session_mock.flush.side_effect = _duplicate_name()
+
+    from testgen.mcp.tools.test_suites import create_test_suite
+
+    with _patch_perms(), pytest.raises(MCPUserError) as exc:
+        create_test_suite(table_group_id=str(uuid4()), test_suite_name="Sales Tests")
+
+    assert str(exc.value) == (
+        "A test suite or contract named Sales Tests already exists in this project. No changes saved."
+    )
+    mock_record.assert_not_called()
+
+
+@patch(f"{MODULE}.contract_creation.create_contract", side_effect=_duplicate_name())
+@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.TestSuite")
+@patch(f"{MODULE}.resolve_table_group")
+def test_create_test_suite_refuses_a_contract_name_another_suite_in_the_project_holds(
+    mock_resolve, mock_suite_cls, _connection, _create, db_session_mock
+):
+    mock_resolve.return_value = _mock_table_group()
+    mock_suite_cls.return_value = _mock_test_suite(test_suite="Orders", suite_type=SuiteType.CONTRACT)
+
+    from testgen.mcp.tools.test_suites import create_test_suite
+
+    with _patch_perms(), pytest.raises(MCPUserError, match="named Orders already exists"):
+        create_test_suite(table_group_id=str(uuid4()), test_suite_name="Orders", suite_type="Contract")
+
+
+@patch(f"{MODULE}.resolve_test_suite")
+def test_update_test_suite_refuses_a_name_another_suite_in_the_project_holds(mock_resolve, db_session_mock):
+    suite = _mock_test_suite(test_suite="Original Name")
+    suite.save.side_effect = _duplicate_name()
+    mock_resolve.return_value = suite
+
+    from testgen.mcp.tools.test_suites import update_test_suite
+
+    with _patch_perms(), pytest.raises(MCPUserError) as exc:
+        update_test_suite(test_suite_id=str(suite.id), test_suite_name="Taken")
+
+    assert str(exc.value) == "A test suite or contract named Taken already exists in this project. No changes saved."
+
+
+@patch(f"{MODULE}.resolve_test_suite")
+def test_update_test_suite_lets_other_integrity_errors_through(mock_resolve, db_session_mock):
+    suite = _mock_test_suite(test_suite="Original Name")
+    suite.save.side_effect = IntegrityError("UPDATE", {}, Exception('violates foreign key "test_suites_fk"'))
+    mock_resolve.return_value = suite
+
+    from testgen.mcp.tools.test_suites import update_test_suite
+
+    with _patch_perms(), pytest.raises(IntegrityError):
+        update_test_suite(test_suite_id=str(suite.id), test_suite_name="Taken")
