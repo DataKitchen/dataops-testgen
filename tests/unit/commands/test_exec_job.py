@@ -24,6 +24,7 @@ from testgen.common.job_context import job_context
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.pausable_job import JobParked, PausableJob
+from testgen.common.stoppable_job import JobStopped, StopReason
 
 pytestmark = pytest.mark.unit
 
@@ -314,6 +315,43 @@ def test_exec_job_settles_a_stopped_run_as_canceled_when_a_cancel_arrived(mock_s
 
     job.park.assert_called_once_with(resume_state)
     callback.assert_called_once_with(job)
+
+
+def test_exec_job_settles_a_run_stopped_by_its_cancel_as_canceled(mock_session):
+    job = _make_job_exec(job_key=JobKey.run_tests)
+    _settles(job, job.mark_canceled, "canceled")
+    callback = Mock()
+
+    with (
+        patch.object(JobExecution, "get", return_value=job),
+        patch.dict(
+            JOB_DISPATCH,
+            {JobKey.run_tests: JobConfig(handler=Mock(side_effect=JobStopped("QUERY", StopReason.CANCEL)))},
+        ),
+        patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [callback]}),
+    ):
+        exec_job(job.id)
+
+    job.mark_canceled.assert_called_once()
+    job.mark_failed.assert_not_called()
+    callback.assert_called_once_with(job)
+
+
+def test_exec_job_fails_a_run_stopped_for_anything_but_a_cancel(mock_session):
+    job = _make_job_exec(job_key=JobKey.run_tests)
+    _settles(job, job.mark_failed, "error")
+
+    with (
+        patch.object(JobExecution, "get", return_value=job),
+        patch.dict(
+            JOB_DISPATCH,
+            {JobKey.run_tests: JobConfig(handler=Mock(side_effect=JobStopped("QUERY", StopReason.INTERRUPT)))},
+        ),
+    ):
+        exec_job(job.id)
+
+    job.mark_canceled.assert_not_called()
+    job.mark_failed.assert_called_once_with("The run was stopped (interrupt)")
 
 
 def test_finalize_fires_callbacks_after_the_transition_is_committed(mock_session):

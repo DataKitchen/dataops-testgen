@@ -8,6 +8,7 @@ from testgen.common.database.flavor.flavor_service import (
     base_type_name,
     exact_float_canonical,
 )
+from testgen.common.database.statement_cancel import RunningStatement
 
 
 class DatabricksFlavorService(FlavorService):
@@ -34,6 +35,18 @@ class DatabricksFlavorService(FlavorService):
 
     def exact_text(self, text_expr: str) -> str:
         return f"CAST({text_expr} AS BINARY)"
+
+    def cancel_statement(self, statement: RunningStatement) -> bool:
+        # From a connection of its own: a connection sends one request at a time, and the busy one
+        # is waiting on the statement's status for up to half a minute.
+        if (command_id := statement.cursor.active_command_id) is None:
+            return False
+        other = statement.engine.raw_connection()
+        try:
+            other.dbapi_connection.session.backend.cancel_command(command_id)
+        finally:
+            other.close()
+        return True
 
     def canonical_number(self, column_ref: str, is_float: bool) -> str:
         if is_float:

@@ -16,6 +16,7 @@ from testgen.common.models.table_group import TableGroup
 from testgen.common.models.user import User
 from testgen.common.monitor_service import INITIAL_MONITOR_TYPES
 from testgen.common.run_service import launch_run
+from testgen.common.stoppable_job import Step, StoppableJob
 
 LOG = logging.getLogger("testgen")
 
@@ -72,45 +73,84 @@ def run_catalog_refresh(
     :raises Exception: The first error from the refresh or the monitor generation, re-raised once the other steps
         have run.
     """
-    table_group = TableGroup.get(table_group_id)
-    if table_group is None:
-        LOG.info(f"Skipping data catalog refresh: table group {table_group_id} no longer exists")
-        return
-    connection = Connection.get(table_group.connection_id)
-    set_target_db_params(connection.__dict__, table_group)
+    CatalogRefreshJob(table_group_id, monitor_suite_id, run_profiling, requested_by).execute()
 
-    LOG.info(f"Refreshing data catalog for table group {table_group_id}")
-    first_error: Exception | None = None
-    try:
-        # Profiling refreshes the catalog in full, so the steps before it need only the tables and columns.
-        run_data_chars_refresh(connection, table_group, datetime.now(UTC), count_rows=not run_profiling)
-    except Exception as error:
-        # A refresh that fails on row counts has still written the catalog, and a profiling run
-        # reports a target error to the user where this job's failure would go unseen.
-        LOG.exception("Data catalog refresh encountered errors")
-        first_error = error
 
-    if monitor_suite_id:
+class CatalogRefreshJob(StoppableJob[int]):
+    """Refresh a table group's data catalog, generate its initial monitors, and queue its profiling run.
+
+    A failed refresh or monitor generation does not stop the steps after it; the first error is
+    raised once they have run.
+    """
+
+    def __init__(
+        self,
+        table_group_id: str,
+        monitor_suite_id: str | None = None,
+        run_profiling: bool = False,
+        requested_by: str | None = None,
+    ) -> None:
+        super().__init__(job_context.get().job_id)
+        self.table_group_id = table_group_id
+        self.monitor_suite_id = monitor_suite_id
+        self.run_profiling = run_profiling
+        self.requested_by = requested_by
+        self.first_error: Exception | None = None
+
+    def execute(self) -> None:
+        self.table_group = TableGroup.get(self.table_group_id)
+        if self.table_group is None:
+            LOG.info(f"Skipping data catalog refresh: table group {self.table_group_id} no longer exists")
+            return
+        super().execute()
+        if self.first_error:
+            raise self.first_error
+
+    def on_start(self) -> None:
+        self.connection = Connection.get(self.table_group.connection_id)
+        set_target_db_params(self.connection.__dict__, self.table_group)
+
+    def _refresh_catalog(self) -> None:
+        LOG.info(f"Refreshing data catalog for table group {self.table_group_id}")
         try:
-            run_monitor_generation(monitor_suite_id, INITIAL_MONITOR_TYPES)
+            # Profiling refreshes the catalog in full, so the steps before it need only the tables and columns.
+            run_data_chars_refresh(
+                self, self.connection, self.table_group, datetime.now(UTC), count_rows=not self.run_profiling,
+            )
+        except Exception as error:
+            # A refresh that fails on row counts has still written the catalog, and a profiling run
+            # reports a target error to the user where this job's failure would go unseen.
+            LOG.exception("Data catalog refresh encountered errors")
+            self.first_error = error
+
+    def _generate_monitors(self) -> None:
+        if not self.monitor_suite_id:
+            return
+        try:
+            run_monitor_generation(self.monitor_suite_id, INITIAL_MONITOR_TYPES)
         except Exception as error:
             LOG.exception("Initial monitor generation encountered errors")
             get_current_session().rollback()
-            first_error = first_error or error
+            self.first_error = self.first_error or error
 
-    if run_profiling:
+    def _queue_profiling(self) -> None:
+        if not self.run_profiling:
+            return
         source = job_context.get().source
-        bind(AuditContext(source=source, actor=_requester(requested_by)))
+        bind(AuditContext(source=source, actor=_requester(self.requested_by)))
         launch_run(
             job_key=JobKey.run_profile,
-            kwargs={"table_group_id": table_group_id},
+            kwargs={"table_group_id": self.table_group_id},
             source=source,
-            project_code=table_group.project_code,
+            project_code=self.table_group.project_code,
         )
         get_current_session().commit()
 
-    if first_error:
-        raise first_error
+    STEPS = (
+        Step("refresh_catalog", _refresh_catalog),
+        Step("generate_monitors", _generate_monitors),
+        Step("queue_profiling", _queue_profiling),
+    )
 
 
 def _requester(user_id: str | None) -> Actor | None:

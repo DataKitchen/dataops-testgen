@@ -179,3 +179,45 @@ def test_closing_the_iterator_stops_the_pool():
     outcomes.close()
 
     assert len(processed) < len(items) / 2
+
+
+def test_on_idle_runs_on_the_consumer_thread_while_every_worker_is_busy():
+    release = threading.Event()
+    idle_threads: list[int] = []
+
+    def on_idle():
+        idle_threads.append(threading.get_ident())
+        release.set()
+
+    outcomes = list(run_keyed_worker_pool(
+        [("k", 1)], lambda arg: release.wait(5) and arg, max_threads=1, on_idle=on_idle, idle_interval=0.01,
+    ))
+
+    assert [o.result for o in outcomes] == [1]
+    assert idle_threads
+    assert set(idle_threads) == {threading.get_ident()}
+
+
+def test_an_error_raised_by_on_idle_leaves_the_iterator_and_stops_the_pool():
+    started = threading.Event()
+    release = threading.Event()
+    processed: list[int] = []
+
+    def process(arg):
+        started.set()
+        release.wait(5)
+        processed.append(arg)
+        return arg
+
+    def on_idle():
+        if started.is_set():
+            release.set()
+            raise RuntimeError("stop")
+
+    with pytest.raises(RuntimeError, match="stop"):
+        list(run_keyed_worker_pool(
+            [(i, i) for i in range(10)], process, max_threads=1, on_idle=on_idle, idle_interval=0.01,
+        ))
+
+    # The item in flight finished; nothing after it was pulled.
+    assert processed == [0]

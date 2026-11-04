@@ -27,12 +27,13 @@ from testgen.common.models.job_execution import RESTARTED_MESSAGE
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import PROGRESS_KEYS, ProfilingRun
 from testgen.common.models.stg_functional_table_update import StgFunctionalTableUpdate
-from testgen.common.pausable_job import PausableJob, Step, WorkTasksChanged
+from testgen.common.pausable_job import PausableJob, WorkTasksChanged
+from testgen.common.stoppable_job import Step
 
 pytestmark = pytest.mark.unit
 
 MODULE = "testgen.commands.run_profiling"
-POOL = "testgen.common.pausable_job.run_keyed_worker_pool"
+POOL = "testgen.common.stoppable_job.run_keyed_worker_pool"
 
 
 def _col(table: str, column: str, record_ct: int = 10, general_type: str = "A") -> ColumnChars:
@@ -81,7 +82,7 @@ def _run_columns(
     job.profiling_run = MagicMock(**{"progress_error.return_value": None})
     job.STEPS = (Step("col_profiling", ProfilingJob._col_profiling),)
 
-    def fake_pool(items, _process, *, max_threads, stop=None):
+    def fake_pool(items, _process, *, max_threads, stop=None, **_idle):
         for column, _built in items:
             kind, payload = outcomes[column.column_name]
             if kind == "err":
@@ -95,6 +96,7 @@ def _run_columns(
         patch(POOL, side_effect=fake_pool),
         patch(f"{MODULE}.get_current_session", return_value=MagicMock()),
         patch("testgen.common.pausable_job.get_current_session", return_value=_no_job_row_session()),
+        patch("testgen.common.stoppable_job.get_current_session", return_value=_no_job_row_session()),
         patch(f"{MODULE}.with_frequent_patterns", side_effect=lambda row: row),
         patch.object(ProfilingJob, "on_start", lambda _self: None),
         patch(f"{MODULE}.ProfileResult") as profile_result,
@@ -235,7 +237,7 @@ def test_a_frequency_error_does_not_write_the_column_pass_error_row():
     job = _freq_job(tasks=[], completed=0)
     job.STEPS = (Step("freq_analysis", ProfilingJob._freq_analysis, fatal=False),)
 
-    def fake_pool(items, _process, *, max_threads, stop=None):
+    def fake_pool(items, _process, *, max_threads, stop=None, **_idle):
         for column, _built in items:
             _kind, payload = outcomes[column.column_name]
             yield WorkerOutcome(key=column, result=None, error=payload)
@@ -245,6 +247,7 @@ def test_a_frequency_error_does_not_write_the_column_pass_error_row():
         patch(f"{MODULE}.fetch_dict_from_db", return_value=[MappingProxyType({"schema_name": "s", "table_name": "t", "column_name": "c1", "value_ct": 10})]),
         patch(f"{MODULE}.get_current_session", return_value=MagicMock()),
         patch("testgen.common.pausable_job.get_current_session", return_value=_no_job_row_session()),
+        patch("testgen.common.stoppable_job.get_current_session", return_value=_no_job_row_session()),
         patch.object(ProfilingJob, "on_start", lambda _self: None),
         patch(f"{MODULE}._write_query_error") as write_query_error,
         patch(f"{MODULE}._write_column_error") as write_column_error,
@@ -266,7 +269,7 @@ def _run_frequency(sampling_params: dict[str, TableSampling]) -> dict:
     job.sampling_params = sampling_params
     job.STEPS = (Step("freq_analysis", ProfilingJob._freq_analysis, fatal=False),)
 
-    def fake_pool(items, _process, *, max_threads, stop=None):
+    def fake_pool(items, _process, *, max_threads, stop=None, **_idle):
         for column, _built in items:
             yield WorkerOutcome(key=column, result=rows, error=None)
 
@@ -278,6 +281,7 @@ def _run_frequency(sampling_params: dict[str, TableSampling]) -> dict:
         ),
         patch(f"{MODULE}.get_current_session", return_value=MagicMock()),
         patch("testgen.common.pausable_job.get_current_session", return_value=_no_job_row_session()),
+        patch("testgen.common.stoppable_job.get_current_session", return_value=_no_job_row_session()),
         patch.object(ProfilingJob, "on_start", lambda _self: None),
         patch.object(ProfileResult, "upsert") as upsert,
         patch.object(ProfileResult, "provenance_counts", return_value=(0, 0)),
@@ -338,7 +342,7 @@ def _keyed_job(hashes_values: bool) -> ProfilingJob:
 def _run_keyed_steps(job: ProfilingJob, error: str | None = None) -> tuple[MagicMock, MagicMock, MagicMock, MagicMock]:
     """Run the key inference and keyed hash steps; return the mocks of everything they could touch."""
 
-    def fake_pool(items, _process, *, max_threads, stop=None):
+    def fake_pool(items, _process, *, max_threads, stop=None, **_idle):
         for key_column, _built in items:
             yield WorkerOutcome(key=key_column, result=None if error else [123], error=error)
 
@@ -348,6 +352,7 @@ def _run_keyed_steps(job: ProfilingJob, error: str | None = None) -> tuple[Magic
         patch(f"{MODULE}.ProfileResult") as profile_result,
         patch(f"{MODULE}.get_current_session", return_value=MagicMock()),
         patch("testgen.common.pausable_job.get_current_session", return_value=_no_job_row_session()),
+        patch("testgen.common.stoppable_job.get_current_session", return_value=_no_job_row_session()),
         patch.object(ProfilingJob, "on_start", lambda _self: None),
     ):
         profile_result.list_keyed_hash_columns.return_value = {"t": ("id", ["amount"])}

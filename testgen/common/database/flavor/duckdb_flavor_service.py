@@ -41,6 +41,7 @@ from testgen.common.database.flavor.flavor_service import (
     exact_float_canonical,
 )
 from testgen.common.database.sql_quoting import sql_identifier, sql_literal
+from testgen.common.database.statement_cancel import RunningStatement
 from testgen.common.flavors import SqlFlavorCode, declares_files, fixed_table_group_schema
 
 LOG = logging.getLogger("testgen")
@@ -353,6 +354,10 @@ class DuckdbFlavorService(FlavorService):
     def exact_text(self, text_expr: str) -> str:
         # A collation on the column or a default_collation setting carries through a cast to VARCHAR
         return f"ENCODE({text_expr})"
+
+    def cancel_statement(self, statement: RunningStatement) -> bool:
+        statement.dbapi_connection.interrupt()
+        return True
 
     def canonical_number(self, column_ref: str, is_float: bool) -> str:
         if is_float:

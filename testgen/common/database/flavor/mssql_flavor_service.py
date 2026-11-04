@@ -10,6 +10,7 @@ from testgen.common.database.flavor.flavor_service import (
     base_type_name,
     exact_float_canonical,
 )
+from testgen.common.database.statement_cancel import RunningStatement
 
 
 class MssqlFlavorService(FlavorService):
@@ -32,6 +33,10 @@ class MssqlFlavorService(FlavorService):
     text_hash_probe = "SELECT HASHBYTES('MD5', CAST(N'x' COLLATE Latin1_General_100_BIN2_UTF8 AS VARCHAR(10)))"
     float_types = frozenset({"float", "real"})
     double_type = "FLOAT"
+
+    def cancel_statement(self, statement: RunningStatement) -> bool:
+        statement.cursor.cancel()
+        return True
 
     def sampleable_object_types(self, sql_flavor_code: str) -> frozenset[ObjectType] | None:
         # Fabric rejects TABLESAMPLE; SQL Server accepts it only on base tables.

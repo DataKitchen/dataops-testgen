@@ -6,6 +6,7 @@ from snowflake.sqlalchemy import URL
 
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.flavor.flavor_service import FlavorService, ResolvedConnectionParams, base_type_name
+from testgen.common.database.statement_cancel import RunningStatement
 
 
 class SnowflakeFlavorService(FlavorService):
@@ -23,6 +24,16 @@ class SnowflakeFlavorService(FlavorService):
 
     def exact_text(self, text_expr: str) -> str:
         return f"TO_BINARY({text_expr}, 'UTF-8')"
+
+    def cancel_statement(self, statement: RunningStatement) -> bool:
+        # From a connection of its own: the connector cancels a query only through a private call.
+        other = statement.engine.raw_connection()
+        try:
+            with other.cursor() as cursor:
+                cursor.execute("SELECT SYSTEM$CANCEL_ALL_QUERIES(%s)", (statement.dbapi_connection.session_id,))
+        finally:
+            other.close()
+        return True
 
     def hex_to_wide_decimal(self, hex_expr: str) -> str:
         return f"CAST(TO_NUMBER(UPPER({hex_expr}), 'XXXXXXXXXXXXXX') AS {self.wide_decimal_type})"

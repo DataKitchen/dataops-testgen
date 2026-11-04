@@ -148,19 +148,22 @@ SCHEMA_ROWS = [
 ]
 
 
-ROW_COUNTS = ([], [], {})
+ROW_COUNTS = ([], {})
+
+# The job the refresh runs for: it runs the counting queries.
+_JOB = MagicMock()
 
 
 @patch(f"{MODULE}.write_data_chars")
-@patch(f"{MODULE}.fetch_from_db_threaded")
+@patch.object(_JOB, "fetch_threaded")
 @patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
 @patch(f"{MODULE}.RefreshDataCharsSQL")
 def test_a_refresh_records_each_file_table(mock_sql, _fetch, mock_threaded, mock_write):
     mock_sql.return_value = _file_refresh_generator()
     file_counts = [{"table_name": "claims", "file_ct": 3}, {"table_name": "orders", "file_ct": 1}]
-    mock_threaded.side_effect = [ROW_COUNTS, (file_counts, [], {})]
+    mock_threaded.side_effect = [ROW_COUNTS, (file_counts, {})]
 
-    data_chars = run_data_chars_refresh(_connection(), MagicMock(), datetime.now(UTC))
+    data_chars = run_data_chars_refresh(_JOB, _connection(), MagicMock(), datetime.now(UTC))
 
     assert [(c.table_name, c.object_type, c.file_ct) for c in data_chars] == [
         ("claims", ObjectType.FILES, 3),
@@ -171,14 +174,14 @@ def test_a_refresh_records_each_file_table(mock_sql, _fetch, mock_threaded, mock
 
 
 @patch(f"{MODULE}.write_data_chars")
-@patch(f"{MODULE}.fetch_from_db_threaded")
+@patch.object(_JOB, "fetch_threaded")
 @patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
 @patch(f"{MODULE}.RefreshDataCharsSQL")
 def test_a_failed_file_count_does_not_stop_the_refresh(mock_sql, _fetch, mock_threaded, mock_write, caplog):
     mock_sql.return_value = _file_refresh_generator()
-    mock_threaded.side_effect = [ROW_COUNTS, ([], [], {0: "glob failed"})]
+    mock_threaded.side_effect = [ROW_COUNTS, ([], {0: "glob failed"})]
 
-    data_chars = run_data_chars_refresh(_connection(), MagicMock(), datetime.now(UTC))
+    data_chars = run_data_chars_refresh(_JOB, _connection(), MagicMock(), datetime.now(UTC))
 
     # The object type does not depend on the count, so it is still recorded.
     assert {(c.object_type, c.file_ct) for c in data_chars} == {(ObjectType.FILES, None)}
@@ -187,13 +190,13 @@ def test_a_failed_file_count_does_not_stop_the_refresh(mock_sql, _fetch, mock_th
 
 
 @patch(f"{MODULE}.write_data_chars")
-@patch(f"{MODULE}.fetch_from_db_threaded", return_value=ROW_COUNTS)
+@patch.object(_JOB, "fetch_threaded", return_value=ROW_COUNTS)
 @patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
 @patch(f"{MODULE}.RefreshDataCharsSQL")
 def test_a_catalog_refresh_records_no_file_counts(mock_sql, _fetch, mock_threaded, mock_write):
     mock_sql.return_value = sql_generator = _file_refresh_generator()
 
-    data_chars = run_data_chars_refresh(_connection(SqlFlavorCode.POSTGRESQL), MagicMock(), datetime.now(UTC))
+    data_chars = run_data_chars_refresh(_JOB, _connection(SqlFlavorCode.POSTGRESQL), MagicMock(), datetime.now(UTC))
 
     assert {(c.object_type, c.file_ct) for c in data_chars} == {(None, None)}
     sql_generator.get_file_counts.assert_not_called()
@@ -213,14 +216,14 @@ def test_metadata_via_api_flavors_scan_the_table_group_s_schema(mock_sql_cls, _m
     sql_generator.flavor_service.get_schema_columns.return_value = []
     sql_generator.filter_schema_columns.return_value = []
 
-    run_data_chars_refresh(MagicMock(), MagicMock(table_group_schema="onboard_2026_09_10"), datetime.now(UTC))
+    run_data_chars_refresh(_JOB, MagicMock(), MagicMock(table_group_schema="onboard_2026_09_10"), datetime.now(UTC))
 
     assert sql_generator.flavor_service.get_schema_columns.call_args.args[1] == "onboard_2026_09_10"
 
 
 @patch(f"{MODULE}.write_data_chars")
 @patch(f"{MODULE}.cache_target_tables")
-@patch(f"{MODULE}.fetch_from_db_threaded")
+@patch.object(_JOB, "fetch_threaded")
 @patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
 @patch(f"{MODULE}.RefreshDataCharsSQL")
 def test_a_caching_connection_copies_its_tables_before_counting_them(
@@ -232,7 +235,7 @@ def test_a_caching_connection_copies_its_tables_before_counting_them(
     mock_cache.side_effect = lambda tables: order.cache(set(tables))
     mock_threaded.side_effect = lambda *_args, **_kwargs: (order.count(), ROW_COUNTS)[1]
 
-    run_data_chars_refresh(_connection(SqlFlavorCode.S3), MagicMock(), datetime.now(UTC))
+    run_data_chars_refresh(_JOB, _connection(SqlFlavorCode.S3), MagicMock(), datetime.now(UTC))
 
     assert order.mock_calls[0] == call.cache({"claims", "orders"})
     assert order.mock_calls[1] == call.count()
@@ -240,27 +243,29 @@ def test_a_caching_connection_copies_its_tables_before_counting_them(
 
 @patch(f"{MODULE}.write_data_chars")
 @patch(f"{MODULE}.cache_target_tables")
-@patch(f"{MODULE}.fetch_from_db_threaded", return_value=ROW_COUNTS)
+@patch.object(_JOB, "fetch_threaded", return_value=ROW_COUNTS)
 @patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
 @patch(f"{MODULE}.RefreshDataCharsSQL")
 def test_a_connection_that_reads_in_place_copies_nothing(mock_sql, _fetch, _threaded, mock_cache, _write):
     mock_sql.return_value = _file_refresh_generator()
 
-    run_data_chars_refresh(_connection(), MagicMock(), datetime.now(UTC))
+    run_data_chars_refresh(_JOB, _connection(), MagicMock(), datetime.now(UTC))
 
     mock_cache.assert_not_called()
 
 
 @patch(f"{MODULE}.write_data_chars")
 @patch(f"{MODULE}.cache_target_tables")
-@patch(f"{MODULE}.fetch_from_db_threaded", return_value=([], [], {}))
+@patch.object(_JOB, "fetch_threaded", return_value=([], {}))
 @patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
 @patch(f"{MODULE}.RefreshDataCharsSQL")
 def test_a_refresh_without_row_counts_reads_no_table_data(mock_sql, _fetch, mock_threaded, mock_cache, mock_write):
     mock_sql.return_value = sql_generator = _file_refresh_generator()
     sql_generator.flavor_service.caches_tables.return_value = True
 
-    data_chars = run_data_chars_refresh(_connection(SqlFlavorCode.S3), MagicMock(), datetime.now(UTC), count_rows=False)
+    data_chars = run_data_chars_refresh(
+        _JOB, _connection(SqlFlavorCode.S3), MagicMock(), datetime.now(UTC), count_rows=False,
+    )
 
     mock_cache.assert_not_called()
     sql_generator.get_row_counts.assert_not_called()

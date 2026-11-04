@@ -11,6 +11,7 @@ from sqlalchemy.engine.base import Connection, Engine
 from testgen.common.clean_sql import parse_numeric_values
 from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.database.file_declarations import FileDeclaration
+from testgen.common.database.statement_cancel import RunningStatement
 from testgen.common.encrypt import DecryptText
 
 SQLFlavor = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "postgresql", "databricks", "duckdb", "bigquery", "oracle", "sap_hana", "salesforce_data360"]
@@ -624,6 +625,15 @@ class FlavorService:
         Empty for a flavor whose tables are not declared as files.
         """
         return []
+
+    def cancel_statement(self, statement: RunningStatement) -> bool:  # noqa: ARG002
+        """Ask the data source to stop a statement another thread is running on it.
+
+        Called from a thread other than the one running the statement, and must not wait for it
+        to stop. Returns whether the cancel was sent; a connection type with no way to cancel
+        returns False and lets the statement finish.
+        """
+        return False
 
     def get_connect_args(self, params: ResolvedConnectionParams) -> dict:  # noqa: ARG002
         return {"connect_timeout": 3600}

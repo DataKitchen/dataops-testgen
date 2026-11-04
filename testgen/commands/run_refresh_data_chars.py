@@ -8,19 +8,20 @@ from testgen.common.database.database_service import (
     cache_target_tables,
     execute_db_queries,
     fetch_dict_from_db,
-    fetch_from_db_threaded,
     write_to_app_db,
 )
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.flavors import declares_files
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
+from testgen.common.stoppable_job import StoppableJob
 from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
 
 
 def run_data_chars_refresh(
+    job: StoppableJob,
     connection: Connection,
     table_group: TableGroup,
     run_date: datetime,
@@ -28,6 +29,7 @@ def run_data_chars_refresh(
 ) -> list[ColumnChars]:
     """Refresh a table group's data catalog from its target and return the columns written.
 
+    :param job: The job refreshing it, which stops the counts when it is asked to stop.
     :param count_rows: Count each table's rows. Without it the catalog gets the tables and columns
         only, and no table's data is read.
     """
@@ -60,7 +62,7 @@ def run_data_chars_refresh(
             count_queries = sql_generator.get_row_counts(distinct_tables)
 
             LOG.info("Getting row counts for table group")
-            count_results, _, error_data = fetch_from_db_threaded(
+            count_results, error_data = job.fetch_threaded(
                 count_queries, use_target_db=True, max_threads=connection.effective_max_threads,
             )
 
@@ -72,7 +74,7 @@ def run_data_chars_refresh(
             file_count_map = {}
             if file_count_queries := sql_generator.get_file_counts():
                 LOG.info("Getting file counts for table group")
-                file_count_results, _, file_count_error_data = fetch_from_db_threaded(
+                file_count_results, file_count_error_data = job.fetch_threaded(
                     file_count_queries, use_target_db=True, max_threads=connection.effective_max_threads,
                 )
                 if file_count_error_data:

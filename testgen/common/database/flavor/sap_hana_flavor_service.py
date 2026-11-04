@@ -1,6 +1,7 @@
 from urllib.parse import quote_plus
 
 from testgen.common.database.flavor.flavor_service import FlavorService, ResolvedConnectionParams
+from testgen.common.database.statement_cancel import RunningStatement
 
 
 class SapHanaFlavorService(FlavorService):
@@ -15,6 +16,10 @@ class SapHanaFlavorService(FlavorService):
 
     # The catalog records DOUBLE, REAL and SMALLDECIMAL as this type
     exact_sum_excluded_types = frozenset({"numeric"})
+
+    def cancel_statement(self, statement: RunningStatement) -> bool:
+        statement.dbapi_connection.cancel()
+        return True
 
     def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
         url = f"{self.url_scheme}://{params.username}:{quote_plus(params.password)}@{params.host}:{params.port}/"

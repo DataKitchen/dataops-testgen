@@ -11,6 +11,7 @@ from testgen.common.database.flavor.flavor_service import (
     base_type_name,
     exact_float_canonical,
 )
+from testgen.common.database.statement_cancel import RunningStatement
 from testgen.common.value_hash import DECIMAL_BOUND
 
 # https://stackoverflow.com/a/74105559
@@ -49,6 +50,10 @@ class OracleFlavorService(FlavorService):
 
     def exact_text(self, text_expr: str) -> str:
         return f"NLSSORT({text_expr}, 'NLS_SORT=BINARY')"
+
+    def cancel_statement(self, statement: RunningStatement) -> bool:
+        statement.dbapi_connection.cancel()
+        return True
 
     def canonical_text(self, column_ref: str, column: ColumnChars) -> str:
         text = super().canonical_text(column_ref, column)

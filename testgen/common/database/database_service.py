@@ -37,6 +37,7 @@ from testgen.common.database.flavor.flavor_service import (
     SQLFlavor,
     resolve_connection_params,
 )
+from testgen.common.database.statement_cancel import track_statements
 from testgen.common.read_file import get_template_files
 from testgen.common.standalone_postgres import get_connection_string as get_standalone_connection_string
 from testgen.common.standalone_postgres import is_standalone_mode
@@ -297,6 +298,8 @@ def run_keyed_worker_pool(
     process: Callable[[A], R],
     max_threads: int = 4,
     stop: Callable[[], bool] | None = None,
+    on_idle: Callable[[], None] | None = None,
+    idle_interval: float = 5.0,
 ) -> Iterator[WorkerOutcome[K, R]]:
     """Run ``process`` over ``items`` with a fixed pool of pull-based workers, yielding each
     item's outcome as it completes.
@@ -314,6 +317,10 @@ def run_keyed_worker_pool(
     ends early, so fewer than ``len(items)`` outcomes are yielded. Items already in flight
     still run to completion and are yielded. ``stop`` is called on worker threads and must be
     cheap and thread-safe.
+
+    When ``on_idle`` is given, it is called on the consumer's thread whenever no outcome has
+    arrived for ``idle_interval`` seconds. An exception it raises leaves the iterator, which
+    stops the pool as below.
 
     A caller that stops consuming -- by raising, or by closing the iterator -- also stops the
     pool, so abandoning the results does not first pay for producing them.
@@ -343,7 +350,11 @@ def run_keyed_worker_pool(
                 except Exception as e:
                     # The consumer expects one outcome per pulled item, so every item must
                     # enqueue one; get_exception_message never raises, so it always does.
-                    LOG.exception("Error processing work key")
+                    if abandoned.is_set() or (stop is not None and stop()):
+                        # Nothing reads it: the pool was told to stop, which is usually why it failed.
+                        LOG.debug("Work key failed after the pool was stopped", exc_info=True)
+                    else:
+                        LOG.exception("Error processing work key")
                     outcomes.put(WorkerOutcome(key, None, get_exception_message(e)))
                 else:
                     outcomes.put(WorkerOutcome(key, result, None))
@@ -355,7 +366,14 @@ def run_keyed_worker_pool(
         still_working = len(workers)
         try:
             while still_working:
-                outcome = outcomes.get()
+                if on_idle is None:
+                    outcome = outcomes.get()
+                else:
+                    try:
+                        outcome = outcomes.get(timeout=idle_interval)
+                    except queue.Empty:
+                        on_idle()
+                        continue
                 if outcome is done:
                     still_working -= 1
                 else:
@@ -638,6 +656,7 @@ def _init_target_db_connection() -> Connection:
         except SQLAlchemyError as e:
             raise ValueError(f"Failed to create engine for Target database '{params.dbname}' (User type = normal)") from e
         else:
+            track_statements(engine, flavor_service)
             engine_cache.target_db = engine
 
     try:
