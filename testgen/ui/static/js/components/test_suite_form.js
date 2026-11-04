@@ -24,6 +24,7 @@
  * @property {TestSuiteFormValidity} validity
  * @property {Array<{value: string, label: string}>} tableGroups
  * @property {('add' | 'edit')} mode
+ * @property {string?} savedName
  * @property {function(string)?} onTableGroupChange
  * @property {function(string)?} onTypeChange
  */
@@ -41,7 +42,7 @@ const { div } = van.tags;
 const TestSuiteFields = (/** @type Properties */ props) => {
     loadStylesheet('test-suite-form', stylesheet);
 
-    const { state, validity, tableGroups, mode, onTableGroupChange, onTypeChange } = props;
+    const { state, validity, tableGroups, mode, savedName, onTableGroupChange, onTypeChange } = props;
     const isEdit = mode === 'edit';
     const typeLabel = () => state.suiteType.val === 'contract' ? 'Contract' : 'Test Suite';
     const severityOptions = [
@@ -70,17 +71,24 @@ const TestSuiteFields = (/** @type Properties */ props) => {
         }),
         div(
             { class: 'flex-row fx-gap-3' },
-            Input({
-                label: () => `${typeLabel()} Name`,
-                value: state.testSuiteName,
-                disabled: isEdit,
-                style: 'flex: 1;',
-                validators: [required],
-                onChange: (value, inputValidity) => {
-                    state.testSuiteName.val = value;
-                    validity.testSuiteName.val = inputValidity.valid;
-                },
-            }),
+            div(
+                { class: 'flex-column fx-gap-1', style: 'flex: 1;' },
+                Input({
+                    label: () => `${typeLabel()} Name`,
+                    value: state.testSuiteName,
+                    validators: [required],
+                    onChange: (value, inputValidity) => {
+                        state.testSuiteName.val = value;
+                        validity.testSuiteName.val = inputValidity.valid;
+                    },
+                }),
+                () => isEdit && state.testSuiteName.val.trim() !== savedName
+                    ? div(
+                        { class: 'text-caption' },
+                        `Scripts and commands that refer to this ${typeLabel().toLowerCase()} by name must be updated to use the new name.`,
+                    )
+                    : '',
+            ),
             Select({
                 label: 'Table Group',
                 value: state.tableGroupId,

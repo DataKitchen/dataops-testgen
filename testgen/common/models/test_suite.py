@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import BigInteger, Boolean, Column, Enum, ForeignKey, Integer, String, asc, func, select, text
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.orm import InstrumentedAttribute, validates
 
 from testgen.common.audit.actions import AuditTargetType
 from testgen.common.audit.fields import AuditFields
@@ -223,6 +223,10 @@ class TestSuite(Entity):
     )
 
     _default_order_by = (asc(func.lower(test_suite)),)
+
+    @validates("test_suite")
+    def _strip_name(self, _key: str, value: str | None) -> str | None:
+        return value.strip() if isinstance(value, str) else value
     _minimal_columns = TestSuiteMinimal.__annotations__.keys()
 
     @classmethod

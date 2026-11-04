@@ -40,7 +40,7 @@ from testgen.common.models.test_definition import (
     TestType,
     TestTypeSummary,
 )
-from testgen.common.models.test_run import TestRun, TestRunMinimal, TestRunSummary
+from testgen.common.models.test_run import RunVersionScope, TestRun, TestRunMinimal, TestRunSummary
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal, TestSuiteSummary
 from testgen.common.models.user import User
 
@@ -118,6 +118,7 @@ def get_test_run_summaries(
     page: int = 1,
     page_size: int = 20,
     test_run_ids: tuple[str, ...] | None = None,
+    all_versions: bool = True,
 ) -> tuple[list[TestRunSummary], int]:
     return _detached(TestRun.select_summary(
         project_code=project_code,
@@ -127,7 +128,17 @@ def get_test_run_summaries(
         page=page,
         page_size=page_size,
         suite_types=TEST_SUITE_TYPES,
+        all_versions=all_versions,
     ))
+
+
+@st.cache_data(show_spinner=False)
+def get_test_run_version_scope(
+    project_code: str,
+    table_group_id: str | None,
+    test_suite_id: str | None,
+) -> RunVersionScope:
+    return TestRun.select_version_scope(project_code, table_group_id, test_suite_id, suite_types=TEST_SUITE_TYPES)
 
 
 # -- TableGroup ---------------------------------------------------------------

@@ -4,6 +4,7 @@ from enum import StrEnum
 from uuid import UUID
 
 import streamlit as st
+from sqlalchemy.exc import IntegrityError
 
 from testgen.commands.run_observability_exporter import export_test_results
 from testgen.commands.test_generation import (
@@ -18,7 +19,11 @@ from testgen.common.audit.test_suites import record_contract_created
 from testgen.common.contract_creation import create_contract, create_contract_from_import
 from testgen.common.contract_document import catalog_table_names
 from testgen.common.contract_import import prepare_import
-from testgen.common.database.test_suite_service import validate_test_suite_fields
+from testgen.common.database.test_suite_service import (
+    duplicate_name_message,
+    is_duplicate_name_error,
+    validate_test_suite_fields,
+)
 from testgen.common.enums import TEST_SUITE_TYPES, JobSource, RegenerationGroup, SuiteType
 from testgen.common.flavors import FLAVOR_CODE_TO_LABEL
 from testgen.common.generation_set_service import (
@@ -51,7 +56,7 @@ from testgen.ui.services.contract_import_service import (
     import_preview,
     read_contract_file,
 )
-from testgen.ui.services.contract_run_service import run_test_suite_options
+from testgen.ui.services.contract_run_service import run_list_args, run_test_suite_options
 from testgen.ui.services.query_cache import (
     get_contract_states,
     get_project_summary,
@@ -233,6 +238,7 @@ class TestSuitesPage(Page):
             selected_id = data.get("test_suite_id")
             selected_name = data.get("test_suite_name")
             success = True
+            list_args = {}
             suite_type = next((ts.suite_type for ts in test_suites if str(ts.id) == str(selected_id)), None)
             message = run_started_message(suite_type, selected_name)
             show_link = session.current_page != "test-runs"
@@ -247,11 +253,14 @@ class TestSuitesPage(Page):
                         source=JobSource.ui,
                         project_code=project_code,
                     )
+                    list_args = run_list_args(selected_id, data.get("version_id"))
             except Exception as error:
                 success = False
                 message = f"Test run could not be started: {error!s}."
                 show_link = False
-            st.session_state[RUN_TESTS_RESULT_KEY] = {"success": success, "message": message, "show_link": show_link}
+            st.session_state[RUN_TESTS_RESULT_KEY] = {
+                "success": success, "message": message, "show_link": show_link, "list_args": list_args,
+            }
             if success and not show_link:
                 st.cache_data.clear()
                 st.session_state.pop(RUN_TESTS_DIALOG_KEY, None)
@@ -259,9 +268,9 @@ class TestSuitesPage(Page):
 
         def on_go_to_test_runs(payload: dict) -> None:
             st.session_state.pop(RUN_TESTS_DIALOG_KEY, None)
-            st.session_state.pop(RUN_TESTS_RESULT_KEY, None)
+            result = st.session_state.pop(RUN_TESTS_RESULT_KEY, None) or {}
             st.cache_data.clear()
-            Router().queue_navigation(to="test-runs", with_args=payload)
+            Router().queue_navigation(to="test-runs", with_args={**payload, **result.get("list_args", {})})
 
         def on_run_tests_dialog_closed(*_) -> None:
             st.session_state.pop(RUN_TESTS_DIALOG_KEY, None)
@@ -516,9 +525,9 @@ def generate_tests_confirmed(data: dict) -> None:
 @with_database_session
 def save_test_suite_form(data: dict) -> None:
     values = {key: data.get(key, default) for key, default in _FORM_DEFAULTS.items()}
+    values["test_suite"] = data.get("test_suite")
     # Validated on a detached copy, so a rejected edit never touches the stored suite.
     candidate = TestSuite(
-        test_suite=data.get("test_suite"),
         deactivate_invalid_tests=data.get("deactivate_invalid_tests", False),
         **values,
     )
@@ -531,12 +540,19 @@ def save_test_suite_form(data: dict) -> None:
     for attr, value in values.items():
         setattr(test_suite, attr, value)
     test_suite.deactivate_invalid_tests = data.get("deactivate_invalid_tests", test_suite.deactivate_invalid_tests)
-    test_suite.save()
+    name = test_suite.test_suite
+    try:
+        test_suite.save()
+    except IntegrityError as err:
+        if not is_duplicate_name_error(err):
+            raise
+        get_current_session().rollback()
+        st.session_state["ts_form_dialog:result"] = {"success": False, "message": duplicate_name_message(name)}
+        return
     record(AuditAction.TEST_SUITE_UPDATED, test_suite)
     st.session_state.pop("ts_form_dialog:result", None)
     st.session_state.pop(EDIT_DIALOG_KEY, None)
-    get_test_suite_summaries.clear()
-    get_project_summary.clear()
+    st.cache_data.clear()
     st.toast("Changes have been saved successfully.", icon=":material/check:")
 
 
@@ -717,12 +733,13 @@ def add_test_suite_confirmed(payload: dict) -> None:
                 rows = _add_contract_from_file(suite, table_group, file["content"])
             else:
                 rows = _add_contract_from_tables(suite, table_group, tests.get("table_names") or [])
-    except Exception:
-        LOG.exception("Adding a test suite failed")
-        st.session_state[WIZARD_RESULT_KEY] = {
-            "success": False,
-            "message": "Something went wrong while adding the test suite.",
-        }
+    except Exception as err:
+        if isinstance(err, IntegrityError) and is_duplicate_name_error(err):
+            message = duplicate_name_message((payload.get("test_suite") or "").strip())
+        else:
+            LOG.exception("Adding a test suite failed")
+            message = "Something went wrong while adding the test suite."
+        st.session_state[WIZARD_RESULT_KEY] = {"success": False, "message": message}
         return
     st.cache_data.clear()
     st.session_state[WIZARD_RESULT_KEY] = {"success": True, "rows": rows}

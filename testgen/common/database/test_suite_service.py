@@ -2,11 +2,15 @@
 
 * ``validate_test_suite_fields`` — required-field, width and value checks. Callers
   surface the returned messages verbatim.
+* ``is_duplicate_name_error`` — recognizes the name-uniqueness violation.
+* ``duplicate_name_message`` — the message for it.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+
+from sqlalchemy.exc import IntegrityError
 
 from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models.test_suite import SuiteSeverity, TestSuite
@@ -74,3 +78,13 @@ def validate_test_suite_fields(
             errors.append(f"{field('generation_sets')}: {err}")
 
     return errors
+
+
+def is_duplicate_name_error(err: IntegrityError) -> bool:
+    """Whether ``err`` is a violation of the test suite name's per-project uniqueness."""
+    return "test_suites_name_unique" in str(err.orig)
+
+
+def duplicate_name_message(name: str) -> str:
+    """The message for a test suite name another test suite or contract in the project holds."""
+    return f"A test suite or contract named {name} already exists in this project."

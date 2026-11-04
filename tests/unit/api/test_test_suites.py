@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import IntegrityError
 
 from testgen.api.deps import db_session, get_authorized_user
 from testgen.api.schemas import TestSuiteCreate
@@ -315,7 +316,7 @@ def _run_summary(**overrides) -> TestRunSummary:
         "active_seconds": 5.0, "error_message": None, "progress": [], "table_groups_name": "client_42",
         "test_suite": "Orders", "project_code": "demo", "project_name": "Demo", "test_ct": 6, "passed_ct": 4,
         "warning_ct": 1, "failed_ct": 1, "error_ct": 0, "log_ct": 0, "dismissed_ct": 0,
-        "dq_score_testing": None, "total_count": 1,
+        "dq_score_testing": None,
     }
     return TestRunSummary(**{**fields, **overrides})
 
@@ -413,12 +414,12 @@ def _assign_id(test_suite):
     test_suite.id = TS_ID
 
 
-def _post(body: dict, *, table_group=None, permitted: bool = True, refresh=None):
+def _post(body: dict, *, table_group=None, permitted: bool = True, refresh=None, save_error=None):
     table_group = _table_group() if table_group is None else table_group
     with (
         patch("testgen.api.deps.TableGroup") as mock_tg_cls,
         patch("testgen.api.deps.has_project_permission", return_value=permitted) as mock_perm,
-        patch.object(TestSuite, "save", autospec=True, side_effect=_assign_id) as mock_save,
+        patch.object(TestSuite, "save", autospec=True, side_effect=save_error or _assign_id) as mock_save,
         patch(f"{MODULE}.get_current_session") as mock_session,
         patch("testgen.common.generation_set_service.list_generation_sets", return_value=["Quick", "Standard"]),
     ):
@@ -561,6 +562,27 @@ def test_create_test_suite_responds_with_the_row_as_stored():
     assert resp.json()["description"] is None
 
 
+def test_create_test_suite_responds_409_when_the_name_is_taken_in_the_project():
+    duplicate = IntegrityError("INSERT", {}, Exception('duplicate key value violates "test_suites_name_unique"'))
+
+    resp, _, _, _ = _post({"test_suite_name": "Orders"}, save_error=duplicate)
+
+    assert resp.status_code == 409
+    assert _error_entries(resp) == [
+        {
+            "code": "duplicate_test_suite_name",
+            "detail": "A test suite or contract with this name already exists in the project.",
+        },
+    ]
+
+
+def test_create_test_suite_lets_other_integrity_errors_through():
+    other = IntegrityError("INSERT", {}, Exception('violates foreign key constraint "test_suites_connections_fk"'))
+
+    with pytest.raises(IntegrityError):
+        _post({"test_suite_name": "Orders"}, save_error=other)
+
+
 def test_create_test_suite_reports_every_validation_failure():
     resp, mock_save, _, table_group = _post({
         "test_suite_name": " ",
@@ -611,8 +633,12 @@ _NO_VERIFICATION = ContractStatus(
 )
 
 
-def _post_contract(body: dict, *, catalog=("orders", "customers"), generation=None, failed=False, reason=None):
+def _post_contract(
+    body: dict, *, catalog=("orders", "customers"), generation=None, failed=False, reason=None, create_error=None
+):
     def create(suite, table_group, connection, table_names):
+        if create_error is not None:
+            raise create_error
         suite.id = TS_ID
         return ContractCreation(
             suite=suite, custom_server_reason=reason, generation=generation, generation_failed=failed
@@ -627,6 +653,15 @@ def _post_contract(body: dict, *, catalog=("orders", "customers"), generation=No
     ):
         resp, mock_save, _, table_group = _post({"test_suite_name": "Orders", "suite_type": "contract", **body})
     return resp, mock_create, mock_save, table_group
+
+
+def test_create_contract_responds_409_when_the_name_is_taken_in_the_project():
+    duplicate = IntegrityError("INSERT", {}, Exception('duplicate key value violates "test_suites_name_unique"'))
+
+    resp, _, _, _ = _post_contract({}, create_error=duplicate)
+
+    assert resp.status_code == 409
+    assert _error_entries(resp)[0]["code"] == "duplicate_test_suite_name"
 
 
 def test_create_contract_generates_its_tables_and_reports_the_result():

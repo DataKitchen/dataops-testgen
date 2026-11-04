@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Query
+from sqlalchemy.exc import IntegrityError
 
 from testgen.api.deps import (
     LimitQuery,
@@ -42,7 +43,7 @@ from testgen.common import contract_creation, contract_document, contract_servic
 from testgen.common.audit.actions import AuditAction
 from testgen.common.audit.recorder import record
 from testgen.common.audit.test_suites import record_contract_created
-from testgen.common.database.test_suite_service import validate_test_suite_fields
+from testgen.common.database.test_suite_service import is_duplicate_name_error, validate_test_suite_fields
 from testgen.common.enums import TEST_SUITE_TYPES, SuiteType
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
@@ -74,9 +75,9 @@ def list_test_suites(
 ):
     """Test suites in a project, contracts included, each with its test count and last completed run.
 
-    Test suite names are not unique, so `test_suite_name` can match more than one
-    suite. Filter by it before creating a suite to avoid making a second one. A contract
-    also carries the numbers of its active version and its draft.
+    `test_suite_name` matches the name exactly; filter by it to check whether a name is free
+    before creating a suite. A contract also carries the numbers of its active version and
+    its draft.
     """
     clauses = []
     if table_group_id is not None:
@@ -113,7 +114,10 @@ def get_test_suite(test_suite: TestSuite = resolve_test_suite("view", TEST_SUITE
     response_model=TestSuiteCreatedResponse,
     status_code=201,
     summary="Create a test suite",
-    responses={400: {"model": ErrorResponse, "description": "One entry per field that failed validation"}},
+    responses={
+        400: {"model": ErrorResponse, "description": "One entry per field that failed validation"},
+        409: {"model": ErrorResponse, "description": "A test suite or contract with this name already exists in the project"},
+    },
 )
 def create_test_suite(
     table_group: TableGroup = resolve_table_group("edit"),  # noqa: B008
@@ -122,9 +126,8 @@ def create_test_suite(
     """Create a test suite, regular or contract, in a table group. It belongs to the table group's
     project and connection.
 
-    Test suite names are not unique: repeating a create makes a second suite with the
-    same name. `set_as_default` makes the table group's first profiling run generate
-    tests into the new suite.
+    A name another test suite or contract in the project holds is rejected. `set_as_default`
+    makes the table group's first profiling run generate tests into the new suite.
 
     A contract is created with its first draft. Given `table_names`, it declares those tables
     and is generated for them before the response returns: its metadata from the data catalog,
@@ -153,10 +156,18 @@ def create_test_suite(
     if errors := validate_test_suite_fields(test_suite):
         raise api_errors(400, "invalid_test_suite", errors)
 
-    if is_contract:
-        return _create_contract(test_suite, table_group, body.table_names)
-
-    test_suite.save()
+    try:
+        if is_contract:
+            return _create_contract(test_suite, table_group, body.table_names)
+        test_suite.save()
+    except IntegrityError as err:
+        if is_duplicate_name_error(err):
+            raise api_error(
+                409,
+                "duplicate_test_suite_name",
+                "A test suite or contract with this name already exists in the project.",
+            ) from err
+        raise
     record(AuditAction.TEST_SUITE_CREATED, test_suite)
     if body.set_as_default:
         table_group.default_test_suite_id = test_suite.id

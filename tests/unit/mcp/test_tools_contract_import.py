@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from testgen.common.contract_import import (
     AppliedImport,
@@ -147,6 +148,21 @@ def test_applying_a_new_contract_creates_and_initializes_it(db_session_mock):
     initialize.assert_called_once()
     apply_import.assert_called_once()
     assert "Contract `Vendor orders` created" in out
+
+
+def test_applying_a_new_contract_refuses_a_name_the_project_already_holds(db_session_mock):
+    db_session_mock.flush.side_effect = IntegrityError(
+        "INSERT", {}, Exception('violates unique constraint "test_suites_name_unique"')
+    )
+    with (
+        patch(f"{MODULE}.validate_test_suite_fields", return_value=[]),
+        pytest.raises(MCPUserError) as exc,
+    ):
+        _run(table_group_id=str(uuid4()), test_suite_name="Vendor orders", mode="apply")
+
+    assert str(exc.value) == (
+        "A test suite or contract named Vendor orders already exists in this project. No changes saved."
+    )
 
 
 def test_a_conformance_failure_after_saving_tells_the_caller_the_import_was_saved(db_session_mock):
