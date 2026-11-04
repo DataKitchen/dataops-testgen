@@ -49,7 +49,11 @@ class AuditedTest(AuditedObject):
 
     test_suite_id: UUID | None = None
     table_groups_id: UUID | None = None
-    is_monitor: bool = False
+    test_type: str | None = None
+
+    @property
+    def is_monitor(self) -> bool:
+        return self.test_type in _MONITOR_TYPES
 
 
 @never_raises(list)
@@ -82,7 +86,7 @@ def describe_tests(test_definition_ids: Iterable[UUID | str]) -> list[AuditedTes
             name=object_name(row.test_name_short or row.test_type, row.table_name, row.column_name),
             test_suite_id=row.test_suite_id,
             table_groups_id=row.table_groups_id,
-            is_monitor=row.test_type in _MONITOR_TYPES,
+            test_type=row.test_type,
         )
         for row in rows
     }

@@ -916,7 +916,7 @@ def build_edit_table_monitors_data(
 
         deleted_ids = get_deleted_metric_ids()
         if deleted_ids:
-            deleted = [monitor for monitor in describe_tests(deleted_ids) if monitor.is_monitor]
+            deleted = [monitor for monitor in describe_tests(deleted_ids) if monitor.test_type == MonitorType.METRIC]
             TestDefinition.delete_where(
                 TestDefinition.id.in_(deleted_ids),
                 TestDefinition.test_type == "Metric_Trend",

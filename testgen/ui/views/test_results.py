@@ -9,7 +9,8 @@ import streamlit as st
 
 from testgen.common import date_service
 from testgen.common.audit.findings import record_result_dispositions
-from testgen.common.audit.test_definitions import record_status_changed
+from testgen.common.audit.recorder import stored_values
+from testgen.common.audit.test_definitions import record_status_changed, record_test_saved
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
@@ -475,6 +476,7 @@ class TestResultsPage(Page):
                     table_group,
                     qualifies_table_refs=table_group_qualifies_table_refs(table_group.id),
                 )
+            stored = stored_values(TestDefinition, definition.id)
             try:
                 error = save_from_dialog(definition, test_suite)
             except CONTRACT_VERSION_ERRORS:
@@ -483,6 +485,7 @@ class TestResultsPage(Page):
             if error:
                 st.session_state[VALIDATE_RESULT_KEY] = {"success": False, "message": error}
                 return
+            record_test_saved(definition, created=False, stored=stored)
             st.session_state.pop(EDIT_TEST_KEY, None)
             st.session_state.pop(VALIDATE_RESULT_KEY, None)
             st.cache_data.clear()

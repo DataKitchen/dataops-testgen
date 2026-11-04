@@ -241,8 +241,9 @@ def update_hygiene_issue(
     """Update the disposition of a hygiene issue (confirm, dismiss, or mute)."""
     db_disposition = parse_disposition(disposition)
     issue = resolve_hygiene_issue(issue_id)
-    record_issue_dispositions({issue.id: issue.disposition}, db_disposition)
+    previous = issue.disposition
     issue.disposition = db_disposition
+    record_issue_dispositions({issue.id: previous}, db_disposition)
 
     doc = MdDoc()
     doc.text(f"Updated hygiene issue {MdDoc.code(issue_id)} disposition to **{disposition}**.")

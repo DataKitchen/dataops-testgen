@@ -254,7 +254,7 @@ def test_a_contract_move_targets_the_draft_copies_it_wrote(audit_session, audit_
 
 
 def test_deleting_tests_records_the_monitors_among_them_as_monitors(audit_session, audit_log):
-    record_tests_deleted([_test(), _test(), _test(name="Metric on orders", is_monitor=True)])
+    record_tests_deleted([_test(), _test(), _test(name="Metric on orders", test_type="Metric_Trend")])
     audit_session.commit()
 
     assert [(entry[0], entry[1], entry[2]) for entry in _entries(audit_log)] == [
