@@ -1,5 +1,6 @@
 """Tests for ``run_test_execution``'s run-scoped referential retargeting and catalog column matching."""
 
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -8,6 +9,7 @@ from sqlalchemy.engine.row import RowMapping
 
 from testgen.commands.queries.execute_tests_query import TestExecutionDef
 from testgen.commands.run_test_execution import (
+    _run_tests,
     attach_column_chars,
     resolve_query_variables,
     restore_result_identity,
@@ -265,3 +267,35 @@ def test_a_test_with_no_custom_query_is_left_alone():
     resolve_query_variables([test_def], {"END_DATE": "2026-10-17"})
 
     assert test_def.custom_query == ""
+
+
+def test_the_write_path_restores_identity_before_writing():
+    """The restore is wired into the write path, not merely available to it. Without the call a
+    run reading elsewhere files every result under the table it happened to read, and the
+    function's own tests still pass."""
+    td = _td(
+        schema_name="staging_a",
+        table_name="orders",
+        read_schema_name="build123",
+        read_table_name="build_orders",
+    )
+    rows = _returned_rows(("Dupe_Rows", str(td.id), "build123", "build_orders", "0"))
+
+    sql_generator = MagicMock()
+    sql_generator.template_result_columns = {"QUERY": QUERY_COLUMNS}
+    sql_generator.test_results_table = "test_results"
+    sql_generator.connection.effective_max_threads = 1
+
+    with (
+        patch(
+            "testgen.commands.run_test_execution.fetch_from_db_threaded",
+            return_value=(rows, None, {}),
+        ),
+        patch("testgen.commands.run_test_execution.write_to_app_db") as write_to_app_db,
+        patch("testgen.commands.run_test_execution.get_current_session"),
+    ):
+        _run_tests(sql_generator, "QUERY", [td])
+
+    written_rows, written_columns, _table = write_to_app_db.call_args.args
+    assert written_columns == QUERY_COLUMNS
+    assert _written(written_rows[0]) == ["Dupe_Rows", str(td.id), "staging_a", "orders", "0"]

@@ -968,9 +968,10 @@ def _make_schema_execution_sql() -> TestExecutionSQL:
 def test_the_table_group_schema_reaches_the_validation_query():
     """Validation resolves identifiers in the schema the table group reads, which is the one its
     tests run against."""
-    _query, params = _make_schema_execution_sql().get_target_identifiers(["test_schema"])
+    _query, params = _make_schema_execution_sql().get_target_identifiers("test_schema")
 
     assert params["DATA_SCHEMA"] == "test_schema"
+    assert params["TEST_SCHEMAS"] == "'test_schema'"
 
 
 def test_the_test_definition_drives_the_executed_sql():
@@ -1014,3 +1015,140 @@ def test_the_match_schema_is_independent_of_the_test_s_own():
 
     assert params["SCHEMA_NAME"] == "onboard_2026_09_10"
     assert params["MATCH_SCHEMA_NAME"] == "reference_2026_09_16"
+
+
+# --- the location a run reads ---
+
+
+def _column(table_name: str, column_name: str, **overrides) -> ColumnChars:
+    defaults = {
+        "schema_name": "build_20261104",
+        "table_name": table_name,
+        "column_name": column_name,
+        "general_type": "A",
+        "db_data_type": "varchar(50)",
+        "logical_type": "string",
+    }
+    defaults.update(overrides)
+    return ColumnChars(**defaults)
+
+
+def test_a_retargeted_test_reads_its_run_s_table_and_reports_its_own():
+    """The two names are separate parameters: the FROM clause takes the table the run reads, and
+    anything scoped to the table group takes the one the test is defined on."""
+    sql_generator = _make_schema_execution_sql()
+    td = _make_td(schema_name="public", table_name="orders")
+    td.read_schema_name = "build_20261104"
+    td.read_table_name = "build_orders"
+
+    params = sql_generator._get_params(td)
+
+    assert params["SCHEMA_NAME"] == "build_20261104"
+    assert params["TABLE_NAME"] == "build_orders"
+    assert params["DATA_SCHEMA"] == "build_20261104"
+    assert params["CATALOG_TABLE_NAME"] == "orders"
+
+
+def test_a_test_the_run_leaves_alone_reads_its_own_table():
+    sql_generator = _make_schema_execution_sql()
+    params = sql_generator._get_params(_make_td(schema_name="public", table_name="orders"))
+
+    assert params["TABLE_NAME"] == "orders"
+    assert params["CATALOG_TABLE_NAME"] == "orders"
+
+
+def test_observed_columns_come_from_the_catalog_when_the_run_reads_the_table_group():
+    """The catalog describes the table group, so it is matched on the definition's table name."""
+    sql_generator = _make_schema_execution_sql()
+    td = _make_td(table_name="orders")
+
+    source = sql_generator._observed_columns(td)
+
+    assert "data_column_chars" in source
+    assert "table_name = 'orders'" in source
+    assert "drop_date IS NULL" in source
+
+
+def test_observed_columns_come_from_the_run_when_it_reads_elsewhere():
+    """A metadata test describes what the run read, not what the catalog holds."""
+    sql_generator = _make_schema_execution_sql()
+    sql_generator.run_columns = [
+        _column("build_orders", "id", general_type="N", db_data_type="integer", logical_type="integer"),
+        _column("build_orders", "name"),
+        _column("other_table", "unrelated"),
+    ]
+    td = _make_td(table_name="orders")
+    td.read_schema_name = "build_20261104"
+    td.read_table_name = "build_orders"
+
+    source = sql_generator._observed_columns(td)
+
+    assert "data_column_chars" not in source
+    assert source.startswith("(VALUES ")
+    assert "('id', 'N', 'integer', 'integer')" in source
+    assert "('name', 'A', 'varchar(50)', 'string')" in source
+    assert "unrelated" not in source
+    assert source.endswith(") oc(column_name, general_type, db_data_type, logical_type)")
+
+
+def test_observed_columns_are_empty_when_the_run_s_table_is_missing():
+    """A table the run does not hold yields no rows, so a count fails and a conformance test
+    reports the table missing."""
+    sql_generator = _make_schema_execution_sql()
+    sql_generator.run_columns = [_column("something_else", "id")]
+    td = _make_td(table_name="orders")
+    td.read_schema_name = "build_20261104"
+    td.read_table_name = "build_orders"
+
+    source = sql_generator._observed_columns(td)
+
+    assert "WHERE FALSE" in source
+    assert "VALUES" not in source
+
+
+def test_observed_columns_match_a_table_case_insensitively_when_no_name_matches_exactly():
+    """A flavor that folds identifiers returns them in its own case."""
+    sql_generator = _make_schema_execution_sql()
+    sql_generator.run_columns = [_column("BUILD_ORDERS", "ID", schema_name="BUILD_20261104")]
+    td = _make_td(table_name="orders")
+    td.read_schema_name = "build_20261104"
+    td.read_table_name = "build_orders"
+
+    assert "'ID'" in sql_generator._observed_columns(td)
+
+
+def test_a_quote_in_an_observed_column_name_is_escaped():
+    sql_generator = _make_schema_execution_sql()
+    sql_generator.run_columns = [_column("build_orders", "it's")]
+    td = _make_td(table_name="orders")
+    td.read_schema_name = "build_20261104"
+    td.read_table_name = "build_orders"
+
+    assert "'it''s'" in sql_generator._observed_columns(td)
+
+
+def test_an_unknown_observed_type_is_a_typed_null():
+    """An untyped NULL in a VALUES list leaves the column with no type."""
+    sql_generator = _make_schema_execution_sql()
+    sql_generator.run_columns = [_column("build_orders", "id", logical_type=None)]
+    td = _make_td(table_name="orders")
+    td.read_schema_name = "build_20261104"
+    td.read_table_name = "build_orders"
+
+    source = sql_generator._observed_columns(td)
+
+    # The empty source is all typed NULLs, so the row has to be there for this to mean anything.
+    assert source.startswith("(VALUES ")
+    assert "('id', 'A', 'varchar(50)', CAST(NULL AS VARCHAR))" in source
+
+
+def test_only_a_template_that_reads_observed_columns_is_given_them():
+    """Rendering a table's whole column list for every test in a run would be wasted on the ones
+    that never reference it."""
+    sql_generator = _make_schema_execution_sql()
+
+    reader = _make_td(table_name="orders", template="SELECT COUNT(*) FROM {OBSERVED_COLUMNS}")
+    assert "data_column_chars" in sql_generator._get_params(reader)["OBSERVED_COLUMNS"]
+
+    other = _make_td(table_name="orders", template="SELECT COUNT(*) FROM {DATA_SCHEMA}.orders")
+    assert sql_generator._get_params(other)["OBSERVED_COLUMNS"] == ""

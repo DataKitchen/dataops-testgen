@@ -256,8 +256,8 @@ class TestRun(Entity):
             (id == TestSuite.last_complete_test_run_id, True),
             else_=False,
         ).label("is_latest_run"),
-        # Each is set only when the run was submitted with that override. The two maps are JSONB
-        # objects, so they are read as JSON rather than through astext.
+        # Each is set only when the run was submitted with that override. The three maps are
+        # JSONB objects, so they are read as JSON rather than through astext.
         JobExecution.kwargs["schema_name"].astext.label("schema_override"),
         JobExecution.kwargs["table_names"].label("table_names_override"),
         JobExecution.kwargs["match_schema_name"].astext.label("match_schema_override"),

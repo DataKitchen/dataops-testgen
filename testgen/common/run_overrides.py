@@ -105,6 +105,8 @@ def validate_table_name_map(mapping: Mapping[str, str] | None) -> str | None:
     for key, value in (mapping or {}).items():
         if key.count("*") > 1:
             return f"Table name pattern `{key}` can contain at most one `*`."
+        if "*" in value and "*" not in key:
+            return f"Table name `{value}` can only contain `*` when its key `{key}` does."
         # The value reaches a table reference and an app-database lookup as text, the same way a
         # schema override does, so it is held to the same shape.
         if error := validate_table_name(value):
@@ -132,6 +134,9 @@ def resolve_table_name(name: str, mapping: Mapping[str, str] | None) -> str:
 
     Returns:
         The mapped name, or ``name`` when no key matches.
+
+    Raises:
+        ValueError: A key matches ``name`` but expands to an empty name.
     """
     # A CUSTOM test carries no table name; its table is only an output label.
     if not mapping or not name:
@@ -146,6 +151,12 @@ def resolve_table_name(name: str, mapping: Mapping[str, str] | None) -> str:
         prefix, suffix = key.split("*", 1)
         if len(name) >= len(prefix) + len(suffix) and name.startswith(prefix) and name.endswith(suffix):
             matched = name[len(prefix) : len(name) - len(suffix)]
-            return value.replace("*", matched)
+            resolved = value.replace("*", matched)
+            if not resolved:
+                raise ValueError(
+                    f"Table name pattern `{key}` maps `{name}` to an empty name. "
+                    f"`{name}` matches `{key}` with nothing in place of `*`."
+                )
+            return resolved
 
     return name

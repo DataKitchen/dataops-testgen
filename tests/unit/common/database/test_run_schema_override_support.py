@@ -56,3 +56,13 @@ def test_a_run_that_overrides_no_schema_is_not_refused(sql_flavor_code):
 def test_a_table_group_with_no_connection_is_not_refused():
     with patch(f"{MODULE}.Connection.get_by_table_group", return_value=None):
         assert unsupported_schema_override(uuid4(), schema_name="reference_2026_09_11") is None
+
+
+@pytest.mark.unit
+def test_a_run_with_no_schema_override_reads_no_connection():
+    """Every test run submission reaches this, so the connection is only looked up when there is
+    an override whose support depends on it."""
+    with patch(f"{MODULE}.Connection.get_by_table_group") as get_by_table_group:
+        assert unsupported_schema_override(uuid4()) is None
+
+    get_by_table_group.assert_not_called()

@@ -22,7 +22,8 @@ RESERVED_PARAMETER_NAMES: frozenset[str] = frozenset({
     "GROUPBY_NAMES", "HAVING_CONDITION", "INPUT_PARAMETERS", "IS_EXCLUDED_DAY", "KEYED_HASH_TERM",
     "LIMIT", "LIMIT_2", "LIMIT_4", "LOWER_TOLERANCE", "MATCH_COLUMN_NAMES", "MATCH_GROUPBY_NAMES",
     "MATCH_HAVING_CONDITION", "MATCH_SCHEMA_NAME", "MATCH_SUBSET_CONDITION", "MATCH_TABLE_NAME",
-    "METADATA", "MULTISET_HASH_TERM", "PROFILE_RUN_DATE", "QUERY", "QUOTE", "RUN_DATE",
+    "METADATA", "MULTISET_HASH_TERM", "OBSERVED_COLUMNS", "PROFILE_RUN_DATE", "QUERY", "QUOTE",
+    "RUN_DATE",
     "SCHEMA_NAME", "SKIP_ERRORS", "SQL_FLAVOR", "SUBSET_CONDITION", "TABLE_GROUPS_ID",
     "TABLE_NAME", "TARGET_SCHEMA", "TEST_DATE", "TEST_DEFINITION_ID", "TEST_RUN_ID",
     "TEST_SCHEMAS", "TEST_SUITE_ID", "TEST_TYPE", "THRESHOLD_VALUE", "UPPER_TOLERANCE",
@@ -41,10 +42,6 @@ VARIABLES = (
     "not given here takes its default, and a key no custom query in the run declares is ignored. "
     "Each value is inserted into the query as SQL text, so a string value needs its own quotes in "
     "the query."
-)
-
-CUSTOM_QUERY_HELP = (
-    "Use {NAME:default} for a value a test run can override, such as {END_DATE:2026-10-10}."
 )
 
 

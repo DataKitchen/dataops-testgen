@@ -281,7 +281,42 @@ def parse_cat_results(
     return test_results
 
 
+def _app_sql_text(value: str | None) -> str:
+    """Return ``value`` with its quotes doubled, for a single-quoted application-database literal."""
+    return (value or "").replace("'", "''")
+
+
+def _app_sql_literal(value: str | None) -> str:
+    """Return ``value`` as an application-database literal, typed when it is NULL."""
+    return "CAST(NULL AS VARCHAR)" if value is None else f"'{_app_sql_text(value)}'"
+
+
+def _columns_of_table(columns: list[ColumnChars], schema_name: str, table_name: str) -> list[ColumnChars]:
+    """Return a table's columns, matched by exact name, else case-insensitively.
+
+    Args:
+        columns: The columns read at one location.
+        schema_name: The schema the table is read from.
+        table_name: The table as the run reads it.
+
+    Returns:
+        The columns of that table, in the order they were read.
+    """
+    exact = [c for c in columns if c.schema_name == schema_name and c.table_name == table_name]
+    if exact:
+        return exact
+    return [
+        c
+        for c in columns
+        if c.schema_name.lower() == schema_name.lower() and c.table_name.lower() == table_name.lower()
+    ]
+
+
 class TestExecutionSQL:
+
+    # The columns of the location this run reads, when it reads somewhere other than the table
+    # group. Metadata tests describe the table group's catalog without it.
+    run_columns: list[ColumnChars] | None = None
 
     null_value = "<NULL>"
     test_results_table = "test_results"
@@ -413,8 +448,10 @@ class TestExecutionSQL:
         return test_def.test_operator, test_def.test_condition
 
     def _get_input_parameters(self, test_def: TestExecutionDef) -> str:
+        # Every value is folded onto one line: this string is templated into a single-quoted SQL
+        # literal, and some flavors, BigQuery among them, end such a literal at a line break.
         return "; ".join(
-            f"{field.name}={getattr(test_def, field.name)}"
+            f"{field.name}={' '.join(str(getattr(test_def, field.name)).split())}"
             for field in dataclasses.fields(InputParameters)
             if getattr(test_def, field.name, None) not in [None, ""]
         ).replace("'", "`")
@@ -439,8 +476,9 @@ class TestExecutionSQL:
                 "APP_SCHEMA_NAME": get_tg_schema(),
                 "SCHEMA_NAME": test_def.source_schema,
                 "TABLE_NAME": test_def.source_table,
-                # The data catalog holds the table group's own tables whatever a run reads, so a
-                # template querying it matches on the name the definition carries.
+                # The data catalog and a contract's declared schema both describe the table group
+                # whatever a run reads, so a template querying either matches on the name the
+                # definition carries.
                 "CATALOG_TABLE_NAME": test_def.table_name,
                 "COLUMN_NAME": f"{quote}{test_def.column_name or ''}{quote}",
                 "COLUMN_NAME_NO_QUOTES": test_def.column_name,
@@ -493,6 +531,11 @@ class TestExecutionSQL:
                     f"{quote}{test_def.column_name or ''}{quote}", test_def.column_type
                 ),
                 "INPUT_PARAMETERS": self._get_input_parameters(test_def),
+                # Only the metadata test types read it, and building it for the rest would render
+                # a table's whole column list per test.
+                "OBSERVED_COLUMNS": (
+                    self._observed_columns(test_def) if "{OBSERVED_COLUMNS}" in (test_def.template or "") else ""
+                ),
             })
 
             params.update(self._freshness_exclusion_params(test_def))
@@ -517,6 +560,42 @@ class TestExecutionSQL:
                 params.update({key: FinalParam(value) for key, value in value_list_params.items()})
 
         return params
+
+    def _observed_columns(self, test_def: TestExecutionDef) -> str:
+        """Return the derived table a metadata test reads a table's observed columns from.
+
+        Args:
+            test_def: The test being executed.
+
+        Returns:
+            A ``FROM`` item aliased ``oc``, holding ``column_name``, ``general_type``,
+            ``db_data_type``, and ``logical_type``. It selects the data catalog's record of the
+            table group's table, or, for a run reading another location, the columns read there.
+        """
+        if self.run_columns is None:
+            return (
+                "(SELECT column_name, general_type, db_data_type, logical_type"
+                f" FROM {get_tg_schema()}.data_column_chars"
+                f" WHERE table_groups_id = '{self.table_group.id}'"
+                f" AND table_name = '{_app_sql_text(test_def.table_name)}'"
+                " AND drop_date IS NULL) oc"
+            )
+
+        columns = _columns_of_table(self.run_columns, test_def.source_schema, test_def.source_table)
+        if not columns:
+            # VALUES needs a row. A table the run does not hold has none, and the tests read it
+            # as the catalog reads a table it has no record of.
+            return (
+                "(SELECT CAST(NULL AS VARCHAR) AS column_name, CAST(NULL AS VARCHAR) AS general_type,"
+                " CAST(NULL AS VARCHAR) AS db_data_type, CAST(NULL AS VARCHAR) AS logical_type"
+                " WHERE FALSE) oc"
+            )
+
+        rows = ", ".join(
+            f"({_app_sql_literal(column.column_name)}, {_app_sql_literal(column.general_type)}, {_app_sql_literal(column.db_data_type)}, {_app_sql_literal(column.logical_type)})"
+            for column in columns
+        )
+        return f"(VALUES {rows}) oc(column_name, general_type, db_data_type, logical_type)"
 
     def _freshness_exclusion_params(self, test_def: TestExecutionDef) -> dict:
         """Freshness exclusion parameters for a test at this run's date.
@@ -585,12 +664,15 @@ class TestExecutionSQL:
         # Runs on App database
         return self._get_query("get_active_test_definitions.sql")
 
-    def get_target_identifiers(self, schemas: Iterable[str]) -> tuple[str, dict]:
+    def get_target_identifiers(self, schema: str) -> tuple[str, dict]:
         # Runs on Target database
         filename = "get_target_identifiers.sql"
         params = {
-            "DATA_SCHEMA": self.table_group.table_group_schema,
-            "TEST_SCHEMAS": ", ".join([f"'{item}'" for item in schemas]),
+            # Both name the one schema being read. A flavor whose information schema is scoped to
+            # a single schema, such as BigQuery, introspects DATA_SCHEMA and would find nothing
+            # for a TEST_SCHEMAS naming any other.
+            "DATA_SCHEMA": schema,
+            "TEST_SCHEMAS": f"'{schema}'",
         }
         try:
             return self._get_query(filename, f"flavors/{self.connection.sql_flavor}/validate_tests", extra_params=params)

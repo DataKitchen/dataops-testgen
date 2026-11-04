@@ -19,13 +19,15 @@ from testgen.common.query_variables import RESERVED_PARAMETER_NAMES
 
 pytestmark = pytest.mark.unit
 
-# Builder function to the module that defines it. A new one belongs here; the alternative is a
-# parameter nobody reserved.
+SOURCE_ROOT = Path(__file__).parents[3] / "testgen"
+
+# Module, relative to the package root, to the builder functions it defines. A new one belongs
+# here; the alternative is a parameter nobody reserved.
 PARAMETER_BUILDERS = {
-    "testgen/testgen/commands/queries/execute_tests_query.py": ("_get_params",),
-    "testgen/testgen/common/source_data_service.py": ("_build_query_standard", "_build_query_custom"),
-    "testgen/testgen/common/database/flavor/flavor_service.py": ("value_hash_params",),
-    "testgen/testgen/common/custom_test_validation.py": ("validate_custom_query",),
+    "commands/queries/execute_tests_query.py": ("_get_params", "_freshness_exclusion_params"),
+    "common/source_data_service.py": ("_build_query_standard", "_build_query_custom"),
+    "common/database/flavor/flavor_service.py": ("value_hash_params",),
+    "common/custom_test_validation.py": ("validate_custom_query", "render_metric_validation_query"),
 }
 
 
@@ -35,7 +37,7 @@ def _substituted_names(path: str, function: str) -> set[str]:
     Taken from the syntax tree rather than by matching text, so a comparison against an
     upper-case literal is not mistaken for a dictionary key.
     """
-    tree = ast.parse(Path(path).read_text())
+    tree = ast.parse((SOURCE_ROOT / path).read_text())
     target = next(
         (
             node

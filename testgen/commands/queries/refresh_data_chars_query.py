@@ -20,6 +20,10 @@ def _like_to_regex(pattern: str) -> re.Pattern[str]:
     return re.compile("^" + re.escape(pattern.strip().replace("\\_", "_")).replace("%", ".*") + "$")
 
 
+# Oracle allows at most this many expressions in an IN list.
+IN_LIST_LIMIT = 1000
+
+
 class RefreshDataCharsSQL:
 
     staging_table = "stg_data_chars_updates"
@@ -87,19 +91,10 @@ class RefreshDataCharsSQL:
         if self.table_names is not None:
             # An explicit set names the tables outright, so the table group's filters, which are
             # written against its own tables, do not apply.
-            return (
-                f" AND c.{ddf_table_ref} IN ({self.flavor_service.string_literal_list(sorted(self.table_names))})"
-                if self.table_names
-                else " AND 1=0"
-            )
+            return f" AND ({self._in_list_criteria(sorted(self.table_names))})" if self.table_names else " AND 1=0"
 
         if table_names := split_criteria(self.table_group.profiling_table_set):
-            # Oracle allows at most 1000 expressions in an IN list
-            in_lists = [
-                f"c.{ddf_table_ref} IN ({self.flavor_service.string_literal_list(table_names[i:i + 1000])})"
-                for i in range(0, len(table_names), 1000)
-            ]
-            table_criteria += f" AND ({' OR '.join(in_lists)})"
+            table_criteria += f" AND ({self._in_list_criteria(table_names)})"
 
         if include_masks := split_criteria(self.table_group.profiling_include_mask):
             table_criteria += f"""
@@ -116,6 +111,22 @@ class RefreshDataCharsSQL:
             """
 
         return table_criteria
+
+    def _in_list_criteria(self, table_names: list[str]) -> str:
+        """Return a predicate matching any of ``table_names``.
+
+        Args:
+            table_names: The tables to match, which must not be empty.
+
+        Returns:
+            One ``IN`` list, or several OR-ed together: Oracle takes at most
+            ``IN_LIST_LIMIT`` expressions in one.
+        """
+        ddf_table_ref = self.flavor_service.ddf_table_ref
+        return " OR ".join(
+            f"c.{ddf_table_ref} IN ({self.flavor_service.string_literal_list(table_names[i : i + IN_LIST_LIMIT])})"
+            for i in range(0, len(table_names), IN_LIST_LIMIT)
+        )
 
     def _like_pattern(self, mask: str) -> str:
         # `%` is the only wildcard; every other character matches itself. `\_` is the usual way to write a literal

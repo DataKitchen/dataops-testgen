@@ -1,6 +1,12 @@
 import pytest
 
-from testgen.common.run_overrides import resolve_table_name, validate_table_name_map
+from testgen.common.run_overrides import (
+    OVERRIDE_LABELS,
+    labelled_overrides,
+    overrides_from_kwargs,
+    resolve_table_name,
+    validate_table_name_map,
+)
 
 
 @pytest.mark.unit
@@ -94,6 +100,87 @@ def test_validate_table_name_map_rejects_a_value_that_cannot_name_a_table(value)
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("value", ["build_orders", "build_*", "Orders 2026", "a" * 100])
+@pytest.mark.parametrize("value", ["build_orders", "Orders 2026", "a" * 100])
 def test_validate_table_name_map_accepts_a_usable_value(value):
     assert validate_table_name_map({"orders": value}) is None
+
+
+@pytest.mark.unit
+def test_validate_table_name_map_rejects_a_star_in_a_value_whose_key_has_none():
+    """A `*` in a value stands for what the key's `*` matched, so an exact key leaves it with
+    nothing to stand for and it would reach SQL as a literal `*`."""
+    assert validate_table_name_map({"orders": "build_*"}) == (
+        "Table name `build_*` can only contain `*` when its key `orders` does."
+    )
+
+
+@pytest.mark.unit
+def test_a_pattern_that_expands_to_nothing_is_an_error():
+    """`orders` matches `orders*` with nothing in place of the `*`, so the value expands to an
+    empty name. Returning it would fall back to the test's own table and read the table group
+    while the run reports the override as applied."""
+    with pytest.raises(ValueError, match="empty name"):
+        resolve_table_name("orders", {"orders*": "*"})
+
+
+@pytest.mark.unit
+def test_a_pattern_that_expands_to_a_name_is_resolved():
+    """The same mapping against a longer name has something to put in place of the `*`."""
+    assert resolve_table_name("orders_2026", {"orders*": "*"}) == "_2026"
+
+
+@pytest.mark.unit
+def test_a_run_s_overrides_are_read_back_from_its_payload():
+    kwargs = {
+        "test_suite_id": "suite-123",
+        "version_id": "version-1",
+        "schema_name": "build_20261104",
+        "table_names": {"orders": "build_orders"},
+        "variables": {"END_DATE": "2026-10-17"},
+    }
+
+    assert overrides_from_kwargs(kwargs) == {
+        "schema_name": "build_20261104",
+        "table_names": {"orders": "build_orders"},
+        "variables": {"END_DATE": "2026-10-17"},
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("kwargs", [None, {}, {"test_suite_id": "suite-123"}])
+def test_a_run_with_no_overrides_reads_back_none(kwargs):
+    assert overrides_from_kwargs(kwargs) == {}
+
+
+@pytest.mark.unit
+def test_overrides_are_labelled_in_a_fixed_order():
+    """The order comes from the declaration, not from the caller, so one run's overrides read the
+    same way as another's."""
+    labelled = labelled_overrides(
+        variables={"END_DATE": "2026-10-17"},
+        schema_name="build_20261104",
+        match_schema_name="reference_2026_09_10",
+    )
+
+    assert list(labelled) == ["Schema", "Match schema", "Variables"]
+    assert labelled["Schema"] == "build_20261104"
+
+
+@pytest.mark.unit
+def test_an_override_a_run_did_not_apply_is_left_out():
+    assert labelled_overrides(schema_name="build_20261104", table_names=None, variables={}) == {
+        "Schema": "build_20261104"
+    }
+
+
+@pytest.mark.unit
+def test_every_override_has_a_label():
+    """The labels are what a reader sees for a run, so an override added without one would be
+    applied and never shown."""
+    assert set(OVERRIDE_LABELS) == {
+        "schema_name",
+        "table_names",
+        "match_schema_name",
+        "match_table_names",
+        "variables",
+    }

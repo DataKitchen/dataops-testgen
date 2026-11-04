@@ -61,10 +61,7 @@ test_types:
              CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
              NULL AS result_message,
              COUNT(*) AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{CATALOG_TABLE_NAME}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS};
   - id: '2419'
     test_type: Match_Column_Ct
     sql_flavor: databricks
@@ -82,10 +79,7 @@ test_types:
              CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
              NULL AS result_message,
              COUNT(*) AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{CATALOG_TABLE_NAME}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS};
   - id: '2219'
     test_type: Match_Column_Ct
     sql_flavor: mssql
@@ -103,10 +97,7 @@ test_types:
              CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
              NULL AS result_message,
              COUNT(*) AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{CATALOG_TABLE_NAME}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS};
   - id: '2319'
     test_type: Match_Column_Ct
     sql_flavor: postgresql
@@ -124,10 +115,7 @@ test_types:
              CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
              NULL AS result_message,
              COUNT(*) AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{CATALOG_TABLE_NAME}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS};
   - id: '2019'
     test_type: Match_Column_Ct
     sql_flavor: redshift
@@ -145,10 +133,7 @@ test_types:
              CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
              NULL AS result_message,
              COUNT(*) AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{CATALOG_TABLE_NAME}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS};
   - id: '2616'
     test_type: Match_Column_Ct
     sql_flavor: redshift_spectrum
@@ -166,10 +151,7 @@ test_types:
              CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
              NULL AS result_message,
              COUNT(*) AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{CATALOG_TABLE_NAME}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS};
   - id: '2119'
     test_type: Match_Column_Ct
     sql_flavor: snowflake
@@ -187,10 +169,7 @@ test_types:
              CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
              NULL AS result_message,
              COUNT(*) AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{CATALOG_TABLE_NAME}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS};
   - id: '8016'
     test_type: Match_Column_Ct
     sql_flavor: oracle
@@ -208,10 +187,7 @@ test_types:
              CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
              NULL AS result_message,
              COUNT(*) AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{CATALOG_TABLE_NAME}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS};
   - id: '8016'
     test_type: Match_Column_Ct
     sql_flavor: sap_hana
@@ -229,10 +205,7 @@ test_types:
              CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
              NULL AS result_message,
              COUNT(*) AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{CATALOG_TABLE_NAME}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS};
   - id: '10095'
     test_type: Match_Column_Ct
     sql_flavor: salesforce_data360
@@ -250,10 +223,7 @@ test_types:
              CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
              NULL AS result_message,
              COUNT(*) AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{CATALOG_TABLE_NAME}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS};
   - id: '11110'
     test_type: Match_Column_Ct
     sql_flavor: duckdb
@@ -271,7 +241,4 @@ test_types:
              CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
              NULL AS result_message,
              COUNT(*) AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{CATALOG_TABLE_NAME}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS};

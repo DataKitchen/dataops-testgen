@@ -315,6 +315,9 @@ def unsupported_schema_override(
     Returns:
         The refusal message, or ``None`` when both overrides apply.
     """
+    if not schema_name and not match_schema_name:
+        return None
+
     connection = Connection.get_by_table_group(table_group_id)
     if not connection:
         return None

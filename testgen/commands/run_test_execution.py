@@ -151,9 +151,9 @@ def run_test_execution(
     if test_suite_id is None:
         raise ValueError("Test Suite ID was not specified")
 
-    # A failure against a caller-supplied location says nothing about the stored definition, so no
-    # override may deactivate a test. One predicate over all of them, so a later override added to
-    # the signature cannot forget it.
+    # A result measured against a caller-supplied location says nothing about the stored
+    # definition, so no override may deactivate a test or write a threshold back. One predicate
+    # over all of them, so a later override added to the signature cannot forget it.
     has_override = any([match_schema_name, schema_name, table_names, match_table_names, variables])
 
     LOG.info(f"Starting test run for test suite {test_suite_id}")
@@ -189,9 +189,12 @@ def run_test_execution(
 
     # Both writeback steps narrow by the run's version, which for a contract is the frozen
     # agreement. Running an agreement does not rewrite it, or the terms in force stop being the
-    # terms that were frozen and the version stops being reproducible. Decided out here because
-    # the prediction below reads it from a finally that a run failing at its first step reaches.
-    writes_definitions = not SuiteVersion.is_frozen_agreement(test_run.version_id)
+    # terms that were frozen and the version stops being reproducible. An overridden run writes
+    # nothing back either: its measures describe the location the caller named, so training a
+    # threshold on them would carry that location into every later run of the stored test.
+    # Decided out here because the prediction below reads it from a finally that a run failing at
+    # its first step reaches.
+    writes_definitions = not SuiteVersion.is_frozen_agreement(test_run.version_id) and not has_override
 
     try:
         LOG.info(f"Test run: {test_run.id}, Test suite: {test_suite.test_suite}, Table group: {table_group.table_groups_name}, Connection: {connection.connection_name}")
@@ -227,6 +230,9 @@ def run_test_execution(
                 schema_name or table_group.table_group_schema,
                 {td.source_table for td in test_defs if td.source_table},
             )
+            # Metadata tests read the catalog, which describes the table group. Pointed elsewhere,
+            # they read that location's columns instead, so they describe what the run read.
+            sql_generator.run_columns = run_chars
 
         if test_defs:
             LOG.info(f"Active test definitions: {len(test_defs)}")

@@ -117,10 +117,11 @@ def get_target_identifiers(
         return target_tables, target_columns
 
     LOG.info("Getting tables and columns in target schemas for validation")
-    target_identifiers = fetch_dict_from_db(
-        *sql_generator.get_target_identifiers(target_schemas),
-        use_target_db=True,
-    )
+    target_identifiers: list[dict] = []
+    for schema in target_schemas:
+        target_identifiers.extend(
+            fetch_dict_from_db(*sql_generator.get_target_identifiers(schema), use_target_db=True)
+        )
     if not target_identifiers:
         LOG.info("No tables or columns present in target schemas")
 

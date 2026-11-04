@@ -82,7 +82,7 @@ def run_tests(
     for field, value in (("table_names", table_names), ("match_table_names", match_table_names)):
         if value:
             if error := run_overrides.validate_table_name_map(value):
-                raise MCPUserError(error)
+                raise MCPUserError(f"{field}: {error}")
             kwargs[field] = value
     if variables:
         if error := query_variables.validate_values(variables):
