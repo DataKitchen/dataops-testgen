@@ -126,7 +126,7 @@ def submit_test_run(
 
     kwargs: dict[str, Any] = {"test_suite_id": str(test_suite.id)}
     if body:
-        for field in ("schema_name", "table_names", "match_schema_name", "match_table_names"):
+        for field in ("schema_name", "table_names", "match_schema_name", "match_table_names", "variables"):
             if value := getattr(body, field):
                 kwargs[field] = value
     if target is not None:

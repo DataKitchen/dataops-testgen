@@ -24,7 +24,7 @@ test_types:
   default_parm_prompts: |-
     Custom SQL Query Returning Failing Records,PII Redactable Columns,Threshold Failure Count
   default_parm_help: |-
-    Query that returns the records failing the test. The test passes when it returns none. Its results are shown as the source data of a failed test, so include the columns needed to follow up. Hard-code the schema or use {DATA_SCHEMA} for the schema of the Table Group. Example: SELECT order_id, order_total FROM {DATA_SCHEMA}.orders WHERE order_total < 0.|Comma-separated list of result column names that contain PII data and should be redacted for users without PII viewing permissions. Leave blank if no columns need redacting.|The number of failing records the query can return before the test fails.
+    Query that returns the records failing the test. The test passes when it returns none. Its results are shown as the source data of a failed test, so include the columns needed to follow up. Hard-code the schema or use {DATA_SCHEMA} for the schema of the Table Group. Example: SELECT order_id, order_total FROM {DATA_SCHEMA}.orders WHERE order_total < 0. Use {NAME:default} for a value a test run can override, such as {END_DATE:2026-10-10}.|Comma-separated list of result column names that contain PII data and should be redacted for users without PII viewing permissions. Leave blank if no columns need redacting.|The number of failing records the query can return before the test fails.
   default_parm_required: Y,N,N
   default_severity: Fail
   run_type: QUERY

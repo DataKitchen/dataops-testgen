@@ -10,7 +10,7 @@ from testgen.commands.test_generation import (
     resolve_generation_profile_run,
     unprofiled_regeneration_note,
 )
-from testgen.common import contract_service, run_overrides
+from testgen.common import contract_service, query_variables, run_overrides
 from testgen.common.audit.runs import RunOperation
 from testgen.common.database.table_group_service import unsupported_schema_override
 from testgen.common.enums import JOB_STATUS_LABEL, JobKey, JobSource, RegenerationGroup, SuiteType
@@ -46,6 +46,7 @@ def run_tests(
     match_table_names: Annotated[
         dict[str, str] | None, Field(description=run_overrides.MATCH_TABLE_NAMES)
     ] = None,
+    variables: Annotated[dict[str, str] | None, Field(description=query_variables.VARIABLES)] = None,
     external_url: Annotated[
         str | None,
         Field(
@@ -83,6 +84,10 @@ def run_tests(
             if error := run_overrides.validate_table_name_map(value):
                 raise MCPUserError(error)
             kwargs[field] = value
+    if variables:
+        if error := query_variables.validate_values(variables):
+            raise MCPUserError(error)
+        kwargs["variables"] = variables
     if refusal := unsupported_schema_override(
         suite.table_groups_id, schema_name=schema_name, match_schema_name=match_schema_name
     ):

@@ -17,6 +17,7 @@ from testgen.common import (
     execute_db_queries,
     fetch_dict_from_db,
     fetch_from_db_threaded,
+    query_variables,
     set_target_db_params,
     write_to_app_db,
 )
@@ -109,6 +110,23 @@ def retarget_read_location(
             test_def.match_table_name = resolve_table_name(test_def.match_table_name, match_table_names)
 
 
+def resolve_query_variables(test_defs: list[TestExecutionDef], variables: Mapping[str, str] | None = None) -> None:
+    """Fill each custom query's declared variables in with this run's values.
+
+    Args:
+        test_defs: The tests to run.
+        variables: Variable name to the value this run gives it, if overridden. A variable left
+            out takes the default its declaration carries.
+
+    Resolved in place, like a referential test's second table: the query a test runs is the
+    query its result reports among its input parameters, and the parameter substitution that
+    follows matches ``{NAME}`` exactly and would pass over a declaration. The stored
+    ``test_definitions`` rows are untouched.
+    """
+    for test_def in test_defs:
+        test_def.custom_query = query_variables.render(test_def.custom_query, variables)
+
+
 def _a_later_contract_run_is_latest(test_suite: TestSuite, test_run: TestRun) -> bool:
     """Whether the latest run of a contract started after ``test_run``."""
     if test_suite.suite_type != SuiteType.CONTRACT or not test_suite.last_complete_test_run_id:
@@ -128,6 +146,7 @@ def run_test_execution(
     schema_name: str | None = None,
     table_names: Mapping[str, str] | None = None,
     match_table_names: Mapping[str, str] | None = None,
+    variables: Mapping[str, str] | None = None,
 ) -> UUID:
     if test_suite_id is None:
         raise ValueError("Test Suite ID was not specified")
@@ -135,7 +154,7 @@ def run_test_execution(
     # A failure against a caller-supplied location says nothing about the stored definition, so no
     # override may deactivate a test. One predicate over all of them, so a later override added to
     # the signature cannot forget it.
-    has_override = any([match_schema_name, schema_name, table_names, match_table_names])
+    has_override = any([match_schema_name, schema_name, table_names, match_table_names, variables])
 
     LOG.info(f"Starting test run for test suite {test_suite_id}")
     time_delta = (run_date - datetime.now(UTC)) if run_date else timedelta()
@@ -196,6 +215,7 @@ def run_test_execution(
         if match_schema_name:
             retarget_match_schema(test_defs, match_schema_name)
         retarget_read_location(test_defs, schema_name, table_names, match_table_names)
+        resolve_query_variables(test_defs, variables)
 
         # The catalog describes the table group, wherever this run happened to read. Tests are
         # checked against what they read, so a run pointed elsewhere needs that location's columns.

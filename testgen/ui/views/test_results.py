@@ -608,6 +608,7 @@ class TestResultsPage(Page):
                         table_names=run.table_names_override,
                         match_schema_name=run.match_schema_override,
                         match_table_names=run.match_table_names_override,
+                        variables=run.variables_override,
                     )
                     or None,
                     "external_url": run.external_url,

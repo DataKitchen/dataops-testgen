@@ -47,6 +47,7 @@ from testgen.common.models.table_group import (
     table_group_defaults,
 )
 from testgen.common.models.test_suite import MONITOR_SETTING_DEFAULTS
+from testgen.common.query_variables import VARIABLES, validate_values
 from testgen.common.run_overrides import (
     MATCH_SCHEMA_NAME,
     MATCH_TABLE_NAMES,
@@ -150,6 +151,7 @@ class TestRunRequest(BaseModel):
         description=MATCH_SCHEMA_NAME,
     )
     match_table_names: dict[str, str] | None = Field(default=None, description=MATCH_TABLE_NAMES)
+    variables: dict[str, str] | None = Field(default=None, description=VARIABLES)
     external_url: str | None = Field(
         default=None,
         max_length=EXTERNAL_URL_MAX_LENGTH,
@@ -184,6 +186,13 @@ class TestRunRequest(BaseModel):
     @classmethod
     def _check_table_names(cls, value: dict[str, str] | None) -> dict[str, str] | None:
         if error := validate_table_name_map(value):
+            raise ValueError(error)
+        return value
+
+    @field_validator("variables")
+    @classmethod
+    def _check_variables(cls, value: dict[str, str] | None) -> dict[str, str] | None:
+        if error := validate_values(value):
             raise ValueError(error)
         return value
 
@@ -287,6 +296,7 @@ class TestRunOverrides(BaseModel):
     table_names: dict[str, str] | None = Field(default=None, description=TABLE_NAMES)
     match_schema_name: str | None = Field(default=None, description=MATCH_SCHEMA_NAME)
     match_table_names: dict[str, str] | None = Field(default=None, description=MATCH_TABLE_NAMES)
+    variables: dict[str, str] | None = Field(default=None, description=VARIABLES)
 
 
 class TestRunResponse(BaseModel):

@@ -577,6 +577,7 @@ def _make_params_execution_sql() -> TestExecutionSQL:
     instance.table_group = MagicMock(id=uuid4())
     instance.test_run = MagicMock(test_suite_id=uuid4(), id=uuid4())
     instance.run_date = datetime(2026, 1, 1, tzinfo=UTC)
+    instance.variables = None
     return instance
 
 

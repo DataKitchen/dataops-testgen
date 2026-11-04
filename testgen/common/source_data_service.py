@@ -9,9 +9,10 @@ from dataclasses import dataclass
 from typing import Literal
 
 import pandas as pd
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from testgen.commands.run_test_validation import ColumnLookup
+from testgen.common import query_variables
 from testgen.common.clean_sql import (
     NonNumericValueError,
     concat_columns,
@@ -29,12 +30,13 @@ from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection, SQLFlavor
 from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.data_table import DataTable
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import MISSING_TEST_DEFINITION_MESSAGE, TestDefinition
 from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_source_data_pii
 from testgen.common.read_file import replace_templated_functions
 from testgen.ui.services.database_service import fetch_from_target_db
-from testgen.utils import dict_from_kv, to_dataframe, to_sql_timestamp
+from testgen.utils import dict_from_kv, is_uuid4, to_dataframe, to_sql_timestamp
 
 LOG = logging.getLogger("testgen")
 DEFAULT_LIMIT = 500
@@ -213,6 +215,23 @@ def fetch_hygiene_source_data(
 # Query builders
 # ---------------------------------------------------------------------------
 
+
+def _run_variables(test_run_id: str | None) -> dict[str, str] | None:
+    """The values a run gave its queries' variables, or ``None`` when the caller has no run.
+
+    Args:
+        test_run_id: The run a result belongs to. A run's id is its job's id.
+
+    Returns:
+        Variable name to the value the run used, or ``None``. A caller resolving a test
+        definition rather than a result has no run, and its query renders with defaults.
+    """
+    if not is_uuid4(test_run_id):
+        return None
+    kwargs = get_current_session().scalar(select(JobExecution.kwargs).where(JobExecution.id == test_run_id))
+    return (kwargs or {}).get("variables")
+
+
 def _build_query_standard(issue_data: dict, limit: int) -> str | None:
     """Build lookup SQL for a standard (non-CUSTOM) test result."""
     lookup_data = _get_lookup_data(issue_data["table_groups_id"], issue_data["test_type_id"], "Test Results")
@@ -251,7 +270,11 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         if (parsed_test_date := parse_fuzzy_date(issue_data["test_date"]))
         else None,
         "VARCHAR_TYPE": flavor_service.varchar_type,
-        "CUSTOM_QUERY": strip_trailing_semicolons(test_definition.custom_query),
+        # The query's declared variables take the values the run gave them, so the lookup renders
+        # the SQL that produced the result rather than the declarations.
+        "CUSTOM_QUERY": strip_trailing_semicolons(
+            query_variables.render(test_definition.custom_query, _run_variables(issue_data.get("test_run_id")))
+        ),
         # BASELINE_VALUE varies (quoted literal / number / IN-list) by test type — templated as-is.
         # The numeric baselines render empty as NULL to avoid invalid SQL like CAST( AS FLOAT).
         "BASELINE_VALUE": test_definition.baseline_value,
@@ -329,10 +352,12 @@ def _build_query_custom(issue_data: dict) -> str | None:
     if not lookup_data or not lookup_data.lookup_query:
         return None
 
+    # As above: the declared variables take the values the run gave them.
+    query = query_variables.render(lookup_data.lookup_query, _run_variables(issue_data.get("test_run_id")))
     params = {
         "DATA_SCHEMA": issue_data["schema_name"],
     }
-    return replace_params(lookup_data.lookup_query, params)
+    return replace_params(query, params)
 
 
 def _generate_recency_lookup_query(

@@ -63,6 +63,7 @@ class TestRunMinimal(EntityMinimal):
     table_names_override: dict | None
     match_schema_override: str | None
     match_table_names_override: dict | None
+    variables_override: dict | None
     external_url: str | None
     caller_metadata: dict | None
 
@@ -261,6 +262,7 @@ class TestRun(Entity):
         JobExecution.kwargs["table_names"].label("table_names_override"),
         JobExecution.kwargs["match_schema_name"].astext.label("match_schema_override"),
         JobExecution.kwargs["match_table_names"].label("match_table_names_override"),
+        JobExecution.kwargs["variables"].label("variables_override"),
         JobExecution.external_url,
         JobExecution.caller_metadata,
     )

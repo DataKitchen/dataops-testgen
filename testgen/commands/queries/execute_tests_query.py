@@ -73,6 +73,7 @@ class InputParameters:
     match_subset_condition: str
     match_groupby_names: str
     match_having_condition: str
+    custom_query: str
 
 @dataclasses.dataclass
 class TestExecutionDef(InputParameters):
@@ -84,7 +85,6 @@ class TestExecutionDef(InputParameters):
     lock_refresh: str
     skip_errors: int
     history_calculation: str
-    custom_query: str
     prediction: dict | str | None
     run_type: TestRunType
     test_scope: TestScope

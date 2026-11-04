@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pandas as pd
 import pytest
@@ -434,10 +435,63 @@ class Test_match_table_resolution:
 
 
 # ---------------------------------------------------------------------------
+# _build_query_standard: the query a run resolved
+# ---------------------------------------------------------------------------
+
+class Test_custom_query_resolution:
+    """A run fills a query's declared variables in, so the result carries the query that produced
+    it and the lookup renders the same SQL rather than the declarations."""
+
+    def _build(self, test_definition, issue_data):
+        with (
+            patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q),
+            patch(f"{MODULE}.TestDefinition.get_for_project", return_value=test_definition),
+            patch(f"{MODULE}._get_lookup_data") as mock_lookup,
+        ):
+            mock_lookup.return_value = LookupData(lookup_query="{CUSTOM_QUERY}", sql_flavor="postgresql")
+            return _build_query_standard(issue_data, limit=500)
+
+    def _build_with_run(self, test_definition, issue_data, variables):
+        with patch(f"{MODULE}._run_variables", return_value=variables):
+            return self._build(test_definition, issue_data)
+
+    def test_a_variable_takes_the_value_its_run_gave_it(self):
+        query = self._build_with_run(
+            _FakeTestDefinition(custom_query="WHERE d > '{END_DATE:2026-10-10}'"),
+            _standard_issue_data(test_run_id=str(uuid4())),
+            {"END_DATE": "2026-10-17"},
+        )
+        assert query == "WHERE d > '2026-10-17'"
+
+    def test_a_caller_with_no_run_renders_the_defaults(self):
+        """The MCP lookup resolves a test definition rather than a result, so it has no run."""
+        query = self._build_with_run(
+            _FakeTestDefinition(custom_query="WHERE d > '{END_DATE:2026-10-10}'"),
+            _standard_issue_data(),
+            None,
+        )
+        assert query == "WHERE d > '2026-10-10'"
+
+    def test_a_query_declaring_nothing_is_unchanged(self):
+        query = self._build_with_run(
+            _FakeTestDefinition(custom_query="SELECT 1"), _standard_issue_data(), None
+        )
+        assert query == "SELECT 1"
+
+
+# ---------------------------------------------------------------------------
 # _build_query_custom
 # ---------------------------------------------------------------------------
 
 class Test_build_query_custom:
+    @patch(f"{MODULE}._get_lookup_data_custom")
+    def test_a_variable_takes_the_value_its_run_gave_it(self, mock_lookup):
+        """A CUSTOM test's lookup is its own query, so it renders with the run's values."""
+        mock_lookup.return_value = LookupData(lookup_query="SELECT * FROM {DATA_SCHEMA}.t WHERE d > '{D:2026-10-10}'")
+        issue_data = _custom_issue_data(schema_name="prod", test_run_id=str(uuid4()))
+        with patch(f"{MODULE}._run_variables", return_value={"D": "2026-10-17"}):
+            assert _build_query_custom(issue_data) == "SELECT * FROM prod.t WHERE d > '2026-10-17'"
+
     @patch(f"{MODULE}._get_lookup_data_custom")
     def test_returns_query_with_schema_replaced(self, mock_lookup):
         mock_lookup.return_value = LookupData(lookup_query="SELECT * FROM {DATA_SCHEMA}.my_table")

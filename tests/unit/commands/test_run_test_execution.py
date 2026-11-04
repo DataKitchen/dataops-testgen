@@ -9,6 +9,7 @@ from sqlalchemy.engine.row import RowMapping
 from testgen.commands.queries.execute_tests_query import TestExecutionDef
 from testgen.commands.run_test_execution import (
     attach_column_chars,
+    resolve_query_variables,
     restore_result_identity,
     retarget_match_schema,
     retarget_read_location,
@@ -220,3 +221,47 @@ def test_a_result_from_an_unknown_definition_is_left_alone():
     restored = restore_result_identity(rows, QUERY_COLUMNS, [retargeted])
 
     assert _written(restored[0])[2:4] == ["build123", "build_orders"]
+
+
+# --- custom query variables ---
+
+
+def test_a_declared_variable_takes_the_run_s_value():
+    test_def = _td(custom_query="WHERE d > '{END_DATE:2026-10-10}'")
+
+    resolve_query_variables([test_def], {"END_DATE": "2026-10-17"})
+
+    assert test_def.custom_query == "WHERE d > '2026-10-17'"
+
+
+def test_a_variable_the_run_leaves_out_takes_its_default():
+    test_def = _td(custom_query="WHERE d > '{END_DATE:2026-10-10}'")
+
+    resolve_query_variables([test_def], {"OTHER": "x"})
+
+    assert test_def.custom_query == "WHERE d > '2026-10-10'"
+
+
+def test_a_run_with_no_values_still_resolves_defaults():
+    """Runs from the UI and the scheduler pass nothing, and their queries still have to run."""
+    test_def = _td(custom_query="WHERE d > '{END_DATE:2026-10-10}'")
+
+    resolve_query_variables([test_def])
+
+    assert test_def.custom_query == "WHERE d > '2026-10-10'"
+
+
+def test_a_parameter_is_left_for_the_parameter_dictionary():
+    test_def = _td(custom_query="SELECT * FROM {DATA_SCHEMA}.orders")
+
+    resolve_query_variables([test_def], {"END_DATE": "2026-10-17"})
+
+    assert test_def.custom_query == "SELECT * FROM {DATA_SCHEMA}.orders"
+
+
+def test_a_test_with_no_custom_query_is_left_alone():
+    test_def = _td(custom_query="")
+
+    resolve_query_variables([test_def], {"END_DATE": "2026-10-17"})
+
+    assert test_def.custom_query == ""

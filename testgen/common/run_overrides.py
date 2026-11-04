@@ -54,6 +54,7 @@ OVERRIDE_LABELS = {
     "table_names": "Tables",
     "match_schema_name": "Match schema",
     "match_table_names": "Match tables",
+    "variables": "Variables",
 }
 
 SCHEMA_OVERRIDE_UNSUPPORTED = (

@@ -37,6 +37,7 @@ from sqlalchemy.sql import visitors
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.expression import case, literal
 
+from testgen.common import query_variables
 from testgen.common.audit.actions import AuditTargetType
 from testgen.common.audit.fields import AuditFields
 from testgen.common.audit.names import object_name
@@ -873,6 +874,8 @@ def test_definition_errors(test_type: TestType, value_of: Callable[[str], object
         errors["custom_query"] = (
             f"test type `{test_type.test_name_short}` does not accept a custom query"
         )
+    elif variable_error := query_variables.validate_declarations(value_of("custom_query")):
+        errors["custom_query"] = variable_error
 
     if not _is_blank(value_of("subset_condition")) and "subset_condition" not in test_type.param_columns:
         errors["subset_condition"] = (
