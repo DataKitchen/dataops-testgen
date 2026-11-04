@@ -18,7 +18,8 @@ AS
             COUNT(*) AS  ct,
             ROW_NUMBER() OVER (ORDER BY CASE WHEN MIN("{COL_NAME}") > ' ' THEN 0 ELSE 1 END, COUNT(*) DESC,
                                         CAST(MIN(CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX))
-                                            COLLATE Latin1_General_100_BIN2) AS rn,
+                                            COLLATE Latin1_General_100_BIN2,
+                                        DATALENGTH(MIN(CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX))))) AS rn,
             SUM(COUNT_BIG(*)) OVER () AS sample_value_ct
      FROM target_table
      WHERE "{COL_NAME}" IS NOT NULL
