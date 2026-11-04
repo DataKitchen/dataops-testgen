@@ -1,3 +1,4 @@
+import re
 import sys
 from urllib.parse import quote_plus
 
@@ -38,6 +39,13 @@ class OracleFlavorService(FlavorService):
     float_types = frozenset({"float", "binary_float", "binary_double"})
     double_type = "BINARY_DOUBLE"
     wide_decimal_type = "NUMBER(38,0)"
+
+    def text_value(self, column_ref: str, column_type: str | None, db_data_type: str | None = None) -> str:  # noqa: ARG002
+        # CHAR and NCHAR values are stored padded with spaces to the declared length. The catalog's
+        # column_type reads char(n) for VARCHAR2 as well, so the declared type tells them apart.
+        if db_data_type and re.fullmatch(r"n?char\(\d+( (char|byte))?\)", db_data_type.lower()):
+            return f"RTRIM({column_ref})"
+        return column_ref
 
     def exact_text(self, text_expr: str) -> str:
         return f"NLSSORT({text_expr}, 'NLS_SORT=BINARY')"

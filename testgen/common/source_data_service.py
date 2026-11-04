@@ -237,6 +237,7 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         "COLUMN_VALUE": flavor_service.text_value(
             f"{flavor_service.quote_character}{issue_data['column_names'] or ''}{flavor_service.quote_character}",
             issue_data["column_type"],
+            column.db_data_type if column else None,
         ),
         "COLUMN_NUM": flavor_service.numeric_value(
             f"{flavor_service.quote_character}{issue_data['column_names'] or ''}{flavor_service.quote_character}",

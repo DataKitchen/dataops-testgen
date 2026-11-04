@@ -271,12 +271,13 @@ class FlavorService:
         """
         return ""
 
-    def text_value(self, column_ref: str, column_type: str | None) -> str:  # noqa: ARG002
+    def text_value(self, column_ref: str, column_type: str | None, db_data_type: str | None = None) -> str:  # noqa: ARG002
         """Return the SQL expression that reads a column's text value.
 
         Args:
             column_ref: The quoted column reference.
             column_type: The column's type as recorded in the data catalog.
+            db_data_type: The column's type as the database declares it, if the catalog has it.
 
         Returns:
             ``column_ref``, or an expression over it that strips padding the flavor adds to
@@ -388,7 +389,7 @@ class FlavorService:
             return self.canonical_number(column_ref, self.is_float(column))
         if column.general_type == "D":
             return self.format_timestamp(self.utc_timestamp(column_ref, column))
-        return self.text_value(column_ref, column.column_type)
+        return self.text_value(column_ref, column.column_type, column.db_data_type)
 
     def canonical_number(self, column_ref: str, is_float: bool) -> str:
         exact = self.float_to_decimal(column_ref) if is_float else column_ref
@@ -501,7 +502,9 @@ class FlavorService:
             column_forms = (numeric_ref, numeric_ref, numeric_ref)
             literal_pairs = [(number, number) for number in numbers]
         else:
-            text_ref = self.value_list_text(self.text_value(column_ref, column.column_type if column else None))
+            text_ref = self.value_list_text(
+                self.text_value(column_ref, column.column_type, column.db_data_type) if column else column_ref
+            )
             exact_ref = self.exact_text(text_ref)
             strings = [
                 value for value in dict.fromkeys(values) if value or self.stores_empty_string

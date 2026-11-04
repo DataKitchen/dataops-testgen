@@ -1,3 +1,4 @@
+import re
 from urllib.parse import quote_plus
 
 from testgen.common.database.column_chars import ColumnChars
@@ -24,6 +25,12 @@ class DatabricksFlavorService(FlavorService):
     supports_value_hash = True
     float_types = frozenset({"double", "float", "real"})
     double_type = "DOUBLE"
+
+    def text_value(self, column_ref: str, column_type: str | None, db_data_type: str | None = None) -> str:  # noqa: ARG002
+        # CHAR values are read padded with spaces to the declared length.
+        if column_type and re.fullmatch(r"char(\(\d+\))?", column_type.lower()):
+            return f"RTRIM({column_ref})"
+        return column_ref
 
     def exact_text(self, text_expr: str) -> str:
         return f"CAST({text_expr} AS BINARY)"

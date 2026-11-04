@@ -450,7 +450,9 @@ class TestExecutionSQL:
                 "MATCH_HAVING_CONDITION": f"HAVING {test_def.match_having_condition}" if test_def.match_having_condition else "",
                 "COLUMN_TYPE": test_def.column_type,
                 "COLUMN_VALUE": self.flavor_service.text_value(
-                    f"{quote}{test_def.column_name or ''}{quote}", test_def.column_type
+                    f"{quote}{test_def.column_name or ''}{quote}",
+                    test_def.column_type,
+                    test_def.column_chars.db_data_type if test_def.column_chars else None,
                 ),
                 "COLUMN_NUM": self.flavor_service.numeric_value(
                     f"{quote}{test_def.column_name or ''}{quote}", test_def.column_type

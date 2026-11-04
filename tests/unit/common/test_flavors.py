@@ -198,6 +198,19 @@ def test_value_list_params_compares_bytes_on_mssql():
     assert params["VALUE_LIST_LITERALS"] == "CAST(N'é ' AS VARBINARY(MAX))"
 
 
+def test_value_list_params_compares_bytes_on_redshift():
+    params = get_flavor_service("redshift").value_list_params('"c"', _column("A"), ["a "])
+    assert params["VALUE_LIST_COLUMN"] == "TO_VARBYTE(CAST(\"c\" AS VARCHAR(1000)), 'utf8')"
+    assert params["VALUE_LIST_LITERALS"] == "TO_VARBYTE('a ', 'utf8')"
+
+
+def test_value_list_params_reads_char_without_its_padding_on_oracle():
+    column = _column("A", "char(5)")
+    column.db_data_type = "CHAR(5)"
+    params = get_flavor_service("oracle").value_list_params('"c"', column, ["a"])
+    assert params["VALUE_LIST_COLUMN"] == "NLSSORT(CAST(RTRIM(\"c\") AS VARCHAR2(1000)), 'NLS_SORT=BINARY')"
+
+
 def test_value_list_params_leaves_out_the_empty_string_on_oracle():
     params = get_flavor_service("oracle").value_list_params('"c"', _column("A"), ["", "a"])
     assert params["VALUE_LIST_CT"] == "1"
