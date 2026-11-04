@@ -144,3 +144,46 @@ def test_send_feedback_posts_synchronously_without_worker(service, monkeypatch):
     assert payload["properties"]["comment"] == "great tool"
     assert service._started is False
     assert service._worker is None
+
+
+def _signed_in(monkeypatch, username, name):
+    user = MagicMock(username=username)
+    user.name = name
+    monkeypatch.setattr(mp_module, "session", MagicMock(auth=MagicMock(user=user, user_display=name)))
+
+
+def test_event_identifies_the_signed_in_user_by_the_hash_of_their_username(service, monkeypatch):
+    _signed_in(monkeypatch, "jdoe", "Jane Doe")
+
+    properties = service._build_event("nav-home")["properties"]
+
+    assert properties["distinct_id"] == service.get_distinct_id("jdoe")
+    assert properties["distinct_id"] == service.get_session_distinct_id()
+    assert "jdoe" not in properties.values()
+    assert "Jane Doe" not in properties.values()
+    assert "username" not in properties
+
+
+def test_username_passed_for_an_event_is_hashed_and_not_sent(service, monkeypatch):
+    captured = []
+    monkeypatch.setattr(service, "send_mp_request", lambda _endpoint, payload: captured.extend(payload))
+
+    service.send_event("mcp-call", username="alice", kind="tool")
+    service.drain()
+
+    properties = captured[0]["properties"]
+    assert properties["distinct_id"] == service.get_distinct_id("alice")
+    assert "username" not in properties
+    assert "alice" not in properties.values()
+
+
+def test_feedback_carries_no_username(service, monkeypatch):
+    _signed_in(monkeypatch, "jdoe", "Jane Doe")
+    posts = []
+    monkeypatch.setattr(service, "send_mp_request", lambda _endpoint, payload: posts.append(payload))
+
+    service.send_feedback(rating=5)
+
+    properties = posts[0]["properties"]
+    assert properties["distinct_id"] == service.get_distinct_id("jdoe")
+    assert "username" not in properties
