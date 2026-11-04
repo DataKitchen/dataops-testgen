@@ -13,6 +13,7 @@ from typing import Annotated, Any
 import yaml
 from pydantic import Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from testgen import settings
 from testgen.common import contract_comparison, contract_creation, contract_import, contract_service
@@ -27,7 +28,11 @@ from testgen.common.contract_import import (
     ContractTermReason,
 )
 from testgen.common.contract_service import CheckableRuleError, InvalidContractDocumentError, OwnedFieldError
-from testgen.common.database.test_suite_service import validate_test_suite_fields
+from testgen.common.database.test_suite_service import (
+    duplicate_name_message,
+    is_duplicate_name_error,
+    validate_test_suite_fields,
+)
 from testgen.common.enums import JOB_STATUS_LABEL, SuiteType
 from testgen.common.flavors import SqlFlavorCode
 from testgen.common.merge_patch import apply_merge_patch
@@ -875,7 +880,12 @@ def import_contract(
     conformance_failed = False
     if parsed_mode is ContractImportMode.APPLY:
         if creating:
-            created = contract_creation.create_contract_from_import(suite, table_group, connection, plan)
+            try:
+                created = contract_creation.create_contract_from_import(suite, table_group, connection, plan)
+            except IntegrityError as err:
+                if is_duplicate_name_error(err):
+                    raise MCPUserError(f"{duplicate_name_message(suite.test_suite)} No changes saved.") from err
+                raise
             record_contract_created(created.suite)
             version_id, conformance_failed = created.version_id, created.conformance_failed
         else:

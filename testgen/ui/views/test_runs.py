@@ -17,18 +17,19 @@ from testgen.common.models.notification_settings import (
 )
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_run import TestRun
+from testgen.common.models.test_run import RunVersionScope, TestRun
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.common.run_service import launch_run, request_run_transition
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
-from testgen.ui.services.contract_run_service import run_test_suite_options, run_version_caption
+from testgen.ui.services.contract_run_service import run_list_args, run_test_suite_options, run_version_caption
 from testgen.ui.services.query_cache import (
     get_contract_states,
     get_project_summary,
     get_test_run_summaries,
+    get_test_run_version_scope,
     select_table_groups_minimal_where,
     select_test_runs_where,
     select_test_suites_minimal_where,
@@ -67,7 +68,14 @@ class TestRunsPage(Page):
         order=1,
     )
 
-    def render(self, project_code: str, table_group_id: str | None = None, test_suite_id: str | None = None, **_kwargs) -> None:
+    def render(
+        self,
+        project_code: str,
+        table_group_id: str | None = None,
+        test_suite_id: str | None = None,
+        all_versions: str | None = None,
+        **_kwargs,
+    ) -> None:
         testgen.page_header(
             PAGE_TITLE,
             "data-quality-testing",
@@ -77,10 +85,24 @@ class TestRunsPage(Page):
 
         with st.spinner("Loading data ..."):
             project_summary = get_project_summary(project_code)
-            test_runs, total_count = get_test_run_summaries(project_code, table_group_id, test_suite_id, page=page)
+            show_all_versions = all_versions == "true"
+            test_runs, total_count = get_test_run_summaries(
+                project_code, table_group_id, test_suite_id, page=page, all_versions=show_all_versions
+            )
             table_groups = select_table_groups_minimal_where(TableGroup.project_code == project_code)
             test_suites = select_test_suites_minimal_where(
                 TestSuite.project_code == project_code, TestSuite.suite_type.in_(TEST_SUITE_TYPES)
+            )
+            contract_in_scope = any(
+                suite.suite_type == SuiteType.CONTRACT
+                and (not table_group_id or str(suite.table_groups_id) == str(table_group_id))
+                and (not test_suite_id or str(suite.id) == str(test_suite_id))
+                for suite in test_suites
+            )
+            version_scope = (
+                get_test_run_version_scope(project_code, table_group_id, test_suite_id)
+                if contract_in_scope
+                else RunVersionScope(False, 0)
             )
 
         def on_run_tests_clicked(*_) -> None:
@@ -127,17 +149,20 @@ class TestRunsPage(Page):
             suite_type = next((ts.suite_type for ts in test_suites if str(ts.id) == str(selected_id)), None)
             message = run_started_message(suite_type, selected_name)
             show_link = session.current_page != "test-runs"
+            version_id = data.get("version_id")
+            list_args = {}
             try:
                 with database_session():
                     launch_run(
                         job_key="run-tests",
                         kwargs={
                             "test_suite_id": str(selected_id),
-                            **({"version_id": str(data["version_id"])} if data.get("version_id") else {}),
+                            **({"version_id": str(version_id)} if version_id else {}),
                         },
                         source=JobSource.ui,
                         project_code=project_code,
                     )
+                    list_args = run_list_args(selected_id, version_id)
             except Exception as error:
                 success = False
                 message = f"Test run could not be started: {error!s}."
@@ -145,7 +170,7 @@ class TestRunsPage(Page):
             st.session_state[TR_RUN_TESTS_RESULT_KEY] = {"success": success, "message": message, "show_link": show_link}
             if success and not show_link:
                 st.cache_data.clear()
-                Router().set_query_params({"page": 1})
+                Router().set_query_params({"page": 1, **list_args})
                 st.session_state.pop(TR_RUN_TESTS_DIALOG_KEY, None)
                 st.session_state.pop(TR_RUN_TESTS_RESULT_KEY, None)
 
@@ -183,6 +208,11 @@ class TestRunsPage(Page):
                     } for run in test_runs
                 ],
                 "total_count": total_count,
+                "version_toggle": {
+                    "visible": version_scope.has_contract,
+                    "checked": show_all_versions,
+                    "hidden_count": version_scope.hidden_count,
+                },
                 "page": page,
                 "page_size": 20,
                 "table_group_options": [
@@ -239,6 +269,7 @@ class TestRunsPage(Page):
 class TestRunFilters(typing.TypedDict):
     table_group_id: str
     test_suite_id: str
+    all_versions: str | None
 
 def on_test_runs_filtered(filters: TestRunFilters) -> None:
     Router().set_query_params({**filters, "page": 1})
@@ -246,6 +277,7 @@ def on_test_runs_filtered(filters: TestRunFilters) -> None:
 
 def refresh_data(*_) -> None:
     get_test_run_summaries.clear()
+    get_test_run_version_scope.clear()
     get_project_summary.clear()
 
 
@@ -325,6 +357,7 @@ def on_cancel_run(payload: dict) -> None:
         and request_run_transition(job_exec, RunOperation.CANCELED)
     ):
         get_test_run_summaries.clear()
+        get_test_run_version_scope.clear()
         get_project_summary.clear()
         fm.reset_post_updates(str_message=":green[Cancellation requested.]", as_toast=True)
     else:
@@ -354,6 +387,7 @@ def on_delete_runs(job_execution_ids: list[str]) -> None:
         for project_code, run_ids in deleted_ids.items():
             record_runs(RunOperation.DELETED, RUN_TESTS_JOB_KEY, project_code, run_ids)
         get_test_run_summaries.clear()
+        get_test_run_version_scope.clear()
         get_project_summary.clear()
         Router().set_query_params({"page": 1})
     except Exception:

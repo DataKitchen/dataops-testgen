@@ -64,7 +64,6 @@ def report_profiling_run(job_exec: JobExecution) -> None:
     connection = Connection.get(profiling_run.connection_id)
     properties = {
         "source": job_exec.source.upper(),
-        "username": job_exec.kwargs.get("username"),
         "sql_flavor": connection.sql_flavor_code if connection else None,
         "sampling": table_group.profile_use_sampling if table_group else None,
         "table_count": profiling_run.table_ct or 0,

@@ -29,7 +29,7 @@ def _run(**overrides) -> TestRunSummary:
         "completed_at": FROZEN, "active_seconds": 300.0, "error_message": None, "progress": [],
         "table_groups_name": "sales_tables", "test_suite": "orders_contract", "project_code": "demo",
         "project_name": "Demo", "test_ct": 5, "passed_ct": 5, "warning_ct": 0, "failed_ct": 0,
-        "error_ct": 0, "log_ct": 0, "dismissed_ct": 0, "dq_score_testing": None, "total_count": 1,
+        "error_ct": 0, "log_ct": 0, "dismissed_ct": 0, "dq_score_testing": None,
     }
     fields.update(overrides)
     return TestRunSummary(**fields)

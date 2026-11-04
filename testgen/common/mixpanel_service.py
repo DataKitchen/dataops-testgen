@@ -42,6 +42,11 @@ def safe_method(method):
     return wrapped
 
 
+def _session_username() -> str | None:
+    user = session.auth.user if session.auth else None
+    return user.username if user else None
+
+
 class MixpanelService(Singleton):
 
     def __init__(self) -> None:
@@ -62,8 +67,16 @@ class MixpanelService(Singleton):
             PersistedSetting.set("INSTANCE_ID", instance_id)
         return instance_id
 
-    def get_distinct_id(self, username):
+    def get_distinct_id(self, username: str | None) -> str:
+        """Return the salted hash that identifies a user's events on this instance.
+
+        :param username: The user's username, or None for events no user caused.
+        """
         return self._hash_value(username or "")
+
+    def get_session_distinct_id(self) -> str:
+        """Return the distinct ID of the user signed in to the current UI session."""
+        return self.get_distinct_id(_session_username())
 
     @functools.cache  # noqa: B019
     def _hash_value(self, value: bytes | str, digest_size: int = 8) -> str:
@@ -72,8 +85,16 @@ class MixpanelService(Singleton):
         return blake2b(value, salt=self.instance_id.encode(), digest_size=digest_size).hexdigest()
 
     @safe_method
-    def send_event(self, event_name, include_usage=False, **properties):
-        self._enqueue(self._build_event(event_name, include_usage=include_usage, **properties))
+    def send_event(self, event_name, include_usage=False, username: str | None = None, **properties):
+        """Queue an analytics event.
+
+        :param event_name: The event's name.
+        :param include_usage: Whether to add the instance's entity counts.
+        :param username: The user the event is about, when it is not the one signed in to the UI session. It is
+            hashed into the event's distinct ID and never sent.
+        :param properties: The event's properties.
+        """
+        self._enqueue(self._build_event(event_name, include_usage=include_usage, username=username, **properties))
 
     def send_feedback(self, **properties):
         # User-submitted feedback is content the user explicitly chose to share,
@@ -84,12 +105,11 @@ class MixpanelService(Singleton):
         except Exception:
             LOG.exception("Error sending feedback")
 
-    def _build_event(self, event_name, include_usage=False, **properties) -> dict:
+    def _build_event(self, event_name, include_usage=False, username: str | None = None, **properties) -> dict:
         properties.setdefault("instance_id", self.instance_id)
         properties.setdefault("edition", settings.DOCKER_HUB_REPOSITORY)
         properties.setdefault("version", settings.VERSION)
-        properties.setdefault("username", session.auth.user_display if session.auth else None)
-        properties.setdefault("distinct_id", self.get_distinct_id(properties["username"]))
+        properties.setdefault("distinct_id", self.get_distinct_id(username or _session_username()))
         properties.setdefault("time", int(time.time()))
         if include_usage:
             properties.update(self.get_usage())

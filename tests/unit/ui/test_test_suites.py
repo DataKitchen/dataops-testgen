@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 import testgen
 from testgen.commands.test_generation import ContractGenerationResult
@@ -26,6 +27,10 @@ from testgen.ui.views.dialogs import generate_tests_dialog as dialog
 pytestmark = pytest.mark.unit
 
 RESULT_KEY = "ts_form_dialog:result"
+
+
+def _integrity_error(constraint: str) -> IntegrityError:
+    return IntegrityError("INSERT", {}, Exception(f'duplicate key value violates unique constraint "{constraint}"'))
 
 
 @pytest.fixture
@@ -111,6 +116,52 @@ def test_edit_applies_the_form_to_the_stored_suite(session_state):
     assert stored.severity == "Log"
     assert stored.component_key == "orders"
     stored.save.assert_called_once()
+
+
+@pytest.mark.usefixtures("db_session_mock")
+def test_edit_renames_the_stored_suite(session_state):
+    stored = MagicMock(test_suite="Orders")
+    with patch.object(view, "get_test_suite", return_value=stored):
+        view.save_test_suite_form(_form(test_suite_id=str(uuid4()), test_suite="Sales Orders"))
+
+    assert stored.test_suite == "Sales Orders"
+    stored.save.assert_called_once()
+
+
+def test_edit_reports_a_name_another_suite_in_the_project_holds(session_state, db_session_mock):
+    stored = MagicMock(test_suite="Orders")
+    stored.save.side_effect = _integrity_error("test_suites_name_unique")
+    with (
+        patch.object(view, "get_test_suite", return_value=stored),
+        patch.object(view, "record") as record,
+    ):
+        view.save_test_suite_form(_form(test_suite_id=str(uuid4()), test_suite="Sales Orders"))
+
+    assert session_state[RESULT_KEY] == {
+        "success": False,
+        "message": "A test suite or contract named Sales Orders already exists in this project.",
+    }
+    db_session_mock.rollback.assert_called_once()
+    record.assert_not_called()
+
+
+@pytest.mark.usefixtures("db_session_mock")
+def test_edit_lets_other_integrity_errors_through(session_state):
+    stored = MagicMock(test_suite="Orders")
+    stored.save.side_effect = _integrity_error("test_suites_connections_fk")
+    with patch.object(view, "get_test_suite", return_value=stored), pytest.raises(IntegrityError):
+        view.save_test_suite_form(_form(test_suite_id=str(uuid4())))
+
+
+@pytest.mark.usefixtures("db_session_mock")
+def test_a_saved_edit_drops_every_cached_read(session_state):
+    with (
+        patch.object(view, "get_test_suite", return_value=MagicMock(test_suite="Orders")),
+        patch.object(view.st.cache_data, "clear") as clear,
+    ):
+        view.save_test_suite_form(_form(test_suite_id=str(uuid4()), test_suite="Sales Orders"))
+
+    clear.assert_called_once_with()
 
 
 @pytest.mark.usefixtures("db_session_mock")
@@ -467,6 +518,45 @@ def test_a_test_suite_without_generation_is_saved_and_reports_skipped(session_st
         {"icon": "success", "text": "Test suite Orders created.", "link": None},
         {"icon": "skipped", "text": "Tests: skipped. Generate them later on the Test Suites page.", "link": None},
     ]
+
+
+@pytest.mark.usefixtures("db_session_mock")
+def test_the_wizard_reports_a_name_another_suite_in_the_project_holds(session_state):
+    with (
+        patch.object(view.TableGroup, "get", return_value=_table_group()),
+        patch.object(TestSuite, "save", autospec=True, side_effect=_integrity_error("test_suites_name_unique")),
+    ):
+        view.add_test_suite_confirmed(_wizard(test_suite=" Orders "))
+
+    assert session_state[view.WIZARD_RESULT_KEY] == {
+        "success": False,
+        "message": "A test suite or contract named Orders already exists in this project.",
+    }
+
+
+@pytest.mark.usefixtures("db_session_mock")
+def test_the_wizard_reports_a_contract_name_another_suite_in_the_project_holds(session_state):
+    with (
+        patch.object(view.TableGroup, "get", return_value=_table_group()),
+        patch.object(view, "catalog_table_names", return_value=["orders"]),
+        patch.object(view, "create_contract", side_effect=_integrity_error("test_suites_name_unique")),
+    ):
+        view.add_test_suite_confirmed(_contract())
+
+    assert session_state[view.WIZARD_RESULT_KEY]["message"] == (
+        "A test suite or contract named Orders already exists in this project."
+    )
+
+
+@pytest.mark.usefixtures("db_session_mock")
+def test_the_wizard_saves_the_name_without_surrounding_spaces(session_state):
+    with (
+        patch.object(view.TableGroup, "get", return_value=_table_group()),
+        patch.object(TestSuite, "save", autospec=True, side_effect=_saved) as save,
+    ):
+        view.add_test_suite_confirmed(_wizard(test_suite=" Orders  "))
+
+    assert save.call_args.args[0].test_suite == "Orders"
 
 
 @pytest.mark.usefixtures("db_session_mock")

@@ -136,12 +136,6 @@ def list_test_runs(
         )
         if not suites:
             raise MCPResourceNotAccessible("Test suite", test_suite)
-        if len(suites) > 1:
-            ids = ", ".join(f"`{suite.id}`" for suite in suites)
-            raise MCPUserError(
-                f"{len(suites)} test suites in project `{project_code}` are named `{test_suite}`: {ids}. "
-                "Filter by `test_suite_id` instead."
-            )
         test_suite_id = str(suites[0].id)
         suite_table_group_id = suites[0].table_groups_id
     if table_group and suite_table_group_id and suite_table_group_id != table_group.id:

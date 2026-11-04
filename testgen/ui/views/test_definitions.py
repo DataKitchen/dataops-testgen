@@ -78,6 +78,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries import profiling_queries
 from testgen.ui.services.contract_page_service import contract_page
+from testgen.ui.services.contract_run_service import run_list_args
 from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db, fetch_from_target_db
 from testgen.ui.services.query_cache import (
     get_connection,
@@ -716,6 +717,7 @@ class TestDefinitionsPage(Page):
             success = True
             message = run_started_message(test_suite.suite_type, selected_name)
             show_link = session.current_page != "test-runs"
+            list_args = {}
             try:
                 launch_run(
                     job_key="run-tests",
@@ -726,11 +728,14 @@ class TestDefinitionsPage(Page):
                     source=JobSource.ui,
                     project_code=project_code,
                 )
+                list_args = run_list_args(selected_id, data.get("version_id"))
             except Exception as error:
                 success = False
                 message = f"Test run could not be started: {error!s}."
                 show_link = False
-            st.session_state[TD_RUN_TESTS_RESULT_KEY] = {"success": success, "message": message, "show_link": show_link}
+            st.session_state[TD_RUN_TESTS_RESULT_KEY] = {
+                "success": success, "message": message, "show_link": show_link, "list_args": list_args,
+            }
             if success and not show_link:
                 st.cache_data.clear()
                 st.session_state.pop(TD_RUN_TESTS_DIALOG_KEY, None)
@@ -742,8 +747,8 @@ class TestDefinitionsPage(Page):
 
         def on_go_to_test_runs(payload: dict) -> None:
             st.session_state.pop(TD_RUN_TESTS_DIALOG_KEY, None)
-            st.session_state.pop(TD_RUN_TESTS_RESULT_KEY, None)
-            Router().queue_navigation(to="test-runs", with_args=payload)
+            result = st.session_state.pop(TD_RUN_TESTS_RESULT_KEY, None) or {}
+            Router().queue_navigation(to="test-runs", with_args={**payload, **result.get("list_args", {})})
 
         def on_notes_clicked(payload: dict) -> None:
             st.session_state[TD_NOTES_DIALOG_KEY] = payload

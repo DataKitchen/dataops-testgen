@@ -13,16 +13,20 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    and_,
     column,
     desc,
+    exists,
     func,
     literal_column,
+    or_,
     select,
     table,
     text,
     true,
 )
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import aliased
 
 from testgen.common.acting_user import acting_username
 from testgen.common.enums import MANAGED_TEST_TYPES
@@ -149,6 +153,37 @@ class SuiteVersion(Entity):
         """
         return func.coalesce(
             cls._frozen_branch(suite_id), cls._draft_branch(suite_id), cls._placeholder_branch()
+        )
+
+    @classmethod
+    def in_force_at(cls, version_id, started_at) -> ColumnElement[bool]:
+        """Whether the version was its suite's highest frozen version at ``started_at``.
+
+        A run with no version predates versions, and the placeholder is what a suite that keeps no
+        versions runs, so both count as in force. A draft, a discarded draft, and a version
+        superseded by ``started_at`` do not.
+
+        :param version_id: the version's id, as a column expression
+        :param started_at: a timezone-aware timestamp expression
+        """
+        checked, later = aliased(cls), aliased(cls)
+        superseded = (
+            exists()
+            .where(
+                later.test_suite_id == checked.test_suite_id,
+                later.version > checked.version,
+                later.frozen_at <= started_at,
+            )
+            .correlate_except(later)
+        )
+        return or_(
+            version_id.is_(None),
+            exists()
+            .where(
+                checked.id == version_id,
+                or_(checked.test_suite_id.is_(None), and_(checked.frozen_at <= started_at, ~superseded)),
+            )
+            .correlate_except(checked),
         )
 
     @classmethod
