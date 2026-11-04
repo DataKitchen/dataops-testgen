@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 
 from testgen.common.data_catalog_service import (
+    CURRENT_VALUES_TOO_LONG_MESSAGE,
     CURRENT_VALUES_TOO_MANY_MESSAGE,
     DESCRIPTION_MAX_LENGTH,
     TAG_FIELDS,
@@ -355,7 +356,7 @@ def test_current_values_refuse_more_than_100_values():
 def test_current_values_refuse_a_list_too_long_to_store():
     result, _ = _fetch_current_values(["x" * 400, "y" * 400, "z" * 400])
 
-    assert result.status == "TOO_MANY"
+    assert result == CurrentValuesResult("TOO_LONG", message=CURRENT_VALUES_TOO_LONG_MESSAGE)
 
 
 def test_current_values_refuse_a_pii_column_to_a_user_who_cannot_view_pii():

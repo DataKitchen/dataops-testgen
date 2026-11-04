@@ -48,6 +48,7 @@ CURRENT_VALUES_MAX_COUNT = 100
 # The width of test_definitions.baseline_value
 CURRENT_VALUES_MAX_LENGTH = 1000
 CURRENT_VALUES_TOO_MANY_MESSAGE = "This column has more than 100 distinct values, which is too many for this test."
+CURRENT_VALUES_TOO_LONG_MESSAGE = "This column's values make a list longer than 1,000 characters, which is too long for this test."
 CURRENT_VALUES_PII_MESSAGE = "This column holds PII, which you do not have permission to view."
 CURRENT_VALUES_EMPTY_MESSAGE = "This column holds no values."
 CURRENT_VALUES_ERROR_MESSAGE = "The column's values could not be loaded."
@@ -55,7 +56,7 @@ CURRENT_VALUES_ERROR_MESSAGE = "The column's values could not be loaded."
 
 @dataclass
 class CurrentValuesResult:
-    status: Literal["OK", "TOO_MANY", "PII", "ND", "ERR"]
+    status: Literal["OK", "TOO_MANY", "TOO_LONG", "PII", "ND", "ERR"]
     message: str | None = None
     value_list: str | None = None
 
@@ -172,7 +173,7 @@ def fetch_current_values(
 
     Returns:
         ``OK`` with the list; ``TOO_MANY`` when the column holds more than ``CURRENT_VALUES_MAX_COUNT``
-        values or the list would not fit ``CURRENT_VALUES_MAX_LENGTH`` characters; ``PII`` for a PII
+        values; ``TOO_LONG`` when the list would not fit ``CURRENT_VALUES_MAX_LENGTH`` characters; ``PII`` for a PII
         column when ``can_view_pii`` is false; ``ND`` when the column holds no values; ``ERR`` when the
         query fails.
     """
@@ -219,7 +220,7 @@ def fetch_current_values(
         texts = sorted(str(value) for value in values)
     value_list = format_value_list(texts)
     if len(value_list) > CURRENT_VALUES_MAX_LENGTH:
-        return CurrentValuesResult("TOO_MANY", message=CURRENT_VALUES_TOO_MANY_MESSAGE)
+        return CurrentValuesResult("TOO_LONG", message=CURRENT_VALUES_TOO_LONG_MESSAGE)
     return CurrentValuesResult("OK", value_list=value_list)
 
 
