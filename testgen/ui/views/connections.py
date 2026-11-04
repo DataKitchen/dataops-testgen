@@ -4,6 +4,7 @@ import typing
 from dataclasses import asdict, dataclass
 
 import streamlit as st
+from sqlalchemy.exc import IntegrityError
 
 from testgen import settings
 from testgen.commands.run_catalog_refresh import submit_table_group_setup
@@ -25,6 +26,7 @@ from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.duckdb_flavor_service import container_path_help
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.database.table_group_service import apply_table_group_flavor_rules, save_new_table_group
+from testgen.common.database.test_suite_service import duplicate_name_message, is_duplicate_name_error
 from testgen.common.enums import JobSource
 from testgen.common.flavors import (
     FLAVOR_CODE_TO_FAMILY,
@@ -471,9 +473,12 @@ class ConnectionsPage(Page):
                         LOG.info("Table group %s created", table_group.id)
                 except Exception as error:
                     get_current_session().rollback()
-                    message = "Something went wrong while creating the table group."
                     success = False
-                    LOG.exception(message)
+                    if isinstance(error, IntegrityError) and is_duplicate_name_error(error):
+                        message = duplicate_name_message(standard_test_suite_data["name"].strip())
+                    else:
+                        message = "Something went wrong while creating the table group."
+                        LOG.exception(message)
 
                 results = {
                     "success": success,

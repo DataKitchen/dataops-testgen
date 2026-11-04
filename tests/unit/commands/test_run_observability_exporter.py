@@ -175,19 +175,12 @@ def test_the_exported_schema_follows_what_the_database_type_reports(sql_flavor_c
     assert _exported_schema(_event(sql_flavor_code=sql_flavor_code)) == expected
 
 
-@pytest.mark.parametrize(
-    ("suites", "message"),
-    [
-        ([], "Project demo has no test suite named Orders."),
-        ([SimpleNamespace(id=uuid4()), SimpleNamespace(id=uuid4())], "Project demo has 2 test suites named Orders."),
-    ],
-)
-def test_exporting_a_name_that_matches_no_suite_or_several_is_refused(suites, message):
+def test_exporting_a_name_that_matches_no_suite_is_refused():
     with (
-        patch.object(exporter.TestSuite, "select_minimal_where", return_value=suites),
+        patch.object(exporter.TestSuite, "select_minimal_where", return_value=[]),
         patch.object(exporter, "export_test_results") as export,
         patch("testgen.common.models.get_current_session"),
-        pytest.raises(click.ClickException, match=message),
+        pytest.raises(click.ClickException, match="Project demo has no test suite named Orders."),
     ):
         exporter.run_observability_exporter.__wrapped__("demo", "Orders")
 

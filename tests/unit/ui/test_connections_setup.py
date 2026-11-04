@@ -8,6 +8,7 @@ handler armed via ``temp_value``.
 from unittest.mock import MagicMock, patch
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from testgen.common.audit.actions import AuditAction
 
@@ -167,3 +168,44 @@ def test_wizard_records_each_object_it_creates():
         ((AuditAction.SCHEDULE_CREATED, schedule_cls.return_value),),
     ]
     record_monitoring.assert_called_once_with(monitor_suite)
+
+
+def test_wizard_reports_a_test_suite_name_another_suite_in_the_project_holds():
+    from testgen.common.models import _current_session_wrapper
+    from testgen.ui import session as session_module
+
+    session = MagicMock()
+    _current_session_wrapper.value = session
+    payload = {
+        **_payload(_monitor_suite(generate=False)),
+        "standard_test_suite": {"generate": True, "name": " Sales Tests ", "schedule": "0 6 * * *", "timezone": "UTC"},
+    }
+    try:
+        with (
+            patch.object(session_module, "st", MagicMock(session_state={})),
+            patch(f"{MODULE}.TableGroup"),
+            patch(f"{MODULE}.TestSuite") as test_suite_cls,
+            patch(f"{MODULE}.save_new_table_group"),
+            patch(f"{MODULE}.record_table_group_created"),
+            patch(f"{MODULE}.record"),
+            patch(f"{MODULE}.submit_table_group_setup") as submit,
+            patch(f"{MODULE}.table_group_queries") as mock_queries,
+            patch(f"{MODULE}.session"),
+        ):
+            test_suite_cls.return_value.save.side_effect = IntegrityError(
+                "INSERT", {}, Exception('violates unique constraint "test_suites_name_unique"')
+            )
+            mock_queries.get_table_group_preview.return_value = None
+            from testgen.ui.views.connections import ConnectionsPage
+
+            page = ConnectionsPage.__new__(ConnectionsPage)
+            _, handlers = page.setup_data_configuration(PROJECT_CODE, CONNECTION_ID)
+            handlers["on_SaveTableGroupClicked_change"](payload)
+            data, _ = page.setup_data_configuration(PROJECT_CODE, CONNECTION_ID)
+    finally:
+        _current_session_wrapper.value = None
+
+    assert data["results"]["success"] is False
+    assert data["results"]["message"] == "A test suite or contract named Sales Tests already exists in this project."
+    session.rollback.assert_called_once()
+    submit.assert_not_called()
