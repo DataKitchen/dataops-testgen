@@ -119,7 +119,8 @@ def _summary(**overrides) -> TestRunSummary:
 
 def test_the_results_page_sends_a_contract_runs_version_block():
     summary = _summary(
-        version_number=3, version_frozen_at=datetime(2026, 10, 1, tzinfo=UTC), active_version_number=3
+        version_number=3, version_frozen_at=datetime(2026, 10, 1, tzinfo=UTC), active_version_number=3,
+        version_checked_in_force=True,
     )
     assert _render(SuiteType.CONTRACT, summary)["data"]["contract_version"] == {
         "value": "v3 active · Verification",
