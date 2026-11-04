@@ -41,8 +41,9 @@ UPDATE test_definitions td
  WHERE td.id = c.id;
 
 -- Value Match: the SQL list in baseline_value, ('A','it''s') or (1, 2), becomes comma-separated.
--- Single-quoted items are read with '' as '; unquoted items are split on commas and trimmed. A list
--- in neither form is left unchanged.
+-- Single-quoted items are read with '' as '; unquoted items, which SQL allows only as numbers, are split
+-- on commas and trimmed. A list in neither form is left unchanged, so a converted list such as (none)
+-- is not read again as a SQL list.
 WITH old_lists AS (
    SELECT id, BTRIM(SUBSTRING(BTRIM(baseline_value) FROM 2 FOR LENGTH(BTRIM(baseline_value)) - 2)) AS items
      FROM test_definitions
@@ -58,7 +59,7 @@ list_values AS (
    SELECT o.id, BTRIM(u.val), u.n
      FROM old_lists o
           CROSS JOIN LATERAL UNNEST(STRING_TO_ARRAY(o.items, ',')) WITH ORDINALITY AS u(val, n)
-    WHERE o.items ~ '^[^'',]*[^'',\s][^'',]*(?:,[^'',]*[^'',\s][^'',]*)*$'
+    WHERE o.items ~ '^\s*[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?\s*(?:,\s*[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?\s*)*$'
 ),
 converted AS (
    SELECT id,
