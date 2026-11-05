@@ -255,6 +255,24 @@ def test_a_canceled_run_stops_before_its_next_step_and_predicts_nothing(
     assert mocked_collaborators["test_suite"].last_complete_test_run_id is None
 
 
+def test_a_cancel_during_the_threshold_update_stops_before_the_definitions_are_read(
+    monkeypatch, mocked_collaborators, running_as_job
+):
+    def update_then_cancel(*_args, **_kwargs):
+        mocked_collaborators["job_session"].scalar.return_value = JobStatus.CANCEL_REQUESTED
+
+    monkeypatch.setattr(run_test_execution, "execute_db_queries", MagicMock(side_effect=update_then_cancel))
+    fetch_definitions = MagicMock(return_value=[])
+    monkeypatch.setattr(run_test_execution, "fetch_dict_from_db", fetch_definitions)
+    monkeypatch.setattr("testgen.settings.JOB_PAUSE_CHECK_INTERVAL", 0)
+
+    with pytest.raises(JobStopped) as stopped:
+        run_test_execution.run_test_execution(uuid4())
+
+    assert stopped.value.step == "prepare"
+    fetch_definitions.assert_not_called()
+
+
 def test_a_run_opens_its_own_database_session(monkeypatch, mocked_collaborators):
     # Quick start calls the run outside any session
     database_session = MagicMock()

@@ -202,11 +202,13 @@ class TestExecutionJob(StoppableJob[int]):
 
         if self.test_suite.suite_type == SuiteType.MONITOR:
             _sync_monitor_definitions(self.sql_generator, self.data_chars)
+            self.stop_if_requested()
 
         if self.writes_definitions:
             # Update the thresholds before retrieving the test definitions in the next steps
             LOG.info("Updating test thresholds based on history calculations")
             execute_db_queries([self.sql_generator.update_history_calc_thresholds()])
+            self.stop_if_requested()
 
         LOG.info("Retrieving active test definitions in test suite")
         test_defs = fetch_dict_from_db(*self.sql_generator.get_active_test_definitions())
@@ -223,6 +225,7 @@ class TestExecutionJob(StoppableJob[int]):
         self.test_run.set_progress("validation", "Running")
         self.test_run.save()
         get_current_session().commit()
+        self.stop_if_requested()
 
         self.valid_test_defs = run_test_validation(
             self.sql_generator,

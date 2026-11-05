@@ -7,7 +7,6 @@ from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.database.database_service import (
     cache_target_tables,
     execute_db_queries,
-    fetch_dict_from_db,
     write_to_app_db,
 )
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
@@ -29,13 +28,14 @@ def run_data_chars_refresh(
 ) -> list[ColumnChars]:
     """Refresh a table group's data catalog from its target and return the columns written.
 
-    :param job: The job refreshing it, which stops the counts when it is asked to stop.
+    :param job: The job refreshing it, which stops the refresh's queries when it is asked to stop.
     :param count_rows: Count each table's rows. Without it the catalog gets the tables and columns
         only, and no table's data is read.
     """
     sql_generator = RefreshDataCharsSQL(connection, table_group)
 
     LOG.info("Getting DDF for table group")
+    schema_error = None
     try:
         if sql_generator.flavor_service.metadata_via_api:
             # Flavor returns column metadata directly (e.g., Salesforce Data 360
@@ -46,10 +46,14 @@ def run_data_chars_refresh(
             api_columns = sql_generator.flavor_service.get_schema_columns(params, table_group.table_group_schema) or []
             data_chars = sql_generator.filter_schema_columns(api_columns)
         else:
-            rows = fetch_dict_from_db(*sql_generator.get_schema_ddf(), use_target_db=True)
+            # Through the job, so a cancel stops the read rather than waiting it out.
+            rows, errors = job.fetch_threaded([sql_generator.get_schema_ddf()], use_target_db=True, max_threads=1)
+            schema_error = errors.get(0)
             data_chars = [ColumnChars(**row) for row in rows]
     except Exception as e:
         raise RuntimeError(f"Error refreshing columns for data catalog. {get_exception_message(e)}") from e
+    if schema_error:
+        raise RuntimeError(f"Error refreshing columns for data catalog. {schema_error}")
 
     if data_chars:
         distinct_tables = {column.table_name for column in data_chars}
