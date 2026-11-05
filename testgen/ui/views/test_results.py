@@ -78,6 +78,7 @@ EDIT_TEST_KEY = "tr:edit_test"
 CONTRACT_VERSION_ERRORS = (FrozenVersionError, RemovedInDraftError)
 CONTRACT_VERSION_MESSAGE = "This contract's tests cannot be changed from this run."
 VALIDATE_RESULT_KEY = "tr:validate_result"
+CURRENT_VALUES_KEY = "tr:current_values"
 ISSUE_REPORT_KEY = "tr:issue_report"
 NOTES_DIALOG_KEY = "tr:notes_dialog"
 
@@ -497,6 +498,14 @@ class TestResultsPage(Page):
                     "message": f"Test validation failed with error: {e}",
                 }
 
+        @with_database_session
+        def on_use_current_values(test_def: dict) -> None:
+            from testgen.ui.views.test_definitions import use_current_values
+
+            if session.auth.user_has_permission("edit"):
+                table_group = get_table_group_minimal(test_suite.table_groups_id)
+                st.session_state[CURRENT_VALUES_KEY] = use_current_values(test_def, table_group)
+
         def on_edit_test_closed(*_) -> None:
             st.session_state.pop(EDIT_TEST_KEY, None)
             st.session_state.pop(VALIDATE_RESULT_KEY, None)
@@ -594,6 +603,7 @@ class TestResultsPage(Page):
                 "source_data": make_json_safe(source_data) if source_data else None,
                 "edit_test": make_json_safe(edit_test) if edit_test else None,
                 "validate_result": st.session_state.pop(VALIDATE_RESULT_KEY, None),
+                "current_values": st.session_state.pop(CURRENT_VALUES_KEY, None),
                 "notes_dialog": notes_dialog,
                 "page": current_page,
                 "total_count": total_count,
@@ -621,6 +631,7 @@ class TestResultsPage(Page):
             on_EditTestSaved_change=on_edit_test_saved,
             on_EditTestClosed_change=on_edit_test_closed,
             on_ValidateTest_change=on_validate_test,
+            on_UseCurrentValues_change=on_use_current_values,
             on_IssueReportClicked_change=on_issue_report_clicked,
             on_ScoreRefreshClicked_change=on_score_refresh,
             on_ExportAll_change=on_export_all,

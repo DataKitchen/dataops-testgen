@@ -15,6 +15,7 @@ from uuid import UUID
 
 from sqlalchemy import select, text
 
+from testgen.common.clean_sql import parse_value_list
 from testgen.common.contract_document import physical_column_names, physical_name
 from testgen.common.enums import MANAGED_TEST_TYPES
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, SqlFlavorCode
@@ -34,7 +35,6 @@ from testgen.common.odcs.quality_rules import (
     declaration_marker,
     drop_field,
     is_declaration_marker,
-    lov_values,
     project_rule,
     property_declaration,
     rename_argument_columns,
@@ -256,7 +256,7 @@ def _apply_enum(prop: dict[str, Any], term: TestDefinition, claimed: dict[tuple[
     The schema's ``enum`` is an array of ``{"value": ...}`` objects, not a list of bare
     strings, so the stored literal is parsed into individual values first.
     """
-    values = lov_values(term.baseline_value) if term.baseline_value else None
+    values = parse_value_list(term.baseline_value) or None
     if values:
         _declare(prop, {"enum": [{"value": value} for value in values]}, claimed)
 

@@ -179,16 +179,13 @@ const TestDefinitions = (/** @type object */ props) => {
     const testTypeFilter = van.state(null);
     const flaggedFilter = van.state(null);
 
-    // Initialize filters from Python query params (runs once on mount)
-    const filtersInitialized = van.state(false);
+    // Follow the query params' filters: on mount, and when a link on this page navigates to other filters.
     van.derive(() => {
-        if (filtersInitialized.val) return;
         const cf = currentFilters.val;
         tableFilter.val = cf.table_name ?? null;
         columnFilter.val = cf.column_name ?? null;
         testTypeFilter.val = cf.test_type ?? null;
         flaggedFilter.val = cf.flagged ?? null;
-        filtersInitialized.val = true;
     });
 
     const columnFilterOptions = van.derive(() => {
@@ -649,6 +646,7 @@ const TestDefinitions = (/** @type object */ props) => {
             open: addDialogOpen,
             info: addDialogInfo,
             validateResult: props.validate_result,
+            currentValues: props.current_values,
             onClose: () => {
                 addDialogOpen.val = false;
                 emit('AddDialogClosed', {});
@@ -659,6 +657,7 @@ const TestDefinitions = (/** @type object */ props) => {
             open: editDialogOpen,
             info: editDialogInfo,
             validateResult: props.validate_result,
+            currentValues: props.current_values,
             onClose: () => {
                 editDialogOpen.val = false;
                 emit('EditDialogClosed', {});
@@ -962,6 +961,15 @@ const ContractSection = (props, emit, rules) => {
     const isContract = van.derive(() => !!contract.val);
     const field = (key) => van.derive(() => contract.val?.[key] ?? null);
     const activeTab = van.state(Math.max(0, CONTRACT_TABS.indexOf(contract.rawVal?.tab)));
+    // The metadata is sent only while its tab is open, so the last copy keeps its forms open behind the other tab
+    const metadata = van.state(null);
+    van.derive(() => {
+        if (!contract.val) {
+            metadata.val = null;
+        } else if (contract.val.metadata) {
+            metadata.val = contract.val.metadata;
+        }
+    });
 
     van.derive(() => {
         const index = CONTRACT_TABS.indexOf(contract.val?.tab);
@@ -1030,9 +1038,11 @@ const ContractSection = (props, emit, rules) => {
                 Tab(
                     { label: 'Contract Metadata' },
                     ContractMetadata({
-                        data: field('metadata'),
+                        data: metadata,
                         onSaveDocument: (text) => emit('ContractSaveDocument', { payload: { text } }),
                         onSaveTables: (tables) => emit('ContractSaveTables', { payload: { tables } }),
+                        onSaveSection: (section, values) => emit('ContractSaveSection', { payload: { section, values } }),
+                        emit,
                     }),
                 ),
             ),
@@ -1155,7 +1165,20 @@ const KeyHint = (key, action) => {
 };
 
 // Faceted add-test picker dialog (step 1) reusing the param form (step 2)
-const AddDialogComponent = ({ open, info, validateResult, onClose }, emit) => {
+// Writes the list a Use Current Values result carries into the form, once per result.
+const applyCurrentValues = (currentValues, formValues) => {
+    let appliedTimestamp = null;
+    van.derive(() => {
+        const result = getValue(currentValues);
+        if (!result || result.timestamp === appliedTimestamp) return;
+        appliedTimestamp = result.timestamp;
+        if (result.value_list != null && formValues.rawVal) {
+            formValues.val = { ...formValues.rawVal, baseline_value: result.value_list };
+        }
+    });
+};
+
+const AddDialogComponent = ({ open, info, validateResult, currentValues, onClose }, emit) => {
     const { div, span, input, label, h4 } = van.tags;
 
     // Types not offered for new tests stay in test_types so saved tests of those types can still be edited
@@ -1180,6 +1203,7 @@ const AddDialogComponent = ({ open, info, validateResult, onClose }, emit) => {
     const step = van.state(1);
     const selectedTestType = van.state(null);
     const formValues = van.state({});
+    applyCurrentValues(currentValues, formValues);
     // Hoisted so the active form tab survives the form re-render on each field change.
     const formActiveTab = van.state(0);
 
@@ -1580,10 +1604,12 @@ const AddDialogComponent = ({ open, info, validateResult, onClose }, emit) => {
         qualifiesTableRefsWithSchema: qualifiesTableRefsWithSchema.rawVal,
         schemaLabel: schemaLabel.rawVal,
         validateResult: getValue(validateResult),
+        currentValues: getValue(currentValues),
         mode: 'add',
         activeTab: formActiveTab,
         onFormChange: (changes) => { formValues.val = { ...formValues.rawVal, ...changes }; },
         onValidate: () => emit('ValidateTest', { payload: formValues.rawVal }),
+        onUseCurrentValues: () => emit('UseCurrentValues', { payload: formValues.rawVal }),
         onSave: () => emit('AddTestSaved', { payload: formValues.rawVal }),
         onBack: () => { step.val = 1; selectedTestType.val = null; },
         onCancel: onClose,
@@ -1598,7 +1624,7 @@ const AddDialogComponent = ({ open, info, validateResult, onClose }, emit) => {
 };
 
 // Edit dialog — mounted once, state persists across Python reruns
-const EditDialogComponent = ({ open, info, validateResult: validateResultProp, onClose }, emit) => {
+const EditDialogComponent = ({ open, info, validateResult: validateResultProp, currentValues, onClose }, emit) => {
     const dialogInfo = van.derive(() => getValue(info) ?? null);
     const tableColumns = van.derive(() => dialogInfo.val?.table_columns ?? []);
     const testSuite = van.derive(() => dialogInfo.val?.test_suite ?? {});
@@ -1607,6 +1633,7 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
     const validateResult = van.derive(() => getValue(validateResultProp) ?? null);
 
     const formValues = van.state(null);
+    applyCurrentValues(currentValues, formValues);
     // Hoisted so the active form tab survives the form re-render on each field change.
     const formActiveTab = van.state(0);
 
@@ -1656,12 +1683,14 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
                     qualifiesTableRefsWithSchema: qualifiesTableRefsWithSchema.rawVal,
                     schemaLabel: schemaLabel.rawVal,
                     validateResult: vr,
+                    currentValues: getValue(currentValues),
                     mode: 'edit',
                     activeTab: formActiveTab,
                     onFormChange: (changes) => {
                         formValues.val = { ...formValues.rawVal, ...changes };
                     },
                     onValidate: () => emit('ValidateTest', { payload: formValues.rawVal }),
+                    onUseCurrentValues: () => emit('UseCurrentValues', { payload: formValues.rawVal }),
                     onSave: () => emit('EditTestSaved', { payload: formValues.rawVal }),
                     onCancel: onClose,
                 }),
@@ -1678,7 +1707,7 @@ const TabLabel = (text, invalid) => span(
 );
 
 // Shared form content for add/edit dialogs
-const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResult, mode, qualifiesTableRefsWithSchema, schemaLabel, activeTab, onFormChange, onValidate, onSave, onCancel, onBack }) => {
+const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResult, currentValues, mode, qualifiesTableRefsWithSchema, schemaLabel, activeTab, onFormChange, onValidate, onUseCurrentValues, onSave, onCancel, onBack }) => {
     const testScope = formValues.test_scope ?? 'column';
     const testType = formValues.test_type ?? '';
     const isValidatable = ['Condition_Flag', 'CUSTOM', 'SQL_Metric'].includes(testType);
@@ -1931,6 +1960,20 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                         qualifiesTableRefsWithSchema,
                         hideHeader: true,
                         excludeColumns: excludeParamColumns,
+                        fieldFooters: testType === 'LOV_All' ? {
+                            baseline_value: div(
+                                { class: 'flex-column fx-align-flex-start fx-gap-2' },
+                                Button({
+                                    type: 'stroked',
+                                    color: 'basic',
+                                    label: 'Use Current Values',
+                                    width: 'auto',
+                                    disabled: !formValues.column_name,
+                                    onclick: onUseCurrentValues,
+                                }),
+                                currentValues?.message ? Alert({ type: 'warn' }, currentValues.message) : null,
+                            ),
+                        } : undefined,
                         onChange: (changes, { valid }) => {
                             paramsValid.val = valid;
                             if (Object.keys(changes).length === 0) return;

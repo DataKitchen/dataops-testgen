@@ -7,6 +7,7 @@ orders; it does not filter: a key the order does not name follows the named ones
 order it arrived in, rather than being dropped.
 """
 
+import re
 from typing import Any
 
 import yaml
@@ -191,3 +192,26 @@ def serialize_document(document: dict[str, Any]) -> str:
         default_flow_style=False,
         allow_unicode=True,
     )
+
+
+def with_root_scalar(text: str, key: str, value: str) -> str:
+    """``text`` with the root ``key`` set to the plain scalar ``value``, every other byte unchanged.
+
+    A root ``key`` line already in ``text`` is replaced in place. Otherwise the line goes before the first
+    root key that ``ROOT_KEY_ORDER`` places after ``key``, or at the end when there is none.
+    """
+    line = f"{key}: {value}\n"
+    lines = text.splitlines(keepends=True)
+    later = set(ROOT_KEY_ORDER[ROOT_KEY_ORDER.index(key) + 1:])
+    insert_at = len(lines)
+    for index, existing in enumerate(lines):
+        root_key = re.match(r"([A-Za-z_][\w-]*):(\s|$)", existing)
+        if not root_key:
+            continue
+        if root_key.group(1) == key:
+            return "".join([*lines[:index], line, *lines[index + 1:]])
+        if root_key.group(1) in later and insert_at == len(lines):
+            insert_at = index
+    if insert_at == len(lines) and lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    return "".join([*lines[:insert_at], line, *lines[insert_at:]])

@@ -9,21 +9,24 @@ WITH target_table AS (
      WHERE RAND() <= 1.0 / {PROFILE_SAMPLE_RATIO}
 -- TG-ENDIF
 ),
+-- Grouped by bytes: comparisons ignore trailing blanks whatever the collation, and a list of expected
+-- values built from merged values would leave the others out
 ranked_vals AS (
-  SELECT "{COL_NAME}" AS val,
+  SELECT MIN("{COL_NAME}") AS val,
          COUNT(*) AS ct,
-         ROW_NUMBER() OVER (ORDER BY CASE WHEN "{COL_NAME}" > ' ' THEN 0 ELSE 1 END, COUNT(*) DESC, COLLATE("{COL_NAME}", 'case_sensitive')) AS rn,
+         ROW_NUMBER() OVER (ORDER BY CASE WHEN MIN("{COL_NAME}") > ' ' THEN 0 ELSE 1 END, COUNT(*) DESC,
+                                     COLLATE(MIN("{COL_NAME}"), 'case_sensitive'), OCTET_LENGTH(MIN("{COL_NAME}"))) AS rn,
          SUM(COUNT(*)) OVER () AS sample_value_ct
     FROM target_table
    WHERE "{COL_NAME}" IS NOT NULL
-   GROUP BY "{COL_NAME}"
+   GROUP BY TO_VARBYTE(CAST("{COL_NAME}" AS VARCHAR(65535)), 'utf8')
 ),
 grouped_vals AS (
-  SELECT CASE WHEN rn <= 10 THEN val END AS top_val, ct, rn, sample_value_ct
+  SELECT CASE WHEN rn <= 10 THEN val END AS top_val, CASE WHEN rn <= 10 THEN rn END AS top_rn, ct, rn, sample_value_ct
     FROM ranked_vals
     WHERE val > ' '
 )
-SELECT top_val AS value,
+SELECT MIN(top_val) AS value,
        SUM(ct) AS value_ct,
        MIN(rn) AS value_rank,
        CASE WHEN MIN(rn) > 10 THEN COUNT(*) END AS other_distinct_ct,
@@ -34,5 +37,6 @@ SELECT top_val AS value,
                     FROM target_table
                    WHERE "{COL_NAME}" IS NOT NULL ) distinct_vals ) AS distinct_value_hash
   FROM grouped_vals
- GROUP BY top_val
+ -- By rank, not by value: grouping the text would merge the byte-distinct values again
+ GROUP BY top_rn
  ORDER BY 3;

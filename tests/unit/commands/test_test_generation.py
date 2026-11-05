@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import duckdb
 import pytest
 
 from testgen.commands.test_generation import (
@@ -19,7 +20,9 @@ from testgen.commands.test_generation import (
     run_test_generation_and_report,
 )
 from testgen.common.enums import JobSource, JobStatus, RegenerationGroup, SuiteType
+from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.suite_version import FrozenVersionError
+from testgen.common.read_file import read_template_yaml_file
 from tests.unit.sql_assertions import conjuncts, equality_conjunct
 
 MODULE = "testgen.commands.test_generation"
@@ -771,6 +774,23 @@ def test_a_type_declaring_a_sampled_measure_is_not_selected_on_a_sampled_column(
     assert "(general_type = 'A' AND value_ct > 0\n) AND (sample_ratio IS NULL OR value_ct = 0)" in _selection_query(
         ["lead_space_ct"]
     )
+
+
+@pytest.mark.parametrize(
+    ("sample_ratio", "selected"),
+    [(None, True), (0.1, False)],
+)
+def test_value_match_is_generated_only_on_a_column_profiled_without_sampling(sample_ratio, selected):
+    value_match = read_template_yaml_file("test_types_LOV_Match.yaml", "dbsetup_test_types")["test_types"]
+    criteria = ProfileResult.apply_exact_measures(value_match["selection_criteria"], value_match["exact_measures"])
+    profile = duckdb.connect()
+    profile.execute(
+        "CREATE TABLE p AS SELECT 'Code' AS functional_data_type, '{}' AS frequent_values,"
+        " 3 AS distinct_value_ct, 100 AS value_ct, ?::DOUBLE AS sample_ratio",
+        [sample_ratio],
+    )
+
+    assert profile.execute(f"SELECT COUNT(*) FROM p WHERE {criteria}").fetchone()[0] == int(selected)
 
 
 def test_a_type_declaring_nothing_keeps_its_criteria():

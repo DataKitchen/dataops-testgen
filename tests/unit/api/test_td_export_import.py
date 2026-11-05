@@ -2421,3 +2421,52 @@ def test_import_409_body_matches_the_declared_model():
     assert _response_schema_ref("/api/v1/test-suites/{test_suite_id}/test-definition-import", "post", "409") == {
         "ErrorResponse"
     }
+
+
+_VALUE_MATCH = {"LOV_Match": TestType(test_type="LOV_Match", test_scope="column")}
+
+
+class Test_import_value_lists:
+
+    def _import(self, column_catalog, general_type, baseline_value, mode=ImportMode.preview):
+        column_catalog.select_general_types.return_value = {("t1", "c1"): general_type}
+        td = _make_import_td(test_type="LOV_Match", table_name="t1", baseline_value=baseline_value)
+        with (
+            patch(f"{SERVICE_MODULE}.get_current_session") as mock_session_fn,
+            patch(f"{SERVICE_MODULE}.TableGroup") as mock_tg_cls,
+            patch(f"{SERVICE_MODULE}.DataTable") as mock_dt_cls,
+            patch(f"{SERVICE_MODULE}._load_test_types", return_value=_VALUE_MATCH),
+            _patched_td_class() as mock_td_cls,
+        ):
+            session = MagicMock()
+            mock_session_fn.return_value = session
+            session.execute.return_value.all.return_value = []
+            session.scalar.return_value = None
+            mock_tg_cls.get.return_value = _make_table_group()
+            mock_dt_cls.select_table_names.return_value = ["t1"]
+            created_td = MagicMock(id=uuid4())
+            mock_td_cls.return_value = created_td
+
+            from testgen.common.test_definition_export_import_service import import_definitions
+
+            result = import_definitions(
+                _make_test_suite(), _make_config(mode=mode, on_new=OnNew.create), _make_payload(td)
+            )
+        return result, created_td
+
+    @pytest.mark.parametrize(
+        ("general_type", "baseline_value", "stored"),
+        [("N", "1, 2,1.0", "1,2"), ("A", "a,A,a", "a,A")],
+    )
+    def test_a_list_is_created_without_duplicates(self, column_catalog, general_type, baseline_value, stored):
+        result, created_td = self._import(column_catalog, general_type, baseline_value, mode=ImportMode.apply)
+
+        assert result.summary.created == 1
+        assert created_td.baseline_value == stored
+
+    def test_a_non_number_listed_for_a_numeric_column_is_skipped(self, column_catalog):
+        result, _ = self._import(column_catalog, "N", "1,two")
+
+        assert _reasons(result, ImportAction.skip) == {ImportReason.invalid_field}
+        [item] = result.items
+        assert item.tds[0].errors == {"baseline_value": "contains a value that is not a number: two"}

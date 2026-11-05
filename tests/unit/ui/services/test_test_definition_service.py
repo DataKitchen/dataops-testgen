@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 
 from testgen.common.enums import SuiteType
+from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.ui.services.test_definition_service import (
     MANAGED_ADD_MESSAGE,
@@ -108,8 +109,8 @@ def test_edit_changing_a_managed_test_to_another_type_is_refused():
 
 
 UNDECLARED_MESSAGE = (
-    "The contract does not declare the table customers. Add it under Declared Tables on the Contract Metadata tab, "
-    "or choose a declared table."
+    "The contract does not declare the table customers. Add it under Schema on the Contract Metadata tab, or choose "
+    "a declared table."
 )
 
 
@@ -175,3 +176,45 @@ def test_dialog_offers_the_declared_tables_and_the_edited_tests_table_on_a_contr
             "orders",
             "payments",
         ]
+
+
+LOV_ALL = TestType(
+    test_type="LOV_All",
+    test_name_short="Value Match All",
+    test_scope="column",
+    default_parm_columns="baseline_value,threshold_value",
+    default_parm_prompts="List of Expected Values,Threshold Mismatch Count",
+    default_parm_required="Y,N",
+)
+
+
+def _save_on_catalog_column(definition: TestDefinition, general_type: str) -> tuple[str | None, bool]:
+    with patch.object(DataColumnChars, "select_general_types", return_value={("t1", "c1"): general_type}):
+        return _save(definition, LOV_ALL)
+
+
+@pytest.mark.parametrize(
+    ("general_type", "entered", "stored"),
+    [
+        ("N", "1.5, 2,1.50", "1.5,2"),
+        ("A", "a,A,a,a b", "a,A,a b"),
+    ],
+)
+def test_value_list_is_saved_without_duplicates(general_type, entered, stored):
+    definition = TestDefinition(
+        test_type="LOV_All", table_groups_id=uuid4(), table_name="t1", column_name="c1", baseline_value=entered
+    )
+
+    assert _save_on_catalog_column(definition, general_type) == (None, True)
+    assert definition.baseline_value == stored
+
+
+def test_value_list_for_a_numeric_column_is_refused_when_it_holds_a_non_number():
+    definition = TestDefinition(
+        test_type="LOV_All", table_groups_id=uuid4(), table_name="t1", column_name="c1", baseline_value="1,x"
+    )
+
+    assert _save_on_catalog_column(definition, "N") == (
+        "The test could not be saved. List of Expected Values: contains a value that is not a number: x.",
+        False,
+    )

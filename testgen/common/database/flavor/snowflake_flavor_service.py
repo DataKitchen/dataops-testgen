@@ -21,6 +21,9 @@ class SnowflakeFlavorService(FlavorService):
     float_types = frozenset({"float", "float4", "float8", "double", "double precision", "real"})
     wide_decimal_type = "NUMBER(38,0)"
 
+    def exact_text(self, text_expr: str) -> str:
+        return f"TO_BINARY({text_expr}, 'UTF-8')"
+
     def hex_to_wide_decimal(self, hex_expr: str) -> str:
         return f"CAST(TO_NUMBER(UPPER({hex_expr}), 'XXXXXXXXXXXXXX') AS {self.wide_decimal_type})"
 

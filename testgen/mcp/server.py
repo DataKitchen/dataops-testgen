@@ -448,7 +448,12 @@ def build_mcp_server(
         list_schedules,
         update_schedule,
     )
-    from testgen.mcp.tools.source_data import get_source_data, get_source_data_query, get_table_sample
+    from testgen.mcp.tools.source_data import (
+        get_current_values,
+        get_source_data,
+        get_source_data_query,
+        get_table_sample,
+    )
     from testgen.mcp.tools.table_groups import (
         create_table_group,
         delete_table_group,
@@ -553,6 +558,7 @@ def build_mcp_server(
     tool_wrapper(generate_create_table_script)
     if not env_hides_source_only_tools:
         tool_wrapper(get_table_sample)
+        tool_wrapper(get_current_values)
     tool_wrapper(list_columns)
     tool_wrapper(list_profiling_summaries)
     tool_wrapper(list_profiling_runs)

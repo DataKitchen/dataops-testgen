@@ -12,12 +12,18 @@ import pandas as pd
 from sqlalchemy import text
 
 from testgen.commands.run_test_validation import ColumnLookup
-from testgen.common.clean_sql import concat_columns, null_if_empty, parse_value_list, strip_trailing_semicolons
+from testgen.common.clean_sql import (
+    NonNumericValueError,
+    concat_columns,
+    null_if_empty,
+    parse_value_list,
+    strip_trailing_semicolons,
+)
 from testgen.common.database.column_chars import ColumnChars
-from testgen.common.database.database_service import get_flavor_service, replace_params
+from testgen.common.database.database_service import FinalParam, get_flavor_service, replace_params
 from testgen.common.database.flavor.flavor_service import FlavorService
 from testgen.common.date_service import parse_fuzzy_date
-from testgen.common.enums import TEST_SUITE_TYPES
+from testgen.common.enums import TEST_SUITE_TYPES, VALUE_LIST_TEST_TYPES
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection, SQLFlavor
 from testgen.common.models.data_column import DataColumnChars
@@ -110,6 +116,8 @@ def fetch_test_result_source_data(
             return SourceDataResult(
                 "ND", "Data that violates test criteria is not present in the current dataset.", lookup_query, None,
             )
+    except NonNumericValueError as e:
+        return SourceDataResult("ERR", str(e), None, None)
     except Exception as e:
         LOG.exception("Source data lookup for test encountered an error.")
         return SourceDataResult("ERR", f"Source data lookup encountered an error:\n\n{e.args[0]}", lookup_query, None)
@@ -219,6 +227,7 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
     # The match schema is run-scoped, so the result row records what the run compared against.
     # Callers resolving a test definition without a result row fall back to its stored value.
     run_parameters = dict_from_kv(issue_data.get("input_parameters"))
+    column, key_column = _catalog_columns(flavor_service, issue_data, test_definition)
 
     params = {
         "TARGET_SCHEMA": issue_data["schema_name"],
@@ -228,6 +237,7 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         "COLUMN_VALUE": flavor_service.text_value(
             f"{flavor_service.quote_character}{issue_data['column_names'] or ''}{flavor_service.quote_character}",
             issue_data["column_type"],
+            column.db_data_type if column else None,
         ),
         "COLUMN_NUM": flavor_service.numeric_value(
             f"{flavor_service.quote_character}{issue_data['column_names'] or ''}{flavor_service.quote_character}",
@@ -270,22 +280,32 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         "LIMIT": limit,
         "LIMIT_2": int(limit / 2),
         "LIMIT_4": int(limit / 4),
-        **_value_hash_params(flavor_service, issue_data, test_definition),
+        **flavor_service.value_hash_params(column, key_column),
         # After every user-supplied parameter, since any of them may contain {DATA_SCHEMA}
         "DATA_SCHEMA": issue_data["schema_name"],
-        # These two go last, so their values are never expanded by a later substitution
-        "BASELINE_VALUE_LIST": flavor_service.string_literal_list(parse_value_list(test_definition.baseline_value)),
-        "BASELINE_VALUE_LITERAL": flavor_service.string_literal_or_null(test_definition.baseline_value),
+        # Substituted last, in one pass, so placeholder text in a listed value is never expanded
+        "BASELINE_VALUE_LIST": FinalParam(
+            flavor_service.string_literal_list(parse_value_list(test_definition.baseline_value))
+        ),
+        "BASELINE_VALUE_LITERAL": FinalParam(flavor_service.string_literal_or_null(test_definition.baseline_value)),
     }
+    if test_definition.test_type in VALUE_LIST_TEST_TYPES:
+        value_list_params = flavor_service.value_list_params(
+            f"{flavor_service.quote_character}{issue_data['column_names'] or ''}{flavor_service.quote_character}",
+            column,
+            parse_value_list(test_definition.baseline_value),
+        )
+        params.update({key: FinalParam(value) for key, value in value_list_params.items()})
 
     lookup_query = replace_params(lookup_data.lookup_query, params)
     lookup_query = replace_templated_functions(lookup_query, lookup_data.sql_flavor)
     return lookup_query
 
 
-def _value_hash_params(flavor_service: FlavorService, issue_data: dict, test_definition: TestDefinition) -> dict:
-    """Value-hash parameters for a test's column and key column, matched in the catalog of its table as test
-    execution matches them."""
+def _catalog_columns(
+    flavor_service: FlavorService, issue_data: dict, test_definition: TestDefinition
+) -> tuple[ColumnChars | None, ColumnChars | None]:
+    """A test's column and key column in the catalog of its table, matched as test execution matches them."""
     columns = ColumnLookup(
         DataTable.list_column_chars(issue_data["table_groups_id"], DataColumnChars.table_name == issue_data["table_name"])
     )
@@ -295,7 +315,7 @@ def _value_hash_params(flavor_service: FlavorService, issue_data: dict, test_def
             return None
         return columns.find(issue_data["schema_name"], issue_data["table_name"], name.strip(f" {flavor_service.quote_character}"))
 
-    return flavor_service.value_hash_params(find(issue_data["column_names"]), find(test_definition.groupby_names))
+    return find(issue_data["column_names"]), find(test_definition.groupby_names)
 
 
 def _build_query_custom(issue_data: dict) -> str | None:
