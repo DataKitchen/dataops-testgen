@@ -1,4 +1,5 @@
 """Unit tests for run_keyed_worker_pool / WorkerOutcome."""
+import contextvars
 import threading
 import time
 
@@ -221,3 +222,14 @@ def test_an_error_raised_by_on_idle_leaves_the_iterator_and_stops_the_pool():
 
     # The item in flight finished; nothing after it was pulled.
     assert processed == [0]
+
+
+def test_workers_see_the_callers_context():
+    request = contextvars.ContextVar("request", default=None)
+    token = request.set("job-1")
+    try:
+        outcomes = list(run_keyed_worker_pool([(i, i) for i in range(4)], lambda _arg: request.get(), max_threads=2))
+    finally:
+        request.reset(token)
+
+    assert {o.result for o in outcomes} == {"job-1"}

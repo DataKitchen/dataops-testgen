@@ -1,4 +1,5 @@
 import concurrent.futures
+import contextvars
 import csv
 import importlib
 import logging
@@ -37,7 +38,7 @@ from testgen.common.database.flavor.flavor_service import (
     SQLFlavor,
     resolve_connection_params,
 )
-from testgen.common.database.statement_cancel import track_statements
+from testgen.common.database.statement_cancel import cancel_statements, track_statements
 from testgen.common.read_file import get_template_files
 from testgen.common.standalone_postgres import get_connection_string as get_standalone_connection_string
 from testgen.common.standalone_postgres import is_standalone_mode
@@ -124,6 +125,17 @@ def cache_target_tables(table_names: Iterable[str]) -> None:
     params = resolve_connection_params(target_db_params.connection)
     with _init_target_db_connection() as connection:
         flavor_service.cache_tables(connection, params, target_db_params.declarations, table_names)
+
+
+def cancel_target_statements() -> int:
+    """Cancel the statements running on the target engine, and refuse any new one on it.
+
+    A job's target engine is replaced when the job sets new target parameters, so the refusal
+    lasts as long as the engine it was made on.
+
+    :returns: How many statements were asked to cancel.
+    """
+    return cancel_statements(engine_cache.target_db) if engine_cache.target_db is not None else 0
 
 
 def get_flavor_service(flavor: SQLFlavor) -> FlavorService:
@@ -362,7 +374,9 @@ def run_keyed_worker_pool(
             outcomes.put(done)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
-        workers = [executor.submit(worker) for _ in range(max_threads)]
+        # Each worker runs in a copy of the caller's context, so what the caller set there -- the job
+        # it runs for -- reaches the code a worker runs.
+        workers = [executor.submit(contextvars.copy_context().run, worker) for _ in range(max_threads)]
         still_working = len(workers)
         try:
             while still_working:

@@ -1,13 +1,11 @@
-"""Tracks the target-database statements this process is running, so a stopping job can cancel them.
-
-A job process runs one job, and every target statement goes through the process's one target
-engine, so tracking per process is tracking per job.
-"""
+"""Tracks the statements an engine is running, so a stopping job can cancel them."""
 
 import logging
 import threading
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
+from weakref import WeakKeyDictionary
 
 from sqlalchemy import event
 from sqlalchemy.engine import Connection, Engine, ExceptionContext
@@ -17,9 +15,11 @@ if TYPE_CHECKING:
 
 LOG = logging.getLogger("testgen")
 
+T = TypeVar("T")
+
 
 class StatementsCanceled(Exception):
-    """A target statement was refused because this process canceled its statements."""
+    """A statement was refused because its engine's statements were canceled."""
 
     def __init__(self) -> None:
         super().__init__("The run was stopped before this query started")
@@ -34,70 +34,84 @@ class RunningStatement:
     cursor: Any
 
 
-_lock = threading.Lock()
-_running: dict[int, tuple[RunningStatement, "FlavorService"]] = {}
-_canceled = threading.Event()
+class StatementTracker:
+    """The statements one engine is running, and whether they were canceled.
 
-
-def track_statements(engine: Engine, flavor_service: "FlavorService") -> None:
-    """Keep a record of the statements ``engine`` runs, for :func:`cancel_target_statements`.
-
-    Once statements were canceled, the engine refuses to start another.
+    Each thread runs one statement at a time, so the running statements are kept by thread: the
+    error event does not always carry the cursor. Once canceled, the engine refuses to start
+    another statement, on every thread.
     """
 
-    @event.listens_for(engine, "before_cursor_execute")
-    def _before(conn: Connection, cursor: Any, *_args: Any) -> None:
-        if _canceled.is_set():
+    def __init__(self, engine: Engine, flavor_service: "FlavorService") -> None:
+        self._flavor_service = flavor_service
+        self._lock = threading.Lock()
+        self._running: dict[int, RunningStatement] = {}
+        self._canceled = threading.Event()
+        event.listen(engine, "before_cursor_execute", self._before)
+        event.listen(engine, "after_cursor_execute", self._forget)
+        event.listen(engine, "handle_error", self._on_error)
+
+    def cancel(self) -> int:
+        """Cancel every statement the engine is running, and refuse any new one.
+
+        Each connection type cancels in its own way; one that cannot leaves its statements to
+        finish.
+
+        :returns: How many statements were asked to cancel.
+        """
+        self._canceled.set()
+        with self._lock:
+            running = list(self._running.values())
+        if not running:
+            return 0
+        asked = self._flavor_service.cancel_statements(running)
+        LOG.info("Canceled %d of %d running queries on the data source", asked, len(running))
+        return asked
+
+    def _before(self, conn: Connection, cursor: Any, *_args: Any) -> None:
+        if self._canceled.is_set():
             raise StatementsCanceled
-        with _lock:
-            _running[threading.get_ident()] = (
-                RunningStatement(conn.engine, conn.connection.dbapi_connection, cursor),
-                flavor_service,
-            )
+        with self._lock:
+            self._running[threading.get_ident()] = RunningStatement(conn.engine, conn.connection.dbapi_connection, cursor)
 
-    # Keyed by thread: a thread runs one statement at a time, and the error event does not always
-    # carry the cursor.
-    @event.listens_for(engine, "after_cursor_execute")
-    def _after(*_args: Any) -> None:
-        with _lock:
-            _running.pop(threading.get_ident(), None)
+    def _forget(self, *_args: Any) -> None:
+        with self._lock:
+            self._running.pop(threading.get_ident(), None)
 
-    @event.listens_for(engine, "handle_error")
-    def _error(_context: ExceptionContext) -> None:
-        with _lock:
-            _running.pop(threading.get_ident(), None)
+    def _on_error(self, _context: ExceptionContext) -> None:
+        self._forget()
 
 
-def cancel_target_statements() -> int:
-    """Cancel every target statement this process is running, and refuse any new one.
+_trackers: "WeakKeyDictionary[Engine, StatementTracker]" = WeakKeyDictionary()
 
-    Each connection type cancels in its own way; one that cannot leaves its statements to finish.
-    A failure to cancel one statement is logged and does not stop the others.
+
+def track_statements(engine: Engine, flavor_service: "FlavorService") -> StatementTracker:
+    """Keep a record of the statements ``engine`` runs, for :func:`cancel_statements`."""
+    tracker = StatementTracker(engine, flavor_service)
+    _trackers[engine] = tracker
+    return tracker
+
+
+def cancel_statements(engine: Engine) -> int:
+    """Cancel the statements ``engine`` is running and refuse any new one, if it is tracked.
 
     :returns: How many statements were asked to cancel.
     """
-    _canceled.set()
-    with _lock:
-        running = list(_running.values())
+    tracker = _trackers.get(engine)
+    return tracker.cancel() if tracker else 0
+
+
+def cancel_each(items: Sequence[T], cancel: Callable[[T], bool]) -> int:
+    """Cancel each running statement, given as whatever ``cancel`` takes, logging a failure rather
+    than stopping at it.
+
+    :returns: How many ``cancel`` reported as asked to cancel.
+    """
     asked = 0
-    for statement, flavor_service in running:
+    for item in items:
         try:
-            if flavor_service.cancel_statement(statement):
+            if cancel(item):
                 asked += 1
         except Exception:
             LOG.warning("Could not cancel a running query on the data source", exc_info=True)
-    if running:
-        LOG.info("Canceled %d of %d running queries on the data source", asked, len(running))
     return asked
-
-
-def statements_canceled() -> bool:
-    """Whether this process canceled its target statements."""
-    return _canceled.is_set()
-
-
-def reset() -> None:
-    """Forget the cancel and every tracked statement. For tests."""
-    _canceled.clear()
-    with _lock:
-        _running.clear()

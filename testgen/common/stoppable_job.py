@@ -26,10 +26,10 @@ from testgen import settings
 from testgen.common.database.database_service import (
     ThreadedProgress,
     WorkerOutcome,
+    cancel_target_statements,
     fetch_dict_from_db,
     run_keyed_worker_pool,
 )
-from testgen.common.database.statement_cancel import cancel_target_statements
 from testgen.common.enums import JobStatus
 from testgen.common.models import get_current_session
 from testgen.common.models.job_execution import JobExecution

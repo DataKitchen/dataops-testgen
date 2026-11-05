@@ -6,6 +6,7 @@ import pytest
 from google.cloud.bigquery import QueryJobConfig
 from sqlalchemy.exc import ProgrammingError
 
+from testgen.common.database.database_service import run_keyed_worker_pool
 from testgen.common.database.flavor.bigquery_flavor_service import (
     RUN_LABEL,
     BigqueryFlavorService,
@@ -55,34 +56,55 @@ def test_duckdb_interrupts_the_connection():
     statement.dbapi_connection.interrupt.assert_called_once_with()
 
 
-def test_snowflake_cancels_the_session_s_queries_from_a_connection_of_its_own():
-    statement = _statement()
-    statement.dbapi_connection.session_id = 4242
-    other = statement.engine.raw_connection.return_value
-    cursor = other.cursor.return_value.__enter__.return_value
-
-    assert SnowflakeFlavorService().cancel_statement(statement) is True
-    cursor.execute.assert_called_once_with("SELECT SYSTEM$CANCEL_ALL_QUERIES(%s)", (4242,))
-    other.close.assert_called_once()
-    statement.dbapi_connection.cursor.assert_not_called()
+def _statements(count: int) -> list[RunningStatement]:
+    engine = MagicMock()
+    return [RunningStatement(engine=engine, dbapi_connection=MagicMock(), cursor=MagicMock()) for _ in range(count)]
 
 
-def test_databricks_cancels_the_command_from_a_connection_of_its_own():
-    statement = _statement()
-    statement.cursor.active_command_id = "command-1"
-    other = statement.engine.raw_connection.return_value
+def test_snowflake_cancels_every_session_through_one_connection_of_its_own():
+    statements = _statements(3)
+    for session_id, statement in enumerate(statements):
+        statement.dbapi_connection.session_id = session_id
+    engine = statements[0].engine
+    cursor = engine.raw_connection.return_value.cursor.return_value.__enter__.return_value
 
-    assert DatabricksFlavorService().cancel_statement(statement) is True
-    other.dbapi_connection.session.backend.cancel_command.assert_called_once_with("command-1")
-    other.close.assert_called_once()
+    assert SnowflakeFlavorService().cancel_statements(statements) == 3
+    engine.raw_connection.assert_called_once()
+    assert [c.args for c in cursor.execute.call_args_list] == [
+        ("SELECT SYSTEM$CANCEL_ALL_QUERIES(%s)", (session_id,)) for session_id in range(3)
+    ]
+    engine.raw_connection.return_value.close.assert_called_once()
 
 
-def test_databricks_has_nothing_to_cancel_before_the_command_starts():
-    statement = _statement()
-    statement.cursor.active_command_id = None
+def test_snowflake_keeps_canceling_after_one_session_fails():
+    statements = _statements(2)
+    cursor = statements[0].engine.raw_connection.return_value.cursor.return_value.__enter__.return_value
+    cursor.execute.side_effect = [RuntimeError("session gone"), None]
 
-    assert DatabricksFlavorService().cancel_statement(statement) is False
-    statement.engine.raw_connection.assert_not_called()
+    assert SnowflakeFlavorService().cancel_statements(statements) == 1
+
+
+def test_databricks_cancels_every_command_through_one_connection_of_its_own():
+    statements = _statements(3)
+    statements[0].cursor.active_command_id = "command-1"
+    statements[1].cursor.active_command_id = None
+    statements[2].cursor.active_command_id = "command-3"
+    engine = statements[0].engine
+    backend = engine.raw_connection.return_value.dbapi_connection.session.backend
+
+    assert DatabricksFlavorService().cancel_statements(statements) == 2
+    engine.raw_connection.assert_called_once()
+    assert [c.args for c in backend.cancel_command.call_args_list] == [("command-1",), ("command-3",)]
+    engine.raw_connection.return_value.close.assert_called_once()
+
+
+def test_databricks_opens_no_connection_before_any_command_starts():
+    statements = _statements(2)
+    for statement in statements:
+        statement.cursor.active_command_id = None
+
+    assert DatabricksFlavorService().cancel_statements(statements) == 0
+    statements[0].engine.raw_connection.assert_not_called()
 
 
 def test_salesforce_data360_lets_its_statements_finish():
@@ -106,6 +128,15 @@ def test_bigquery_labels_a_run_s_queries_with_the_run(run_id):
     _label_run_queries(SimpleNamespace(_client=client), None)
 
     assert client.default_query_job_config.labels == {"team": "data", RUN_LABEL: str(run_id)}
+
+
+def test_bigquery_labels_a_connection_a_pool_worker_opens(run_id):
+    """Most connections are opened on a worker of the job's query pool, not on the job's thread."""
+    client = SimpleNamespace(default_query_job_config=None)
+
+    list(run_keyed_worker_pool([("connect", None)], lambda _arg: _label_run_queries(SimpleNamespace(_client=client), None)))
+
+    assert client.default_query_job_config.labels == {RUN_LABEL: str(run_id)}
 
 
 def test_bigquery_labels_nothing_outside_a_run():

@@ -351,7 +351,7 @@ def test_exec_job_fails_a_run_stopped_for_anything_but_a_cancel(mock_session):
         exec_job(job.id)
 
     job.mark_canceled.assert_not_called()
-    job.mark_failed.assert_called_once_with("The run was stopped (interrupt)")
+    job.mark_failed.assert_called_once_with("The run was stopped before it finished")
 
 
 def test_finalize_fires_callbacks_after_the_transition_is_committed(mock_session):

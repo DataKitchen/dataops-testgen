@@ -1,6 +1,6 @@
 import re
 from abc import abstractmethod
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypedDict
 from urllib.parse import quote_plus
@@ -11,7 +11,7 @@ from sqlalchemy.engine.base import Connection, Engine
 from testgen.common.clean_sql import parse_numeric_values
 from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.database.file_declarations import FileDeclaration
-from testgen.common.database.statement_cancel import RunningStatement
+from testgen.common.database.statement_cancel import RunningStatement, cancel_each
 from testgen.common.encrypt import DecryptText
 
 SQLFlavor = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "postgresql", "databricks", "duckdb", "bigquery", "oracle", "sap_hana", "salesforce_data360"]
@@ -626,12 +626,21 @@ class FlavorService:
         """
         return []
 
-    def cancel_statement(self, statement: RunningStatement) -> bool:  # noqa: ARG002
-        """Ask the data source to stop a statement another thread is running on it.
+    def cancel_statements(self, statements: Sequence[RunningStatement]) -> int:
+        """Ask the data source to stop statements other threads are running on it.
 
-        Called from a thread other than the one running the statement, and must not wait for it
-        to stop. Returns whether the cancel was sent; a connection type with no way to cancel
-        returns False and lets the statement finish.
+        Called from a thread other than the ones running the statements, and must not wait for
+        them to stop. A failure to cancel one statement is logged and does not stop the others.
+
+        :returns: How many statements were asked to cancel.
+        """
+        return cancel_each(statements, self.cancel_statement)
+
+    def cancel_statement(self, statement: RunningStatement) -> bool:  # noqa: ARG002
+        """Ask the data source to stop one statement another thread is running on it.
+
+        Returns whether the cancel was sent; a connection type with no way to cancel returns False
+        and lets the statement finish.
         """
         return False
 

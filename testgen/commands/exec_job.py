@@ -81,11 +81,10 @@ def exec_job(job_execution_id: UUID) -> None:
             # A run that cannot park is only ever asked to cancel. Stopped for anything else, it is
             # left unfinished with nothing to finish it, so it ends as an error.
             LOG.info("Job %s stopped in step '%s' (%s)", job_execution_id, stopped.step, stopped.reason)
-            reason = stopped.reason
-            if reason == StopReason.CANCEL:
+            if stopped.reason == StopReason.CANCEL:
                 _settle(job_execution_id, lambda job: job.mark_canceled())
             else:
-                _settle(job_execution_id, lambda job: job.mark_failed(f"The run was stopped ({reason})"))
+                _settle(job_execution_id, lambda job: job.mark_failed("The run was stopped before it finished"))
         except Exception as e:
             LOG.exception("Job %s failed", job_execution_id)
             message = get_exception_message(e)

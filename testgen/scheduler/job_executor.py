@@ -249,9 +249,9 @@ class JobExecutor:
     def _request_interrupt_on_running_jobs(self) -> set[UUID]:
         """Ask pausable running jobs to stop at a work-key boundary. Returns the ids asked.
 
-        Only pausable job keys are asked, since no other handler can see the request. This
-        does not wait: the jobs that honor it exit like any other, so the shutdown wait that
-        follows covers them and asking adds no delay of its own. A job that stops writes its own
+        Only pausable job keys are asked: they park and resume later, while any other job asked
+        to stop would end as an error. This does not wait: the jobs that honor it exit like any
+        other, so the shutdown wait that follows covers them and asking adds no delay of its own. A job that stops writes its own
         INTERRUPTED and the next start claims it; one killed before it got there is ended as an
         error by ``recover_stale``, since nothing recorded where it had reached.
         """
