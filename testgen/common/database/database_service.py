@@ -39,6 +39,7 @@ from testgen.common.database.flavor.flavor_service import (
     resolve_connection_params,
 )
 from testgen.common.database.statement_cancel import cancel_statements, track_statements
+from testgen.common.models import bound_session
 from testgen.common.read_file import get_template_files
 from testgen.common.standalone_postgres import get_connection_string as get_standalone_connection_string
 from testgen.common.standalone_postgres import is_standalone_mode
@@ -305,6 +306,11 @@ class WorkerOutcome(Generic[K, R]):
     error: str | None
 
 
+def _without_bound_session(work: Callable[[], None]) -> None:
+    with bound_session(None):
+        work()
+
+
 def run_keyed_worker_pool(
     items: Sequence[tuple[K, A]],
     process: Callable[[A], R],
@@ -375,8 +381,12 @@ def run_keyed_worker_pool(
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
         # Each worker runs in a copy of the caller's context, so what the caller set there -- the job
-        # it runs for -- reaches the code a worker runs.
-        workers = [executor.submit(contextvars.copy_context().run, worker) for _ in range(max_threads)]
+        # it runs for -- reaches the code a worker runs. A database session bound to that context is
+        # left behind: a session is not safe to share across threads.
+        workers = [
+            executor.submit(contextvars.copy_context().run, _without_bound_session, worker)
+            for _ in range(max_threads)
+        ]
         still_working = len(workers)
         try:
             while still_working:

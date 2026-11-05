@@ -2,10 +2,12 @@
 import contextvars
 import threading
 import time
+from unittest.mock import MagicMock
 
 import pytest
 
 from testgen.common.database.database_service import WorkerOutcome, run_keyed_worker_pool
+from testgen.common.models import bound_session, get_current_session
 
 pytestmark = pytest.mark.unit
 
@@ -233,3 +235,11 @@ def test_workers_see_the_callers_context():
         request.reset(token)
 
     assert {o.result for o in outcomes} == {"job-1"}
+
+
+def test_workers_do_not_share_a_session_bound_to_the_callers_context():
+    session = MagicMock()
+    with bound_session(session):
+        outcomes = list(run_keyed_worker_pool([(i, i) for i in range(2)], lambda _arg: get_current_session()))
+
+    assert {o.result for o in outcomes} == {None}

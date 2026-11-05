@@ -102,10 +102,11 @@ def cancel_statements(engine: Engine) -> int:
 
 
 def cancel_each(items: Sequence[T], cancel: Callable[[T], bool]) -> int:
-    """Cancel each running statement, given as whatever ``cancel`` takes, logging a failure rather
-    than stopping at it.
+    """Pass each item to ``cancel``, logging a failure rather than stopping at it.
 
-    :returns: How many ``cancel`` reported as asked to cancel.
+    :param items: The running statements, or what identifies each to the data source.
+    :param cancel: Cancels one, and returns whether the cancel was sent.
+    :returns: How many cancels were sent.
     """
     asked = 0
     for item in items:
