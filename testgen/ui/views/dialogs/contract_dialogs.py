@@ -40,6 +40,7 @@ class _Dialog(StrEnum):
     REMOVE_TABLES = "remove_tables"
     DOCUMENT_RESULT = "document_result"
     TABLES_RESULT = "tables_result"
+    SECTION_RESULT = "section_result"
 
 
 def _state(suite: TestSuite, dialog: _Dialog) -> dict[str, Any] | None:
@@ -164,6 +165,17 @@ def contract_props(
             written(result["message"])
 
     @with_database_session
+    def on_save_section(payload: dict) -> None:
+        section = contract_metadata_service.MetadataSection(payload["section"])
+        result = contract_metadata_service.save_section(suite, section, payload["values"])
+        target = {key: payload["values"].get(key) for key in ("table", "column")}
+        _set_state(
+            suite, _Dialog.SECTION_RESULT, {**result, "section": section.value, "target": target, "token": str(uuid4())},
+        )
+        if result["success"]:
+            written(result["message"])
+
+    @with_database_session
     def apply_tables(tables: list[str]) -> None:
         result = contract_metadata_service.save_tables(suite, tables)
         _set_state(suite, _Dialog.TABLES_RESULT, {**result, "token": str(uuid4())})
@@ -185,14 +197,16 @@ def contract_props(
             _clear_state(_Dialog.REMOVE_TABLES)
             apply_tables(state["tables"])
 
+    open_tab = tab if tab in tuple(ContractTab) else ContractTab.RULES
     data = {
         "summary": page.summary,
-        "tab": tab if tab in tuple(ContractTab) else ContractTab.RULES,
+        "tab": open_tab,
         "metadata": {
             **contract_metadata_service.metadata_tab(suite, selected, page.editable),
             "document_result": _state(suite, _Dialog.DOCUMENT_RESULT),
             "tables_result": _state(suite, _Dialog.TABLES_RESULT),
-        },
+            "section_result": _state(suite, _Dialog.SECTION_RESULT),
+        } if open_tab == ContractTab.METADATA else None,
         "export": None,
         "import": None,
         "freeze": None,
@@ -244,6 +258,7 @@ def contract_props(
         "on_ContractDiscardConfirmed_change": on_discard_confirmed,
         "on_ContractSaveDocument_change": on_save_document,
         "on_ContractSaveTables_change": on_save_tables,
+        "on_ContractSaveSection_change": on_save_section,
         "on_ContractRemoveTablesConfirmed_change": on_remove_tables_confirmed,
         "on_ContractRemoveTablesClosed_change": closer(_Dialog.REMOVE_TABLES),
     }

@@ -711,6 +711,7 @@ def apply_import(
     document["apiVersion"] = ODCS_API_VERSION
     document["version"] = SuiteVersion.document_version(version.version)
     document["name"] = suite.test_suite
+    document.pop("status", None)
     _match_physical_types(document, table_group, FLAVOR_CODE_TO_FAMILY[flavor])
     version.metadata_document = document
     version.odcs_api_version = ODCS_API_VERSION

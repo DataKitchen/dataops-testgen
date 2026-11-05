@@ -309,15 +309,19 @@ def _run_summary(run: TestRun | None) -> TestRunSummary | None:
 def export_version(version: SuiteVersion, contract_name: str | None = None) -> ExportedDocument:
     """The version's document as YAML text, with a fresh check of whether it validates.
 
-    Returns a frozen version's stored bytes unchanged, reading no terms and rendering
-    nothing; a draft, which has no stored bytes yet, is rendered and serialized fresh.
-    Either way ``problems`` is computed against the returned text rather than assumed, so a
+    Returns a frozen version's stored bytes unchanged but for its ``status``, reading no terms
+    and rendering nothing; a draft, which has no stored bytes yet, is rendered and serialized
+    fresh. Either way ``status`` is filled in from the version's state (``document_status``).
+    ``problems`` is computed against the returned text rather than assumed, so a
     frozen document that no longer validates -- for instance after a schema pin change --
     is reported rather than presumed clean. A draft's ``name`` is ``contract_name`` when given.
     """
-    text = version.frozen_document or serialize.serialize_document(
-        render.render_document(version, contract_name=contract_name)
-    )
+    status = document_status(version)
+    if version.frozen_document:
+        text = serialize.with_root_scalar(version.frozen_document, "status", status)
+    else:
+        document = render.render_document(version, contract_name=contract_name)
+        text = serialize.serialize_document({**document, "status": status})
     problems = validate_document(yaml.safe_load(text))
     return ExportedDocument(text, problems)
 
@@ -366,6 +370,14 @@ class OwnedFieldError(InvalidContractDocumentError):
 # Root fields TestGen sets on a contract's document rather than taking from the caller.
 OWNED_FIELDS = ("apiVersion", "kind", "id", "version")
 
+ODCS_STATUS = {VersionState.DRAFT: "draft", VersionState.ACTIVE: "active", VersionState.SUPERSEDED: "deprecated"}
+
+
+def document_status(version: SuiteVersion) -> str:
+    """The ODCS ``status`` of ``version``'s document: its state, with a superseded version ``deprecated``."""
+    is_active = version.frozen_at is not None and SuiteVersion.is_active(version.id, version.test_suite_id)
+    return ODCS_STATUS[version_state(version.frozen_at, is_active)]
+
 
 @dataclass(frozen=True)
 class SavedMetadata:
@@ -376,6 +388,7 @@ class SavedMetadata:
     unresolved_declarations: list[str]
     untested_declarations: list[str]
     overridden_declarations: list[str]
+    unchecked_paths: list[str]
     problems: list[str]
 
 
@@ -388,6 +401,8 @@ def save_metadata_document(suite: TestSuite, document: dict[str, Any]) -> SavedM
       already stores the same rule at the same place; every other rule is stored marked unverifiable;
     - a root field TestGen sets (``apiVersion``, ``kind``, ``id``, ``version``) that differs from
       the version's is refused, and one left out is kept;
+    - a ``status`` other than the version's (``document_status``) or the stored one is refused. It is never
+      stored, since it follows the version's state;
     - ``name`` is the suite's name: a ``name`` that is neither the suite's nor the stored one is refused;
     - the document merged with the version's terms is validated, and a problem it did not have
       before is refused (``InvalidContractDocumentError``). Problems it already had are returned.
@@ -397,6 +412,8 @@ def save_metadata_document(suite: TestSuite, document: dict[str, Any]) -> SavedM
     ``unresolved_declarations`` no test type checks, ``untested_declarations`` a test type checks
     but the contract holds no such test on the column, and ``overridden_declarations`` a test on
     the column declares with a different value, which the rendered document shows instead.
+    ``unchecked_paths`` names each path the unresolved and untested declarations declare that no
+    test on the column checks, either alone or as part of a declaration.
     """
     _assert_contract(suite)
     current = SuiteVersion.draft_for(suite.id) or _active_version(suite)
@@ -408,8 +425,12 @@ def save_metadata_document(suite: TestSuite, document: dict[str, Any]) -> SavedM
     get_current_session().refresh(current, ["metadata_document"])
     stored = current.metadata_document or {}
 
-    if problems := [*_owned_field_changes(document, stored), *_name_changes(document, stored, suite)]:
+    problems = [
+        *_owned_field_changes(document, stored), *_status_changes(document, stored, current), *_name_changes(document, stored, suite),
+    ]
+    if problems:
         raise OwnedFieldError(problems)
+    document.pop("status", None)
     for key in OWNED_FIELDS:
         if key not in document and key in stored:
             document[key] = stored[key]
@@ -438,8 +459,16 @@ def save_metadata_document(suite: TestSuite, document: dict[str, Any]) -> SavedM
         unresolved_declarations=declarations.unresolved,
         untested_declarations=declarations.untested,
         overridden_declarations=declarations.overridden,
+        unchecked_paths=declarations.unchecked,
         problems=[problem.text for problem in problems.problems],
     )
+
+
+def _status_changes(document: dict[str, Any], stored: dict[str, Any], version: SuiteVersion) -> list[str]:
+    status = document_status(version)
+    if "status" not in document or document["status"] in (status, stored.get("status")):
+        return []
+    return [f"$.status: `status` cannot be changed. It is `{status}`."]
 
 
 def _name_changes(document: dict[str, Any], stored: dict[str, Any], suite: TestSuite) -> list[str]:
@@ -620,6 +649,7 @@ class _Declarations:
     unresolved: list[str]
     untested: list[str]
     overridden: list[str]
+    unchecked: list[str]
 
 
 def _unchecked_declarations(
@@ -633,7 +663,7 @@ def _unchecked_declarations(
         .order_by(*render.TERM_ORDER)
     ):
         terms.setdefault((term.table_name, term.column_name, term.test_type), []).append(term)
-    found = _Declarations(unresolved=[], untested=[], overridden=[])
+    found = _Declarations(unresolved=[], untested=[], overridden=[], unchecked=[])
     for (table_name, column_name), prop in _properties(document).items():
         before_prop = before.get((table_name, column_name)) or {}
         if before_prop == prop:
@@ -641,9 +671,9 @@ def _unchecked_declarations(
         label = f"{table_name}.{column_name}"
         declared_before = resolve_unnamed_declarations(before_prop, resolver.known_test_types)
         declared = resolve_unnamed_declarations(prop, resolver.known_test_types)
-        found.unresolved.extend(
-            f"{label}: {path}" for path in declared.unresolved if path not in declared_before.unresolved
-        )
+        unresolved = [path for path in declared.unresolved if path not in declared_before.unresolved]
+        found.unresolved.extend(f"{label}: {path}" for path in unresolved)
+        found.unchecked.extend(f"{label}: {path}" for path in unresolved)
         parameters_before = {term.test_type: term.parameters for term in declared_before.terms}
         for declaration in declared.terms:
             if parameters_before.get(declaration.test_type) == declaration.parameters:
@@ -653,9 +683,30 @@ def _unchecked_declarations(
             candidates = terms.get((table_name, column_name, declaration.test_type))
             if not candidates:
                 found.untested.append(f"{label}: {name}")
+                found.unchecked.extend(
+                    f"{label}: {path}"
+                    for path in declared.declares[declaration.test_type]
+                    if not any(
+                        terms.get((table_name, column_name, alone.test_type))
+                        for alone in resolve_unnamed_declarations(
+                            _declaring_only(prop, path), resolver.known_test_types
+                        ).terms
+                    )
+                )
             elif _rendered_declaration_differs(candidates, prop):
                 found.overridden.append(f"{label}: {name}")
     return found
+
+
+def _declaring_only(prop: dict[str, Any], path: str) -> dict[str, Any]:
+    """``prop``'s logical type and the one declared ``path``, without its other declarations."""
+    alone: dict[str, Any] = {"logicalType": prop.get("logicalType")}
+    option = path.removeprefix("logicalTypeOptions.")
+    if option != path:
+        alone["logicalTypeOptions"] = {option: prop["logicalTypeOptions"][option]}
+    else:
+        alone[path] = prop[path]
+    return alone
 
 
 def _rendered_declaration_differs(terms: list[TestDefinition], prop: dict[str, Any]) -> bool:
