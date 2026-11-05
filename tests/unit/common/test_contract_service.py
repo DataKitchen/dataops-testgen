@@ -371,7 +371,8 @@ _RULE_TEST_TYPES = {
         test_scope="table" if code in ("Row_Ct", "Dupe_Rows") else "column",
     )
     for code, columns in {
-        "Row_Ct": "threshold_value", "Required": "threshold_value", "Max_Val": "baseline_value,threshold_value",
+        "Row_Ct": "threshold_value", "Required": "threshold_value", "Unique": "threshold_value",
+        "Max_Val": "baseline_value,threshold_value",
         "Dupe_Rows": "groupby_names,skip_errors",
     }.items()
 }
@@ -438,7 +439,7 @@ def test_saving_a_document_marks_it_modified_even_when_it_is_the_drafts_own_obje
         _save_stubs(stored) as (suite, draft, _),
         patch("testgen.common.contract_service.flag_modified") as flagged,
     ):
-        stored["status"] = "active"
+        stored["domain"] = "sales"
         contract_service.save_metadata_document(suite, stored)
 
     flagged.assert_called_once_with(draft, "metadata_document")
@@ -453,9 +454,64 @@ def test_a_name_other_than_the_contracts_is_refused():
     ]
 
 
+def test_a_status_other_than_the_versions_is_refused():
+    with _save_stubs(_metadata()) as (suite, _, _), pytest.raises(contract_service.OwnedFieldError) as excinfo:
+        contract_service.save_metadata_document(suite, _metadata(status="retired"))
+
+    assert excinfo.value.problems == ["$.status: `status` cannot be changed. It is `draft`."]
+
+
+def test_a_status_matching_the_version_is_accepted_and_not_stored():
+    with _save_stubs(_metadata()) as (suite, draft, _):
+        contract_service.save_metadata_document(suite, _metadata(status="draft"))
+
+    assert "status" not in draft.metadata_document
+
+
+def test_a_status_the_stored_document_already_carries_is_not_a_change():
+    with _save_stubs(_metadata(status="retired")) as (suite, draft, _):
+        contract_service.save_metadata_document(suite, _metadata(status="retired", domain="sales"))
+
+    assert "status" not in draft.metadata_document
+
+
+def test_a_status_the_stored_document_carries_is_not_kept():
+    with _save_stubs(_metadata(status="retired")) as (suite, draft, _):
+        contract_service.save_metadata_document(suite, _metadata())
+
+    assert "status" not in draft.metadata_document
+
+
+def test_editing_the_active_version_accepts_its_own_status():
+    with _save_stubs(_metadata()) as (suite, draft, _):
+        active = SuiteVersion(
+            id=uuid4(), test_suite_id=suite.id, version=1, frozen_at=datetime.now(UTC), metadata_document=_metadata(),
+        )
+        with (
+            patch.object(SuiteVersion, "draft_for", return_value=None),
+            patch.object(SuiteVersion, "in_force_for", return_value=active),
+            patch.object(SuiteVersion, "is_active", return_value=True),
+            patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
+        ):
+            contract_service.save_metadata_document(suite, _metadata(domain="sales"))
+
+    assert "status" not in draft.metadata_document
+
+
+@pytest.mark.parametrize(("frozen", "active", "status"), [
+    (False, False, "draft"),
+    (True, True, "active"),
+    (True, False, "deprecated"),
+])
+def test_a_versions_document_status_follows_its_state(frozen, active, status):
+    version = SuiteVersion(id=uuid4(), test_suite_id=uuid4(), version=1, frozen_at=datetime.now(UTC) if frozen else None)
+    with patch.object(SuiteVersion, "is_active", return_value=active):
+        assert contract_service.document_status(version) == status
+
+
 def test_a_saved_document_takes_the_contracts_name():
     with _save_stubs(_metadata(name="Old name")) as (suite, draft, _):
-        contract_service.save_metadata_document(suite, _metadata(name="Old name", status="active"))
+        contract_service.save_metadata_document(suite, _metadata(name="Old name", domain="sales"))
 
     assert draft.metadata_document["name"] == "Orders"
 
@@ -464,7 +520,7 @@ def test_saving_a_document_reconciles_conformance_tests_after_committing_it():
     """Conformance generation reads the declared tables on its own connection, so the document
     has to be committed before it runs or the reconciliation sees the previous declaration."""
     with _save_stubs(_metadata()) as (suite, _, calls):
-        contract_service.save_metadata_document(suite, _metadata(status="active"))
+        contract_service.save_metadata_document(suite, _metadata(domain="sales"))
 
     assert calls == ["commit", "reconcile"]
 
@@ -515,9 +571,9 @@ def test_a_rule_already_stored_at_the_same_place_is_kept():
     stored = _metadata()
     stored["schema"][0]["quality"].append(_rows_rule())
     with _save_stubs(stored) as (suite, draft, _):
-        saved = contract_service.save_metadata_document(suite, {**copy.deepcopy(stored), "status": "active"})
+        saved = contract_service.save_metadata_document(suite, {**copy.deepcopy(stored), "domain": "sales"})
 
-    assert draft.metadata_document["status"] == "active"
+    assert draft.metadata_document["domain"] == "sales"
     assert saved.unverifiable_rules == []
 
 
@@ -539,23 +595,23 @@ def test_root_fields_testgen_sets_are_kept_when_left_out():
 
 
 def test_a_document_the_save_makes_invalid_is_refused_naming_the_path():
-    document = _metadata(status=42)
+    document = _metadata(tenant=42)
     with _save_stubs(_metadata()) as (suite, _, calls):
         with pytest.raises(contract_service.InvalidContractDocumentError) as raised:
             contract_service.save_metadata_document(suite, document)
 
-    assert [problem.split(":")[0] for problem in raised.value.problems] == ["$.status"]
+    assert [problem.split(":")[0] for problem in raised.value.problems] == ["$.tenant"]
     assert calls == []
 
 
 def test_problems_the_stored_document_already_had_are_returned_rather_than_refused():
-    stored = _metadata(status=42)
+    stored = _metadata(tenant=42)
     with _save_stubs(stored) as (suite, _, _calls):
         saved = contract_service.save_metadata_document(
             suite, {**copy.deepcopy(stored), "description": {"purpose": "Order reporting"}}
         )
 
-    assert [problem.split(":")[0] for problem in saved.problems] == ["$.status"]
+    assert [problem.split(":")[0] for problem in saved.problems] == ["$.tenant"]
 
 
 def _invalid_rule(**fields):
@@ -634,6 +690,31 @@ def test_a_changed_column_reports_declarations_nothing_checks():
     assert saved.overridden_declarations == []
 
 
+def test_a_changed_column_reports_each_declared_path_no_test_checks():
+    document = _metadata()
+    document["schema"][0]["properties"][0].update(required=True, logicalTypeOptions={"maximum": 500, "exclusiveMinimum": 0})
+    with _save_stubs(_metadata(), terms=[_declared_term("Required")]) as (suite, _, _calls):
+        saved = contract_service.save_metadata_document(suite, document)
+
+    assert saved.unchecked_paths == [
+        "orders.amount: logicalTypeOptions.exclusiveMinimum", "orders.amount: logicalTypeOptions.maximum",
+    ]
+
+
+@pytest.mark.parametrize(("terms", "unchecked"), [
+    ([], ["orders.amount: unique", "orders.amount: required"]),
+    ([_declared_term("Required")], ["orders.amount: unique"]),
+])
+def test_a_path_a_test_checks_on_its_own_is_not_reported_with_the_declaration_it_joins(terms, unchecked):
+    document = _metadata()
+    document["schema"][0]["properties"][0].update(required=True, unique=True)
+    with _save_stubs(_metadata(), terms=terms) as (suite, _, _calls):
+        saved = contract_service.save_metadata_document(suite, document)
+
+    assert saved.untested_declarations == ["orders.amount: Unique"]
+    assert saved.unchecked_paths == unchecked
+
+
 def test_a_declaration_a_test_sets_to_another_value_is_reported():
     stored = _metadata()
     stored["schema"][0]["properties"][0]["logicalTypeOptions"] = {"maximum": 100}
@@ -707,11 +788,11 @@ def test_saving_onto_a_frozen_only_contract_lands_in_its_new_draft():
         patch.object(render, "_terms_for_version", return_value=[]),
         patch("testgen.common.contract_service.reconcile_contract_conformance"),
     ):
-        saved = contract_service.save_metadata_document(suite, _metadata(version="3.0.0", status="active"))
+        saved = contract_service.save_metadata_document(suite, _metadata(version="3.0.0", domain="sales"))
 
     route.assert_called_once_with(suite.id)
     assert saved.version_id == draft.id
-    assert draft.metadata_document["status"] == "active"
+    assert draft.metadata_document["domain"] == "sales"
     assert draft.metadata_document["version"] == "4.0.0"
     assert frozen.metadata_document["name"] == "Orders"
 
@@ -1357,22 +1438,42 @@ def _frozen_version(**overrides) -> SuiteVersion:
     return SuiteVersion(**fields)
 
 
-def test_exporting_a_frozen_version_returns_its_stored_bytes():
+@pytest.fixture
+def in_force():
+    with patch.object(SuiteVersion, "is_active", return_value=True):
+        yield
+
+
+@pytest.mark.usefixtures("in_force")
+def test_exporting_a_frozen_version_returns_its_stored_bytes_with_its_status():
     frozen = _frozen_version()
-    assert contract_service.export_version(frozen).text == frozen.frozen_document
+
+    text = contract_service.export_version(frozen).text
+
+    assert text.replace("status: active\n", "") == frozen.frozen_document
+    assert yaml.safe_load(text)["status"] == "active"
 
 
+def test_a_superseded_versions_export_reads_deprecated_over_the_status_it_stored():
+    frozen = _frozen_version(frozen_document=yaml.dump({**_VALID_MERGED_DOCUMENT, "status": "active"}))
+    with patch.object(SuiteVersion, "is_active", return_value=False):
+        text = contract_service.export_version(frozen).text
+
+    assert text == frozen.frozen_document.replace("status: active", "status: deprecated")
+
+
+@pytest.mark.usefixtures("in_force")
 def test_a_frozen_version_exports_identically_after_the_serialiser_changes(monkeypatch):
     # Without the monkeypatch this proves nothing -- a re-render would produce the same
     # string today. Reversing the serialiser's own root key order changes what a fresh
     # serialization would produce, so an unchanged result here can only come from the
     # stored bytes, never from rendering and serializing again.
     frozen = _frozen_version()
-    before = contract_service.export_version(frozen).text
     monkeypatch.setattr(serialize, "ROOT_KEY_ORDER", list(reversed(serialize.ROOT_KEY_ORDER)))
-    assert contract_service.export_version(frozen).text == before
+    assert contract_service.export_version(frozen).text.replace("status: active\n", "") == frozen.frozen_document
 
 
+@pytest.mark.usefixtures("in_force")
 def test_exporting_a_frozen_version_renders_nothing(monkeypatch):
     # The coalesce short-circuits: no terms are read and no rules are projected.
     def _raises(*_args, **_kwargs):
@@ -1380,9 +1481,10 @@ def test_exporting_a_frozen_version_renders_nothing(monkeypatch):
 
     frozen = _frozen_version()
     monkeypatch.setattr(contract_service.render, "render_document", _raises)
-    assert contract_service.export_version(frozen).text == frozen.frozen_document
+    assert contract_service.export_version(frozen).text.replace("status: active\n", "") == frozen.frozen_document
 
 
+@pytest.mark.usefixtures("in_force")
 def test_exporting_a_frozen_version_reports_whether_it_still_validates():
     frozen = _frozen_version()
     assert contract_service.export_version(frozen).problems == []
@@ -1397,6 +1499,7 @@ def test_exporting_a_draft_renders_it_fresh():
 
     render_mock.assert_called_once_with(draft, contract_name=None)
     assert yaml.safe_load(exported.text)["kind"] == ODCS_KIND
+    assert yaml.safe_load(exported.text)["status"] == "draft"
     assert exported.problems == []
 
 

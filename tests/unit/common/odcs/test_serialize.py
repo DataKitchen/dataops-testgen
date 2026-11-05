@@ -13,6 +13,7 @@ from testgen.common.odcs.serialize import (
     RULE_KEY_ORDER,
     SCHEMA_KEY_ORDER,
     serialize_document,
+    with_root_scalar,
 )
 
 pytestmark = pytest.mark.unit
@@ -225,3 +226,33 @@ def test_a_multiline_query_stays_readable():
     assert "\\n" not in output
     reloaded = yaml.safe_load(output)
     assert reloaded["schema"][0]["quality"][0]["query"] == query
+
+
+def test_a_root_scalar_is_inserted_at_its_place_in_the_root_order():
+    text = serialize_document({"version": "1.0.0", "kind": "DataContract", "name": "orders", "servers": []})
+
+    filled = with_root_scalar(text, "status", "active")
+
+    assert filled.splitlines() == ["version: 1.0.0", "kind: DataContract", "name: orders", "status: active", "servers: []"]
+
+
+def test_a_root_scalar_the_text_already_holds_is_replaced_in_place():
+    text = "version: 1.0.0\nstatus: active\nschema:\n- name: status\n  status: x\n"
+
+    assert with_root_scalar(text, "status", "deprecated") == (
+        "version: 1.0.0\nstatus: deprecated\nschema:\n- name: status\n  status: x\n"
+    )
+
+
+def test_a_root_scalar_with_no_later_root_key_is_appended():
+    assert with_root_scalar("version: 1.0.0\nkind: DataContract\n", "status", "draft") == (
+        "version: 1.0.0\nkind: DataContract\nstatus: draft\n"
+    )
+
+
+def test_inserting_a_root_scalar_leaves_every_other_byte_alone():
+    text = "kind: DataContract\n# kept\nschema:\n- name: orders\n"
+
+    filled = with_root_scalar(text, "status", "draft")
+
+    assert filled.replace("status: draft\n", "") == text

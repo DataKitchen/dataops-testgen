@@ -40,8 +40,8 @@ def save_from_dialog(definition: TestDefinition, suite: TestSuite | TestSuiteMin
         if not definition.table_name:
             return "A test on a contract must name one of the tables the contract declares."
         return (
-            f"The contract does not declare the table {definition.table_name}. Add it under Declared Tables on "
-            "the Contract Metadata tab, or choose a declared table."
+            f"The contract does not declare the table {definition.table_name}. Add it under Schema on the "
+            "Contract Metadata tab, or choose a declared table."
         )
     if definition.test_type not in NON_PUBLIC_TEST_TYPES:
         test_type = TestType.get(definition.test_type)
