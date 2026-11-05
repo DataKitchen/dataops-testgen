@@ -3,7 +3,8 @@ from typing import Annotated
 
 from pydantic import Field
 
-from testgen.common.data_catalog_service import fetch_table_sample
+from testgen.common.clean_sql import NonNumericValueError
+from testgen.common.data_catalog_service import fetch_current_values, fetch_table_sample
 from testgen.common.database.table_group_service import schema_label_for_table_group
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
@@ -139,7 +140,10 @@ def get_source_data_query(
     if test_definition_id:
         context = _resolve_test_definition_context(test_definition_id, reference_date)
         entity_label, entity_id = "Test Definition", test_definition_id
-        query = build_test_result_query(context, limit)
+        try:
+            query = build_test_result_query(context, limit)
+        except NonNumericValueError as error:
+            raise MCPUserError(str(error)) from error
     else:
         context = _resolve_hygiene_context(issue_id)
         entity_label, entity_id = "Hygiene Issue", issue_id
@@ -281,4 +285,54 @@ def get_table_sample(
     if result.pii_redacted:
         doc.text("_PII columns have been redacted._")
     doc.table_from_dataframe(result.df)
+    return doc.render()
+
+
+@mcp_source_data_only
+@with_database_session
+@mcp_permission("edit")
+def get_current_values(
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from `get_data_inventory`.")],
+    table_name: Annotated[str, Field(description="Table name exactly as stored in TestGen (case-sensitive).")],
+    column_name: Annotated[str, Field(description="Column name exactly as stored in TestGen (case-sensitive).")],
+) -> str:
+    """Read a column's distinct values as the expected-values list of Value Match All.
+
+    Returns the list in the comma-separated form the `baseline_value` field of `LOV_Match` and `LOV_All`
+    takes, sorted, with NULLs left out. Values are distinct as those tests compare them: numbers by value,
+    other values exactly by their text. Refused when the column holds more than 100 distinct values or
+    the list would exceed 1,000 characters.
+    """
+    tg = resolve_table_group(table_group_id)
+
+    schema_name, _ = DataColumnChars.list_for_create_script(tg.id, table_name)
+    if schema_name is None:
+        raise MCPResourceNotAccessible("Table", table_name)
+    if (table_name, column_name) not in DataColumnChars.select_general_types(
+        tg.id, DataColumnChars.table_name == table_name, DataColumnChars.column_name == column_name
+    ):
+        raise MCPResourceNotAccessible("Column", column_name)
+
+    connection = Connection.get_by_table_group(tg.id)
+    if connection is None:
+        raise MCPResourceNotAccessible("Table", table_name)
+
+    result = fetch_current_values(
+        connection,
+        tg.id,
+        schema_name,
+        table_name,
+        column_name,
+        can_view_pii=get_project_permissions().has_permission("view_pii", tg.project_code),
+    )
+    if result.status == "ERR":
+        raise MCPUserError(
+            f"Could not read from the data source for connection `{connection.connection_name}`."
+        )
+    if result.status != "OK":
+        raise MCPUserError(result.message)
+
+    doc = MdDoc()
+    doc.heading(1, f"Current values of `{table_name}.{column_name}`")
+    doc.code_block(result.value_list)
     return doc.render()

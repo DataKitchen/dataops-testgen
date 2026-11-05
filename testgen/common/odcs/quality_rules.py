@@ -22,9 +22,9 @@ from datetime import date, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from testgen.common.clean_sql import parse_value_list, strip_trailing_semicolons
+from testgen.common.clean_sql import format_value_list, parse_value_list, strip_trailing_semicolons
 from testgen.common.database.database_service import get_flavor_service
-from testgen.common.enums import OdcsDimension, QualityDimension, TestScope
+from testgen.common.enums import VALUE_LIST_TEST_TYPES, OdcsDimension, QualityDimension, TestScope
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, SqlFlavorCode
 from testgen.common.models.test_definition import (
     NON_PUBLIC_TEST_TYPES,
@@ -175,9 +175,7 @@ class RuleMapping:
     ``test_operator`` (see ``ACCEPTANCE_OPERATOR``), but ``Missing_Pct`` and
     ``Row_Ct_Pct`` carry ``mustBeBetween`` outright -- a converted band around a fixed
     baseline, not an inversion of the stored operator. ``dimension`` is the already-translated
-    ODCS dimension (``odcs_dimension`` output), except ``LOV_All``, which carries ``coverage``
-    explicitly rather than the ``conformity`` its stored ``Validity`` dimension would translate
-    to. ``scope`` is the node the rule renders on; when ``scope_follows_term`` is set the node
+    ODCS dimension (``odcs_dimension`` output). ``scope`` is the node the rule renders on; when ``scope_follows_term`` is set the node
     depends on the term, not the type (see ``rule_scope``), and ``scope`` is only the default.
     """
     test_type: str
@@ -603,25 +601,6 @@ def rule_shape(test_type: str) -> RuleShape | None:
     return mapping.shape if mapping is not None else RuleShape.CUSTOM
 
 
-_LOV_LITERAL_VALUE = re.compile(r"'((?:[^']|'')*)'")
-_BARE_NUMBER = re.compile(r"-?\d+(\.\d+)?")
-
-
-def lov_values(raw: str) -> list[str]:
-    """The individual values inside a stored LOV literal, e.g. ``"('Y','N')"`` -> ``["Y", "N"]``.
-
-    A parenthesized literal with no quoted values is read as bare numbers, e.g. ``"(1,2,3)"`` ->
-    ``["1", "2", "3"]``; it reads as no values unless every one of them is a number.
-    """
-    if quoted := _LOV_LITERAL_VALUE.findall(raw):
-        return [match.replace("''", "'") for match in quoted]
-    literal = raw.strip()
-    if not (literal.startswith("(") and literal.endswith(")")):
-        return []
-    bare = [value.strip() for value in literal[1:-1].split(",")]
-    return bare if all(_BARE_NUMBER.fullmatch(value) for value in bare) else []
-
-
 # Identifier quote characters across flavors: ANSI double quotes, and BigQuery/Databricks backticks.
 _IDENTIFIER_QUOTES = ('"', "`")
 
@@ -925,7 +904,7 @@ def drop_generated_metadata(
         generated["dimension"].append(mapping.dimension)
     if custom:
         generated["name"] = [test_type.test_name_long, test_type.test_name_short, test_type.test_type]
-        generated["description"] = [_custom_description(parameters.get("threshold_value"), test_type)]
+        generated["description"] = [_custom_description(parameters, test_type)]
     return {key: value for key, value in metadata.items() if value not in generated.get(key, ())}
 
 
@@ -934,19 +913,23 @@ def _normalized(text: str | None) -> str:
     return " ".join(text.split()) if text else ""
 
 
-def _custom_description(threshold_value: str | None, test_type: "TestType") -> str:
+def _custom_description(parameters: dict[str, Any], test_type: "TestType") -> str:
     """A plain-words statement of what a ``custom`` rule checks.
 
-    Built from the catalog's own prose and the term's ``threshold_value``. Other ODCS engines do not
-    run a ``custom`` rule, so for a counterparty without TestGen this is the only usable part
-    of it. Names no parameter: a reader is told what the check does, not which field carries
-    it. A segment the catalogue leaves unset is omitted rather than rendered as ``None``.
+    Built from the catalog's own prose and the term's ``parameters``: its ``threshold_value``, and
+    for a value-list type the values its ``baseline_value`` lists. Other ODCS engines do not run a
+    ``custom`` rule, so for a counterparty without TestGen this is the only usable part of it.
+    Names no parameter: a reader is told what the check does, not which field carries it. A
+    segment the catalogue leaves unset is omitted rather than rendered as ``None``.
     """
+    threshold_value = parameters.get("threshold_value")
     segments: list[str] = []
     if statement := _normalized(test_type.test_description):
         segments.append(statement)
     if failure := _normalized(test_type.except_message):
         segments.append(f"Fails: {failure}")
+    if test_type.test_type in VALUE_LIST_TEST_TYPES and (values := parse_value_list(parameters.get("baseline_value"))):
+        segments.append(f"Expected values: {format_value_list(values)}.")
     if threshold_value not in (None, ""):
         bound = f"Threshold: {threshold_value}"
         if label := _normalized(test_type.threshold_description):
@@ -1055,9 +1038,9 @@ def _build_sql_query(
     if scope is RuleScope.COLUMN:
         measure = measure.replace("{COLUMN_NAME}", "{property}")
 
-    # A qualified schema/table pattern some flavors' measures use to reference the same
-    # table a second time (e.g. LOV_All's mssql/sap_hana inner subquery) -- it names the
-    # same object the rule is attached to, so it collapses onto ODCS's own placeholder too.
+    # A qualified schema/table pattern a measure may use to reference the same table a second
+    # time -- it names the same object the rule is attached to, so it collapses onto ODCS's own
+    # placeholder too.
     measure = measure.replace('"{SCHEMA_NAME}"."{TABLE_NAME}"', "{object}")
     measure = measure.replace("{SCHEMA_NAME}", "{object}").replace("{TABLE_NAME}", "{object}")
 
@@ -1118,7 +1101,7 @@ def _argument_value(term: "TestDefinition", argument: RuleArgument, logical_type
         literal = constant_value(term, logical_type)
         value = [literal] if literal is not None else None
     elif argument.name == "validValues":
-        value = lov_values(raw) if raw else None
+        value = parse_value_list(raw)
     else:
         value = raw
     if not value:
@@ -1137,7 +1120,9 @@ def _custom_check(
         "type": RuleShape.CUSTOM.value,
         "engine": "testgen",
         "name": term.test_description or test_type.test_name_long or test_type.test_name_short or term.test_type,
-        "description": _custom_description(term.threshold_value, test_type),
+        "description": _custom_description(
+            {"threshold_value": term.threshold_value, "baseline_value": term.baseline_value}, test_type
+        ),
         "implementation": _custom_implementation(term, test_type),
     }
     return rule, _server_type_markers(flavor)
@@ -1846,19 +1831,14 @@ def _stored(value: Any) -> str:
     return str(value)
 
 
-def _lov_literal(values: list[Any]) -> str:
-    """The stored ``LOV_Match`` literal for ``values`` -- the inverse of ``lov_values``."""
-    return "(" + ",".join("'" + str(value).replace("'", "''") + "'" for value in values) + ")"
-
-
-def _value_list(values: list[Any]) -> str:
-    """The stored CSV list for ``values`` -- the inverse of ``parse_value_list``, quoting a value
-    only where unquoted CSV would not read it back."""
-    def quoted(value: str) -> str:
-        if value == "" or value != value.strip() or any(char in value for char in ',"'):
-            return '"' + value.replace('"', '""') + '"'
-        return value
-    return ",".join(quoted(str(value)) for value in values)
+def _pipe_list_parameters(threshold_value: Any) -> dict[str, str]:
+    """``baseline_value`` and ``threshold_value`` for a ``LOV_All`` implementation that carries its
+    values as one quoted, pipe-delimited ``threshold_value``, e.g. ``'A|it''s'``; none for any other."""
+    text = str(threshold_value or "").strip()
+    if len(text) < 2 or not (text.startswith("'") and text.endswith("'")):
+        return {}
+    values = text[1:-1].replace("''", "'").split("|")
+    return {"baseline_value": format_value_list(values), "threshold_value": "0"}
 
 
 def _constant_literal(value: Any) -> str:
@@ -1899,7 +1879,10 @@ def _rule_parameters(
     put them there.
     """
     if rule.get("type") == RuleShape.CUSTOM.value:
-        return dict(rule.get("implementation") or {})
+        parameters = dict(rule.get("implementation") or {})
+        if test_type == "LOV_All" and not parameters.get("baseline_value"):
+            parameters.update(_pipe_list_parameters(parameters.get("threshold_value")))
+        return parameters
 
     bound = next(iter(thresholds.values()), None)
     if test_type == "SQL_Metric":
@@ -1923,11 +1906,11 @@ def _rule_parameters(
 
     parameters = {"threshold_value": _stored(bound)}
     if test_type == "LOV_Match":
-        parameters["baseline_value"] = _lov_literal(arguments.get("validValues") or [])
+        parameters["baseline_value"] = format_value_list([_stored(value) for value in arguments.get("validValues") or []])
     elif test_type == "Pattern_Match":
         parameters["baseline_value"] = arguments.get("pattern")
     elif test_type == "Required_No_Placeholder" and arguments.get("missingValues"):
-        parameters["baseline_value"] = _value_list(arguments["missingValues"])
+        parameters["baseline_value"] = format_value_list([_stored(value) for value in arguments["missingValues"]])
     elif test_type == "Constant":
         parameters["baseline_value"] = _constant_literal((arguments.get("validValues") or [None])[0])
     return parameters

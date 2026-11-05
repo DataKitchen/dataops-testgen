@@ -4,7 +4,11 @@ from uuid import uuid4
 import pandas as pd
 import pytest
 
-from testgen.common.data_catalog_service import TableSampleResult
+from testgen.common.data_catalog_service import (
+    CURRENT_VALUES_TOO_MANY_MESSAGE,
+    CurrentValuesResult,
+    TableSampleResult,
+)
 from testgen.common.source_data_service import SourceDataResult
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
@@ -608,3 +612,56 @@ def test_get_table_sample_rejects_out_of_range_limit(mock_tg_cls, bad_limit, db_
     from testgen.mcp.tools.source_data import get_table_sample
     with pytest.raises(MCPUserError):
         get_table_sample(str(uuid4()), "orders", limit=bad_limit)
+
+
+def _current_values(fetch_result, mock_tg_cls, mock_dc, mock_conn, mock_fetch, column_found=True):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dc.list_for_create_script.return_value = ("demo", [])
+    mock_dc.select_general_types.return_value = {("orders", "status"): "A"} if column_found else {}
+    mock_conn.get_by_table_group.return_value = MagicMock(connection_name="main")
+    mock_fetch.return_value = fetch_result
+
+    from testgen.mcp.tools.source_data import get_current_values
+
+    return get_current_values(str(uuid4()), "orders", "status")
+
+
+@patch("testgen.mcp.tools.source_data.fetch_current_values")
+@patch("testgen.mcp.tools.source_data.Connection")
+@patch("testgen.mcp.tools.source_data.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_current_values_returns_the_list(mock_tg_cls, mock_dc, mock_conn, mock_fetch, db_session_mock):
+    result = _current_values(
+        CurrentValuesResult("OK", value_list='A,B,"a,b"'), mock_tg_cls, mock_dc, mock_conn, mock_fetch
+    )
+
+    assert 'A,B,"a,b"' in result
+    assert mock_fetch.call_args.args[2:] == ("demo", "orders", "status")
+
+
+@patch("testgen.mcp.tools.source_data.fetch_current_values")
+@patch("testgen.mcp.tools.source_data.Connection")
+@patch("testgen.mcp.tools.source_data.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_current_values_refuses_a_column_with_too_many_values(
+    mock_tg_cls, mock_dc, mock_conn, mock_fetch, db_session_mock
+):
+    with pytest.raises(MCPUserError, match="more than 100 distinct values"):
+        _current_values(
+            CurrentValuesResult("TOO_MANY", message=CURRENT_VALUES_TOO_MANY_MESSAGE),
+            mock_tg_cls, mock_dc, mock_conn, mock_fetch,
+        )
+
+
+@patch("testgen.mcp.tools.source_data.fetch_current_values")
+@patch("testgen.mcp.tools.source_data.Connection")
+@patch("testgen.mcp.tools.source_data.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_current_values_hides_a_column_the_catalog_does_not_record(
+    mock_tg_cls, mock_dc, mock_conn, mock_fetch, db_session_mock
+):
+    with pytest.raises(MCPResourceNotAccessible):
+        _current_values(
+            CurrentValuesResult("OK", value_list="A"), mock_tg_cls, mock_dc, mock_conn, mock_fetch, column_found=False
+        )
+    mock_fetch.assert_not_called()

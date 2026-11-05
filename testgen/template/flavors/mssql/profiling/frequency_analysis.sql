@@ -10,23 +10,24 @@ WITH target_table AS (
     SELECT {COL_VALUE} AS "{COL_NAME}" FROM "{DATA_SCHEMA}"."{DATA_TABLE}" {TABLE_HINT}
 -- TG-ENDIF
     ),
--- Values that differ only in case or trailing spaces group together under the collation, so each group is
--- written as its least member by binary value: which member a GROUP BY returns is not defined
+-- Grouped by binary value: under the collation, values that differ only in case or trailing spaces would
+-- group together, and a list of expected values built from them would leave the others out
 ranked_vals
 AS
     (SELECT CAST(MIN(CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX)) AS val,
             COUNT(*) AS  ct,
-            ROW_NUMBER() OVER (ORDER BY CASE WHEN "{COL_NAME}" > ' ' THEN 0 ELSE 1 END, COUNT(*) DESC,
+            ROW_NUMBER() OVER (ORDER BY CASE WHEN MIN("{COL_NAME}") > ' ' THEN 0 ELSE 1 END, COUNT(*) DESC,
                                         CAST(MIN(CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX))
-                                            COLLATE Latin1_General_100_BIN2) AS rn,
+                                            COLLATE Latin1_General_100_BIN2,
+                                        DATALENGTH(MIN(CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX))))) AS rn,
             SUM(COUNT_BIG(*)) OVER () AS sample_value_ct
      FROM target_table
      WHERE "{COL_NAME}" IS NOT NULL
-     GROUP BY "{COL_NAME}"
+     GROUP BY CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX))
     ),
 grouped_vals
 AS (
-    SELECT CASE WHEN rn <= 10 THEN val END AS top_val, ct, rn, sample_value_ct
+    SELECT CASE WHEN rn <= 10 THEN val END AS top_val, CASE WHEN rn <= 10 THEN rn END AS top_rn, ct, rn, sample_value_ct
     FROM ranked_vals
     WHERE val > ' '
     ),
@@ -74,14 +75,15 @@ AS (
            END AS distinct_value_hash
     FROM hash_bytes
     )
-SELECT top_val AS value,
+SELECT MIN(top_val) AS value,
        SUM(ct) AS value_ct,
        MIN(rn) AS value_rank,
        CASE WHEN MIN(rn) > 10 THEN COUNT(*) END AS other_distinct_ct,
        MAX(sample_value_ct) AS sample_value_ct,
        (SELECT distinct_value_hash FROM value_hash) AS distinct_value_hash
 FROM grouped_vals
-GROUP BY top_val
+-- By rank, not by value: grouping the text would merge the binary-distinct values again
+GROUP BY top_rn
 ORDER BY 3;
 
 -- Convert function has style = 2 : The characters 0x aren't added to the left of the converted result for style 2.
