@@ -2038,13 +2038,14 @@ _UNNAMED_BOUNDS: dict[str, dict[str, str]] = {
 
 @dataclass(frozen=True)
 class UnnamedDeclarations:
-    """The terms a property's unnamed declarations resolve to, the declared paths none does, and
-    the declared paths a term owns: those a resolving ``testgenTerm`` entry names or an unnamed
-    declaration resolved from."""
+    """The terms a property's unnamed declarations resolve to, the declared paths none does, the
+    declared paths a term owns: those a resolving ``testgenTerm`` entry names or an unnamed
+    declaration resolved from, and the paths each term's test type resolved from."""
 
     terms: list[ResolvedTerm]
     unresolved: list[str]
     owned: list[str]
+    declares: dict[str, list[str]]
 
 
 def resolve_unnamed_declarations(prop: dict[str, Any], known_test_types: frozenset[str]) -> UnnamedDeclarations:
@@ -2081,6 +2082,7 @@ def resolve_unnamed_declarations(prop: dict[str, Any], known_test_types: frozens
 
     terms: list[ResolvedTerm] = []
     owned = set(named)
+    declares: dict[str, list[str]] = {}
 
     def take(test_type: str, paths: list[str]) -> None:
         if test_type not in known_test_types:
@@ -2095,6 +2097,7 @@ def resolve_unnamed_declarations(prop: dict[str, Any], known_test_types: frozens
         terms.append(ResolvedTerm(
             test_type=test_type, thresholds={}, arguments={}, conversion={}, parameters=parameters,
         ))
+        declares[test_type] = paths
         for path in paths:
             del pending[path]
             owned.add(path)
@@ -2113,7 +2116,7 @@ def resolve_unnamed_declarations(prop: dict[str, Any], known_test_types: frozens
     elif "required" in pending and "unique" not in named:
         take("Required", ["required"])
 
-    return UnnamedDeclarations(terms=terms, unresolved=sorted(pending), owned=sorted(owned))
+    return UnnamedDeclarations(terms=terms, unresolved=sorted(pending), owned=sorted(owned), declares=declares)
 
 
 # The `testgen` property marking a quality rule this engine cannot check: it stays in the

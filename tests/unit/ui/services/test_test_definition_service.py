@@ -109,8 +109,8 @@ def test_edit_changing_a_managed_test_to_another_type_is_refused():
 
 
 UNDECLARED_MESSAGE = (
-    "The contract does not declare the table customers. Add it under Declared Tables on the Contract Metadata tab, "
-    "or choose a declared table."
+    "The contract does not declare the table customers. Add it under Schema on the Contract Metadata tab, or choose "
+    "a declared table."
 )
 
 
