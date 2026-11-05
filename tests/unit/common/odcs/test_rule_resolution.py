@@ -448,6 +448,31 @@ def test_a_testgen_custom_rule_with_its_types_parameters_resolves():
     assert resolved.parameters == {"threshold_value": "2"}
 
 
+@pytest.mark.parametrize(
+    ("implementation", "parameters"),
+    [
+        ({"threshold_value": "'A|it''s|a,b'"}, {"baseline_value": "A,it's,\"a,b\"", "threshold_value": "0"}),
+        ({"threshold_value": "''"}, {"baseline_value": '""', "threshold_value": "0"}),
+        ({"threshold_value": "''''"}, {"baseline_value": "'", "threshold_value": "0"}),
+        ({"baseline_value": "A,B", "threshold_value": "1"}, {"baseline_value": "A,B", "threshold_value": "1"}),
+        ({"threshold_value": "A|B"}, {"threshold_value": "A|B"}),
+    ],
+)
+def test_a_value_match_all_rule_with_a_pipe_delimited_threshold_resolves_to_a_list(implementation, parameters):
+    rule = _testgen_custom_rule(
+        implementation=implementation,
+        customProperties=[{"property": "testType", "value": "LOV_All", "vendor": "testgen"}],
+    )
+    declared = {"LOV_All": frozenset({"baseline_value", "threshold_value"})}
+
+    resolved = resolve_rule(
+        rule, RuleScope.COLUMN, _KNOWN | {"LOV_All"}, "email",
+        flavor=SqlFlavorCode.POSTGRESQL, declared_parameters=declared,
+    )
+
+    assert resolved.parameters == parameters
+
+
 def test_a_custom_rules_catalog_name_is_dropped_but_a_users_name_is_kept():
     test_type = _test_type("Avg_Shift", test_name_short="Average Shift", test_name_long="Column mean shift")
 

@@ -272,6 +272,7 @@ const EditTestDialog = (props) => {
         open: editDialogOpen,
         info: editDialogInfo,
         validateResult: props.validate_result,
+        currentValues: props.current_values,
         onClose: () => {
             editDialogOpen.val = false;
             emit('EditTestClosed', {});

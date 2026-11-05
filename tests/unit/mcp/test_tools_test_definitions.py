@@ -3651,3 +3651,58 @@ def test_resolved_version_reports_a_contract_with_no_version_to_read():
         pytest.raises(MCPUserError, match="no version to export"),
     ):
         resolved_version(MagicMock(suite_type=SuiteType.CONTRACT))
+
+
+def _value_list_td(baseline_value: str) -> MagicMock:
+    td = _orm_td(test_type="LOV_Match", baseline_value=baseline_value, table_name="orders", column_name="qty")
+    td.editable_fields.return_value = td.editable_fields.return_value | {"baseline_value"}
+    return td
+
+
+@patch("testgen.mcp.tools.test_definitions.DataColumnChars.general_type_of", return_value="N")
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_saves_nothing_for_a_list_that_dedupes_to_the_stored_one(
+    mock_resolve_td, mock_tt_model, _mock_general_type, db_session_mock
+):
+    td = _value_list_td("1,2")
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    result = update_test(str(td.id), fields={"baseline_value": "1, 2,1.00"})
+
+    assert "No fields changed" in result
+    td.save.assert_not_called()
+
+
+@patch("testgen.mcp.tools.test_definitions.DataColumnChars.general_type_of", return_value="N")
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_stores_a_list_without_duplicates(mock_resolve_td, mock_tt_model, _mock_general_type, db_session_mock):
+    td = _value_list_td("1,2")
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    update_test(str(td.id), fields={"baseline_value": "3,1.5,3.0"})
+
+    assert td.baseline_value == "3,1.5"
+    td.save.assert_called_once()
+
+
+@patch("testgen.mcp.tools.test_definitions.DataColumnChars.general_type_of", return_value="N")
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_rejects_a_non_number_listed_for_a_numeric_column(
+    mock_resolve_td, mock_tt_model, _mock_general_type, db_session_mock
+):
+    td = _value_list_td("1,2")
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    with pytest.raises(MCPUserError) as error:
+        update_test(str(td.id), fields={"baseline_value": "1,two"})
+
+    assert str(error.value) == (
+        "Update rejected. No changes saved.\n\n- `baseline_value`: contains a value that is not a number: two"
+    )
+    td.save.assert_not_called()

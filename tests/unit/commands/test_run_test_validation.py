@@ -8,6 +8,7 @@ from testgen.commands.queries.execute_tests_query import TestExecutionDef
 from testgen.commands.run_test_validation import (
     check_column_types,
     check_identifiers,
+    check_value_lists,
     collect_test_identifiers,
     run_test_validation,
 )
@@ -375,6 +376,42 @@ def test_check_types_skips_a_name_that_matches_several_columns_only_without_case
     assert check_column_types([td], catalog, '"') == {}
 
 
+# --- check_value_lists ---
+
+
+@pytest.mark.parametrize("test_type", ["LOV_Match", "LOV_All"])
+def test_check_value_lists_reports_a_non_number_listed_for_a_numeric_column(test_type):
+    td = _make_td(test_type=test_type, baseline_value='1,2,"3,4"')
+    errors = check_value_lists([td], [_column("N", "integer")], '"')
+    assert errors == {td.id: ["List of Expected Values contains a value that is not a number: 3,4."]}
+
+
+def test_check_value_lists_passes_numbers_listed_for_a_numeric_column():
+    td = _make_td(test_type="LOV_All", baseline_value=" 1, 2.50,-3,1e2")
+    assert check_value_lists([td], [_column("N", "integer")], '"') == {}
+
+
+@pytest.mark.parametrize("general_type", ["A", "D", None])
+def test_check_value_lists_accepts_any_text_for_other_columns(general_type):
+    td = _make_td(test_type="LOV_Match", baseline_value="a,b")
+    assert check_value_lists([td], [_column(general_type)], '"') == {}
+
+
+def test_check_value_lists_skips_a_column_absent_from_the_catalog():
+    td = _make_td(test_type="LOV_Match", baseline_value="a,b")
+    assert check_value_lists([td], [_column("N", column_name="other")], '"') == {}
+
+
+def test_check_value_lists_checks_only_value_list_types():
+    td = _make_td(test_type="Constant", baseline_value="abc")
+    assert check_value_lists([td], [_column("N", "integer")], '"') == {}
+
+
+def test_check_value_lists_skips_a_test_that_already_failed_validation():
+    td = _make_td(test_type="LOV_Match", baseline_value="a", errors=["Missing table: public.orders"])
+    assert check_value_lists([td], [_column("N", "integer")], '"') == {}
+
+
 # --- run_test_validation persistence ---
 
 
@@ -449,3 +486,16 @@ def test_validation_passes_a_test_whose_column_fits(monkeypatch):
 
     assert valid == [td]
     assert not written.called
+
+
+def test_validation_reports_a_non_number_in_a_numeric_value_list(monkeypatch):
+    present = ({("public", "orders")}, {("public", "orders", "amount")})
+    td, valid, _, _ = _validation_harness(
+        monkeypatch,
+        column_chars=[_column("N", "integer")],
+        td=_make_td(test_type="LOV_Match", baseline_value="1,x"),
+        target=present,
+    )
+
+    assert valid == []
+    assert td.errors == ["Deactivated", "List of Expected Values contains a value that is not a number: x."]

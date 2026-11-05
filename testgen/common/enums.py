@@ -379,6 +379,9 @@ TEST_SUITE_TYPES: tuple[SuiteType, ...] = (SuiteType.REGULAR, SuiteType.CONTRACT
 # set. Schema_Conformance follows the tables a contract declares, one definition per table.
 MANAGED_TEST_TYPES: frozenset[str] = frozenset({"Schema_Conformance"})
 
+# Test types that match a column against a list of expected values, stored as CSV in baseline_value
+VALUE_LIST_TEST_TYPES: frozenset[str] = frozenset({"LOV_Match", "LOV_All"})
+
 
 class RegenerationGroup(StrEnum):
     """What a contract regeneration refreshes besides declaring the catalog's columns and refreshing

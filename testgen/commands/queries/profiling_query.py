@@ -107,7 +107,7 @@ class ProfilingSQL:
                 "DATA_TABLE": column_chars.table_name,
                 "COL_NAME": column_chars.column_name,
                 "COL_VALUE": self.flavor_service.text_value(
-                    f"{quote}{column_chars.column_name}{quote}", column_chars.column_type
+                    f"{quote}{column_chars.column_name}{quote}", column_chars.column_type, column_chars.db_data_type
                 ),
                 "COL_NUM": self.flavor_service.numeric_value(
                     f"{quote}{column_chars.column_name}{quote}", column_chars.column_type

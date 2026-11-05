@@ -71,7 +71,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT val AS frequent_value, ct AS count FROM ( SELECT CAST(MIN(CAST(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX)) AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(MIN(CAST(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2) AS rn FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} > ' ' GROUP BY {COLUMN_VALUE} ) ranked WHERE rn <= 10 ORDER BY rn;
+      SELECT val AS frequent_value, ct AS count FROM ( SELECT CAST(MIN(CAST(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX)) AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(MIN(CAST(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2, DATALENGTH(MIN(CAST(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) AS VARBINARY(MAX))))) AS rn FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} > ' ' GROUP BY CAST(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) AS VARBINARY(MAX)) ) ranked WHERE rn <= 10 ORDER BY rn;
     error_type: Test Results
   - id: '1612'
     test_id: '1543'
@@ -87,7 +87,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT val AS frequent_value, ct AS count FROM ( SELECT {COLUMN_VALUE} AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, COLLATE({COLUMN_VALUE}, 'case_sensitive')) AS rn FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} > ' ' GROUP BY {COLUMN_VALUE} ) ranked WHERE rn <= 10 ORDER BY rn;
+      SELECT val AS frequent_value, ct AS count FROM ( SELECT MIN({COLUMN_VALUE}) AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, COLLATE(MIN({COLUMN_VALUE}), 'case_sensitive'), OCTET_LENGTH(MIN({COLUMN_VALUE}))) AS rn FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} > ' ' GROUP BY TO_VARBYTE(CAST({COLUMN_VALUE} AS VARCHAR(65535)), 'utf8') ) ranked WHERE rn <= 10 ORDER BY rn;
     error_type: Test Results
   - id: '1656'
     test_id: '1543'
@@ -95,7 +95,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT val AS frequent_value, ct AS count FROM ( SELECT {COLUMN_VALUE} AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, COLLATE({COLUMN_VALUE}, 'case_sensitive')) AS rn FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} > ' ' GROUP BY {COLUMN_VALUE} ) ranked WHERE rn <= 10 ORDER BY rn;
+      SELECT val AS frequent_value, ct AS count FROM ( SELECT MIN({COLUMN_VALUE}) AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, COLLATE(MIN({COLUMN_VALUE}), 'case_sensitive'), OCTET_LENGTH(MIN({COLUMN_VALUE}))) AS rn FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} > ' ' GROUP BY TO_VARBYTE(CAST({COLUMN_VALUE} AS VARCHAR(65535)), 'utf8') ) ranked WHERE rn <= 10 ORDER BY rn;
     error_type: Test Results
   - id: '1678'
     test_id: '1543'
@@ -233,14 +233,14 @@ test_types:
     sql_flavor: mssql
     template: |-
       WITH ranked AS (
-        -- A group of values that differ only in case or trailing spaces is written as its least member by binary
-        -- value, as profiling writes it: which member a GROUP BY returns is not defined
+        -- Grouped by binary value, as profiling groups frequent values: under the collation, values that differ
+        -- only in case or trailing spaces would group together
         SELECT CAST(MIN(CAST(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX)) AS val,
                COUNT(*) AS ct,
-               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(MIN(CAST(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2) AS rn
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(MIN(CAST(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2, DATALENGTH(MIN(CAST(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) AS VARBINARY(MAX))))) AS rn
           FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
          WHERE {COLUMN_VALUE} > ' '
-         GROUP BY {COLUMN_VALUE}
+         GROUP BY CAST(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) AS VARBINARY(MAX))
       ),
       test AS (
         SELECT STRING_AGG(CONCAT(CAST(val AS NVARCHAR(MAX)), N' (', CAST(ct AS NVARCHAR(20)), N')'), N', ') WITHIN GROUP (ORDER BY rn) AS measure
@@ -325,12 +325,14 @@ test_types:
     sql_flavor: redshift
     template: |-
       WITH ranked AS (
-        SELECT {COLUMN_VALUE} AS val,
+        -- Grouped by bytes, as profiling groups frequent values: comparisons ignore trailing blanks
+        SELECT MIN({COLUMN_VALUE}) AS val,
                COUNT(*) AS ct,
-               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, COLLATE({COLUMN_VALUE}, 'case_sensitive')) AS rn
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, COLLATE(MIN({COLUMN_VALUE}), 'case_sensitive'),
+                                           OCTET_LENGTH(MIN({COLUMN_VALUE}))) AS rn
           FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
          WHERE {COLUMN_VALUE} > ' '
-         GROUP BY {COLUMN_VALUE}
+         GROUP BY TO_VARBYTE(CAST({COLUMN_VALUE} AS VARCHAR(65535)), 'utf8')
       ),
       test AS (
         SELECT LISTAGG(val || ' (' || CAST(ct AS VARCHAR) || ')', ', ') WITHIN GROUP (ORDER BY rn) AS measure
@@ -370,12 +372,14 @@ test_types:
     sql_flavor: redshift_spectrum
     template: |-
       WITH ranked AS (
-        SELECT {COLUMN_VALUE} AS val,
+        -- Grouped by bytes, as profiling groups frequent values: comparisons ignore trailing blanks
+        SELECT MIN({COLUMN_VALUE}) AS val,
                COUNT(*) AS ct,
-               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, COLLATE({COLUMN_VALUE}, 'case_sensitive')) AS rn
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, COLLATE(MIN({COLUMN_VALUE}), 'case_sensitive'),
+                                           OCTET_LENGTH(MIN({COLUMN_VALUE}))) AS rn
           FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
          WHERE {COLUMN_VALUE} > ' '
-         GROUP BY {COLUMN_VALUE}
+         GROUP BY TO_VARBYTE(CAST({COLUMN_VALUE} AS VARCHAR(65535)), 'utf8')
       ),
       test AS (
         SELECT LISTAGG(val || ' (' || CAST(ct AS VARCHAR) || ')', ', ') WITHIN GROUP (ORDER BY rn) AS measure

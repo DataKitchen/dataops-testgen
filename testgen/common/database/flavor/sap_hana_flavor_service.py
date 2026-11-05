@@ -11,6 +11,7 @@ class SapHanaFlavorService(FlavorService):
     default_uppercase = True
     test_query = "SELECT 1 FROM DUMMY"
     url_scheme = "hana+hdbcli"
+    single_row_from = " FROM DUMMY"
 
     # The catalog records DOUBLE, REAL and SMALLDECIMAL as this type
     exact_sum_excluded_types = frozenset({"numeric"})

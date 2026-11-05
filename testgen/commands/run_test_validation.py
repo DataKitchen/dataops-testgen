@@ -5,10 +5,11 @@ from uuid import UUID
 
 from testgen.commands.queries.execute_tests_query import TestExecutionDef, TestExecutionSQL
 from testgen.common import execute_db_queries, fetch_dict_from_db
+from testgen.common.clean_sql import NonNumericValueError, parse_numeric_values, parse_value_list
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import write_to_app_db
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
-from testgen.common.enums import MANAGED_TEST_TYPES
+from testgen.common.enums import MANAGED_TEST_TYPES, VALUE_LIST_TEST_TYPES
 from testgen.common.models.data_column import GENERAL_TYPE_CODE_TO_LABEL
 
 LOG = logging.getLogger("testgen")
@@ -218,6 +219,37 @@ def check_column_types(
     return errors
 
 
+def check_value_lists(
+    test_defs: list[TestExecutionDef],
+    column_chars: list[ColumnChars],
+    quote_char: str,
+) -> dict[UUID, list[str]]:
+    """Check that each value-list test on a numeric column lists only numbers.
+
+    A test's column is matched as ``check_column_types`` matches it. Tests that already have errors,
+    and columns not matched or not numeric, are not checked.
+
+    Returns {test_id: [error_messages]} for tests whose list holds a value that is not a number.
+    """
+    columns = ColumnLookup(column_chars)
+    errors: dict[UUID, list[str]] = {}
+
+    for td in test_defs:
+        if td.errors or td.test_type not in VALUE_LIST_TEST_TYPES or not td.column_name:
+            continue
+
+        column = columns.find(td.schema_name, td.table_name, td.column_name.strip(f" {quote_char}"))
+        if not column or column.general_type != "N":
+            continue
+
+        try:
+            parse_numeric_values(parse_value_list(td.baseline_value))
+        except NonNumericValueError as error:
+            errors[td.id] = [str(error)]
+
+    return errors
+
+
 def run_test_validation(
     sql_generator: TestExecutionSQL,
     test_defs: list[TestExecutionDef],
@@ -227,8 +259,9 @@ def run_test_validation(
 ) -> list[TestExecutionDef]:
     """Validate test definitions against the current target schema.
 
-    Populates ``td.errors`` on test_defs that reference missing tables or columns, or whose
-    column's general type, per ``column_chars``, does not fit the test type.
+    Populates ``td.errors`` on test_defs that reference missing tables or columns, whose
+    column's general type, per ``column_chars``, does not fit the test type, or whose list of
+    expected values for a numeric column holds a value that is not a number.
     By default, also writes Error results and deactivates the failing tests; pass
     ``defer_persistence=True`` to skip those side effects (e.g. when the caller
     will attempt a regeneration first and let a later validation pass persist
@@ -254,6 +287,8 @@ def run_test_validation(
 
     if column_chars:
         for test_id, error_list in check_column_types(test_defs, column_chars, quote).items():
+            test_defs_by_id[test_id].errors.extend(error_list)
+        for test_id, error_list in check_value_lists(test_defs, column_chars, quote).items():
             test_defs_by_id[test_id].errors.extend(error_list)
 
     if not defer_persistence:

@@ -1,6 +1,17 @@
+from decimal import Decimal
+
 import pytest
 
-from testgen.common.clean_sql import CleanSQL, concat_columns, parse_value_list, strip_trailing_semicolons
+from testgen.common.clean_sql import (
+    CleanSQL,
+    NonNumericValueError,
+    concat_columns,
+    format_value_list,
+    normalize_value_list,
+    parse_numeric_values,
+    parse_value_list,
+    strip_trailing_semicolons,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -89,10 +100,80 @@ def test_concat_columns_none():
         ("it's", ["it's"]),
         ("a\\b", ["a\\b"]),
         ('" "," x"', [" ", " x"]),
+        ("A , B", ["A", "B"]),
+        (' a ,"b " , "c" ', ["a", "b ", "c"]),
+        ("\t tab \t,x", ["tab", "x"]),
+        ("a,,b", ["a", "", "b"]),
+        ("a,", ["a", ""]),
+        ("a\n\nb", ["a", "b"]),
+        ('"line\nbreak",x', ["line\nbreak", "x"]),
+        ('say "hi"', ['say "hi"']),
     ],
 )
 def test_parse_value_list(value, expected):
     assert parse_value_list(value) == expected
+
+
+# --- parse_numeric_values ---
+
+def test_parse_numeric_values_keeps_the_first_of_values_equal_as_numbers():
+    numbers = parse_numeric_values(["1.5", "2", "1.50", " 2.0 ", "-0.5", "1e2", "100"])
+    assert [str(number) for number in numbers] == ["1.5", "2", "-0.5", "1E+2"]
+
+
+def test_parse_numeric_values_accepts_an_empty_list():
+    assert parse_numeric_values([]) == []
+
+
+@pytest.mark.parametrize("value", ["a", "", "1,5", "NaN", "Infinity", "-inf", "0x10", "1_000", "\u0663", "1e", "."])
+def test_parse_numeric_values_rejects_a_value_that_is_not_a_finite_number(value):
+    with pytest.raises(NonNumericValueError) as error:
+        parse_numeric_values(["1", value])
+    assert error.value.value == value
+    assert str(error.value) == f"List of Expected Values contains a value that is not a number: {value}."
+
+
+def test_parse_numeric_values_returns_decimals():
+    assert parse_numeric_values(["0.1"]) == [Decimal("0.1")]
+
+
+# --- format_value_list / normalize_value_list ---
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        (["Y", "N"], "Y,N"),
+        (["", "a,b", 'say "hi"', "it's"], '"","a,b","say ""hi""",it\'s'),
+        ([" lead", "trail ", "\ttab"], '" lead","trail ","\ttab"'),
+        (["line\nbreak", "cr\rhere"], '"line\nbreak","cr\rhere"'),
+        (["a|b", "ü"], "a|b,ü"),
+        ([], ""),
+    ],
+)
+def test_format_value_list_reads_back_with_parse_value_list(values, expected):
+    assert format_value_list(values) == expected
+    assert parse_value_list(expected) == values
+
+
+@pytest.mark.parametrize(
+    ("value", "numeric", "expected"),
+    [
+        ("1.5, 2,1.50, 2.0", True, "1.5,2"),
+        (" 10 ,1e1", True, "10"),
+        ("a,A,a", False, "a,A"),
+        ('a, "a",x', False, "a,x"),
+        ('"",a,""', False, '"",a'),
+        ("e,é", False, "e,é"),
+    ],
+)
+def test_normalize_value_list_keeps_each_value_once(value, numeric, expected):
+    assert normalize_value_list(value, numeric) == expected
+
+
+def test_normalize_value_list_rejects_a_non_number_in_a_numeric_list():
+    with pytest.raises(NonNumericValueError) as error:
+        normalize_value_list("1,two", numeric=True)
+    assert error.value.value == "two"
 
 
 # --- strip_trailing_semicolons ---

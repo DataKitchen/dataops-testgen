@@ -17,6 +17,7 @@ from testgen.common.odcs.quality_rules import (
     RuleShape,
     _cohens_h_band,
     _groupby_columns,
+    drop_generated_metadata,
     odcs_dimension,
     project_rule,
     rule_scope,
@@ -144,7 +145,7 @@ def test_a_library_rule_names_its_metric_and_never_a_rule_key():
 def test_a_list_of_values_term_carries_its_values_as_an_argument():
     term = _term(
         test_type="LOV_Match",
-        baseline_value="('Y','N')",
+        baseline_value="Y,N",
         threshold_value="0",
         contract_term_id="term-lov",
     )
@@ -780,14 +781,14 @@ def test_a_term_with_no_contract_identity_is_refused_by_name():
     [
         ("Required", {"threshold_value": "   "}),
         ("Required", {"threshold_value": "many"}),
-        ("LOV_Match", {"baseline_value": "5", "threshold_value": "0"}),
+        ("LOV_Match", {"baseline_value": None, "threshold_value": "0"}),
         ("Missing_Pct", {"baseline_ct": "50", "baseline_value_ct": "40", "threshold_value": None}),
         ("Missing_Pct", {"baseline_ct": "0", "baseline_value_ct": "0", "threshold_value": "2.0"}),
         ("Missing_Pct", {"baseline_ct": None, "baseline_value_ct": "40", "threshold_value": "2.0"}),
         ("Missing_Pct", {"baseline_ct": "50", "baseline_value_ct": "60", "threshold_value": "0.5"}),
         ("Missing_Pct", {"baseline_ct": "-5", "baseline_value_ct": "1", "threshold_value": "0.5"}),
         ("Row_Ct_Pct", {"baseline_ct": "0", "threshold_value": "10"}),
-        ("LOV_Match", {"baseline_value": "Val1,Val2", "threshold_value": "0"}),
+        ("LOV_Match", {"baseline_value": "", "threshold_value": "0"}),
         ("Pattern_Match", {"baseline_value": "", "threshold_value": "0"}),
         ("Match_Null_Ct", {"baseline_ct": None}),
         ("Dupe_Rows", {"groupby_names": "order_id"}),
@@ -814,7 +815,7 @@ def test_a_term_whose_values_cannot_be_stated_exactly_renders_custom(test_type, 
     [
         ("Required", {"threshold_value": None}, {"mustBeLessOrEqualTo": 0}),
         ("Required", {"threshold_value": ""}, {"mustBeLessOrEqualTo": 0}),
-        ("LOV_Match", {"baseline_value": "('A','B')", "threshold_value": None}, {"mustBeLessOrEqualTo": 0}),
+        ("LOV_Match", {"baseline_value": "A,B", "threshold_value": None}, {"mustBeLessOrEqualTo": 0}),
         ("Pattern_Match", {"baseline_value": "[A-Z]{3}", "threshold_value": ""}, {"mustBeLessOrEqualTo": 0}),
         ("Row_Ct", {"threshold_value": None}, {"mustBeGreaterOrEqualTo": 0}),
         ("Match_Row_Ct", {"threshold_value": None}, {"mustBe": 0}),
@@ -829,8 +830,8 @@ def test_a_blank_threshold_renders_as_the_zero_execution_runs_it_with(test_type,
     assert {key: value for key, value in rule.items() if key.startswith("must")} == bound
 
 
-def test_an_unquoted_numeric_value_list_renders_its_values():
-    term = _term(test_type="LOV_Match", baseline_value="(1, 2,3)", threshold_value="0")
+def test_a_value_list_renders_its_values():
+    term = _term(test_type="LOV_Match", baseline_value="1, 2,3", threshold_value="0")
     rule = project_rule(term, _test_type("LOV_Match"), SqlFlavorCode.POSTGRESQL)
 
     assert rule["type"] == "library"
@@ -1008,17 +1009,25 @@ def test_a_description_omits_catalogue_segments_that_are_absent():
     assert "None" not in rule["description"]
 
 
-def test_a_non_numeric_threshold_renders_as_stored():
-    """LOV_All stores a pipe-delimited list, not a number."""
-    term = _term(test_type="LOV_All", threshold_value="'Val1|Val2'")
+def test_a_value_match_all_rule_carries_its_list_and_states_it():
+    term = _term(test_type="LOV_All", baseline_value='Val1,"a,b"', threshold_value="0")
     test_type = _test_type(
-        "LOV_All", dq_dimension="Validity", default_parm_columns="threshold_value",
-        test_description="Tests that column values match pipe-delimited list of expected values.",
-        except_message="Column values do not exactly match expected list of values.",
-        threshold_description="Sorted list of all distinct expected values",
+        "LOV_All", dq_dimension="Validity", test_scope="column", default_parm_columns="baseline_value,threshold_value",
+        test_description="Tests that every column value is in the list of expected values.",
+        threshold_description="Number of values that do not match the expected list",
     )
     rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
-    assert "Threshold: 'Val1|Val2'" in rule["description"]
+
+    assert rule["type"] == "custom"
+    assert rule["implementation"] == {"baseline_value": 'Val1,"a,b"', "threshold_value": "0"}
+    assert rule["description"] == (
+        "Tests that every column value is in the list of expected values. "
+        'Expected values: Val1,"a,b". '
+        "Threshold: 0 (Number of values that do not match the expected list)."
+    )
+    assert drop_generated_metadata(
+        {"description": rule["description"]}, test_type, rule["implementation"], custom=True
+    ) == {}
 
 
 def test_a_type_declaring_no_parameters_still_renders_an_empty_implementation():
@@ -1047,11 +1056,11 @@ def test_a_single_bound_library_term_renders_its_own_threshold(test_type, operat
     assert rule[operator] == 4217
 
 
-def test_a_list_of_values_term_unescapes_a_quote_inside_a_value():
-    term = _term(test_type="LOV_Match", baseline_value="('it''s','N')", threshold_value="0")
+def test_a_list_of_values_term_reads_quoted_values():
+    term = _term(test_type="LOV_Match", baseline_value='"a,b",it\'s,"say ""hi""",""', threshold_value="0")
     rule = project_rule(term, _test_type("LOV_Match", dq_dimension="Validity"), SqlFlavorCode.POSTGRESQL)
 
-    assert rule["arguments"] == {"validValues": ["it's", "N"]}
+    assert rule["arguments"] == {"validValues": ["a,b", "it's", 'say "hi"', ""]}
 
 
 def test_a_pattern_term_keeps_its_pattern_as_a_string():
