@@ -222,7 +222,7 @@ def test_the_document_sits_in_a_yaml_fence(db_session_mock):
 def test_a_document_containing_a_triple_backtick_escalates_the_fence(db_session_mock):
     """A description field carrying backticks would otherwise close the block early and
     hand the caller a truncated file that looks complete."""
-    document = FROZEN_YAML + 'description:\n  purpose: "see ``` the example"\n'
+    document = FROZEN_YAML + 'status: active\ndescription:\n  purpose: "see ``` the example"\n'
     version = SuiteVersion(
         id=uuid4(), version=3, frozen_document=document, frozen_at=datetime(2026, 9, 12, tzinfo=UTC)
     )
@@ -287,7 +287,8 @@ def test_splitting_counts_bytes_not_characters():
 
 def _big_contract(lines=400):
     body = "".join(f"  # padding padding padding padding padding line {i}\n" for i in range(lines))
-    return FROZEN_YAML + "description:\n  purpose: >\n" + body
+    # It carries the status export fills in, so the export is the stored bytes exactly.
+    return FROZEN_YAML + "status: active\ndescription:\n  purpose: >\n" + body
 
 
 def _export_chunked(document, limit, **kwargs):
@@ -760,6 +761,7 @@ def _saved(version_id, **fields):
         unresolved_declarations=fields.get("unresolved_declarations", []),
         untested_declarations=fields.get("untested_declarations", []),
         overridden_declarations=fields.get("overridden_declarations", []),
+        unchecked_paths=fields.get("unchecked_paths", []),
         problems=fields.get("problems", []),
     )
 

@@ -179,16 +179,13 @@ const TestDefinitions = (/** @type object */ props) => {
     const testTypeFilter = van.state(null);
     const flaggedFilter = van.state(null);
 
-    // Initialize filters from Python query params (runs once on mount)
-    const filtersInitialized = van.state(false);
+    // Follow the query params' filters: on mount, and when a link on this page navigates to other filters.
     van.derive(() => {
-        if (filtersInitialized.val) return;
         const cf = currentFilters.val;
         tableFilter.val = cf.table_name ?? null;
         columnFilter.val = cf.column_name ?? null;
         testTypeFilter.val = cf.test_type ?? null;
         flaggedFilter.val = cf.flagged ?? null;
-        filtersInitialized.val = true;
     });
 
     const columnFilterOptions = van.derive(() => {
@@ -962,6 +959,15 @@ const ContractSection = (props, emit, rules) => {
     const isContract = van.derive(() => !!contract.val);
     const field = (key) => van.derive(() => contract.val?.[key] ?? null);
     const activeTab = van.state(Math.max(0, CONTRACT_TABS.indexOf(contract.rawVal?.tab)));
+    // The metadata is sent only while its tab is open, so the last copy keeps its forms open behind the other tab
+    const metadata = van.state(null);
+    van.derive(() => {
+        if (!contract.val) {
+            metadata.val = null;
+        } else if (contract.val.metadata) {
+            metadata.val = contract.val.metadata;
+        }
+    });
 
     van.derive(() => {
         const index = CONTRACT_TABS.indexOf(contract.val?.tab);
@@ -1030,9 +1036,11 @@ const ContractSection = (props, emit, rules) => {
                 Tab(
                     { label: 'Contract Metadata' },
                     ContractMetadata({
-                        data: field('metadata'),
+                        data: metadata,
                         onSaveDocument: (text) => emit('ContractSaveDocument', { payload: { text } }),
                         onSaveTables: (tables) => emit('ContractSaveTables', { payload: { tables } }),
+                        onSaveSection: (section, values) => emit('ContractSaveSection', { payload: { section, values } }),
+                        emit,
                     }),
                 ),
             ),

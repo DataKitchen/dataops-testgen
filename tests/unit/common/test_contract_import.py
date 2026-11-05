@@ -825,12 +825,13 @@ def test_applying_writes_the_draft_then_commits_then_reconciles_conformance():
         )
         table_group = MagicMock(table_group_schema="public")
         plan = contract_import.prepare_import(
-            yaml.safe_dump(_document(apiVersion="v3.1.0")), table_group, _connection(), None
+            yaml.safe_dump(_document(apiVersion="v3.1.0", status="retired")), table_group, _connection(), None
         )
 
         result = contract_import.apply_import(plan, MagicMock(), table_group, SqlFlavorCode.POSTGRESQL)
 
     assert result == contract_import.AppliedImport(version_id=draft_id, conformance_failed=False)
+    assert "status" not in version.metadata_document
     assert calls == ["commit", "conformance"]
     assert version.metadata_document["apiVersion"] == "v3.2.0"
     assert version.metadata_document["version"] == "3.0.0"
