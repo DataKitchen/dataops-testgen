@@ -143,7 +143,8 @@ def test_freezing_records_the_api_version_the_bytes_were_validated_against():
     assert frozen.odcs_api_version == ODCS_API_VERSION
 
 
-def test_freezing_without_a_label_leaves_the_drafts_label_untouched():
+@pytest.mark.parametrize("label", [None, "", "   "])
+def test_freezing_with_a_blank_label_leaves_the_drafts_label_untouched(label):
     suite = _suite()
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, label="carried over")
     with (
@@ -152,9 +153,23 @@ def test_freezing_without_a_label_leaves_the_drafts_label_untouched():
         patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
     ):
-        frozen = contract_service.freeze_version(suite)
+        frozen = contract_service.freeze_version(suite, label=label)
 
     assert frozen.label == "carried over"
+
+
+def test_freezing_trims_the_label():
+    suite = _suite()
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(TestDefinition, "assign_missing_term_ids"),
+        patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+    ):
+        frozen = contract_service.freeze_version(suite, label="  Q4 agreement ")
+
+    assert frozen.label == "Q4 agreement"
 
 
 def test_freezing_does_not_touch_the_drafts_author():

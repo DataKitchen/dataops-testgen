@@ -56,7 +56,7 @@ def version_history(suite: TestSuite) -> dict[str, Any]:
     for item in items:
         state = version_state(item.frozen_at, item.version == active_number)
         state_text = state.value.capitalize()
-        options.append({"value": item.version, "label": format_version(item.version, state)})
+        options.append({"value": item.version, "label": format_version(item.version, state, item.label)})
         versions.append({
             "version": item.version,
             "state": state.value,
@@ -108,7 +108,7 @@ def version_comparison(suite: TestSuite, source: int, target: int) -> dict[str, 
             result["error"] = str(e)
             continue
         is_active = active is not None and version.version == active.version
-        label = format_version(version.version, version_state(version.frozen_at, is_active))
+        label = format_version(version.version, version_state(version.frozen_at, is_active), version.label)
         result[f"{side}_label"] = label
         try:
             documents[side] = contract_service.export_version(version, contract_name=suite.test_suite).text

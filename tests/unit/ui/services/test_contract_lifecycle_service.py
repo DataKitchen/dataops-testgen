@@ -76,19 +76,6 @@ def test_freezing_reports_the_version_frozen():
     freeze.assert_called_once_with(suite, label="Q4 agreement", username="alice")
 
 
-@pytest.mark.parametrize("label", [None, "", "   "])
-def test_a_blank_label_is_no_label(label):
-    _, freeze, suite = _freeze(label)
-
-    freeze.assert_called_once_with(suite, label=None, username="alice")
-
-
-def test_a_label_is_trimmed():
-    _, freeze, suite = _freeze("  Q4 agreement ")
-
-    freeze.assert_called_once_with(suite, label="Q4 agreement", username="alice")
-
-
 def test_a_document_that_does_not_validate_is_refused_with_its_problems():
     problems = ["servers[0].schema is required", "schema[2].properties[4].logicalType must be one of …"]
     result, *_ = _freeze(None, side_effect=InvalidContractDocumentError(problems))

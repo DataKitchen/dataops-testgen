@@ -87,6 +87,8 @@ def freeze_version(suite: TestSuite, *, label: str | None = None, username: str 
     written. Raises ``InvalidContractDocumentError``, leaving the draft a draft, when the
     merged document does not validate; terms are not regenerated here, only what the draft
     already holds is rendered.
+
+    :param label: the name to give the version, trimmed; a blank one leaves the draft's label as it is
     """
     draft = SuiteVersion.draft_for(suite.id)
     if draft is None:
@@ -104,7 +106,7 @@ def freeze_version(suite: TestSuite, *, label: str | None = None, username: str 
     draft.frozen_document = serialize.serialize_document(document)
     draft.frozen_at = datetime.now(UTC)
     draft.frozen_by = username
-    if label is not None:
+    if label := (label or "").strip():
         draft.label = label
     get_current_session().flush()
     return draft
