@@ -335,6 +335,27 @@ class DataColumnChars(Entity):
         return {(row.table_name, row.column_name) for row in get_current_session().execute(query)}
 
     @classmethod
+    def select_general_types(cls, table_groups_id: UUID, *clauses) -> dict[tuple[str, str], str | None]:
+        """Return the general type of each column in the table group's catalog that is not dropped and
+        matches ``clauses``, keyed by ``(table_name, column_name)``."""
+        query = select(cls.table_name, cls.column_name, cls.general_type).where(
+            cls.table_groups_id == table_groups_id, cls.drop_date.is_(None), *clauses
+        )
+        return {(row.table_name, row.column_name): row.general_type for row in get_current_session().execute(query)}
+
+    @classmethod
+    def general_type_of(
+        cls, table_groups_id: UUID | None, table_name: str | None, column_name: str | None
+    ) -> str | None:
+        """Return the general type the table group's catalog records for a column, or None when it has none."""
+        if not (table_groups_id and table_name and column_name):
+            return None
+        general_types = cls.select_general_types(
+            table_groups_id, cls.table_name == table_name, cls.column_name == column_name
+        )
+        return general_types.get((table_name, column_name))
+
+    @classmethod
     def list_for_create_script(
         cls, table_groups_id: UUID, table_name: str,
     ) -> tuple[str | None, list[CreateScriptColumn]]:

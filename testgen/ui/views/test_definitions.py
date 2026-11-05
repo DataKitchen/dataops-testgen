@@ -23,6 +23,7 @@ from testgen.common.audit.test_definitions import (
     record_tests_moved,
 )
 from testgen.common.custom_test_validation import validate_custom_query, validate_metric_query
+from testgen.common.data_catalog_service import fetch_current_values
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
@@ -117,6 +118,7 @@ TD_UNLOCK_DIALOG_KEY = "td:unlock_dialog"
 TD_RUN_TESTS_DIALOG_KEY = "td:run_tests_dialog"
 TD_RUN_TESTS_RESULT_KEY = "td:run_tests_result"
 TD_VALIDATE_RESULT_KEY = "td:validate_result"
+TD_CURRENT_VALUES_KEY = "td:current_values"
 TD_COPY_MOVE_COLLISION_KEY = "td:copy_move_collision"
 TD_COPY_MOVE_OVERWRITE_KEY = "td:copy_move_overwrite"
 TD_NOTES_DIALOG_KEY = "td:notes_dialog"
@@ -268,6 +270,7 @@ class TestDefinitionsPage(Page):
 
         # Build dialog states
         validate_result = st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)
+        current_values = st.session_state.pop(TD_CURRENT_VALUES_KEY, None)
 
         qualifies_table_refs_with_schema = True
         schema_label = str(TableGroupSchemaLabel.SCHEMA)
@@ -707,6 +710,11 @@ class TestDefinitionsPage(Page):
                     "message": f"Test validation failed with error: {e}",
                 }
 
+        @with_database_session
+        def on_use_current_values(test_def: dict) -> None:
+            if user_can_edit:
+                st.session_state[TD_CURRENT_VALUES_KEY] = use_current_values(test_def, table_group)
+
         def on_run_tests_clicked(*_) -> None:
             st.session_state[TD_RUN_TESTS_DIALOG_KEY] = True
 
@@ -983,6 +991,7 @@ class TestDefinitionsPage(Page):
                 },
                 "run_tests_disabled_reason": contract.run_disabled_reason if contract else None,
                 "validate_result": validate_result,
+                "current_values": current_values,
                 "add_dialog": add_dialog,
                 "edit_dialog": edit_dialog,
                 "delete_dialog": delete_dialog,
@@ -1015,6 +1024,7 @@ class TestDefinitionsPage(Page):
             on_MoveConfirmed_change=on_move_confirmed,
             on_CopyMoveTargetChanged_change=on_copy_move_target_changed,
             on_ValidateTest_change=on_validate_test,
+            on_UseCurrentValues_change=on_use_current_values,
             on_RunTestsClicked_change=on_run_tests_clicked,
             on_RunTestsConfirmed_change=on_run_tests_confirmed,
             on_RunTestsDialogClosed_change=on_run_tests_dialog_closed,
@@ -1623,6 +1633,23 @@ def get_columns(table_groups_id: str) -> list[dict]:
         {"table_groups_id": table_groups_id},
     )
     return [dict(row) for row in results]
+
+
+def use_current_values(test_definition: dict, table_group: TableGroupMinimal) -> dict:
+    """Read the column of a test being edited for its list of expected values.
+
+    Returns the ``current_values`` prop the test form reads: the list, or the message saying why
+    there is none, stamped so the form applies each result once.
+    """
+    result = fetch_current_values(
+        get_connection(table_group.connection_id),
+        table_group.id,
+        test_definition["schema_name"],
+        test_definition["table_name"],
+        test_definition["column_name"],
+        can_view_pii=session.auth.user_has_permission("view_pii"),
+    )
+    return {"timestamp": datetime.now(UTC).isoformat(), "value_list": result.value_list, "message": result.message}
 
 
 def validate_test(test_definition: dict, table_group: TableGroupMinimal) -> None:

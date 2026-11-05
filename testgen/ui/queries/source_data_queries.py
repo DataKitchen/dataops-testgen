@@ -9,6 +9,7 @@ from typing import Literal
 import pandas as pd
 import streamlit as st
 
+from testgen.common.clean_sql import NonNumericValueError
 from testgen.common.source_data_service import (
     SourceDataResult,
     build_hygiene_query,
@@ -39,8 +40,12 @@ def get_hygiene_issue_source_data(
     return _to_tuple(fetch_hygiene_source_data(issue_data, limit, mask_pii))
 
 
-def get_test_issue_source_query(issue_data: dict, limit: int = DEFAULT_LIMIT) -> str:
-    return build_test_result_query(issue_data, limit)
+def get_test_issue_source_query(issue_data: dict, limit: int = DEFAULT_LIMIT) -> str | None:
+    try:
+        return build_test_result_query(issue_data, limit)
+    except NonNumericValueError:
+        # The source data fetch reports the error
+        return None
 
 
 @st.cache_data(show_spinner=False)

@@ -20,9 +20,9 @@ from testgen.common.source_data_service import (
     SourceDataResult,
     _build_query_custom,
     _build_query_standard,
+    _catalog_columns,
     _generate_recency_lookup_query,
     _mask_lookup_pii,
-    _value_hash_params,
     build_hygiene_query,
     build_test_result_query,
     fetch_hygiene_source_data,
@@ -98,6 +98,7 @@ def _hygiene_issue_data(**overrides):
 
 @dataclass
 class _FakeTestDefinition:
+    test_type: str | None = None
     custom_query: str | None = None
     baseline_value: str | None = None
     baseline_ct: int | None = None
@@ -251,6 +252,29 @@ class Test_build_query_standard:
     @patch(f"{MODULE}.replace_params")
     @patch(f"{MODULE}.TestDefinition.get_for_project")
     @patch(f"{MODULE}._get_lookup_data")
+    def test_value_list_renders_for_the_catalog_column_type(self, mock_lookup, mock_td, mock_replace, _mock_templated):
+        mock_lookup.return_value = LookupData(lookup_query="SELECT 1", sql_flavor="postgresql")
+        mock_td.return_value = _FakeTestDefinition(test_type="LOV_All", baseline_value="1,2.0,1.00")
+        _build_query_standard(_standard_issue_data(column_names="id"), limit=500)
+        params = mock_replace.call_args[0][1]
+        assert params["VALUE_LIST_COLUMN"] == '"id"'
+        assert params["VALUE_LIST_LITERALS"] == "1, 2.0"
+        assert params["VALUE_LIST_CT"] == "2"
+
+    @patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q)
+    @patch(f"{MODULE}.replace_params")
+    @patch(f"{MODULE}.TestDefinition.get_for_project")
+    @patch(f"{MODULE}._get_lookup_data")
+    def test_value_list_is_left_out_for_other_test_types(self, mock_lookup, mock_td, mock_replace, _mock_templated):
+        mock_lookup.return_value = LookupData(lookup_query="SELECT 1", sql_flavor="postgresql")
+        mock_td.return_value = _FakeTestDefinition(test_type="Constant", baseline_value="abc")
+        _build_query_standard(_standard_issue_data(column_names="id"), limit=500)
+        assert "VALUE_LIST_LITERALS" not in mock_replace.call_args[0][1]
+
+    @patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q)
+    @patch(f"{MODULE}.replace_params")
+    @patch(f"{MODULE}.TestDefinition.get_for_project")
+    @patch(f"{MODULE}._get_lookup_data")
     def test_subset_condition_defaults(self, mock_lookup, mock_td, mock_replace, _mock_templated):
         mock_lookup.return_value = LookupData(lookup_query="SELECT 1", sql_flavor="postgresql")
         mock_td.return_value = _FakeTestDefinition(subset_condition=None)
@@ -267,18 +291,20 @@ def _test_type_lookups():
         for lookup in test_type.get("target_data_lookups") or []:
             if lookup.get("lookup_query"):
                 yield pytest.param(
+                    test_type["test_type"],
                     lookup["sql_flavor"],
                     lookup["lookup_query"],
                     id=f"{test_type['test_type']}-{lookup['sql_flavor']}",
                 )
 
 
-@pytest.mark.parametrize(("sql_flavor", "lookup_query"), list(_test_type_lookups()))
+@pytest.mark.parametrize(("test_type", "sql_flavor", "lookup_query"), list(_test_type_lookups()))
 @patch(f"{MODULE}.TestDefinition.get_for_project")
 @patch(f"{MODULE}._get_lookup_data")
-def test_every_lookup_placeholder_is_substituted(mock_lookup, mock_td, sql_flavor, lookup_query):
+def test_every_lookup_placeholder_is_substituted(mock_lookup, mock_td, test_type, sql_flavor, lookup_query):
     mock_lookup.return_value = LookupData(lookup_query=lookup_query, sql_flavor=sql_flavor)
     mock_td.return_value = _FakeTestDefinition(
+        test_type=test_type,
         groupby_names="id",
         **{name: "1" for name in _FakeTestDefinition.__dataclass_fields__ if name.startswith("baseline_")},
     )
@@ -414,6 +440,16 @@ class Test_fetch_test_result_source_data:
         assert result.df is not None
         assert result.query == "SELECT 1"
         assert result.message is None
+
+    @patch(f"{MODULE}._get_lookup_data", return_value=LookupData(lookup_query="SELECT 1", sql_flavor="postgresql"))
+    @patch(
+        f"{MODULE}.TestDefinition.get_for_project",
+        return_value=_FakeTestDefinition(test_type="LOV_Match", baseline_value="1,x"),
+    )
+    def test_returns_err_when_a_numeric_column_lists_a_non_number(self, _mock_td, _mock_lookup):
+        result = fetch_test_result_source_data(_standard_issue_data(test_type="LOV_Match", column_names="id"))
+        assert result.status == "ERR"
+        assert result.message == "List of Expected Values contains a value that is not a number: x."
 
     @patch(f"{MODULE}.TestDefinition.get_for_project", return_value=None)
     def test_returns_na_when_no_test_definition(self, _mock_td):
@@ -628,11 +664,11 @@ class Test_SourceDataResult:
         assert r.df is None
 
 
-def test_value_hash_params_find_the_key_column_as_test_execution_does():
+def test_catalog_columns_find_the_key_column_as_test_execution_does():
     flavor_service = get_flavor_service("postgresql")
     test_definition = SimpleNamespace(groupby_names=' "ID" ')
 
-    params = _value_hash_params(flavor_service, _standard_issue_data(column_names="email"), test_definition)
+    column, key_column = _catalog_columns(flavor_service, _standard_issue_data(column_names="email"), test_definition)
 
-    assert '"id"' in params["KEYED_HASH_TERM"]
-    assert "EPOCH_SUM_TERM" in params
+    assert column.column_name == "email"
+    assert key_column.column_name == "id"

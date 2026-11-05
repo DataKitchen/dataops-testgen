@@ -12,6 +12,7 @@ from testgen.commands.queries.execute_tests_query import (
     group_cat_tests,
     parse_cat_results,
 )
+from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.enums import SuiteType
 from testgen.common.models.connection import Connection
@@ -599,6 +600,41 @@ def test_baseline_value_literal_is_not_expanded_by_other_params():
     td = _make_td(test_type="Match_Frequent_Values", baseline_value="{DATA_SCHEMA} (2), {BASELINE_CT} (1)")
     query = replace_params("SELECT {BASELINE_VALUE_LITERAL} FROM {DATA_SCHEMA}.t", instance._get_params(td))
     assert query == "SELECT '{DATA_SCHEMA} (2), {BASELINE_CT} (1)' FROM public.t"
+
+
+def test_get_params_value_list_follows_the_catalog_column_type():
+    instance = _make_params_execution_sql()
+    instance.flavor_service = get_flavor_service("postgresql")
+    td = _make_td(test_type="LOV_All", column_name="amount", baseline_value="1,1.0, 2")
+    td.column_chars = ColumnChars("public", "orders", "amount", general_type="N", column_type="numeric(10,2)")
+    params = instance._get_params(td)
+    assert params["VALUE_LIST_COLUMN"] == '"amount"'
+    assert params["VALUE_LIST_LITERALS"] == "1, 2"
+    assert params["VALUE_LIST_CT"] == "2"
+
+
+def test_get_params_value_list_matches_text_when_the_column_is_not_in_the_catalog():
+    instance = _make_params_execution_sql()
+    instance.flavor_service = get_flavor_service("postgresql")
+    params = instance._get_params(_make_td(test_type="LOV_Match", column_name="code", baseline_value="a,A"))
+    assert params["VALUE_LIST_COLUMN"] == 'CAST("code" AS VARCHAR(1000)) COLLATE "C"'
+    assert params["VALUE_LIST_CT"] == "2"
+
+
+def test_get_params_value_list_is_left_out_for_other_test_types():
+    instance = _make_params_execution_sql()
+    instance.flavor_service = get_flavor_service("postgresql")
+    td = _make_td(test_type="Constant", column_name="amount", baseline_value="abc")
+    td.column_chars = ColumnChars("public", "orders", "amount", general_type="N")
+    assert "VALUE_LIST_LITERALS" not in instance._get_params(td)
+
+
+def test_value_list_is_not_expanded_by_any_param():
+    instance = _make_params_execution_sql()
+    instance.flavor_service = get_flavor_service("postgresql")
+    td = _make_td(test_type="LOV_All", column_name="code", baseline_value="{DATA_SCHEMA},{VALUE_LIST_CT}")
+    query = replace_params("{VALUE_LIST_LITERALS} | {VALUE_LIST_CT}", instance._get_params(td))
+    assert query == "'{DATA_SCHEMA}' COLLATE \"C\", '{VALUE_LIST_CT}' COLLATE \"C\" | 2"
 
 
 @pytest.mark.parametrize(

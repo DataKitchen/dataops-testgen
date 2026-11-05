@@ -3,6 +3,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from functools import partial
 from typing import Annotated, NoReturn
 from uuid import UUID
 
@@ -28,6 +29,7 @@ from testgen.common.database.table_group_service import (
 from testgen.common.enums import ImpactDimension, QualityDimension, SuiteType, TestScope
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.suite_version import (
     FrozenVersionError,
     RemovedInDraftError,
@@ -48,6 +50,8 @@ from testgen.common.models.test_definition import (
     TestDefinitionNote,
     TestDefinitionSummary,
     TestType,
+    stored_value_list,
+    stores_empty_string,
 )
 from testgen.common.models.test_result import TestResult
 from testgen.common.models.test_suite import TestSuite
@@ -799,6 +803,7 @@ def create_test(
     )
 
     try:
+        td.normalize_value_list()
         td.validate(tt)
     except InvalidTestDefinitionFields as e:
         _raise_validation_errors(e, "Test definition creation rejected. No changes saved.")
@@ -865,6 +870,17 @@ def update_test(
         if writable_id is not None and writable_id != td.id:
             td = resolve_test_definition(str(writable_id))
 
+    if "baseline_value" in fields:
+        general_type = DataColumnChars.general_type_of(
+            td.table_groups_id, fields.get("table_name", td.table_name), fields.get("column_name", td.column_name)
+        )
+        try:
+            fields["baseline_value"] = stored_value_list(
+                td.test_type, fields["baseline_value"], general_type, partial(stores_empty_string, td.table_groups_id)
+            )
+        except InvalidTestDefinitionFields as e:
+            _raise_validation_errors(e, "Update rejected. No changes saved.")
+
     hidden = CALIBRATION_SHAPED_PARAM_COLUMNS if mcp_source_data_protected() else frozenset()
     # Compared on the row the write lands on; report_no_change's rollback discards a draft routing opened.
     # A hidden field is never compared: "no change" would confirm a guess at its value.
@@ -895,6 +911,7 @@ def update_test(
             )
 
         try:
+            td.normalize_value_list()
             td.validate(tt)
         except InvalidTestDefinitionFields as e:
             _raise_validation_errors(e, "Update rejected. No changes saved.")

@@ -57,6 +57,7 @@ EXEMPT_METHODS = {
     "set_status_attribute": "a write — its version predicate is covered by test_raw_sql_version_scoping.py",
     "editable_fields": "derives a field list from the test type; issues no statement",
     "validate": "checks fields already in memory; issues no statement",
+    "normalize_value_list": "reads only the catalog's data_column_chars; issues no statement on test_definitions",
     "version_clause": "builds the predicate the reads apply; issues no statement itself",
     "any_contract_version_clause": (
         "builds the predicate a read applies to address a contract's rows in any version; issues no "

@@ -23,6 +23,9 @@ class PostgresqlFlavorService(RedshiftFlavorService):
 
     wide_decimal_type = "NUMERIC(38,0)"
 
+    def exact_text(self, text_expr: str) -> str:
+        return f'{text_expr} COLLATE "C"'
+
     def canonical_number(self, column_ref: str, is_float: bool) -> str:
         if is_float:
             # A direct cast keeps only 15 significant digits, and a float's shortest text is not its exact value

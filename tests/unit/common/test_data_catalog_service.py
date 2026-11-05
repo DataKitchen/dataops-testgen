@@ -1,21 +1,28 @@
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 
 from testgen.common.data_catalog_service import (
+    CURRENT_VALUES_TOO_LONG_MESSAGE,
+    CURRENT_VALUES_TOO_MANY_MESSAGE,
     DESCRIPTION_MAX_LENGTH,
     TAG_FIELDS,
     TAG_MAX_LENGTH,
+    CurrentValuesResult,
     TableSampleResult,
     apply_column_metadata,
     apply_table_metadata,
     build_create_table_script,
     disable_autoflags,
+    fetch_current_values,
     fetch_table_sample,
     render_create_table_script,
     validate_metadata_fields,
 )
+from testgen.common.database.column_chars import ColumnChars
 from testgen.common.models.data_column import CreateScriptColumn
 
 pytestmark = pytest.mark.unit
@@ -303,3 +310,69 @@ def test_tag_fields_has_nine_entries():
     assert "data_source" in TAG_FIELDS
     assert "aggregation_level" in TAG_FIELDS
     assert "data_classification" in TAG_FIELDS
+
+
+# ---------------------------------------------------------------------------
+# fetch_current_values
+# ---------------------------------------------------------------------------
+
+
+def _fetch_current_values(rows, general_type="A", pii_columns=(), can_view_pii=True):
+    connection = MagicMock(sql_flavor="postgresql", sql_flavor_code="postgresql")
+    catalog = [ColumnChars("demo", "orders", "status", general_type=general_type, column_type="varchar(10)")]
+    with (
+        patch(f"{MODULE}.fetch_from_target_db", return_value=[{"LISTED_VALUE": value} for value in rows]) as fetch,
+        patch(f"{MODULE}.DataTable.list_column_chars", return_value=catalog),
+        patch(f"{MODULE}.get_pii_columns", return_value=list(pii_columns)),
+        patch(f"{MODULE}.TableGroup"),
+    ):
+        result = fetch_current_values(connection, uuid4(), "demo", "orders", "status", can_view_pii=can_view_pii)
+    return result, fetch
+
+
+def test_current_values_are_read_distinct_in_the_compared_form():
+    result, fetch = _fetch_current_values(["b", "a", "A", "a,b", ""])
+
+    assert result == CurrentValuesResult("OK", value_list='"",A,a,"a,b",b')
+    assert fetch.call_args.args[1] == (
+        'SELECT  MIN(CAST("status" AS VARCHAR(1000))) AS listed_value FROM "demo"."orders" WHERE "status" IS NOT NULL'
+        ' GROUP BY CAST("status" AS VARCHAR(1000)) COLLATE "C" LIMIT 101'
+    )
+
+
+def test_current_values_of_a_numeric_column_are_sorted_as_numbers():
+    result, fetch = _fetch_current_values([Decimal("10.00"), 9, Decimal("100")], general_type="N")
+
+    assert result.value_list == "9,10.00,100"
+    assert 'GROUP BY "status"' in fetch.call_args.args[1]
+
+
+def test_current_values_refuse_more_than_100_values():
+    result, _ = _fetch_current_values([str(index) for index in range(101)])
+
+    assert result == CurrentValuesResult("TOO_MANY", message=CURRENT_VALUES_TOO_MANY_MESSAGE)
+
+
+def test_current_values_refuse_a_list_too_long_to_store():
+    result, _ = _fetch_current_values(["x" * 400, "y" * 400, "z" * 400])
+
+    assert result == CurrentValuesResult("TOO_LONG", message=CURRENT_VALUES_TOO_LONG_MESSAGE)
+
+
+def test_current_values_refuse_a_pii_column_to_a_user_who_cannot_view_pii():
+    result, fetch = _fetch_current_values(["a"], pii_columns=["Status"], can_view_pii=False)
+
+    assert result.status == "PII"
+    fetch.assert_not_called()
+
+
+def test_current_values_read_a_pii_column_for_a_user_who_can_view_pii():
+    result, _ = _fetch_current_values(["a"], pii_columns=["status"], can_view_pii=True)
+
+    assert result.value_list == "a"
+
+
+def test_current_values_of_an_empty_column_say_so():
+    result, _ = _fetch_current_values([])
+
+    assert result.status == "ND"
