@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import Field
 from sqlalchemy import select
 
+from testgen.common.audit.findings import record_result_dispositions
 from testgen.common.enums import MANAGED_TEST_TYPES, Disposition, JobStatus
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
@@ -770,6 +771,7 @@ def update_test_result(
         )
 
     update: DispositionUpdate = set_test_results_disposition([result.id], db_disposition)
+    record_result_dispositions(update, db_disposition)
 
     doc = MdDoc()
     if update.matched == 0:
@@ -846,6 +848,7 @@ def bulk_update_test_results(
 
     result_ids = list(get_current_session().scalars(select(TestResult.id).where(*clauses)).all())
     update = set_test_results_disposition(result_ids, db_disposition)
+    record_result_dispositions(update, db_disposition)
 
     filters = []
     if table_name:

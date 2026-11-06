@@ -2240,7 +2240,9 @@ def test_bulk_update_tests_scopes_to_a_version(mock_resolve_suite, mock_session,
     bulk_update_tests(test_suite_id=str(uuid4()), action="disable")
 
     statements = emitted_statements(session)
-    assert len(statements) == 2, "one select of the matches, one update of their writable rows"
+    assert len(statements) == 3, (
+        "one select of the matches, one of the rows the update switches, one update of their writable rows"
+    )
     assert all(scopes_to_a_version(statement) for statement in statements), (
         "the bulk update reads or writes every version of the suite, not the one it resolves to"
     )
@@ -3273,6 +3275,7 @@ def test_update_holds_its_edits_out_of_autoflush_until_save(db_session_mock):
             "testgen.mcp.tools.test_definitions.TableGroup.get",
             side_effect=lambda _id: events.append(f"query after edit to {td.severity}"),
         ),
+        patch("testgen.mcp.tools.test_definitions.record_test_saved"),
     ):
         update_test(str(td.id), fields={"severity": "Warning"})
     assert events == ["hold", "query after edit to Warning", "release", "save"]
@@ -3651,6 +3654,26 @@ def test_resolved_version_reports_a_contract_with_no_version_to_read():
         pytest.raises(MCPUserError, match="no version to export"),
     ):
         resolved_version(MagicMock(suite_type=SuiteType.CONTRACT))
+
+
+@pytest.mark.usefixtures("routes_in_place")
+@patch("testgen.mcp.tools.test_definitions.record_status_changed")
+@patch("testgen.mcp.tools.test_definitions.get_current_session")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_bulk_update_tests_records_the_tests_it_switched(
+    mock_resolve_suite, mock_session, mock_record, db_session_mock
+):
+    mock_resolve_suite.return_value = _make_suite()
+    switched = uuid4()
+    session = mock_session.return_value
+    session.execute.return_value.all.return_value = [_matched_row(switched), _matched_row()]
+    session.scalars.return_value.all.return_value = [switched]
+
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    bulk_update_tests(test_suite_id=str(uuid4()), action="disable")
+
+    mock_record.assert_called_once_with("test_active", False, [switched])
 
 
 def _value_list_td(baseline_value: str) -> MagicMock:

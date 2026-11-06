@@ -37,6 +37,10 @@ from sqlalchemy.sql import visitors
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.expression import case, literal
 
+from testgen.common.audit.actions import AuditTargetType
+from testgen.common.audit.fields import AuditFields
+from testgen.common.audit.names import object_name
+from testgen.common.audit.safety import isolated_read
 from testgen.common.clean_sql import NonNumericValueError, normalize_value_list, parse_value_list
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.enums import (
@@ -57,6 +61,7 @@ from testgen.common.models.suite_version import (
     SuiteVersion,
     UnmatchedInDraftError,
 )
+from testgen.common.models.test_suite import TestSuite
 from testgen.utils import is_uuid4
 
 TestRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
@@ -938,8 +943,39 @@ def _param_fields_flagged(test_type: TestType, flag: str) -> set[str]:
     return {col for col, value in zip(_param_columns(test_type), flags, strict=False) if value == flag}
 
 
+def _audit_name(definition: "TestDefinition") -> str | None:
+    """The test's type and what it runs on, as audit records name it."""
+    with isolated_read() as session:
+        label = session.scalar(select(TestType.test_name_short).where(TestType.test_type == definition.test_type))
+    return object_name(label or definition.test_type, definition.table_name, definition.column_name)
+
+
+def _audit_project(definition: "TestDefinition") -> str | None:
+    with isolated_read() as session:
+        return session.scalar(select(TestSuite.project_code).where(TestSuite.id == definition.test_suite_id))
+
+
+AUDIT_STATE_FIELDS = ("lock_refresh", "flagged")
+AUDIT_PLACEMENT_FIELDS = ("test_suite_id", "table_groups_id", "schema_name")
+
+
 class TestDefinition(Entity):
     __tablename__ = "test_definitions"
+    __audit__: ClassVar = AuditFields(
+        target_type=AuditTargetType.TEST_DEFINITION,
+        name=_audit_name,
+        project=_audit_project,
+        values=(
+            "test_type", "test_description", "table_name", "column_name", "skip_errors",
+            "baseline_ct", "baseline_unique_ct", "baseline_value", "baseline_value_ct", "threshold_value",
+            "baseline_sum", "baseline_avg", "baseline_sd", "lower_tolerance", "upper_tolerance",
+            "subset_condition", "groupby_names", "having_condition", "window_date_column", "window_days",
+            "match_schema_name", "match_table_name", "match_column_names", "match_subset_condition",
+            "match_groupby_names", "match_having_condition", "history_calculation", "history_calculation_upper",
+            "history_lookback", "custom_query", "test_active", "severity", "export_to_observability",
+            "impact_dimension", "external_url", "custom_metadata", *AUDIT_STATE_FIELDS, *AUDIT_PLACEMENT_FIELDS,
+        ),
+    )
 
     # default=uuid4: Python-side ID for ORM inserts (enables batch flush without per-row round-trips).
     # server_default: fallback for raw SQL inserts in test generation templates that omit the id column.
@@ -1224,7 +1260,7 @@ class TestDefinition(Entity):
             raise ManagedTestDefinitionError
 
     @classmethod
-    def _writable_ids(cls, row_ids: Iterable[UUID | str]) -> list[UUID]:
+    def writable_ids(cls, row_ids: Iterable[UUID | str]) -> list[UUID]:
         """The rows a write to the named rows lands on, resolving each row's suite through ``resolve_writable``.
 
         A row of a regular or monitor suite maps to itself. A row of a contract's frozen version maps to
@@ -1234,7 +1270,7 @@ class TestDefinition(Entity):
 
     @classmethod
     def _writable_id_map(cls, row_ids: Iterable[UUID | str]) -> dict[UUID, UUID]:
-        """Each named row's id mapped to the id of the row a write to it lands on, as ``_writable_ids`` resolves it."""
+        """Each named row's id mapped to the id of the row a write to it lands on, as ``writable_ids`` resolves it."""
         ids = [UUID(str(row_id)) for row_id in row_ids]
         if not ids:
             return {}
@@ -1608,10 +1644,14 @@ class TestDefinition(Entity):
         status_type: Literal["test_active", "lock_refresh", "flagged"],
         test_definition_ids: list[str | UUID],
         value: bool,
-    ) -> None:
-        writable_ids = cls._writable_ids(test_definition_ids)
+    ) -> list[UUID]:
+        """Set a status column on the named rows, landing on a contract's draft rather than a frozen version.
+
+        Returns the ids of the rows whose value changed.
+        """
+        writable_ids = cls.writable_ids(test_definition_ids)
         if not writable_ids:
-            return
+            return []
 
         query = f"""
         WITH selected AS (
@@ -1623,7 +1663,8 @@ class TestDefinition(Entity):
         FROM test_definitions td
             INNER JOIN selected ON (td.id = selected.id::UUID)
         WHERE td.id = test_definitions.id
-            AND td.version_id = {SuiteVersion.resolved_for_sql("td.test_suite_id")};
+            AND td.version_id = {SuiteVersion.resolved_for_sql("td.test_suite_id")}
+        RETURNING test_definitions.id, td.{status_type} IS DISTINCT FROM :value AS changed;
         """
         params = {
             "test_definition_ids": [str(row_id) for row_id in writable_ids],
@@ -1631,7 +1672,7 @@ class TestDefinition(Entity):
         }
 
         db_session = get_current_session()
-        db_session.execute(text(query), params)
+        return [row.id for row in db_session.execute(text(query), params) if row.changed]
 
     @classmethod
     def _retargeted_schemas(
@@ -1674,17 +1715,17 @@ class TestDefinition(Entity):
         *,
         target_schema: str,
         qualifies_table_refs: bool,
-    ) -> None:
+    ) -> list[UUID]:
         """Relocate test definitions into a test suite, taking the target table group's schema.
 
         ``target_schema`` is the target table group's schema, and ``qualifies_table_refs`` whether its
-        connection's flavor names a table as ``schema.table``.
+        connection's flavor names a table as ``schema.table``. Returns the ids of the rows moved.
         """
         db_session = get_current_session()
         target_version = db_session.scalar(select(SuiteVersion.resolved_for(target_test_suite_id)))
         cls.assert_version_writable(target_version)
         cls._assert_no_managed_definitions(cls.id.in_([UUID(str(identifier)) for identifier in test_definition_ids]))
-        writable_ids = cls._writable_ids(test_definition_ids)
+        writable_ids = cls.writable_ids(test_definition_ids)
         scoped_ids = db_session.scalars(
             select(cls.id).where(cls.id.in_(writable_ids), cls.version_clause())
         ).all()
@@ -1708,6 +1749,7 @@ class TestDefinition(Entity):
             .execution_options(synchronize_session=False)
         )
         cls.assign_missing_term_ids(target_version)
+        return list(scoped_ids)
 
     @classmethod
     def copy(
@@ -1720,11 +1762,11 @@ class TestDefinition(Entity):
         *,
         target_schema: str,
         qualifies_table_refs: bool,
-    ) -> None:
+    ) -> list[UUID]:
         """Copy test definitions into a test suite, taking the target table group's schema.
 
         ``target_schema`` is the target table group's schema, and ``qualifies_table_refs`` whether its
-        connection's flavor names a table as ``schema.table``.
+        connection's flavor names a table as ``schema.table``. Returns the ids of the copies.
         """
         db_session = get_current_session()
         target_version = db_session.scalar(select(SuiteVersion.resolved_for(target_test_suite_id)))
@@ -1778,11 +1820,12 @@ class TestDefinition(Entity):
         query = insert(cls).from_select(
             [*modified_columns, *other_columns],
             select(*select_columns).where(cls.id.in_(test_definition_ids), cls.version_clause()),
-        )
-        db_session.execute(query)
+        ).returning(cls.id)
+        copied_ids = list(db_session.execute(query).scalars())
         # A copy is a new term, so it takes none of the source's contract identity; it still
         # needs one of its own when the target version is a contract's.
         cls.assign_missing_term_ids(target_version)
+        return copied_ids
 
     @classmethod
     def get_source_data_context(
