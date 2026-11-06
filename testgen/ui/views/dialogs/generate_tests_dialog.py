@@ -1,7 +1,10 @@
+from sqlalchemy import text
+
 from testgen.commands.test_generation import resolve_generation_profile_run
+from testgen.common.audit.test_definitions import record_status_changed
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.enums import MANAGED_TEST_TYPES, SuiteType
-from testgen.common.models import with_database_session
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.suite_version import SuiteVersion
@@ -9,7 +12,7 @@ from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.sampling_requirements import sampled_profile_gaps
-from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
+from testgen.ui.services.database_service import fetch_all_from_db, fetch_one_from_db
 
 
 @with_database_session
@@ -116,14 +119,16 @@ def lock_edited_tests(test_suite_id: str) -> None:
     which is opened when there is none, so a frozen version is never written."""
     if TestSuite.get(test_suite_id).suite_type == SuiteType.CONTRACT:
         TestDefinition.resolve_write_target(test_suite_id)
-    execute_db_query(
-        f"""
+    locked = get_current_session().execute(
+        text(f"""
         UPDATE test_definitions
             SET lock_refresh = 'Y'
         WHERE test_suite_id = :test_suite_id
             AND version_id = {SuiteVersion.resolved_for_sql("test_definitions.test_suite_id")}
             AND last_manual_update IS NOT NULL
-            AND lock_refresh = 'N';
-        """,
-        {"test_suite_id": test_suite_id}
-    )
+            AND lock_refresh = 'N'
+        RETURNING id;
+        """),
+        {"test_suite_id": test_suite_id},
+    ).scalars().all()
+    record_status_changed("lock_refresh", True, locked)

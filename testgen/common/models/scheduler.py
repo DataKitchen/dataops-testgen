@@ -10,6 +10,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 
 from testgen.common.audit.actions import AuditTargetType
 from testgen.common.audit.fields import AuditFields
+from testgen.common.audit.safety import isolated_read
 from testgen.common.enums import JobKey
 from testgen.common.models import Base, get_current_session
 from testgen.common.models.table_group import TableGroup
@@ -41,8 +42,7 @@ def _audit_name(schedule: "JobSchedule") -> str:
 
 
 def _name_of(name_column: InstrumentedAttribute, id_column: InstrumentedAttribute, id_value: str) -> str:
-    session = get_current_session()
-    with session.no_autoflush:
+    with isolated_read() as session:
         return session.scalar(select(name_column).where(id_column == id_value)) or id_value
 
 

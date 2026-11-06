@@ -11,6 +11,8 @@ from testgen.common.audit.monitors import (
     record_monitoring_enabled,
     record_monitoring_updated,
 )
+from testgen.common.audit.recorder import stored_values
+from testgen.common.audit.test_definitions import describe_tests, record_test_saved, record_tests_deleted
 from testgen.common.cron_service import get_cron_sample
 from testgen.common.custom_test_validation import validate_aggregate_expression
 from testgen.common.enums import JobKey, JobSource, MonitorCalculation, MonitorType, SuiteType
@@ -890,7 +892,10 @@ def build_edit_table_monitors_data(
                     merged["prediction"] = None
 
                 merged["last_manual_update"] = datetime.now(UTC)
-                TestDefinition(**merged).save()
+                stored = stored_values(TestDefinition, current_def.id, TestDefinition.version_clause())
+                monitor = TestDefinition(**merged)
+                monitor.save()
+                record_test_saved(monitor, created=False, stored=stored)
 
         for new_metric in get_new_metrics():
             new_def = TestDefinition(
@@ -907,13 +912,16 @@ def build_edit_table_monitors_data(
                     setattr(new_def, key, value)
             new_def.last_manual_update = datetime.now(UTC)
             new_def.save()
+            record_test_saved(new_def, created=True)
 
         deleted_ids = get_deleted_metric_ids()
         if deleted_ids:
+            deleted = [monitor for monitor in describe_tests(deleted_ids) if monitor.test_type == MonitorType.METRIC]
             TestDefinition.delete_where(
                 TestDefinition.id.in_(deleted_ids),
                 TestDefinition.test_type == "Metric_Trend",
             )
+            record_tests_deleted(deleted)
 
         if should_close():
             st.session_state.pop(EDIT_TABLE_MONITORS_DIALOG_KEY, None)
