@@ -55,6 +55,7 @@ DO UPDATE SET
   profiling_as_of_date = EXCLUDED.profiling_as_of_date,
   profile_run_id       = EXCLUDED.profile_run_id,
   threshold_value      = EXCLUDED.threshold_value,
+  subset_condition     = NULL,
   skip_errors          = EXCLUDED.skip_errors
 -- Ignore locked tests
 WHERE test_definitions.lock_refresh = 'N';

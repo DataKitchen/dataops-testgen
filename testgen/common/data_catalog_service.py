@@ -13,7 +13,7 @@ from uuid import UUID
 
 import pandas as pd
 
-from testgen.common.clean_sql import format_value_list
+from testgen.common.clean_sql import expand_subset, format_value_list, subset_params
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.flavor_service import FlavorService
 from testgen.common.models.connection import Connection
@@ -165,11 +165,15 @@ def fetch_current_values(
     column_name: str,
     *,
     can_view_pii: bool,
+    subset_condition: str | None = None,
 ) -> CurrentValuesResult:
     """Read a column's distinct values from the source table as a list of expected values.
 
     Values are distinct as the value-list tests compare them: numbers by value, other values exactly by
     their text. NULLs are left out. The list is sorted and formatted as ``format_value_list`` stores it.
+
+    Args:
+        subset_condition: A test's record subset condition; when given, only the matching records are read.
 
     Returns:
         ``OK`` with the list; ``TOO_MANY`` when the column holds more than ``CURRENT_VALUES_MAX_COUNT``
@@ -195,9 +199,12 @@ def fetch_current_values(
     params = flavor_service.value_list_params(column_ref, column, [])
     prefix, suffix = flavor_service.row_limit_clauses(CURRENT_VALUES_MAX_COUNT + 1)
     table_ref = flavor_service.get_table_ref(schema_name, table_name, connection.sql_flavor_code)
+    where = f"{column_ref} IS NOT NULL"
+    if subset_and := subset_params(subset_condition)["SUBSET_AND"]:
+        where += " " + expand_subset(subset_and, schema_name)
     query = (
         f"SELECT {prefix} MIN({params['VALUE_LIST_VALUE']}) AS listed_value FROM {table_ref}"
-        f" WHERE {column_ref} IS NOT NULL GROUP BY {params['VALUE_LIST_DISTINCT']} {suffix}"
+        f" WHERE {where} GROUP BY {params['VALUE_LIST_DISTINCT']} {suffix}"
     )
 
     try:
