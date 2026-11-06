@@ -317,7 +317,7 @@ def test_tag_fields_has_nine_entries():
 # ---------------------------------------------------------------------------
 
 
-def _fetch_current_values(rows, general_type="A", pii_columns=(), can_view_pii=True):
+def _fetch_current_values(rows, general_type="A", pii_columns=(), can_view_pii=True, subset_condition=None):
     connection = MagicMock(sql_flavor="postgresql", sql_flavor_code="postgresql")
     catalog = [ColumnChars("demo", "orders", "status", general_type=general_type, column_type="varchar(10)")]
     with (
@@ -326,7 +326,9 @@ def _fetch_current_values(rows, general_type="A", pii_columns=(), can_view_pii=T
         patch(f"{MODULE}.get_pii_columns", return_value=list(pii_columns)),
         patch(f"{MODULE}.TableGroup"),
     ):
-        result = fetch_current_values(connection, uuid4(), "demo", "orders", "status", can_view_pii=can_view_pii)
+        result = fetch_current_values(
+            connection, uuid4(), "demo", "orders", "status", can_view_pii=can_view_pii, subset_condition=subset_condition
+        )
     return result, fetch
 
 
@@ -334,6 +336,25 @@ def test_current_values_are_read_distinct_in_the_compared_form():
     result, fetch = _fetch_current_values(["b", "a", "A", "a,b", ""])
 
     assert result == CurrentValuesResult("OK", value_list='"",A,a,"a,b",b')
+    assert fetch.call_args.args[1] == (
+        'SELECT  MIN(CAST("status" AS VARCHAR(1000))) AS listed_value FROM "demo"."orders" WHERE "status" IS NOT NULL'
+        ' GROUP BY CAST("status" AS VARCHAR(1000)) COLLATE "C" LIMIT 101'
+    )
+
+
+def test_current_values_read_only_the_records_of_a_subset():
+    _, fetch = _fetch_current_values(["a"], subset_condition="region = 'EU' OR id IN (SELECT id FROM {DATA_SCHEMA}.eu)")
+
+    assert fetch.call_args.args[1] == (
+        'SELECT  MIN(CAST("status" AS VARCHAR(1000))) AS listed_value FROM "demo"."orders" WHERE "status" IS NOT NULL'
+        " AND (region = 'EU' OR id IN (SELECT id FROM demo.eu))"
+        ' GROUP BY CAST("status" AS VARCHAR(1000)) COLLATE "C" LIMIT 101'
+    )
+
+
+def test_current_values_of_a_blank_subset_read_every_record():
+    _, fetch = _fetch_current_values(["a"], subset_condition="   ")
+
     assert fetch.call_args.args[1] == (
         'SELECT  MIN(CAST("status" AS VARCHAR(1000))) AS listed_value FROM "demo"."orders" WHERE "status" IS NOT NULL'
         ' GROUP BY CAST("status" AS VARCHAR(1000)) COLLATE "C" LIMIT 101'

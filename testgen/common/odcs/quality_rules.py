@@ -473,12 +473,12 @@ def property_declaration(term: "TestDefinition", logical_type: str | None) -> di
     """The schema-property fields that make exactly ``term``'s claim, or ``None`` when none do.
 
     A declaration asserts every value of the column, so only a term that fails on a single
-    offending value is one. ``logical_type`` is the property's declared ``logicalType``. A
+    offending value, and tests every record, is one. ``logical_type`` is the property's declared ``logicalType``. A
     ``Text_Length_Range`` term declares whichever of its two bounds it sets. ``Unique`` also
     declares ``required``, because its measure counts every NULL where ``unique`` alone ignores
     them.
     """
-    if term.test_type not in DECLARATION_LOGICAL_TYPES or not _allows_no_exceptions(term):
+    if term.test_type not in DECLARATION_LOGICAL_TYPES or not _allows_no_exceptions(term) or term.subset_condition:
         return None
     allowed = DECLARATION_LOGICAL_TYPES[term.test_type]
     if allowed is not None and logical_type not in allowed:
@@ -1231,7 +1231,7 @@ def project_rule(
     term renders ``custom`` unless its baseline is one literal of that type (``constant_value``).
     A routed term renders ``custom`` whenever its stored values cannot be stated in its
     mapped shape -- a cleared threshold or bound, a baseline count of 0, an unparseable
-    argument, or a placeholder no other engine could substitute.
+    argument, a placeholder no other engine could substitute, or a record subset condition.
     The result is plain JSON-safe data -- ``dict``, ``list``, ``str``, ``int``, ``float`` and
     ``bool`` only -- so it serializes with ``yaml.safe_dump`` and validates against the
     pinned ODCS schema.
@@ -1243,6 +1243,9 @@ def project_rule(
         )
     mapping = RULE_MAPPINGS.get(term.test_type)
     if FLAVOR_CODE_TO_FAMILY[flavor] in _INEXACT_FAMILIES.get(term.test_type, frozenset()):
+        mapping = None
+    if term.subset_condition:
+        # No other shape can state a subset: a library or sql rule would check the whole table
         mapping = None
 
     check = None

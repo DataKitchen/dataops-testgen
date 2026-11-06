@@ -18,14 +18,14 @@ test_types:
   dq_score_risk_factor: '1.0'
   column_name_prompt: null
   column_name_help: null
-  default_parm_columns: baseline_value,threshold_value
+  default_parm_columns: baseline_value,threshold_value,subset_condition
   default_parm_values: |-
-    '"",blank,(blank),[blank],error,(error),[error],missing,(missing),[missing],tbd,(tbd),[tbd],n/a,(n/a),[n/a],#na,(#na),[#na],none,(none),[none],null,(null),[null],unknown,(unknown),[unknown],BLANK,(BLANK),[BLANK],ERROR,(ERROR),[ERROR],MISSING,(MISSING),[MISSING],TBD,(TBD),[TBD],N/A,(N/A),[N/A],#NA,(#NA),[#NA],NONE,(NONE),[NONE],NULL,(NULL),[NULL],UNKNOWN,(UNKNOWN),[UNKNOWN]',0
+    '"",blank,(blank),[blank],error,(error),[error],missing,(missing),[missing],tbd,(tbd),[tbd],n/a,(n/a),[n/a],#na,(#na),[#na],none,(none),[none],null,(null),[null],unknown,(unknown),[unknown],BLANK,(BLANK),[BLANK],ERROR,(ERROR),[ERROR],MISSING,(MISSING),[MISSING],TBD,(TBD),[TBD],N/A,(N/A),[N/A],#NA,(#NA),[#NA],NONE,(NONE),[NONE],NULL,(NULL),[NULL],UNKNOWN,(UNKNOWN),[UNKNOWN]',0,NULL
   default_parm_prompts: |-
-    List of Placeholder Values,Threshold Missing Value Count
+    List of Placeholder Values,Threshold Missing Value Count,Record Subset Condition
   default_parm_help: |-
-    Comma-separated list of values that count as missing, matched exactly. Enclose a value in double quotes if it contains a comma, and use "" for the empty string.|The number of missing values that are acceptable before test fails.
-  default_parm_required: Y,N
+    Comma-separated list of values that count as missing, matched exactly. Enclose a value in double quotes if it contains a comma, and use "" for the empty string.|The number of missing values that are acceptable before test fails.|Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.
+  default_parm_required: Y,N,N
   default_severity: Fail
   run_type: CAT
   test_scope: column
@@ -50,7 +50,7 @@ test_types:
     test_type: Required_No_Placeholder
     sql_flavor: bigquery
     measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+      COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME}) + SUM(CASE WHEN {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -58,7 +58,7 @@ test_types:
     test_type: Required_No_Placeholder
     sql_flavor: databricks
     measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+      COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME}) + SUM(CASE WHEN {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -66,7 +66,7 @@ test_types:
     test_type: Required_No_Placeholder
     sql_flavor: mssql
     measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR (DATALENGTH({COLUMN_VALUE}) <= 4000 AND CAST({COLUMN_VALUE} AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2 IN ({BASELINE_VALUE_LIST}) AND DATALENGTH({COLUMN_VALUE}) = DATALENGTH(RTRIM({COLUMN_VALUE}))) THEN 1 ELSE 0 END)
+      COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME}) + SUM(CASE WHEN DATALENGTH({COLUMN_VALUE}) <= 4000 AND CAST({COLUMN_VALUE} AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2 IN ({BASELINE_VALUE_LIST}) AND DATALENGTH({COLUMN_VALUE}) = DATALENGTH(RTRIM({COLUMN_VALUE})) THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -74,7 +74,7 @@ test_types:
     test_type: Required_No_Placeholder
     sql_flavor: postgresql
     measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+      COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME}) + SUM(CASE WHEN {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -82,7 +82,7 @@ test_types:
     test_type: Required_No_Placeholder
     sql_flavor: redshift
     measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+      COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME}) + SUM(CASE WHEN {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -90,7 +90,7 @@ test_types:
     test_type: Required_No_Placeholder
     sql_flavor: redshift_spectrum
     measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+      COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME}) + SUM(CASE WHEN {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -98,7 +98,7 @@ test_types:
     test_type: Required_No_Placeholder
     sql_flavor: snowflake
     measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+      COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME}) + SUM(CASE WHEN {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -106,7 +106,7 @@ test_types:
     test_type: Required_No_Placeholder
     sql_flavor: oracle
     measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+      COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME}) + SUM(CASE WHEN {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -114,7 +114,7 @@ test_types:
     test_type: Required_No_Placeholder
     sql_flavor: sap_hana
     measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+      COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME}) + SUM(CASE WHEN {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -122,7 +122,7 @@ test_types:
     test_type: Required_No_Placeholder
     sql_flavor: salesforce_data360
     measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+      COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME}) + SUM(CASE WHEN {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -130,7 +130,7 @@ test_types:
     test_type: Required_No_Placeholder
     sql_flavor: duckdb
     measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+      COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME}) + SUM(CASE WHEN {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -141,7 +141,7 @@ test_types:
     sql_flavor: bigquery
     lookup_type: null
     lookup_query: |-
-      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` IS NULL OR `{COLUMN_NAME}` IN ({BASELINE_VALUE_LIST}) GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE (`{COLUMN_NAME}` IS NULL OR `{COLUMN_NAME}` IN ({BASELINE_VALUE_LIST})) {SUBSET_AND} GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
     error_type: Test Results
   - id: '1505'
     test_id: '1520'
@@ -149,7 +149,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` IS NULL OR `{COLUMN_NAME}` IN ({BASELINE_VALUE_LIST}) GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE (`{COLUMN_NAME}` IS NULL OR `{COLUMN_NAME}` IN ({BASELINE_VALUE_LIST})) {SUBSET_AND} GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
     error_type: Test Results
   - id: '1509'
     test_id: '1520'
@@ -157,7 +157,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR (DATALENGTH({COLUMN_VALUE}) <= 4000 AND CAST({COLUMN_VALUE} AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2 IN ({BASELINE_VALUE_LIST}) AND DATALENGTH({COLUMN_VALUE}) = DATALENGTH(RTRIM({COLUMN_VALUE}))) GROUP BY "{COLUMN_NAME}";
+      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE ("{COLUMN_NAME}" IS NULL OR (DATALENGTH({COLUMN_VALUE}) <= 4000 AND CAST({COLUMN_VALUE} AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2 IN ({BASELINE_VALUE_LIST}) AND DATALENGTH({COLUMN_VALUE}) = DATALENGTH(RTRIM({COLUMN_VALUE})))) {SUBSET_AND} GROUP BY "{COLUMN_NAME}";
     error_type: Test Results
   - id: '1513'
     test_id: '1520'
@@ -165,7 +165,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE ("{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1517'
     test_id: '1520'
@@ -173,7 +173,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE ("{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1521'
     test_id: '1520'
@@ -181,7 +181,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE ("{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1525'
     test_id: '1520'
@@ -189,7 +189,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE ("{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '8519'
     test_id: '1520'
@@ -197,7 +197,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST}) GROUP BY "{COLUMN_NAME}" FETCH FIRST {LIMIT} ROWS ONLY
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE ("{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Test Results
   - id: '8519'
     test_id: '1520'
@@ -205,7 +205,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE ("{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Test Results
   - id: '10051'
     test_id: '1520'
@@ -213,7 +213,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE ("{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '11107'
     test_id: '1520'
@@ -221,6 +221,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE ("{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

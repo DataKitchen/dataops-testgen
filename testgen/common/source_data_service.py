@@ -18,6 +18,7 @@ from testgen.common.clean_sql import (
     null_if_empty,
     parse_value_list,
     strip_trailing_semicolons,
+    subset_params,
 )
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import FinalParam, get_flavor_service, replace_params
@@ -261,7 +262,8 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         "THRESHOLD_VALUE": test_definition.threshold_value or 0,
         # SUBSET_CONDITION should be replaced after CUSTOM_QUERY
         # since the latter may contain the former
-        "SUBSET_CONDITION": test_definition.subset_condition or "1=1",
+        "SUBSET_CONDITION": (test_definition.subset_condition or "").strip() or "1=1",
+        **subset_params(test_definition.subset_condition),
         "GROUPBY_NAMES": test_definition.groupby_names,
         "HAVING_CONDITION": f"HAVING {test_definition.having_condition}" if test_definition.having_condition else "",
         "MATCH_SCHEMA_NAME": run_parameters.get("match_schema_name") or test_definition.match_schema_name,

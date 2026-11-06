@@ -1648,6 +1648,7 @@ def use_current_values(test_definition: dict, table_group: TableGroupMinimal) ->
         test_definition["table_name"],
         test_definition["column_name"],
         can_view_pii=session.auth.user_has_permission("view_pii"),
+        subset_condition=test_definition.get("subset_condition"),
     )
     return {"timestamp": datetime.now(UTC).isoformat(), "value_list": result.value_list, "message": result.message}
 

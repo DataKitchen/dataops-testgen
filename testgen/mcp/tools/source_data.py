@@ -295,13 +295,23 @@ def get_current_values(
     table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from `get_data_inventory`.")],
     table_name: Annotated[str, Field(description="Table name exactly as stored in TestGen (case-sensitive).")],
     column_name: Annotated[str, Field(description="Column name exactly as stored in TestGen (case-sensitive).")],
+    subset_condition: Annotated[
+        str | None,
+        Field(
+            description=(
+                "The `subset_condition` of the test the list is for, written like a SQL WHERE clause, "
+                "e.g. `status = 'SHIPPED'`. Only the matching records are read. Omit to read every record."
+            )
+        ),
+    ] = None,
 ) -> str:
     """Read a column's distinct values as the expected-values list of Value Match All.
 
     Returns the list in the comma-separated form the `baseline_value` field of `LOV_Match` and `LOV_All`
     takes, sorted, with NULLs left out. Values are distinct as those tests compare them: numbers by value,
-    other values exactly by their text. Refused when the column holds more than 100 distinct values or
-    the list would exceed 1,000 characters.
+    other values exactly by their text. For a test with a `subset_condition`, pass the same condition so
+    the list holds only the values of the records the test reads. Refused when the column holds more than
+    100 distinct values or the list would exceed 1,000 characters.
     """
     tg = resolve_table_group(table_group_id)
 
@@ -324,6 +334,7 @@ def get_current_values(
         table_name,
         column_name,
         can_view_pii=get_project_permissions().has_permission("view_pii", tg.project_code),
+        subset_condition=subset_condition,
     )
     if result.status == "ERR":
         raise MCPUserError(

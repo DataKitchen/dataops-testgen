@@ -874,6 +874,11 @@ def test_definition_errors(test_type: TestType, value_of: Callable[[str], object
             f"test type `{test_type.test_name_short}` does not accept a custom query"
         )
 
+    if not _is_blank(value_of("subset_condition")) and "subset_condition" not in test_type.param_columns:
+        errors["subset_condition"] = (
+            f"test type `{test_type.test_name_short}` does not accept a record subset condition"
+        )
+
     metadata_error = validate_custom_metadata(value_of("custom_metadata"))
     if metadata_error:
         errors["custom_metadata"] = metadata_error
