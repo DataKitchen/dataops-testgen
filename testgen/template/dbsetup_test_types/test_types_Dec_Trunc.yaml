@@ -18,13 +18,14 @@ test_types:
   dq_score_risk_factor: '1.0'
   column_name_prompt: null
   column_name_help: null
-  default_parm_columns: threshold_value
+  default_parm_columns: threshold_value,subset_condition
   default_parm_values: |-
-    ROUND(fractional_sum, 0)
+    ROUND(fractional_sum, 0),NULL
   default_parm_prompts: |-
-    Sum of Fractional Values at Baseline
-  default_parm_help: null
-  default_parm_required: N
+    Sum of Fractional Values at Baseline,Record Subset Condition
+  default_parm_help: |-
+    |Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.
+  default_parm_required: N,N
   default_severity: Fail
   run_type: CAT
   test_scope: column
@@ -140,7 +141,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT LENGTH(SPLIT(CAST(`{COLUMN_NAME}` AS STRING), '.')[SAFE_OFFSET(1)]) AS decimal_scale, COUNT(*) AS count
-      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE}
       GROUP BY decimal_scale
       LIMIT {LIMIT};
     error_type: Test Results
@@ -150,7 +151,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT LENGTH(SPLIT_PART(`{COLUMN_NAME}`::STRING, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY decimal_scale LIMIT {LIMIT};
+      SELECT DISTINCT LENGTH(SPLIT_PART(`{COLUMN_NAME}`::STRING, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE} GROUP BY decimal_scale LIMIT {LIMIT};
     error_type: Test Results
   - id: '1145'
     test_id: '1011'
@@ -160,7 +161,7 @@ test_types:
     lookup_query: |-
       WITH CTE AS (
         SELECT LEN(SUBSTRING(CAST(ABS("{COLUMN_NAME}") % 1 AS VARCHAR), 3, LEN("{COLUMN_NAME}"))) AS decimal_scale
-        FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+        FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}
       )
       SELECT DISTINCT TOP {LIMIT} decimal_scale, COUNT(*) AS count
         FROM cte GROUP BY decimal_scale ORDER BY COUNT(*) DESC;
@@ -171,7 +172,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT LENGTH(SPLIT_PART({COLUMN_NUM} :: TEXT, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY decimal_scale LIMIT {LIMIT};
+      SELECT DISTINCT LENGTH(SPLIT_PART({COLUMN_NUM} :: TEXT, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE} GROUP BY decimal_scale LIMIT {LIMIT};
     error_type: Test Results
   - id: '1006'
     test_id: '1011'
@@ -179,7 +180,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) LIMIT {LIMIT};
+      SELECT DISTINCT DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE} GROUP BY DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) LIMIT {LIMIT};
     error_type: Test Results
   - id: '1406'
     test_id: '1011'
@@ -187,7 +188,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) LIMIT {LIMIT};
+      SELECT DISTINCT DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE} GROUP BY DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) LIMIT {LIMIT};
     error_type: Test Results
   - id: '1202'
     test_id: '1011'
@@ -195,7 +196,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT LENGTH(SPLIT_PART("{COLUMN_NAME}" :: TEXT, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY decimal_scale LIMIT {LIMIT};
+      SELECT DISTINCT LENGTH(SPLIT_PART("{COLUMN_NAME}" :: TEXT, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE} GROUP BY decimal_scale LIMIT {LIMIT};
     error_type: Test Results
   - id: '8006'
     test_id: '1011'
@@ -203,7 +204,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT CASE WHEN INSTR(TO_CHAR("{COLUMN_NAME}"), '.') > 0 THEN LENGTH(SUBSTR(TO_CHAR("{COLUMN_NAME}"), INSTR(TO_CHAR("{COLUMN_NAME}"), '.') + 1)) ELSE 0 END AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY CASE WHEN INSTR(TO_CHAR("{COLUMN_NAME}"), '.') > 0 THEN LENGTH(SUBSTR(TO_CHAR("{COLUMN_NAME}"), INSTR(TO_CHAR("{COLUMN_NAME}"), '.') + 1)) ELSE 0 END FETCH FIRST {LIMIT} ROWS ONLY
+      SELECT DISTINCT CASE WHEN INSTR(TO_CHAR("{COLUMN_NAME}"), '.') > 0 THEN LENGTH(SUBSTR(TO_CHAR("{COLUMN_NAME}"), INSTR(TO_CHAR("{COLUMN_NAME}"), '.') + 1)) ELSE 0 END AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE} GROUP BY CASE WHEN INSTR(TO_CHAR("{COLUMN_NAME}"), '.') > 0 THEN LENGTH(SUBSTR(TO_CHAR("{COLUMN_NAME}"), INSTR(TO_CHAR("{COLUMN_NAME}"), '.') + 1)) ELSE 0 END FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Test Results
   - id: '8006'
     test_id: '1011'
@@ -211,7 +212,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT CASE WHEN LOCATE(TO_VARCHAR("{COLUMN_NAME}"), '.') > 0 THEN LENGTH(SUBSTR(TO_VARCHAR("{COLUMN_NAME}"), LOCATE(TO_VARCHAR("{COLUMN_NAME}"), '.') + 1)) ELSE 0 END AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY CASE WHEN LOCATE(TO_VARCHAR("{COLUMN_NAME}"), '.') > 0 THEN LENGTH(SUBSTR(TO_VARCHAR("{COLUMN_NAME}"), LOCATE(TO_VARCHAR("{COLUMN_NAME}"), '.') + 1)) ELSE 0 END LIMIT {LIMIT}
+      SELECT DISTINCT CASE WHEN LOCATE(TO_VARCHAR("{COLUMN_NAME}"), '.') > 0 THEN LENGTH(SUBSTR(TO_VARCHAR("{COLUMN_NAME}"), LOCATE(TO_VARCHAR("{COLUMN_NAME}"), '.') + 1)) ELSE 0 END AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE} GROUP BY CASE WHEN LOCATE(TO_VARCHAR("{COLUMN_NAME}"), '.') > 0 THEN LENGTH(SUBSTR(TO_VARCHAR("{COLUMN_NAME}"), LOCATE(TO_VARCHAR("{COLUMN_NAME}"), '.') + 1)) ELSE 0 END LIMIT {LIMIT}
     error_type: Test Results
   - id: '10011'
     test_id: 1011
@@ -219,7 +220,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT LENGTH(SPLIT_PART(CAST("{COLUMN_NAME}" AS TEXT), '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TABLE_NAME}" GROUP BY decimal_scale LIMIT {LIMIT};
+      SELECT DISTINCT LENGTH(SPLIT_PART(CAST("{COLUMN_NAME}" AS TEXT), '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TABLE_NAME}" {SUBSET_WHERE} GROUP BY decimal_scale LIMIT {LIMIT};
     error_type: Test Results
   - id: '11023'
     test_id: '1011'
@@ -227,6 +228,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT LENGTH(SPLIT_PART("{COLUMN_NAME}" :: TEXT, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY decimal_scale LIMIT {LIMIT};
+      SELECT DISTINCT LENGTH(SPLIT_PART("{COLUMN_NAME}" :: TEXT, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE} GROUP BY decimal_scale LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

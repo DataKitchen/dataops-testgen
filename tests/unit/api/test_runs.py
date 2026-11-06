@@ -186,14 +186,14 @@ FROZEN = datetime(2026, 9, 12, tzinfo=UTC)
 @pytest.mark.parametrize(
     ("run_version", "expected"),
     [
-        (RunVersion(3, FROZEN, 3, datetime(2026, 9, 13, 9, 0), 3, JobStatus.COMPLETED), (3, VersionState.ACTIVE, True, False)),
-        (RunVersion(3, FROZEN, 4, datetime(2026, 9, 13, 9, 0), 3, JobStatus.COMPLETED), (3, VersionState.SUPERSEDED, True, False)),
-        (RunVersion(3, FROZEN, 4, datetime(2026, 9, 20, 9, 0), 4, JobStatus.COMPLETED), (3, VersionState.SUPERSEDED, False, False)),
-        (RunVersion(4, None, 3, datetime(2026, 9, 13, 9, 0), 3, JobStatus.COMPLETED), (4, VersionState.DRAFT, False, True)),
-        (RunVersion(3, FROZEN, 3, datetime(2026, 9, 10, 9, 0), None, JobStatus.COMPLETED), (3, VersionState.ACTIVE, False, True)),
+        (RunVersion(3, FROZEN, 3, datetime(2026, 9, 13, 9, 0), True, JobStatus.COMPLETED), (3, VersionState.ACTIVE, True, False, False)),
+        (RunVersion(3, FROZEN, 4, datetime(2026, 9, 13, 9, 0), True, JobStatus.COMPLETED), (3, VersionState.SUPERSEDED, True, False, False)),
+        (RunVersion(3, FROZEN, 4, datetime(2026, 9, 20, 9, 0), False, JobStatus.COMPLETED), (3, VersionState.SUPERSEDED, False, False, True)),
+        (RunVersion(4, None, 3, datetime(2026, 9, 13, 9, 0), False, JobStatus.COMPLETED), (4, VersionState.DRAFT, False, True, False)),
+        (RunVersion(3, FROZEN, 3, datetime(2026, 9, 10, 9, 0), False, JobStatus.COMPLETED), (3, VersionState.ACTIVE, False, True, False)),
         (
-            RunVersion(3, FROZEN, 3, datetime(2026, 9, 13, 9, 0), 3, JobStatus.CANCELED),
-            (3, VersionState.ACTIVE, False, False),
+            RunVersion(3, FROZEN, 3, datetime(2026, 9, 13, 9, 0), True, JobStatus.CANCELED),
+            (3, VersionState.ACTIVE, False, False, False),
         ),
     ],
     ids=[
@@ -213,7 +213,15 @@ def test_get_test_run_names_a_contract_runs_version(
         passed=1, failed=0, warning=0, error=0, log=0, dismissed=0,
     )
     mock_tr_cls.select_summary.return_value = (
-        [MagicMock(run_version=run_version, version_discarded=False, is_preview=run_version.is_preview)], 1
+        [
+            MagicMock(
+                run_version=run_version,
+                version_discarded=False,
+                is_preview=run_version.is_preview,
+                is_out_of_force=run_version.is_out_of_force,
+            )
+        ],
+        1,
     )
     job = _mock_job()
 
@@ -221,7 +229,7 @@ def test_get_test_run_names_a_contract_runs_version(
 
     mock_tr_cls.select_summary.assert_called_once_with(job_execution_id=job.id, suite_types=TEST_SUITE_TYPES)
     version = result.version
-    assert (version.number, version.state, version.counts_as_status, version.preview) == expected
+    assert (version.number, version.state, version.counts_as_status, version.preview, version.out_of_force) == expected
     assert version.discarded is False
 
 
@@ -235,7 +243,7 @@ def test_get_test_run_reports_a_discarded_draft_run_as_a_preview(mock_tr_cls, mo
         passed=1, failed=0, warning=0, error=0, log=0, dismissed=0,
     )
     mock_tr_cls.select_summary.return_value = (
-        [MagicMock(run_version=None, version_discarded=True, is_preview=True)], 1
+        [MagicMock(run_version=None, version_discarded=True, is_preview=True, is_out_of_force=False)], 1
     )
 
     result = get_test_run(_mock_job())
@@ -245,6 +253,7 @@ def test_get_test_run_reports_a_discarded_draft_run_as_a_preview(mock_tr_cls, mo
         "state": VersionState.DRAFT,
         "counts_as_status": False,
         "preview": True,
+        "out_of_force": False,
         "discarded": True,
     }
 

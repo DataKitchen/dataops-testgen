@@ -676,10 +676,11 @@ def test_version_label_names_the_versions_current_state(db_session_mock):
 def test_a_check_of_a_version_already_superseded_says_it_does_not_count(db_session_mock):
     run = _real_run_summary(
         version_number=4, version_frozen_at=datetime(2026, 9, 12, tzinfo=UTC), active_version_number=5,
-        test_starttime=datetime(2026, 9, 20, 9, 0), version_in_force_at_start=5,
+        test_starttime=datetime(2026, 9, 20, 9, 0), version_checked_in_force=False,
     )
     out = _render(run)
     assert "**Version:** v4 superseded" in out
+    assert "**Out of force:** Yes" in out
     assert "**Counts as contract status:** No" in out
     assert "Preview" not in out
 
@@ -696,19 +697,20 @@ def test_a_check_of_a_version_already_superseded_says_it_does_not_count(db_sessi
 def test_a_run_of_the_active_version_that_has_not_completed_says_it_does_not_count(db_session_mock, status, counts):
     run = _real_run_summary(
         status=status, version_number=4, version_frozen_at=datetime(2026, 9, 12, tzinfo=UTC),
-        active_version_number=4, test_starttime=datetime(2026, 9, 13, 9, 0), version_in_force_at_start=4,
+        active_version_number=4, test_starttime=datetime(2026, 9, 13, 9, 0), version_checked_in_force=True,
     )
     out = _render(run)
     assert f"**Counts as contract status:** {counts}" in out
-    assert "Preview" not in out
+    assert "Preview" not in out and "Out of force" not in out
 
 
 def test_a_verification_since_superseded_still_counted(db_session_mock):
     run = _real_run_summary(
         version_number=4, version_frozen_at=datetime(2026, 9, 12, tzinfo=UTC), active_version_number=5,
-        test_starttime=datetime(2026, 9, 13, 9, 0), version_in_force_at_start=4,
+        test_starttime=datetime(2026, 9, 13, 9, 0), version_checked_in_force=True,
     )
-    assert "Counts as contract status" not in _render(run)
+    out = _render(run)
+    assert "Counts as contract status" not in out and "Out of force" not in out
 
 
 def test_a_versioned_run_without_a_start_time_is_not_a_preview(db_session_mock):
@@ -728,7 +730,8 @@ def test_a_regular_run_row_names_no_version(db_session_mock):
     [
         (
             {"version_number": 4, "version_frozen_at": datetime(2026, 9, 12, tzinfo=UTC),
-             "active_version_number": 4, "test_starttime": datetime(2026, 9, 13, 9, 0)},
+             "active_version_number": 4, "test_starttime": datetime(2026, 9, 13, 9, 0),
+             "version_checked_in_force": True},
             "v4 active", False,
         ),
         (
@@ -759,3 +762,4 @@ def test_get_test_run_names_a_contract_runs_version(mock_run, db_session_mock, o
 
     assert f"**Version:** {version}" in out
     assert ("**Preview:** Yes" in out) is preview
+    assert "Out of force" not in out

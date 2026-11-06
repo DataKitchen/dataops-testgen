@@ -17,14 +17,14 @@ test_types:
   dq_score_risk_factor: '1.0'
   column_name_prompt: null
   column_name_help: null
-  default_parm_columns: threshold_value,baseline_value
+  default_parm_columns: threshold_value,baseline_value,subset_condition
   default_parm_values: |-
-    0,CASE WHEN max_length > 3 AND initcap(min_text) = min_text THEN '''January'',''February'',''March'',''April'',''May'',''June'',''July'',''August'',''September'',''October'',''November'',''December''' WHEN max_length > 3 AND upper(min_text) = min_text THEN '''JANUARY'',''FEBRUARY'',''MARCH'',''APRIL'',''MAY'',''JUNE'',''JULY'',''AUGUST'',''SEPTEMBER'',''OCTOBER'',''NOVEMBER'',''DECEMBER''' WHEN max_length > 3 AND lower(min_text) = min_text THEN '''january'',''february'',''march'',''april'',''may'',''june'',''july'',''august'',''september'',''october'',''november'',''december''' WHEN max_length = 3 AND initcap(min_text) = min_text THEN '''Jan'',''Feb'',''Mar'',''Apr'',''May'',''Jun'',''Jul'',''Aug'',''Sep'',''Oct'',''Nov'',''Dec''' WHEN max_length = 3 AND upper(min_text) = min_text THEN '''JAN'',''FEB'',''MAR'',''APR'',''MAY'',''JUN'',''JUL'',''AUG'',''SEP'',''OCT'',''NOV'',''DEC''' WHEN max_length = 3 AND lower(min_text) = min_text THEN '''jan'',''feb'',''mar'',''apr'',''may'',''jun'',''jul'',''aug'',''sep'',''oct'',''nov'',''dec''' WHEN max_length = 2 AND min_text = '01' THEN '''01'',''02'',''03'',''04'',''05'',''06'',''07'',''08'',''09'',''10'',''11'',''12''' WHEN max_length = 2 AND min_text = '1' THEN '''1'',''2'',''3'',''4'',''5'',''6'',''7'',''8'',''9'',''10'',''11'',''12''' WHEN min_value = 1 THEN '1,2,3,4,5,6,7,8,9,10,11,12' ELSE 'NULL' END
+    0,CASE WHEN max_length > 3 AND initcap(min_text) = min_text THEN '''January'',''February'',''March'',''April'',''May'',''June'',''July'',''August'',''September'',''October'',''November'',''December''' WHEN max_length > 3 AND upper(min_text) = min_text THEN '''JANUARY'',''FEBRUARY'',''MARCH'',''APRIL'',''MAY'',''JUNE'',''JULY'',''AUGUST'',''SEPTEMBER'',''OCTOBER'',''NOVEMBER'',''DECEMBER''' WHEN max_length > 3 AND lower(min_text) = min_text THEN '''january'',''february'',''march'',''april'',''may'',''june'',''july'',''august'',''september'',''october'',''november'',''december''' WHEN max_length = 3 AND initcap(min_text) = min_text THEN '''Jan'',''Feb'',''Mar'',''Apr'',''May'',''Jun'',''Jul'',''Aug'',''Sep'',''Oct'',''Nov'',''Dec''' WHEN max_length = 3 AND upper(min_text) = min_text THEN '''JAN'',''FEB'',''MAR'',''APR'',''MAY'',''JUN'',''JUL'',''AUG'',''SEP'',''OCT'',''NOV'',''DEC''' WHEN max_length = 3 AND lower(min_text) = min_text THEN '''jan'',''feb'',''mar'',''apr'',''may'',''jun'',''jul'',''aug'',''sep'',''oct'',''nov'',''dec''' WHEN max_length = 2 AND min_text = '01' THEN '''01'',''02'',''03'',''04'',''05'',''06'',''07'',''08'',''09'',''10'',''11'',''12''' WHEN max_length = 2 AND min_text = '1' THEN '''1'',''2'',''3'',''4'',''5'',''6'',''7'',''8'',''9'',''10'',''11'',''12''' WHEN min_value = 1 THEN '1,2,3,4,5,6,7,8,9,10,11,12' ELSE 'NULL' END,NULL
   default_parm_prompts: |-
-    Threshold Invalid Months,Valid Month List
+    Threshold Invalid Months,Valid Month List,Record Subset Condition
   default_parm_help: |-
-    The acceptable number of records with invalid months present.|List of valid month values for this field, in quotes if field is numeric, separated by commas.
-  default_parm_required: N,Y
+    The acceptable number of records with invalid months present.|List of valid month values for this field, in quotes if field is numeric, separated by commas.|Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.
+  default_parm_required: N,Y,N
   default_severity: Fail
   run_type: CAT
   test_scope: column
