@@ -432,6 +432,8 @@ def _render_run_version(doc: MdDoc, run: TestRunSummary) -> None:
     if run.is_preview:
         doc.field("Preview", "Yes")
         return
+    if run.is_out_of_force:
+        doc.field("Out of force", "Yes")
     run_version = run.run_version
     if not run_version.checked_version_in_force:
         doc.field("Counts as contract status", "No, a later version was already frozen when it ran")
