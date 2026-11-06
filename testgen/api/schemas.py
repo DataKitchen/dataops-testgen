@@ -48,6 +48,7 @@ from testgen.common.models.table_group import (
 )
 from testgen.common.models.test_suite import MONITOR_SETTING_DEFAULTS
 from testgen.common.test_definition_export_import_service import (
+    TESTS_FAIL_VALIDATION_ON_EACH_RUN,
     ContractVersion,
     ImportConfig,
     ImportPayload,
@@ -117,8 +118,7 @@ class TableGroupSchemaChange(BaseModel):
         description=(
             "Tables in the table group's catalog that it no longer selects after the move, because the new "
             "schema does not have them or because the request's table filters exclude them. The change still "
-            "applies. Their tests report an error on each test run, or are deactivated if the test suite "
-            "deactivates tests that fail validation, and the next monitor run deletes their "
+            f"applies. Their tests {TESTS_FAIL_VALIDATION_ON_EACH_RUN}, and the next monitor run deletes their "
             "monitors along with the thresholds they learned."
         ),
     )

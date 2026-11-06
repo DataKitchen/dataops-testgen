@@ -66,7 +66,7 @@ from testgen.ui.services.query_cache import (
     select_test_definitions_where,
 )
 from testgen.ui.services.string_service import snake_case_to_title_case
-from testgen.ui.services.test_definition_service import MANAGED_EDIT_MESSAGE, dialog_table_columns, save_from_dialog
+from testgen.ui.services.test_definition_service import MANAGED_EDIT_MESSAGE, dialog_catalog, save_from_dialog
 from testgen.ui.session import session
 from testgen.utils import dataframe_to_json_records, friendly_score, make_json_safe
 
@@ -688,7 +688,7 @@ def _build_edit_test_dialog_data(test_definition_id: str | None, test_suite_mini
         "open": True,
         "test_definition": make_json_safe(test_def_dict),
         "test_types": make_json_safe(test_types),
-        "table_columns": dialog_table_columns(full_test_suite, table_columns, test_def_row.table_name),
+        **dialog_catalog(full_test_suite, table_columns, test_def_row.table_name),
         "table_group_schema": table_group.table_group_schema,
         "test_suite": test_suite_info,
         "qualifies_table_refs_with_schema": (
