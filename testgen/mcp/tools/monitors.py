@@ -11,6 +11,7 @@ from testgen.common.audit.monitors import (
     record_monitoring_enabled,
     record_monitoring_updated,
 )
+from testgen.common.audit.test_definitions import record_test_saved
 from testgen.common.cron_service import describe_cron, get_cron_sample
 from testgen.common.enums import MonitorCalculation, MonitorType
 from testgen.common.history_calculation_service import (
@@ -1242,6 +1243,7 @@ def set_monitor_predictive(
     monitor.lock_refresh = True
     monitor.last_manual_update = datetime.now(UTC)
     monitor.save()
+    record_test_saved(monitor, created=False)
 
     display_name = _monitor_display_name(monitor)
     doc = MdDoc()
@@ -1326,6 +1328,7 @@ def set_monitor_static(
     monitor.lock_refresh = True
     monitor.last_manual_update = datetime.now(UTC)
     monitor.save()
+    record_test_saved(monitor, created=False)
 
     display_name = _monitor_display_name(monitor)
     doc = MdDoc()
@@ -1497,6 +1500,7 @@ def set_monitor_historical(
     monitor.lock_refresh = True
     monitor.last_manual_update = datetime.now(UTC)
     monitor.save()
+    record_test_saved(monitor, created=False)
 
     display_name = _monitor_display_name(monitor)
     doc = MdDoc()

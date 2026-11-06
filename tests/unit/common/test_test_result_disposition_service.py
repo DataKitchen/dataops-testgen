@@ -51,6 +51,23 @@ def _td_updates(session):
     ]
 
 
+def _result_update(session):
+    return next(
+        call.args[0]
+        for call in session.execute.call_args_list
+        if isinstance(call.args[0], Update) and call.args[0].table.name == "test_results"
+    )
+
+
+def _affected_read(session):
+    """The read of the results' definitions, with their suites."""
+    return next(
+        call.args[0]
+        for call in session.execute.call_args_list
+        if not isinstance(call.args[0], Update) and "test_suites" in str(call.args[0])
+    )
+
+
 def _compiled(statement) -> str:
     return str(statement.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
 
@@ -126,8 +143,7 @@ class Test_set_test_results_disposition:
         session = _session([])
         with patch(f"{MODULE}.get_current_session", return_value=session):
             set_test_results_disposition([uuid4()], None)
-        tr_stmt = session.execute.call_args_list[0].args[0]
-        assert tr_stmt.compile().params["disposition"] is None
+        assert _result_update(session).compile().params["disposition"] is None
 
     def test_regular_suite_couples_its_own_definitions(self):
         suite, td = uuid4(), uuid4()
@@ -306,8 +322,7 @@ class Test_set_test_results_disposition:
         session = _session([])
         with patch(f"{MODULE}.get_current_session", return_value=session):
             set_test_results_disposition([uuid4()], Disposition.CONFIRMED)
-        reads = [call.args[0] for call in session.execute.call_args_list if not isinstance(call.args[0], Update)]
-        sql = _compiled(reads[0])
+        sql = _compiled(_affected_read(session))
         assert "test_definitions.test_active" in sql
         assert "test_definitions.lock_refresh" in sql
 
@@ -318,8 +333,7 @@ class Test_set_test_results_disposition:
             result = set_test_results_disposition([uuid4()], Disposition.INACTIVE)
 
         assert result == DispositionUpdate(matched=2, passed_skipped=0, managed_skipped=3)
-        tr_update = session.execute.call_args_list[0].args[0]
-        assert "test_results.test_type NOT IN ('Schema_Conformance')" in _compiled(tr_update)
+        assert "test_results.test_type NOT IN ('Schema_Conformance')" in _compiled(_result_update(session))
 
     @pytest.mark.parametrize("disposition", [Disposition.CONFIRMED, Disposition.DISMISSED, None])
     def test_other_dispositions_apply_to_the_results_of_managed_tests(self, disposition):
@@ -328,16 +342,49 @@ class Test_set_test_results_disposition:
             result = set_test_results_disposition([uuid4()], disposition)
 
         assert result.managed_skipped == 0
-        tr_update = session.execute.call_args_list[0].args[0]
-        assert "Schema_Conformance" not in _compiled(tr_update)
+        assert "Schema_Conformance" not in _compiled(_result_update(session))
 
     @pytest.mark.parametrize("disposition", [Disposition.CONFIRMED, Disposition.INACTIVE, None])
     def test_the_definitions_of_managed_tests_are_never_coupled(self, disposition):
         session = _session([])
         with patch(f"{MODULE}.get_current_session", return_value=session):
             set_test_results_disposition([uuid4()], disposition)
-        reads = [call.args[0] for call in session.execute.call_args_list if not isinstance(call.args[0], Update)]
-        assert "test_results.test_type NOT IN ('Schema_Conformance')" in _compiled(reads[0])
+        assert "test_results.test_type NOT IN ('Schema_Conformance')" in _compiled(_affected_read(session))
+
+
+PreviousRow = namedtuple("PreviousRow", "id disposition")
+
+
+def test_the_update_reports_what_it_changed():
+    suite, kept_td, switched_td = uuid4(), uuid4(), uuid4()
+    changed_result, same_result = uuid4(), uuid4()
+    session = MagicMock()
+    session.scalar.return_value = 0
+
+    def execute(statement):
+        if isinstance(statement, Update):
+            return MagicMock(rowcount=2)
+        sql = str(statement)
+        if "test_suites" in sql:
+            return MagicMock(all=lambda: [AffectedRow(suite, kept_td, False, True), AffectedRow(suite, switched_td)])
+        if "test_results.disposition" in sql:
+            return iter([PreviousRow(changed_result, None), PreviousRow(same_result, "Inactive")])
+        return MagicMock(all=lambda: [CopyRow(kept_td, False, True), CopyRow(switched_td, True, False)])
+
+    session.execute.side_effect = execute
+    with (
+        patch(f"{MODULE}.get_current_session", return_value=session),
+        patch(f"{MODULE}.SuiteVersion.is_frozen_agreement", return_value=False),
+        patch.object(
+            TestDefinition, "resolve_writable",
+            side_effect=lambda _suite, ids, **_kwargs: (uuid4(), {td: td for td in ids}),
+        ),
+    ):
+        update = set_test_results_disposition([changed_result, same_result], Disposition.INACTIVE)
+
+    assert update.changed == {changed_result: None}
+    assert update.switched == (switched_td,)
+    assert update.relocked == (switched_td,)
 
 
 class Test_contract_draft_changes:

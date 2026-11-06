@@ -14,6 +14,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from testgen.common.audit.actions import AuditTargetType
 from testgen.common.audit.fields import AuditFields
+from testgen.common.audit.safety import isolated_read
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import JSON_TYPE
 from testgen.common.models.entity import Entity
@@ -89,8 +90,7 @@ def _audit_name(notification: "NotificationSettings") -> str:
 
 
 def _name_of(name_column: ColumnElement, id_column: ColumnElement, id_value: UUID) -> str:
-    session = get_current_session()
-    with session.no_autoflush:
+    with isolated_read() as session:
         return session.scalar(select(name_column).where(id_column == id_value)) or str(id_value)
 
 

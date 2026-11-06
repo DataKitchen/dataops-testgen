@@ -1,11 +1,13 @@
 """The fields of a model an audit record may carry, and the changes made to them."""
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import Column, TypeDecorator, inspect
+from sqlalchemy import Column, Integer, String, TypeDecorator, inspect
 from sqlalchemy.orm.attributes import PASSIVE_NO_INITIALIZE, get_history
 
 from testgen.common.audit.actions import AuditTargetType
@@ -14,6 +16,7 @@ from testgen.common.models.custom_types import EncryptedBytea
 SECRET_INFO_KEY = "secret"  # noqa: S105
 
 _UNSET = object()
+_INTEGER = re.compile(r"[-+]?\d+")
 
 
 @dataclass(frozen=True)
@@ -25,7 +28,8 @@ class AuditFields:
     :param target_type: the kind of object the record names as affected
     :param name: attribute holding the object's name, or a function that builds a name for an object that has none
     :param id: attribute holding the id records carry
-    :param project: attribute holding the object's project code
+    :param project: attribute holding the object's project code, or a function that looks it up for an object that
+        holds none
     :param values: fields recorded with their before and after values
     :param withheld: fields recorded as changed, without their values
     """
@@ -33,7 +37,7 @@ class AuditFields:
     target_type: AuditTargetType
     name: str | Callable[[Any], str | None] | None = None
     id: str = "id"
-    project: str | None = None
+    project: str | Callable[[Any], str | None] | None = None
     values: tuple[str, ...] = ()
     withheld: tuple[str, ...] = ()
 
@@ -44,6 +48,11 @@ class AuditFields:
         if callable(self.name):
             return self.name(obj)
         return getattr(obj, self.name) if self.name else None
+
+    def project_of(self, obj: object) -> str | None:
+        if callable(self.project):
+            return self.project(obj)
+        return getattr(obj, self.project) if self.project else None
 
 
 def is_secret(column: Column) -> bool:
@@ -122,11 +131,28 @@ def to_record(obj: object, declaration: AuditFields, changes: dict[str, FieldCha
 def _reported(column: Column, value: Any) -> Any:
     if _as_stored(column, value) is None:
         return None
+    value = _coerced(column, value)
     return value.value if isinstance(value, Enum) else value
 
 
 def _as_stored(column: Column, value: Any) -> Any:
-    """``value`` as the column writes it, so that a form's ``""`` and a stored NULL compare equal."""
+    """``value`` as the column writes it, so that a form's ``""`` and a stored NULL compare equal, and so does a
+    number with the same number written as text.
+    """
     if isinstance(column.type, TypeDecorator) and not isinstance(column.type, EncryptedBytea):
-        return column.type.process_bind_param(value, None)
+        value = column.type.process_bind_param(value, None)
+    return _coerced(column, value)
+
+
+def _coerced(column: Column, value: Any) -> Any:
+    """A number bound for a text column as text, and an integer written as text bound for an integer column as an
+    integer, as the database converts them.
+    """
+    storage = column.type.impl if isinstance(column.type, TypeDecorator) else column.type
+    if isinstance(column.type, EncryptedBytea):
+        return value
+    if isinstance(storage, String) and isinstance(value, int | float | Decimal) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(storage, Integer) and isinstance(value, str) and _INTEGER.fullmatch(value.strip()):
+        return int(value)
     return value
