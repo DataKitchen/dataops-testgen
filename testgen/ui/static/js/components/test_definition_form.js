@@ -428,25 +428,28 @@ const ThresholdForm = (options, definition) => {
     return div(
         { class: 'flex-column fx-gap-4 border border-radius-1 p-3 mt-5', style: 'position: relative;' },
         Caption({ content: 'Thresholds', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
-        RadioGroup({
-            name: 'threshold_mode',
-            options: isFreshnessTrend
-                ? thresholdModeOptions.filter(option => option.value !== 'historical')
-                : thresholdModeOptions,
-            value: mode,
-            layout: 'vertical',
-            onChange: (newMode) => {
-                mode.val = newMode;
-                options.setFieldValues({
-                    'history_calculation': newMode === 'prediction' ? 'PREDICT' : newMode === 'historical' ? historyCalc.val : null,
-                    'history_calculation_upper': newMode === 'historical' ? historyCalcUpper.val : null,
-                    'history_lookback': newMode === 'historical' ? historyLookback.val : null,
-                    'lower_tolerance': newMode === 'static' ? lowerTolerance.val : newMode === 'prediction' ? definition.lower_tolerance : null,
-                    'upper_tolerance': newMode === 'static' ? upperTolerance.val : newMode === 'prediction' ? definition.upper_tolerance : null,
-                });
-                applyModeValidity(newMode);
-            },
-        }),
+        div(
+            { class: 'mt-3' },
+            RadioGroup({
+                name: 'threshold_mode',
+                options: isFreshnessTrend
+                    ? thresholdModeOptions.filter(option => option.value !== 'historical')
+                    : thresholdModeOptions,
+                value: mode,
+                layout: 'vertical',
+                onChange: (newMode) => {
+                    mode.val = newMode;
+                    options.setFieldValues({
+                        'history_calculation': newMode === 'prediction' ? 'PREDICT' : newMode === 'historical' ? historyCalc.val : null,
+                        'history_calculation_upper': newMode === 'historical' ? historyCalcUpper.val : null,
+                        'history_lookback': newMode === 'historical' ? historyLookback.val : null,
+                        'lower_tolerance': newMode === 'static' ? lowerTolerance.val : newMode === 'prediction' ? definition.lower_tolerance : null,
+                        'upper_tolerance': newMode === 'static' ? upperTolerance.val : newMode === 'prediction' ? definition.upper_tolerance : null,
+                    });
+                    applyModeValidity(newMode);
+                },
+            }),
+        ),
         () => {
             if (mode.val === 'historical') {
                 return div(
