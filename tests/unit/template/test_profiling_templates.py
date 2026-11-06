@@ -39,6 +39,8 @@ PERCENTILE_SUBQUERY = re.compile(
 # A percentile aggregated in the column's main read, one line per percentile.
 INLINE_PERCENTILE = re.compile(r"^.*\bAS percentile_\d+,?$", re.MULTILINE)
 # The sampling clauses the flavors use. Placeholders are rendered by then, so this matches the SQL.
+# A template parameter the render left in place.
+UNRENDERED_PARAM = re.compile(r"\{[A-Z][A-Z0-9_]*\}")
 SAMPLING_CLAUSE = re.compile(r"\bSAMPLE\b|\bTABLESAMPLE\b|\bRAND(?:OM)?\s*\(", re.IGNORECASE)
 
 
@@ -119,6 +121,7 @@ def test_every_type_renders_a_well_formed_select(flavor, general_type, sampled):
     for approx in _percentile_methods(flavor):
         query = _render(flavor, general_type, sampled, approx=approx)
         assert "-- TG-" not in query
+        assert not UNRENDERED_PARAM.search(query), UNRENDERED_PARAM.search(query).group(0)
         assert not PLACEHOLDER.search(query)
         assert not DANGLING_COMMA.search(query), DANGLING_COMMA.search(query).group(0)
         assert query.count("(") == query.count(")")
