@@ -3275,6 +3275,7 @@ def test_update_holds_its_edits_out_of_autoflush_until_save(db_session_mock):
             "testgen.mcp.tools.test_definitions.TableGroup.get",
             side_effect=lambda _id: events.append(f"query after edit to {td.severity}"),
         ),
+        patch("testgen.mcp.tools.test_definitions.record_test_saved"),
     ):
         update_test(str(td.id), fields={"severity": "Warning"})
     assert events == ["hold", "query after edit to Warning", "release", "save"]

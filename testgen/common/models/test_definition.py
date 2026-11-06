@@ -40,6 +40,7 @@ from sqlalchemy.sql.expression import case, literal
 from testgen.common.audit.actions import AuditTargetType
 from testgen.common.audit.fields import AuditFields
 from testgen.common.audit.names import object_name
+from testgen.common.audit.safety import isolated_read
 from testgen.common.clean_sql import NonNumericValueError, normalize_value_list, parse_value_list
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.enums import (
@@ -939,15 +940,13 @@ def _param_fields_flagged(test_type: TestType, flag: str) -> set[str]:
 
 def _audit_name(definition: "TestDefinition") -> str | None:
     """The test's type and what it runs on, as audit records name it."""
-    session = get_current_session()
-    with session.no_autoflush:
+    with isolated_read() as session:
         label = session.scalar(select(TestType.test_name_short).where(TestType.test_type == definition.test_type))
     return object_name(label or definition.test_type, definition.table_name, definition.column_name)
 
 
 def _audit_project(definition: "TestDefinition") -> str | None:
-    session = get_current_session()
-    with session.no_autoflush:
+    with isolated_read() as session:
         return session.scalar(select(TestSuite.project_code).where(TestSuite.id == definition.test_suite_id))
 
 

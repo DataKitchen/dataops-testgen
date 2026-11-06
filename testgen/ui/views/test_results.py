@@ -477,7 +477,7 @@ class TestResultsPage(Page):
                     table_group,
                     qualifies_table_refs=table_group_qualifies_table_refs(table_group.id),
                 )
-            stored = stored_values(TestDefinition, definition.id)
+            stored = stored_values(TestDefinition, definition.id, TestDefinition.version_clause())
             try:
                 error = save_from_dialog(definition, test_suite)
             except CONTRACT_VERSION_ERRORS:

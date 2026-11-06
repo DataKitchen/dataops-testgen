@@ -892,7 +892,7 @@ def build_edit_table_monitors_data(
                     merged["prediction"] = None
 
                 merged["last_manual_update"] = datetime.now(UTC)
-                stored = stored_values(TestDefinition, current_def.id)
+                stored = stored_values(TestDefinition, current_def.id, TestDefinition.version_clause())
                 monitor = TestDefinition(**merged)
                 monitor.save()
                 record_test_saved(monitor, created=False, stored=stored)

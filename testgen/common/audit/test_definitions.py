@@ -9,10 +9,9 @@ from sqlalchemy import select
 from testgen.common.audit.actions import AuditAction, AuditTargetType
 from testgen.common.audit.names import object_name
 from testgen.common.audit.recorder import changes_of, changes_since, record
-from testgen.common.audit.safety import never_raises
+from testgen.common.audit.safety import isolated_read, never_raises
 from testgen.common.audit.selections import AuditedObject, record_selection
-from testgen.common.enums import MonitorType
-from testgen.common.models import get_current_session
+from testgen.common.enums import MonitorType, SuiteType
 from testgen.common.models.test_definition import (
     AUDIT_PLACEMENT_FIELDS,
     AUDIT_STATE_FIELDS,
@@ -50,6 +49,7 @@ class AuditedTest(AuditedObject):
     test_suite_id: UUID | None = None
     table_groups_id: UUID | None = None
     test_type: str | None = None
+    in_contract: bool = False
 
     @property
     def is_monitor(self) -> bool:
@@ -58,12 +58,13 @@ class AuditedTest(AuditedObject):
 
 @never_raises(list)
 def describe_tests(test_definition_ids: Iterable[UUID | str]) -> list[AuditedTest]:
-    """The named test definitions, with the project and name their records carry. Never flushes the session."""
+    """The named test definitions of their suites' resolved versions, with the project and name their records carry.
+    Never flushes the session.
+    """
     ids = [UUID(str(identifier)) for identifier in test_definition_ids]
     if not ids:
         return []
-    session = get_current_session()
-    with session.no_autoflush:
+    with isolated_read() as session:
         rows = session.execute(
             select(
                 TestDefinition.id,
@@ -73,11 +74,12 @@ def describe_tests(test_definition_ids: Iterable[UUID | str]) -> list[AuditedTes
                 TestDefinition.test_suite_id,
                 TestDefinition.table_groups_id,
                 TestSuite.project_code,
+                TestSuite.suite_type,
                 TestType.test_name_short,
             )
             .join(TestSuite, TestSuite.id == TestDefinition.test_suite_id)
             .outerjoin(TestType, TestType.test_type == TestDefinition.test_type)
-            .where(TestDefinition.id.in_(ids))
+            .where(TestDefinition.id.in_(ids), TestDefinition.version_clause())
         ).all()
     by_id = {
         row.id: AuditedTest(
@@ -87,6 +89,7 @@ def describe_tests(test_definition_ids: Iterable[UUID | str]) -> list[AuditedTes
             test_suite_id=row.test_suite_id,
             table_groups_id=row.table_groups_id,
             test_type=row.test_type,
+            in_contract=row.suite_type == SuiteType.CONTRACT,
         )
         for row in rows
     }
@@ -101,7 +104,10 @@ def record_tests(
     changes: dict[str, dict[str, Any]] | None = None,
     single_changes: Callable[[AuditedObject], dict[str, dict[str, Any]]] | None = None,
 ) -> None:
-    """Record ``action`` on ``tests``, one record per project. See ``record_selection``."""
+    """Record ``action`` on ``tests``, one record per project, leaving out the tests of contracts. See
+    ``record_selection``.
+    """
+    tests = [test for test in tests if not test.in_contract]
     record_selection(action, tests, target_type, changes=changes, single_changes=single_changes)
 
 
@@ -136,9 +142,13 @@ def record_tests_moved(
 ) -> None:
     """Record tests moved into a test suite: where they came from, when they shared it, and where they went.
 
+    A move out of or into a contract records nothing.
+
     :param moving: the tests as they were before the move, as ``describe_tests`` read them.
-    :param moved_ids: the rows the move wrote, which for a contract are its draft's copies.
+    :param moved_ids: the rows the move wrote.
     """
+    if any(test.in_contract for test in moving) or _is_contract(target_test_suite_id):
+        return
     changes: dict[str, dict[str, Any]] = {}
     for name, target, before in (
         ("test_suite_id", target_test_suite_id, {test.test_suite_id for test in moving}),
@@ -170,12 +180,14 @@ def record_test_saved(definition: TestDefinition, *, created: bool, stored: Mapp
     """Record a test definition, or a monitor, created or changed through a form or a tool.
 
     A test's update records its changed fields, then its lock or flag as an update of its state, and its switch on or
-    off, each as its own record. A save that changed nothing records nothing.
+    off, each as its own record. A save that changed nothing, or a test of a contract, records nothing.
 
     :param created: whether the save created the test.
     :param stored: the test's values as stored before the save, for an object built from a form rather than loaded;
         without it, the changes are read from the object's history.
     """
+    if _is_contract(definition.test_suite_id):
+        return
     is_monitor = definition.test_type in _MONITOR_TYPES
     target_type = AuditTargetType.MONITOR if is_monitor else AuditTargetType.TEST_DEFINITION
     actions = _ACTIONS[target_type]
@@ -216,9 +228,10 @@ def record_tests_deleted(tests: Collection[AuditedTest]) -> None:
 @never_raises()
 def record_import(test_suite: TestSuite, config: ImportConfig, response: ImportResponse) -> None:
     """Record what an import of test definitions into ``test_suite`` did: the tests it created, updated, and deleted,
-    each as one record. A preview records nothing, and a deleted test is no longer there to be named.
+    each as one record. A preview, or an import into a contract, records nothing, and a deleted test is no longer
+    there to be named.
     """
-    if config.mode == ImportMode.preview:
+    if config.mode == ImportMode.preview or test_suite.suite_type == SuiteType.CONTRACT:
         return
     ids: dict[ImportAction, list[UUID]] = defaultdict(list)
     for item in response.items:
@@ -232,3 +245,8 @@ def record_import(test_suite: TestSuite, config: ImportConfig, response: ImportR
             for identifier in dict.fromkeys(ids[ImportAction.delete])
         ],
     )
+
+
+def _is_contract(test_suite_id: UUID | str) -> bool:
+    with isolated_read() as session:
+        return session.scalar(select(TestSuite.suite_type).where(TestSuite.id == test_suite_id)) == SuiteType.CONTRACT

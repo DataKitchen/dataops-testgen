@@ -15,11 +15,12 @@ from uuid import uuid4
 from sqlalchemy import event, inspect, select
 from sqlalchemy.orm import Session as SQLAlchemySession
 from sqlalchemy.orm import SessionTransaction
+from sqlalchemy.sql.elements import ColumnElement
 
 from testgen.common.audit.actions import CHANGE_ACTIONS, AuditAction, AuditTargetType, Outcome
 from testgen.common.audit.fields import AuditFields, FieldChange, current_values, pending_changes, to_record
 from testgen.common.audit.record import Actor, AuditRecord
-from testgen.common.audit.safety import never_raises
+from testgen.common.audit.safety import isolated_read, never_raises
 from testgen.common.audit.sinks import get_sink
 from testgen.common.enums import JobSource
 from testgen.common.models import Session, get_current_session
@@ -197,13 +198,17 @@ def changes_since(
 
 
 @never_raises(dict)
-def stored_values(model: type, identifier: object) -> dict[str, Any]:
-    """The declared fields of ``model``'s row ``identifier`` as stored, read without flushing the session."""
+def stored_values(model: type, identifier: object, *clauses: ColumnElement[bool]) -> dict[str, Any]:
+    """The declared fields of ``model``'s row ``identifier`` as stored, read without flushing the session.
+
+    :param clauses: further conditions the row must meet.
+    """
     declaration: AuditFields = model.__audit__
-    session = get_current_session()
     columns = [getattr(model, name) for name in declaration.declared()]
-    with session.no_autoflush:
-        row = session.execute(select(*columns).where(getattr(model, declaration.id) == identifier)).first()
+    with isolated_read() as session:
+        row = session.execute(
+            select(*columns).where(getattr(model, declaration.id) == identifier, *clauses)
+        ).first()
     return dict(row._mapping) if row else {}
 
 

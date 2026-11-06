@@ -7,9 +7,8 @@ from sqlalchemy import select
 
 from testgen.common.audit.actions import AuditAction
 from testgen.common.audit.recorder import changes_of, record
-from testgen.common.audit.safety import never_raises
+from testgen.common.audit.safety import isolated_read, never_raises
 from testgen.common.audit.selections import common_changes
-from testgen.common.models import get_current_session
 from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.table_group import TableGroup
@@ -29,7 +28,7 @@ def record_catalog_changes(entries: Iterable[DataTable | DataColumnChars]) -> No
     """
     changed: dict[tuple[type, str | None], list[tuple[DataTable | DataColumnChars, dict[str, dict[str, Any]]]]]
     changed = defaultdict(list)
-    entries = list(entries)
+    entries = list(dict.fromkeys(entries))
     projects = _projects({entry.table_groups_id for entry in entries})
     for entry in entries:
         if changes := changes_of(entry):
@@ -52,8 +51,7 @@ def record_catalog_changes(entries: Iterable[DataTable | DataColumnChars]) -> No
 def _projects(table_group_ids: set[UUID]) -> dict[UUID, str]:
     if not table_group_ids:
         return {}
-    session = get_current_session()
-    with session.no_autoflush:
+    with isolated_read() as session:
         rows = session.execute(
             select(TableGroup.id, TableGroup.project_code).where(TableGroup.id.in_(table_group_ids))
         )

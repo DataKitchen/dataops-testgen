@@ -5,11 +5,10 @@ from sqlalchemy import select
 
 from testgen.common.audit.actions import AuditAction, AuditTargetType
 from testgen.common.audit.names import object_name
-from testgen.common.audit.safety import never_raises
+from testgen.common.audit.safety import isolated_read, never_raises
 from testgen.common.audit.selections import AuditedObject, record_selection
 from testgen.common.audit.test_definitions import describe_tests, record_tests
 from testgen.common.enums import Disposition
-from testgen.common.models import get_current_session
 from testgen.common.models.hygiene_issue import HygieneIssue, HygieneIssueType
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResult
@@ -79,8 +78,7 @@ def _record_dispositions(
 def _describe_results(result_ids: Collection[UUID]) -> list[AuditedObject]:
     if not result_ids:
         return []
-    session = get_current_session()
-    with session.no_autoflush:
+    with isolated_read() as session:
         rows = session.execute(
             select(
                 TestResult.id,
@@ -107,8 +105,7 @@ def _describe_results(result_ids: Collection[UUID]) -> list[AuditedObject]:
 def _describe_issues(issue_ids: Collection[UUID]) -> list[AuditedObject]:
     if not issue_ids:
         return []
-    session = get_current_session()
-    with session.no_autoflush:
+    with isolated_read() as session:
         rows = session.execute(
             select(
                 HygieneIssue.id,

@@ -509,7 +509,7 @@ class TestDefinitionsPage(Page):
                 definition, table_group, qualifies_table_refs=qualifies_table_refs_with_schema
             )
             created = definition.id is None
-            stored = None if created else stored_values(TestDefinition, definition.id)
+            stored = None if created else stored_values(TestDefinition, definition.id, TestDefinition.version_clause())
             if error := save_from_dialog(definition, test_suite):
                 return error
             record_test_saved(definition, created=created, stored=stored)

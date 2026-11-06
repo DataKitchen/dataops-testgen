@@ -178,3 +178,17 @@ def test_a_selection_split_by_project_keeps_each_single_issues_previous_value(au
         entry["project_code"]: entry["changes"]["disposition"].get("from", "-") for entry in audit_log.records()
     }
     assert previous == {"finance": "Dismissed", "sales": None}
+
+
+def test_a_catalog_entry_edited_twice_in_one_act_is_one_target(audit_session, audit_log):
+    group = uuid4()
+    column = _column(group)
+    column.description = "Order total"
+    column.data_source = "crm"
+    with patch(f"{CATALOG}._projects", return_value={group: "demo"}):
+        record_catalog_changes([column, column])
+    audit_session.commit()
+
+    [entry] = audit_log.records()
+    assert (entry["target_count"], entry["target_name"]) == (1, "orders.amount")
+    assert set(entry["changes"]) == {"description", "data_source"}
