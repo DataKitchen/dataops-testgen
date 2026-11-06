@@ -145,6 +145,91 @@ def expand_path(value: str | None) -> str:
 _REMOTE_URL = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
 
 
+# What the process keeps outside DuckDB's own memory accounting: the interpreter, TestGen, and
+# allocations DuckDB does not count against its limit. DuckDB's default limit, 80% of memory,
+# leaves too little of a small container for these once a run fills DuckDB's share.
+_MEMORY_HEADROOM_BYTES = 1 << 30
+_MEMORY_HEADROOM_FRACTION = 0.2
+_CGROUP_ROOT = Path("/sys/fs/cgroup")
+_PROC_SELF_CGROUP = Path("/proc/self/cgroup")
+
+
+def _cgroup_files(v2_file: str, v1_controller: str, v1_file: str) -> list[Path]:
+    """A cgroup setting's files in this process's cgroup and each of its ancestors, cgroup v2 and v1 alike.
+
+    The process's path comes from ``/proc/self/cgroup``. Where the cgroup filesystem is mounted with
+    the process's own cgroup at its root, that path does not exist below the mount and the root
+    holds the value instead, so the root is always read too.
+    """
+    try:
+        lines = _PROC_SELF_CGROUP.read_text().splitlines()
+    except OSError:
+        return []
+    candidates: list[Path] = []
+    for line in lines:
+        if line.count(":") < 2:
+            continue
+        _, controllers, cgroup_path = line.split(":", 2)
+        if controllers == "":
+            base, name = _CGROUP_ROOT, v2_file
+        elif v1_controller in controllers.split(","):
+            base, name = _CGROUP_ROOT / controllers, v1_file
+        else:
+            continue
+        directory = base / cgroup_path.strip("/")
+        candidates.extend(parent / name for parent in [directory, *directory.parents] if parent.is_relative_to(base))
+    return [candidate for candidate in dict.fromkeys(candidates) if candidate.is_file()]
+
+
+def _read(path: Path) -> str:
+    with contextlib.suppress(OSError):
+        return path.read_text().strip()
+    return ""
+
+
+def _machine_memory_bytes() -> int | None:
+    with contextlib.suppress(ValueError, OSError, AttributeError):
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    return None
+
+
+def container_memory_bytes() -> int | None:
+    """The tightest memory limit on this process's cgroup, or None when it has none."""
+    machine = _machine_memory_bytes()
+    limits = [
+        int(value)
+        for path in _cgroup_files("memory.max", "memory", "memory.limit_in_bytes")
+        # cgroup v1 reports "no limit" as a number near the maximum of a 64-bit counter.
+        if (value := _read(path)).isdigit() and (machine is None or int(value) < machine)
+    ]
+    return min(limits, default=None)
+
+
+def available_cpus() -> int:
+    """The CPUs this process may run on, capped by its cgroup's CPU quota."""
+    if hasattr(os, "process_cpu_count"):
+        cpus = os.process_cpu_count() or 1
+    elif hasattr(os, "sched_getaffinity"):
+        cpus = len(os.sched_getaffinity(0)) or 1
+    else:
+        cpus = os.cpu_count() or 1
+    quotas = []
+    for path in _cgroup_files("cpu.max", "cpu", "cpu.cfs_quota_us"):
+        quota, _, period = _read(path).partition(" ")
+        if path.name == "cpu.cfs_quota_us":
+            period = _read(path.with_name("cpu.cfs_period_us"))
+        if quota.isdigit() and period.isdigit() and int(period) > 0:
+            quotas.append(-(-int(quota) // int(period)))
+    return max(1, min([cpus, *quotas]))
+
+
+def duckdb_memory_limit(available: int | None) -> str | None:
+    """DuckDB's memory limit for this process, leaving room for what DuckDB does not account for."""
+    if not available:
+        return None
+    headroom = max(_MEMORY_HEADROOM_BYTES, int(available * _MEMORY_HEADROOM_FRACTION))
+    return f"{max(available - headroom, available // 4) // (1 << 20)}MiB"
+
 def _require_absolute_path(value: str | None, label: str) -> None:
     """Raise ``ValueError`` unless ``value`` names an absolute path once ``~`` is expanded.
 
@@ -462,7 +547,12 @@ class DuckdbFlavorService(FlavorService):
             # SECRET run once external access is closed, which it otherwise refuses because it
             # reads the persistent secret directory, a dot-directory in the home directory.
             "allow_persistent_secrets": False,
+            # DuckDB counts the machine's cores, not the ones the process may use.
+            "threads": available_cpus(),
         }
+        # Outside a memory-limited container, DuckDB's own default applies.
+        if memory_limit := duckdb_memory_limit(container_memory_bytes()):
+            config["memory_limit"] = memory_limit
         if settings.DUCKDB_EXTENSION_DIRECTORY:
             config["extension_directory"] = settings.DUCKDB_EXTENSION_DIRECTORY
         return {"config": config}
@@ -602,12 +692,9 @@ class DuckdbFlavorService(FlavorService):
             if not base_path:
                 raise DuckdbConnectionError("This connection has no storage location configured.")
             self._register_storage_secret(connection, store, params)
-            # Named like a spill directory, so the startup sweep removes one a killed run left behind.
-            run_cache_directory = TEMP_DIRECTORY / f"{os.getpid()}-{uuid4().hex}"
-            connection.info[_RUN_CACHE_DIRECTORY_KEY] = run_cache_directory
             # The trailing slash keeps a sibling that shares the prefix, such as data-archive
             # beside data, outside the allow-list.
-            allowed = [f"{base_path}/", f"{run_cache_directory}/"]
+            allowed = [f"{base_path}/"]
         else:
             if not base_path:
                 raise DuckdbConnectionError("This connection has no base path configured.")
@@ -615,7 +702,10 @@ class DuckdbFlavorService(FlavorService):
                 raise DuckdbConnectionError(f"The base path was not found. {container_path_note()}".rstrip())
             allowed = [base_path]
 
-        self._confine_reads(connection, allowed)
+        # Named like a spill directory, so the startup sweep removes one a killed run left behind.
+        run_cache_directory = TEMP_DIRECTORY / f"{os.getpid()}-{uuid4().hex}"
+        connection.info[_RUN_CACHE_DIRECTORY_KEY] = run_cache_directory
+        self._confine_reads(connection, [*allowed, f"{run_cache_directory}/"])
         connection.info[_DECLARATION_FAILURES_KEY] = self.build_declaration_views(
             connection,
             base_path,
@@ -670,7 +760,7 @@ class DuckdbFlavorService(FlavorService):
         return connection.info.get(_DECLARATION_FAILURES_KEY, {})
 
     def caches_tables(self, sql_flavor_code: str) -> bool:
-        return object_storage.store_for(sql_flavor_code) is not None
+        return declares_files(sql_flavor_code)
 
     def cache_tables(
         self,
@@ -679,12 +769,12 @@ class DuckdbFlavorService(FlavorService):
         declarations: list[FileDeclaration],
         table_names: Iterable[str],
     ) -> None:
-        """Copy the named declarations from object storage into a local database and repoint their views.
+        """Copy the named declarations into a local database and repoint their views.
 
-        Every later query on this connection reads the copy, so the object is downloaded once. A
-        Parquet declaration is left on storage, since a query reads only the columns and row groups
-        it needs. A declaration that fails to copy keeps reading from storage, and a failure to write
-        the copy stops copying the rest.
+        Every later query on this connection reads the copy, so each file is read and parsed once. A
+        Parquet declaration is left in place, since a query reads only the columns and row groups it
+        needs. A declaration that fails to copy keeps reading its files, and a failure to write the
+        copy stops copying the rest.
         """
         run_cache_directory: Path | None = connection.info.get(_RUN_CACHE_DIRECTORY_KEY)
         table_group_schema = fixed_table_group_schema(params.sql_flavor_code)
@@ -716,7 +806,7 @@ class DuckdbFlavorService(FlavorService):
             except Exception as error:
                 connection.rollback()
                 self._disable_run_cache(connection)
-                LOG.warning(f"Tables are read from storage, because no local copy could be set up: {error}")
+                LOG.warning(f"Tables are read in place, because no local copy could be set up: {error}")
                 return
             connection.info[_RUN_CACHE_TABLES_KEY] = cached
 
@@ -740,13 +830,13 @@ class DuckdbFlavorService(FlavorService):
                     self._drop_copy(connection, copy)
                 driver_error = getattr(error, "orig", error)
                 LOG.warning(
-                    f"Declaration {declaration.name} could not be copied locally, so it is read from storage: "
+                    f"Declaration {declaration.name} could not be copied locally, so it is read in place: "
                     f"{error_message(driver_error)}"
                 )
                 if _is_write_failure(driver_error):
                     # Most likely a full disk, which every later copy would hit too.
                     if skipped := [remaining.name for remaining in to_copy[position + 1:]]:
-                        LOG.warning(f"Declarations not copied locally, so read from storage: {', '.join(skipped)}")
+                        LOG.warning(f"Declarations not copied locally, so read in place: {', '.join(skipped)}")
                     # With nothing copied yet, the cache holds only the failed partial write, so deleting it frees
                     # that space for spilling queries.
                     if not cached:
