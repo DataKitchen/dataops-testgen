@@ -18,13 +18,14 @@ test_types:
   dq_score_risk_factor: '0.75'
   column_name_prompt: null
   column_name_help: null
-  default_parm_columns: baseline_value_ct,baseline_avg,baseline_sd,threshold_value
+  default_parm_columns: baseline_value_ct,baseline_avg,baseline_sd,threshold_value,subset_condition
   default_parm_values: |-
-    value_ct,avg_value,stdev_value,0.5::VARCHAR
-  default_parm_prompts: "Value Ct at Baseline,Mean at Baseline,Std Deviation at Baseline,Threshold\
-    \ Difference Measure "
-  default_parm_help: null
-  default_parm_required: Y,Y,Y,N
+    value_ct,avg_value,stdev_value,0.5::VARCHAR,NULL
+  default_parm_prompts: |-
+    Value Ct at Baseline,Mean at Baseline,Std Deviation at Baseline,Threshold Difference Measure,Record Subset Condition
+  default_parm_help: |-
+    ||||Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.
+  default_parm_required: Y,Y,Y,N,N
   default_severity: Warning
   run_type: CAT
   test_scope: column
@@ -141,7 +142,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT AVG(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_average
-      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE};
     error_type: Test Results
   - id: '1299'
     test_id: '1005'
@@ -149,7 +150,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT AVG(`{COLUMN_NAME}` :: FLOAT) AS current_average FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+      SELECT AVG(`{COLUMN_NAME}` :: FLOAT) AS current_average FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE};
     error_type: Test Results
   - id: '1141'
     test_id: '1005'
@@ -157,7 +158,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT AVG(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT AVG(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '1084'
     test_id: '1005'
@@ -165,7 +166,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT AVG({COLUMN_NUM} :: FLOAT) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT AVG({COLUMN_NUM} :: FLOAT) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '1002'
     test_id: '1005'
@@ -173,7 +174,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT AVG("{COLUMN_NAME}"::FLOAT) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT AVG("{COLUMN_NAME}"::FLOAT) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '1402'
     test_id: '1005'
@@ -181,7 +182,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '1198'
     test_id: '1005'
@@ -189,7 +190,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '8002'
     test_id: '1005'
@@ -197,7 +198,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT AVG(CAST("{COLUMN_NAME}" AS NUMBER)) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      SELECT AVG(CAST("{COLUMN_NAME}" AS NUMBER)) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}
     error_type: Test Results
   - id: '8002'
     test_id: '1005'
@@ -205,7 +206,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT AVG(CAST("{COLUMN_NAME}" AS DECIMAL)) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      SELECT AVG(CAST("{COLUMN_NAME}" AS DECIMAL)) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}
     error_type: Test Results
   - id: '10006'
     test_id: 1005
@@ -213,7 +214,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT AVG(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_average FROM "{TABLE_NAME}";
+      SELECT AVG(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_average FROM "{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '11012'
     test_id: '1005'
@@ -221,6 +222,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   test_templates: []

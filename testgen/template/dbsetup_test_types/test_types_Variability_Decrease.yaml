@@ -18,13 +18,14 @@ test_types:
   dq_score_risk_factor: '0.75'
   column_name_prompt: null
   column_name_help: null
-  default_parm_columns: baseline_sd,threshold_value
+  default_parm_columns: baseline_sd,threshold_value,subset_condition
   default_parm_values: |-
-    stdev_value, 80
+    stdev_value, 80,NULL
   default_parm_prompts: |-
-    Std Deviation at Baseline,Expected Minimum Percent
-  default_parm_help: null
-  default_parm_required: Y,Y
+    Std Deviation at Baseline,Expected Minimum Percent,Record Subset Condition
+  default_parm_help: |-
+    ||Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.
+  default_parm_required: Y,Y,N
   default_severity: Warning
   run_type: CAT
   test_scope: column
@@ -145,7 +146,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT STDDEV_POP(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_standard_deviation
-      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE};
     error_type: Test Results
   - id: '1329'
     test_id: '1041'
@@ -153,7 +154,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST(`{COLUMN_NAME}` AS FLOAT)) as current_standard_deviation FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+      SELECT STDDEV(CAST(`{COLUMN_NAME}` AS FLOAT)) as current_standard_deviation FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE};
     error_type: Test Results
   - id: '1171'
     test_id: '1041'
@@ -161,7 +162,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT STDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT STDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '1114'
     test_id: '1041'
@@ -169,7 +170,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST({COLUMN_NUM} AS FLOAT)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT STDDEV(CAST({COLUMN_NUM} AS FLOAT)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '1032'
     test_id: '1041'
@@ -177,7 +178,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV("{COLUMN_NAME}"::FLOAT) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT STDDEV("{COLUMN_NAME}"::FLOAT) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '1432'
     test_id: '1041'
@@ -185,7 +186,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '1228'
     test_id: '1041'
@@ -193,7 +194,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '8032'
     test_id: '1041'
@@ -201,7 +202,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST("{COLUMN_NAME}" AS NUMBER)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS NUMBER)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}
     error_type: Test Results
   - id: '8032'
     test_id: '1041'
@@ -209,7 +210,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST("{COLUMN_NAME}" AS DECIMAL)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS DECIMAL)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}
     error_type: Test Results
   - id: '10043'
     test_id: 1041
@@ -217,7 +218,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TABLE_NAME}";
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '11091'
     test_id: '1041'
@@ -225,6 +226,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   test_templates: []
