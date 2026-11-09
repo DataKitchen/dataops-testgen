@@ -145,12 +145,12 @@ SELECT *
   CROSS JOIN pattern_measures
 -- TG-ENDIF
 -- TG-IF is_not_A
-SELECT
+-- The distinct count and the percentiles each get an aggregation of their own: on HANA, either one beside other
+-- aggregates takes memory in proportion to the column's distinct values, about 3 GB per column at 5 million rows.
+SELECT *
+  FROM (SELECT
   COUNT(CASE WHEN "{COL_NAME}" IS NOT NULL THEN 1 END) AS value_ct,
   SUM(CASE WHEN "{COL_NAME}" IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
--- TG-ENDIF
--- TG-IF is_not_A_or_X
-  COUNT(DISTINCT "{COL_NAME}") AS distinct_value_ct,
 -- TG-ENDIF
 -- TG-IF is_type_DN
   MIN(LENGTH(TO_VARCHAR("{COL_NAME}"))) AS min_length,
@@ -164,9 +164,6 @@ SELECT
   MAX("{COL_NAME}") AS max_value,
   AVG(CAST("{COL_NAME}" AS DECIMAL)) AS avg_value,
   STDDEV(CAST("{COL_NAME}" AS DOUBLE)) AS stdev_value,
-  MIN(pct_25) AS percentile_25,
-  MIN(pct_50) AS percentile_50,
-  MIN(pct_75) AS percentile_75,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
   SUM(ROUND(CAST(ABS(MOD("{COL_NAME}", 1)) AS DECIMAL(38,8)), 5)) AS fractional_sum,
@@ -222,12 +219,16 @@ SELECT
 -- TG-ENDIF
 -- TG-IF is_not_A
   COUNT(*) AS record_ct
-  FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+  FROM "{DATA_SCHEMA}"."{DATA_TABLE}") measures
+-- TG-ENDIF
+-- TG-IF is_not_A_or_X
+  , (SELECT COUNT(DISTINCT "{COL_NAME}") AS distinct_value_ct
+       FROM "{DATA_SCHEMA}"."{DATA_TABLE}") distinct_values
 -- TG-ENDIF
 -- TG-IF is_N_exact_pctile
   , (SELECT
-             PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,
-             PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_50,
-             PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_75
+             PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS percentile_25,
+             PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS percentile_50,
+             PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS percentile_75
         FROM "{DATA_SCHEMA}"."{DATA_TABLE}") pctile
 -- TG-ENDIF
