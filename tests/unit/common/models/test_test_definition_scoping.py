@@ -41,6 +41,10 @@ EXEMPT_METHODS = {
         "a write — opens the draft a write lands on; it reads suite_versions, and the term "
         "copy it performs is exercised as copy_to_version"
     ),
+    "writable_ids": (
+        "a write router — maps named rows onto the rows a write lands on through resolve_writable, which "
+        "opens a contract's draft; covered by test_contract_write_guard.py"
+    ),
     "assert_version_writable": "a guard — its own predicate is covered by test_contract_write_guard.py",
     "copy": "a write — version stamping is covered by test_test_definition_version_stamping.py",
     "move": "a write — version stamping is covered by test_test_definition_version_stamping.py",

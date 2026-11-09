@@ -19,6 +19,7 @@ from testgen.common.models.suite_version import (
 from testgen.common.models.test_run import TestRunSummary
 
 PREVIEW_NOTE = "A preview does not count as the contract's status."
+OUT_OF_FORCE_NOTE = "A run out of force does not count as the contract's status."
 
 
 def run_list_args(test_suite_id: UUID | str, version_id: UUID | str | None) -> dict[str, str]:
@@ -36,12 +37,16 @@ def run_list_args(test_suite_id: UUID | str, version_id: UUID | str | None) -> d
 
 
 def run_version_caption(run: TestRunSummary) -> str | None:
-    """The run's version for the test-runs list caption, e.g. ``v4 draft · Preview``, or None for an
-    unversioned run."""
+    """The run's version for the test-runs list caption, e.g. ``v3 active``, ``v4 draft · Preview`` or
+    ``v2 superseded · Out of force``, or None for an unversioned run."""
     label = run.version_label
     if label is None:
         return None
-    return f"{label} · Preview" if run.is_preview else label
+    if run.is_preview:
+        return f"{label} · Preview"
+    if run.is_out_of_force:
+        return f"{label} · Out of force"
+    return label
 
 
 def run_version_block(run: TestRunSummary) -> dict[str, str] | None:
@@ -54,11 +59,13 @@ def run_version_block(run: TestRunSummary) -> dict[str, str] | None:
         tooltip = f"This run checked a draft that was later discarded. {PREVIEW_NOTE}"
     elif run.is_preview:
         tooltip = f"v{run.version_number} was not frozen when this run started. {PREVIEW_NOTE}"
+    elif run.is_out_of_force:
+        tooltip = f"v{run.version_number} was already superseded when this run started. {OUT_OF_FORCE_NOTE}"
     elif run.version_number == run.active_version_number:
         tooltip = f"v{run.version_number} is the agreement in force."
     else:
         tooltip = f"The contract has since moved on. v{run.active_version_number} is the agreement in force."
-    classification = "Preview" if run.is_preview else "Verification"
+    classification = "Preview" if run.is_preview else "Out of force" if run.is_out_of_force else "Verification"
     return {"value": f"{text} · {classification}", "tooltip": tooltip}
 
 

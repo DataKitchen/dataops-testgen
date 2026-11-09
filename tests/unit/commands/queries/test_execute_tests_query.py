@@ -659,6 +659,112 @@ def test_data_schema_is_expanded_inside_user_parameters(field, placeholder):
     assert "public.t" in query
 
 
+def _subset_execution_sql() -> TestExecutionSQL:
+    instance = _make_params_execution_sql()
+    instance.connection = Connection(sql_flavor="postgresql", sql_flavor_code="postgresql", max_query_chars=None)
+    instance.flavor_service = get_flavor_service("postgresql")
+    return instance
+
+
+def test_subset_is_evaluated_once_per_record_and_read_by_the_measure():
+    instance = _subset_execution_sql()
+    td = _make_td(
+        test_type="Required", measure="COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME})",
+        subset_condition="status = 'X' OR status IS NULL",
+    )
+    [(query, _)], _ = instance.aggregate_cat_tests([td])
+    flag = instance._subset_flag(td)
+    assert f'COUNT({flag}) - COUNT((CASE WHEN {flag} = 1 THEN "amount" END))' in td.measure_expression
+    assert query.endswith(
+        f"FROM (SELECT \"orders\".*, CASE WHEN (status = 'X' OR status IS NULL) THEN 1 END AS {flag} "
+        'FROM "public"."orders" "orders") "orders"'
+    )
+    assert query.count("status = 'X'") == 1
+
+
+def test_tests_with_one_subset_share_its_column_in_one_query():
+    instance = _subset_execution_sql()
+    test_defs = [
+        _make_td(measure="COUNT({COLUMN_NAME})", subset_condition="a = 1"),
+        _make_td(measure="MAX({COLUMN_NAME})", subset_condition="a = 1"),
+        _make_td(measure="MIN({COLUMN_NAME})", subset_condition="b = 2"),
+        _make_td(measure="COUNT({COLUMN_NAME})"),
+    ]
+    queries, groups = instance.aggregate_cat_tests(test_defs)
+    assert len(queries) == 1 and len(groups[0]) == 4
+    query = queries[0][0]
+    assert query.count("CASE WHEN (a = 1) THEN 1 END") == 1
+    assert query.count("CASE WHEN (b = 2) THEN 1 END") == 1
+    assert instance._subset_flag(test_defs[0]) != instance._subset_flag(test_defs[2])
+
+
+def test_query_without_a_subset_reads_the_table_directly():
+    instance = _subset_execution_sql()
+    td = _make_td(test_type="Required", measure="COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME})")
+    [(query, _)], _ = instance.aggregate_cat_tests([td])
+    assert td.measure_expression.startswith('COALESCE(CAST(COUNT(*) - COUNT("amount") AS')
+    assert query.endswith('FROM "public"."orders"')
+
+
+def test_blank_subset_reads_the_table_directly():
+    instance = _subset_execution_sql()
+    td = _make_td(test_type="Required", measure="COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME})", subset_condition="  ")
+    [(query, _)], _ = instance.aggregate_cat_tests([td])
+    assert td.measure_expression.startswith('COALESCE(CAST(COUNT(*) - COUNT("amount") AS')
+    assert query.endswith('FROM "public"."orders"')
+    assert instance._get_params(td)["SUBSET_CONDITION"] == "1=1"
+
+
+def test_custom_query_subset_reads_the_subset_column():
+    instance = _subset_execution_sql()
+    td = _make_td(
+        test_type="Volume_Trend", measure="{CUSTOM_QUERY}",
+        custom_query="COUNT(CASE WHEN {SUBSET_CONDITION} THEN 1 END)", subset_condition="a = 1",
+    )
+    instance.aggregate_cat_tests([td])
+    assert f"COUNT(CASE WHEN {instance._subset_flag(td)} = 1 THEN 1 END)" in td.measure_expression
+
+
+def test_data_schema_is_expanded_inside_a_subset():
+    instance = _subset_execution_sql()
+    td = _make_td(
+        test_type="LOV_Match", column_name="code", baseline_value="a",
+        measure="SUM(CASE WHEN {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) THEN 1 ELSE 0 END)",
+        subset_condition="id IN (SELECT id FROM {DATA_SCHEMA}.t)",
+    )
+    [(query, _)], _ = instance.aggregate_cat_tests([td])
+    assert "{DATA_SCHEMA}" not in query
+    assert "id IN (SELECT id FROM public.t)" in query
+
+
+def test_a_shared_subset_counts_once_against_the_query_length():
+    instance = _subset_execution_sql()
+    instance.connection.max_query_chars = 4500
+    long_subset = "status IN (" + ", ".join(f"'{n:04}'" for n in range(250)) + ")"
+    test_defs = [_make_td(measure="COUNT({COLUMN_NAME})", subset_condition=long_subset) for _ in range(5)]
+    queries, _ = instance.aggregate_cat_tests(test_defs)
+    assert len(queries) == 1
+    assert len(queries[0][0]) <= 4500
+
+
+def test_queries_reading_a_subset_of_a_long_named_table_fit_the_query_length():
+    instance = _subset_execution_sql()
+    instance.connection.max_query_chars = 6000
+    test_defs = [
+        _make_td(
+            measure="MAX({COLUMN_NAME})",
+            column_name=f"column_{n}",
+            schema_name="s" * 120,
+            table_name="t" * 120,
+            subset_condition="status = 'SHIPPED'",
+        )
+        for n in range(40)
+    ]
+    queries, _ = instance.aggregate_cat_tests(test_defs)
+    assert len(queries) > 1
+    assert max(len(query) for query, _ in queries) <= 6000
+
+
 def test_run_query_test_renders_inline_template_unbound():
     instance = _make_params_execution_sql()
     instance.flavor_service = get_flavor_service("postgresql")

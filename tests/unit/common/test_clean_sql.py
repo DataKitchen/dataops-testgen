@@ -6,11 +6,13 @@ from testgen.common.clean_sql import (
     CleanSQL,
     NonNumericValueError,
     concat_columns,
+    expand_subset,
     format_value_list,
     normalize_value_list,
     parse_numeric_values,
     parse_value_list,
     strip_trailing_semicolons,
+    subset_params,
 )
 
 pytestmark = pytest.mark.unit
@@ -191,3 +193,23 @@ def test_normalize_value_list_rejects_a_non_number_in_a_numeric_list():
 )
 def test_strip_trailing_semicolons(sql, expected):
     assert strip_trailing_semicolons(sql) == expected
+
+
+# --- subset_params ---
+
+@pytest.mark.parametrize("subset_condition", [None, "", "  \n "])
+def test_subset_params_without_a_condition_select_every_record(subset_condition):
+    assert subset_params(subset_condition) == {"SUBSET_ROW": "*", "SUBSET_WHERE": "", "SUBSET_AND": ""}
+
+
+def test_expand_subset_names_the_table_schema():
+    condition = "id IN (SELECT id FROM {DATA_SCHEMA}.eu) AND {DATA_SCHEMA}.f(x) = 1"
+    assert expand_subset(condition, "demo") == "id IN (SELECT id FROM demo.eu) AND demo.f(x) = 1"
+
+
+def test_subset_params_parenthesize_the_condition():
+    assert subset_params("a = 1 OR b = 2") == {
+        "SUBSET_ROW": "CASE WHEN (a = 1 OR b = 2) THEN 1 END",
+        "SUBSET_WHERE": "WHERE (a = 1 OR b = 2)",
+        "SUBSET_AND": "AND (a = 1 OR b = 2)",
+    }

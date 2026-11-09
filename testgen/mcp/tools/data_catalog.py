@@ -4,6 +4,7 @@ from typing import Annotated
 from pydantic import Field
 
 from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.catalog import record_catalog_changes
 from testgen.common.audit.recorder import record
 from testgen.common.data_catalog_service import (
     TAG_FIELDS,
@@ -65,15 +66,19 @@ def update_catalog_metadata(
     inheritance_notices: list[str] = []
     exclusion_notices: list[str] = []
     rows: list[tuple[str, str, str]] = []
+    edited: list[DataTable | DataColumnChars] = []
 
     for spec in updates:
         target = _target_label(spec)
         try:
-            outcome, detail = _apply_update(spec, perms, tg_cache, flag_writes, inheritance_notices, exclusion_notices)
+            outcome, detail = _apply_update(
+                spec, perms, tg_cache, flag_writes, inheritance_notices, exclusion_notices, edited
+            )
             rows.append((target, outcome, detail))
         except MCPUserError as err:
             rows.append((target, "Failed", str(err)))
 
+    record_catalog_changes(edited)
     autoflag_notices: list[str] = []
     for entry in flag_writes.values():
         disabled = disable_autoflags(entry["tg"], wrote_cde=entry["cde"], wrote_pii=entry["pii"])
@@ -93,7 +98,9 @@ def _target_label(spec: Mapping) -> str:
     return f"{table}.{column}" if column else table
 
 
-def _apply_update(spec, perms, tg_cache, flag_writes, inheritance_notices, exclusion_notices) -> tuple[str, str]:
+def _apply_update(
+    spec, perms, tg_cache, flag_writes, inheritance_notices, exclusion_notices, edited
+) -> tuple[str, str]:
     if not isinstance(spec, Mapping):
         raise MCPUserError("Each update must be an object.")
 
@@ -150,6 +157,7 @@ def _apply_update(spec, perms, tg_cache, flag_writes, inheritance_notices, exclu
         apply_column_metadata(target, fields)
     else:
         apply_table_metadata(target, fields)
+    edited.append(target)
 
     entry = flag_writes.setdefault(tg.id, {"tg": tg, "cde": False, "pii": False})
     if cde_changed:

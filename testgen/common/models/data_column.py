@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import ClassVar
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -18,6 +19,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import postgresql
 
+from testgen.common.audit.actions import AuditTargetType
+from testgen.common.audit.fields import AuditFields
 from testgen.common.models import get_current_session
 from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.hygiene_issue import HygieneIssue
@@ -259,8 +262,30 @@ class CreateScriptColumn:
     datatype_suggestion: str | None
 
 
+CATALOG_TAG_FIELDS = (
+    "data_source",
+    "source_system",
+    "source_process",
+    "business_domain",
+    "stakeholder_group",
+    "transform_level",
+    "aggregation_level",
+    "data_product",
+    "data_classification",
+)
+
+
+def _audit_column_name(column: "DataColumnChars") -> str:
+    return f"{column.table_name}.{column.column_name}"
+
+
 class DataColumnChars(Entity):
     __tablename__ = "data_column_chars"
+    __audit__: ClassVar = AuditFields(
+        target_type=AuditTargetType.CATALOG_COLUMN,
+        name=_audit_column_name,
+        values=("description", "critical_data_element", "excluded_data_element", "pii_flag", *CATALOG_TAG_FIELDS),
+    )
 
     id: UUID = Column("column_id", postgresql.UUID(as_uuid=True), primary_key=True, default=uuid4)
     table_id: UUID = Column(postgresql.UUID(as_uuid=True), ForeignKey("data_table_chars.table_id"))

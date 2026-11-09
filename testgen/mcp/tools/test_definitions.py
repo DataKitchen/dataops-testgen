@@ -12,6 +12,13 @@ from pydantic import Field, ValidationError
 from sqlalchemy import TypeDecorator, select, update
 
 from testgen.common import contract_service
+from testgen.common.audit.test_definitions import (
+    describe_tests,
+    record_import,
+    record_status_changed,
+    record_test_saved,
+    record_tests_deleted,
+)
 from testgen.common.contract_rules import UndeclaredTableError, check_table_declared
 from testgen.common.custom_test_validation import validate_custom_query
 from testgen.common.database.table_group_service import (
@@ -802,6 +809,7 @@ def create_test(
         _raise_validation_errors(e, "Test definition creation rejected. No changes saved.")
 
     td.save()
+    record_test_saved(td, created=True)
 
     # The joined test-type metadata (param_fields, default_severity, dq_dimension, ...)
     # is only present on the Summary dataclass, so re-fetch for rendering.
@@ -914,6 +922,7 @@ def update_test(
         raise _frozen_version_error(e, suite, [old_id]) from e
     except RemovedInDraftError as e:
         raise _removed_in_draft(e, suite) from e
+    record_test_saved(td, created=False)
 
     doc = MdDoc()
     doc.heading(1, f"Test definition `{td.id}` updated")
@@ -1153,11 +1162,22 @@ def bulk_update_tests(
 
 
 def _set_test_values(test_definition_ids: list[UUID], values: dict) -> None:
-    get_current_session().execute(
+    """Write ``values`` to the tests, recording the tests whose active state it switched."""
+    session = get_current_session()
+    target = values["test_active"]
+    switched = session.scalars(
+        select(TestDefinition.id).where(
+            TestDefinition.id.in_(test_definition_ids),
+            TestDefinition.version_clause(),
+            TestDefinition.test_active != target,
+        )
+    ).all()
+    session.execute(
         update(TestDefinition)
         .where(TestDefinition.id.in_(test_definition_ids), TestDefinition.version_clause())
         .values(**values)
     )
+    record_status_changed("test_active", target, switched)
 
 
 # ---------------------------------------------------------------------------
@@ -1296,10 +1316,12 @@ def _delete_resolved_tests(scope: str, selected: list[TestDefinitionMinimal], ke
     deleted, writes = _route_for_delete(selected)
     ids = [deleted_id for _, deleted_id in deleted]
     note_count = TestDefinitionNote.count_stored_on(ids)
+    audited = describe_tests(ids)
     try:
         TestDefinition.delete_where(TestDefinition.id.in_(ids), TestDefinition.version_clause())
     except ManagedTestDefinitionError as error:
         raise MCPUserError(str(error)) from error
+    record_tests_deleted(audited)
 
     suite, version_id = writes[0] if len(writes) == 1 else (None, None)
     version = SuiteVersion.get(version_id) if suite is not None and suite.suite_type == SuiteType.CONTRACT else None
@@ -1713,6 +1735,7 @@ def import_tests(
             f"Nothing was applied.\n\n{breakdown.render()}\n\n"
             "Retry with `mode='apply'` to import while skipping these, or adjust the payload or policies."
         ) from err
+    record_import(suite, config, result)
 
     preview = config.mode is ImportMode.preview
     doc = MdDoc()

@@ -13,6 +13,7 @@ from streamlit.delta_generator import DeltaGenerator
 
 from testgen.common import date_service
 from testgen.common.audit.actions import AuditAction
+from testgen.common.audit.catalog import record_catalog_changes
 from testgen.common.audit.recorder import record
 from testgen.common.data_catalog_service import (
     apply_column_metadata,
@@ -632,13 +633,17 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> None:
 
     with spinner_container:
         with st.spinner("Saving tags"):
+            edited: list[DataTable | DataColumnChars] = []
             if table_ids and shared_fields:
                 for table in DataTable.select_where(DataTable.id.in_(table_ids)):
                     apply_table_metadata(table, shared_fields)
+                    edited.append(table)
 
             if column_ids and column_fields:
                 for column in DataColumnChars.select_where(DataColumnChars.id.in_(column_ids)):
                     apply_column_metadata(column, column_fields)
+                    edited.append(column)
+            record_catalog_changes(edited)
 
             # Disable autodetection flags on table group if requested
             disable_flags = payload.get("disable_flags", [])

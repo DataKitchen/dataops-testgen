@@ -17,13 +17,13 @@ test_types:
   dq_score_risk_factor: '1.0'
   column_name_prompt: null
   column_name_help: null
-  default_parm_columns: baseline_value,threshold_value
+  default_parm_columns: baseline_value,threshold_value,subset_condition
   default_parm_values: null
   default_parm_prompts: |-
-    Constant Value at Baseline,Threshold Failure Count
+    Constant Value at Baseline,Threshold Failure Count,Record Subset Condition
   default_parm_help: |-
-    The single, unchanging value of the column.|The number of failing records that are acceptable before the test fails.
-  default_parm_required: Y,N
+    The single, unchanging value of the column.|The number of failing records that are acceptable before the test fails.|Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.
+  default_parm_required: Y,N,N
   default_severity: Fail
   run_type: CAT
   test_scope: column
@@ -139,7 +139,7 @@ test_types:
     lookup_query: |-
       SELECT `{COLUMN_NAME}`, COUNT(*) AS count
       FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
-      WHERE `{COLUMN_NAME}` <> {BASELINE_VALUE}
+      WHERE `{COLUMN_NAME}` <> {BASELINE_VALUE} {SUBSET_AND}
       GROUP BY `{COLUMN_NAME}`
       LIMIT {LIMIT};
     error_type: Test Results
@@ -149,7 +149,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` <> {BASELINE_VALUE} GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` <> {BASELINE_VALUE} {SUBSET_AND} GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
     error_type: Test Results
   - id: '1143'
     test_id: '1007'
@@ -157,7 +157,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}";
+      SELECT DISTINCT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} {SUBSET_AND} GROUP BY "{COLUMN_NAME}";
     error_type: Test Results
   - id: '1086'
     test_id: '1007'
@@ -165,7 +165,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_NUM} <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_NUM} <> {BASELINE_VALUE} {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1004'
     test_id: '1007'
@@ -173,7 +173,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1404'
     test_id: '1007'
@@ -181,7 +181,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1200'
     test_id: '1007'
@@ -189,7 +189,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '8004'
     test_id: '1007'
@@ -197,7 +197,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" FETCH FIRST {LIMIT} ROWS ONLY
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} {SUBSET_AND} GROUP BY "{COLUMN_NAME}" FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Test Results
   - id: '8004'
     test_id: '1007'
@@ -205,7 +205,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Test Results
   - id: '10009'
     test_id: 1007
@@ -213,7 +213,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '11019'
     test_id: '1007'
@@ -221,6 +221,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

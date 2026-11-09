@@ -20,6 +20,7 @@ from testgen.api.schemas import (
     ImportStrictErrorBody,
 )
 from testgen.common import contract_service
+from testgen.common.audit.test_definitions import record_import
 from testgen.common.enums import TEST_SUITE_TYPES
 from testgen.common.models.suite_version import (
     FrozenVersionError,
@@ -125,7 +126,7 @@ def import_test_definitions(
     that version. A refusal applies nothing.
     """
     try:
-        return import_definitions(test_suite, body.config, body.payload)
+        response = import_definitions(test_suite, body.config, body.payload)
     except InvalidImportPayload as err:
         raise api_error(400, err.code, str(err)) from err
     except UnmatchedInDraftError as err:
@@ -162,6 +163,8 @@ def import_test_definitions(
                 import_result=err.result,
             ).model_dump(mode="json"),
         ) from err
+    record_import(test_suite, body.config, response)
+    return response
 
 
 

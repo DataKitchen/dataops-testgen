@@ -283,6 +283,18 @@ class Test_build_query_standard:
         assert params["SUBSET_CONDITION"] == "1=1"
         assert params["MATCH_SUBSET_CONDITION"] == "1=1"
 
+    @patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q)
+    @patch(f"{MODULE}.replace_params")
+    @patch(f"{MODULE}.TestDefinition.get_for_project")
+    @patch(f"{MODULE}._get_lookup_data")
+    def test_blank_subset_condition_selects_every_record(self, mock_lookup, mock_td, mock_replace, _mock_templated):
+        mock_lookup.return_value = LookupData(lookup_query="SELECT 1", sql_flavor="postgresql")
+        mock_td.return_value = _FakeTestDefinition(subset_condition="   ")
+        _build_query_standard(_standard_issue_data(), limit=500)
+        params = mock_replace.call_args[0][1]
+        assert params["SUBSET_CONDITION"] == "1=1"
+        assert params["SUBSET_AND"] == ""
+
 
 def _test_type_lookups():
     yaml_dir = Path(testgen.__file__).parent / "template" / "dbsetup_test_types"

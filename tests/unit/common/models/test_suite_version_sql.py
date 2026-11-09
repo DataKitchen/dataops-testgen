@@ -211,28 +211,36 @@ def test_latest_verification_of_a_draft_is_none_without_a_query(session_mock):
 
 
 @pytest.mark.parametrize(
-    ("frozen_at", "active_number", "started", "in_force", "state", "preview", "counts"),
+    ("frozen_at", "active_number", "started", "in_force", "state", "preview", "counts", "out_of_force"),
     [
-        (datetime(2026, 9, 12, tzinfo=UTC), 3, datetime(2026, 9, 13), 3, VersionState.ACTIVE, False, True),
-        (datetime(2026, 9, 12, tzinfo=UTC), 4, datetime(2026, 9, 13), 3, VersionState.SUPERSEDED, False, True),
-        (datetime(2026, 9, 12, tzinfo=UTC), 4, datetime(2026, 9, 20), 4, VersionState.SUPERSEDED, False, False),
-        (datetime(2026, 9, 12, tzinfo=UTC), 3, datetime(2026, 9, 11), 2, VersionState.ACTIVE, True, False),
-        (None, 2, datetime(2026, 9, 13), 2, VersionState.DRAFT, True, False),
+        (datetime(2026, 9, 12, tzinfo=UTC), 3, datetime(2026, 9, 13), True, VersionState.ACTIVE, False, True, False),
+        (
+            datetime(2026, 9, 12, tzinfo=UTC), 4, datetime(2026, 9, 13), True, VersionState.SUPERSEDED, False, True,
+            False,
+        ),
+        (
+            datetime(2026, 9, 12, tzinfo=UTC), 4, datetime(2026, 9, 20), False, VersionState.SUPERSEDED, False, False,
+            True,
+        ),
+        (datetime(2026, 9, 12, tzinfo=UTC), 3, datetime(2026, 9, 11), False, VersionState.ACTIVE, True, False, False),
+        (None, 2, datetime(2026, 9, 13), False, VersionState.DRAFT, True, False, False),
     ],
     ids=["verification", "verification-since-superseded", "check-of-a-superseded-version", "preview-frozen-since",
          "draft"],
 )
 def test_a_completed_run_counts_when_it_verified_the_version_in_force_as_it_started(
-    frozen_at, active_number, started, in_force, state, preview, counts
+    frozen_at, active_number, started, in_force, state, preview, counts, out_of_force
 ):
     run_version = RunVersion(3, frozen_at, active_number, started, in_force, JobStatus.COMPLETED)
-    assert (run_version.state, run_version.is_preview, run_version.counts_as_status) == (state, preview, counts)
+    assert (run_version.state, run_version.is_preview, run_version.counts_as_status, run_version.is_out_of_force) == (
+        state, preview, counts, out_of_force,
+    )
 
 
 @pytest.mark.parametrize(
     "status", [JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.CANCELED, JobStatus.ERROR, None]
 )
 def test_a_run_that_has_not_completed_does_not_count(status):
-    run_version = RunVersion(3, datetime(2026, 9, 12, tzinfo=UTC), 3, datetime(2026, 9, 13), 3, status)
+    run_version = RunVersion(3, datetime(2026, 9, 12, tzinfo=UTC), 3, datetime(2026, 9, 13), True, status)
     assert run_version.checked_version_in_force is True
     assert run_version.counts_as_status is False

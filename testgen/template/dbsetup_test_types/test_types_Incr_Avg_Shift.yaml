@@ -18,13 +18,14 @@ test_types:
   dq_score_risk_factor: '0.75'
   column_name_prompt: null
   column_name_help: null
-  default_parm_columns: baseline_value_ct,baseline_sum,baseline_avg,baseline_sd,threshold_value
+  default_parm_columns: baseline_value_ct,baseline_sum,baseline_avg,baseline_sd,threshold_value,subset_condition
   default_parm_values: |-
-    value_ct,(avg_value * value_ct)::FLOAT,avg_value,stdev_value,2
+    value_ct,(avg_value * value_ct)::FLOAT,avg_value,stdev_value,2,NULL
   default_parm_prompts: |-
-    Value Count at Baseline,Sum at Baseline,Mean Value at Baseline,Std Deviation at Baseline,Threshold Max Z-Score
-  default_parm_help: null
-  default_parm_required: Y,Y,Y,Y,N
+    Value Count at Baseline,Sum at Baseline,Mean Value at Baseline,Std Deviation at Baseline,Threshold Max Z-Score,Record Subset Condition
+  default_parm_help: |-
+    |||||Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.
+  default_parm_required: Y,Y,Y,Y,N,N
   default_severity: Warning
   run_type: CAT
   test_scope: column
@@ -143,7 +144,7 @@ test_types:
       SELECT AVG(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_average,
              SUM(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_sum,
              NULLIF(CAST(COUNT(`{COLUMN_NAME}`) AS FLOAT64), 0) AS current_value_count
-      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE};
     error_type: Test Results
   - id: '1309'
     test_id: '1017'
@@ -151,7 +152,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT AVG(`{COLUMN_NAME}` :: FLOAT) AS current_average, SUM(`{COLUMN_NAME}` ::FLOAT) AS current_sum, NULLIF(COUNT(`{COLUMN_NAME}` )::FLOAT, 0) as current_value_count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+      SELECT AVG(`{COLUMN_NAME}` :: FLOAT) AS current_average, SUM(`{COLUMN_NAME}` ::FLOAT) AS current_sum, NULLIF(COUNT(`{COLUMN_NAME}` )::FLOAT, 0) as current_value_count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE};
     error_type: Test Results
   - id: '1151'
     test_id: '1017'
@@ -159,7 +160,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT AVG(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_average, SUM(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_sum, NULLIF(CAST(COUNT("{COLUMN_NAME}") AS FLOAT), 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT AVG(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_average, SUM(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_sum, NULLIF(CAST(COUNT("{COLUMN_NAME}") AS FLOAT), 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '1094'
     test_id: '1017'
@@ -167,7 +168,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT AVG({COLUMN_NUM} :: FLOAT) AS current_average, SUM({COLUMN_NUM} ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT AVG({COLUMN_NUM} :: FLOAT) AS current_average, SUM({COLUMN_NUM} ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '1012'
     test_id: '1017'
@@ -175,7 +176,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '1412'
     test_id: '1017'
@@ -183,7 +184,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '1208'
     test_id: '1017'
@@ -191,7 +192,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '8012'
     test_id: '1017'
@@ -199,7 +200,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT AVG(CAST("{COLUMN_NAME}" AS NUMBER)) AS current_average, SUM(CAST("{COLUMN_NAME}" AS NUMBER)) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}"), 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      SELECT AVG(CAST("{COLUMN_NAME}" AS NUMBER)) AS current_average, SUM(CAST("{COLUMN_NAME}" AS NUMBER)) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}"), 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}
     error_type: Test Results
   - id: '8012'
     test_id: '1017'
@@ -207,7 +208,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT AVG(CAST("{COLUMN_NAME}" AS DECIMAL)) AS current_average, SUM(CAST("{COLUMN_NAME}" AS DECIMAL)) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}"), 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      SELECT AVG(CAST("{COLUMN_NAME}" AS DECIMAL)) AS current_average, SUM(CAST("{COLUMN_NAME}" AS DECIMAL)) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}"), 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}
     error_type: Test Results
   - id: '10019'
     test_id: 1017
@@ -215,7 +216,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT AVG(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_average, SUM(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_sum, NULLIF(CAST(COUNT("{COLUMN_NAME}" ) AS FLOAT), 0) as current_value_count FROM "{TABLE_NAME}";
+      SELECT AVG(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_average, SUM(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_sum, NULLIF(CAST(COUNT("{COLUMN_NAME}" ) AS FLOAT), 0) as current_value_count FROM "{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '11040'
     test_id: '1017'
@@ -223,6 +224,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   test_templates: []

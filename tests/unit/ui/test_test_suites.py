@@ -413,11 +413,15 @@ def test_locking_edited_tests_of_a_contract_lands_on_its_draft(suite_type, opens
         patch.object(
             dialog.TestDefinition, "resolve_write_target", side_effect=lambda _id: events.append("draft") or ("v", {}),
         ),
-        patch.object(dialog, "execute_db_query", side_effect=lambda *_: events.append("lock")),
+        patch.object(dialog, "get_current_session") as session,
+        patch.object(dialog, "record_status_changed") as record,
     ):
+        session.return_value.execute.side_effect = lambda *_: events.append("lock") or session.return_value.locked
+        session.return_value.locked.scalars.return_value.all.return_value = ["t1"]
         dialog.lock_edited_tests("abc")
 
     assert events == (["draft", "lock"] if opens_draft else ["lock"])
+    record.assert_called_once_with("lock_refresh", True, ["t1"])
 
 
 MIB = 1024 * 1024

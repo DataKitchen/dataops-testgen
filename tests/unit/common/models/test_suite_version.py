@@ -362,3 +362,12 @@ def test_a_frozen_version_not_in_force_is_superseded():
 )
 def test_format_version_names_a_version_by_number_and_state(number, state, expected):
     assert format_version(number, state) == expected
+
+
+def test_format_version_follows_the_name_with_the_versions_label():
+    assert format_version(2, VersionState.ACTIVE, "Production") == "v2 active · Production"
+
+
+@pytest.mark.parametrize("label", [None, "", "   "])
+def test_format_version_without_a_label_keeps_the_plain_name(label):
+    assert format_version(3, VersionState.DRAFT, label) == "v3 draft"

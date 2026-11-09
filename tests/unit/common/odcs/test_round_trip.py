@@ -73,7 +73,7 @@ _METADATA = {
 }
 
 # Every routed and declared type, plus the variants that fall back to custom (a tolerant bound, a date Constant,
-# a cleared threshold or baseline) or declare one bound; each term sits on its own column so no two declare the same field.
+# a cleared threshold or baseline, a record subset) or declare one bound; each term sits on its own column so no two declare the same field.
 # (test type, column, column logicalType, term fields)
 _TERMS: list[tuple[str, str | None, str | None, dict]] = [
     ("Required", "c_required", "string", {"threshold_value": "3"}),
@@ -117,10 +117,15 @@ _TERMS: list[tuple[str, str | None, str | None, dict]] = [
     ("Min_Val", "c_min_described", "number",
      {"baseline_value": "0", "threshold_value": "0", "test_description": "No negative refunds"}),
     ("Required", "c_required_described", "string", {"threshold_value": "3", "test_description": "Few missing names"}),
+    ("Required", "c_required_subset", "string", {"threshold_value": "3", "subset_condition": "status = 'SHIPPED'"}),
+    ("Required", "c_required_strict_subset", "string", {"threshold_value": "0", "subset_condition": "status = 'SHIPPED'"}),
+    ("Max_Val", "c_max_subset", "integer",
+     {"baseline_value": "100", "threshold_value": "0", "subset_condition": "region = 'EU' OR region IS NULL"}),
 ]
 # Table-scoped terms, which share the table's quality list.
 _TABLE_TERMS: list[tuple[str, dict]] = [
     ("Row_Ct_Pct", {"baseline_ct": "1000", "threshold_value": "10"}),
+    ("Row_Ct_Pct", {"baseline_ct": "1000", "threshold_value": "10", "subset_condition": "status = 'SHIPPED'"}),
     ("Match_Row_Ct", {"threshold_value": "600"}),
     ("Dupe_Rows", {"groupby_names": '"c_required", "c_lov"', "skip_errors": 0}),
     ("SQL_Metric", {"custom_query": "SELECT COUNT(*) AS late FROM {DATA_SCHEMA}.orders;", "lower_tolerance": "1",

@@ -374,6 +374,22 @@ def test_validate_custom_query_not_accepted():
     assert "custom_query" in exc_info.value.errors
 
 
+def test_validate_subset_condition_not_accepted():
+    tt = make_test_type()  # param_columns = {threshold_value}; no subset_condition allowed
+    td = make_td(column_name="email", threshold_value="10", subset_condition="status = 'SHIPPED'")
+    with pytest.raises(InvalidTestDefinitionFields) as exc_info:
+        td.validate(tt)
+    assert "subset_condition" in exc_info.value.errors
+
+
+def test_validate_subset_condition_accepted_when_declared():
+    tt = make_test_type(
+        param_columns={"threshold_value", "subset_condition"}, default_parm_columns="threshold_value,subset_condition"
+    )
+    td = make_td(column_name="email", threshold_value="10", subset_condition="status = 'SHIPPED'")
+    td.validate(tt)  # no raise
+
+
 def test_validate_severity_accepts_valid_strenum_values():
     tt = make_test_type()
     for value in ("Fail", "Warning"):

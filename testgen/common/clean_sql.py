@@ -33,6 +33,38 @@ def strip_trailing_semicolons(sql: str | None) -> str | None:
     return re.sub(r"[\s;]+$", "", sql) if sql else sql
 
 
+def subset_params(subset_condition: str | None) -> dict[str, str]:
+    """Return the template parameters that restrict a test to the records matching its subset condition.
+
+    Args:
+        subset_condition: The test's record subset condition, written like a SQL ``WHERE`` clause.
+
+    Returns:
+        ``SUBSET_ROW``, the argument of a ``COUNT`` of the matching records; ``SUBSET_WHERE``, a
+        ``WHERE`` clause; and ``SUBSET_AND``, a term to append to an existing ``WHERE`` clause.
+        Without a condition, or with a blank one, they render ``*`` and two empty strings.
+    """
+    if not subset_condition or not subset_condition.strip():
+        return {"SUBSET_ROW": "*", "SUBSET_WHERE": "", "SUBSET_AND": ""}
+    # Parenthesized so a condition containing OR still binds as one term
+    subset = f"({subset_condition})"
+    return {
+        "SUBSET_ROW": f"CASE WHEN {subset} THEN 1 END",
+        "SUBSET_WHERE": f"WHERE {subset}",
+        "SUBSET_AND": f"AND {subset}",
+    }
+
+
+def expand_subset(subset_condition: str, schema_name: str) -> str:
+    """Return a record subset condition with ``{DATA_SCHEMA}`` expanded to ``schema_name``.
+
+    Args:
+        subset_condition: The test's record subset condition, written like a SQL ``WHERE`` clause.
+        schema_name: The schema of the test's table.
+    """
+    return subset_condition.replace("{DATA_SCHEMA}", schema_name)
+
+
 # One list value and the separator after it: a value in double quotes, or an unquoted value
 # trimmed of the whitespace around it
 _LIST_ITEM = re.compile(r'[^\S\r\n]*(?:"((?:[^"]|"")*)"[^\S\r\n]*|([^,\r\n]*?)[^\S\r\n]*)(,|\r\n|\r|\n|\Z)')

@@ -1,4 +1,5 @@
 import dataclasses
+import hashlib
 from collections.abc import Iterable
 from datetime import date, datetime
 from typing import ClassVar, TypedDict
@@ -7,7 +8,14 @@ from uuid import UUID
 import pandas as pd
 
 from testgen.common import read_template_sql_file
-from testgen.common.clean_sql import concat_columns, null_if_empty, parse_value_list, strip_trailing_semicolons
+from testgen.common.clean_sql import (
+    concat_columns,
+    expand_subset,
+    null_if_empty,
+    parse_value_list,
+    strip_trailing_semicolons,
+    subset_params,
+)
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import (
     FinalParam,
@@ -37,6 +45,9 @@ from testgen.utils import to_sql_timestamp
 # Separates the measures of the CAT tests batched into one aggregate query. parse_cat_results splits
 # on it and indexes positionally, so it must be a sequence no measure can contain.
 MEASURE_SEPARATOR = "~^~"
+
+# The parameters through which a CAT measure reads the column's value on each record
+ROW_LEVEL_PARAMS = ("COLUMN_NAME", "COLUMN_NUM", "COLUMN_VALUE", "VALUE_LIST_COLUMN", "VALUE_LIST_DISTINCT")
 
 
 @dataclasses.dataclass
@@ -90,6 +101,10 @@ class TestExecutionDef(InputParameters):
     measure_expression: str = None
     condition_expression: str = None
     errors: list[str] = dataclasses.field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.subset_condition is not None and not self.subset_condition.strip():
+            self.subset_condition = None
 
 class AggregateResult(TypedDict):
     query_index: int
@@ -437,6 +452,7 @@ class TestExecutionSQL:
                 # SUBSET_CONDITION should be replaced after CUSTOM_QUERY
                 # since the latter may contain the former
                 "SUBSET_CONDITION": test_def.subset_condition or "1=1",
+                **subset_params(test_def.subset_condition),
                 "GROUPBY_NAMES": test_def.groupby_names,
                 "HAVING_CONDITION": f"HAVING {test_def.having_condition}" if test_def.having_condition else "",
                 "WINDOW_DATE_COLUMN": test_def.window_date_column,
@@ -619,7 +635,19 @@ class TestExecutionSQL:
                 params = self._get_params(td)
                 operator, condition_template = self._resolve_cat_operator_and_condition(td)
 
-                measure = replace_params(td.measure, params)
+                # Records outside the subset read as NULL, which the measure's aggregates skip,
+                # so subset and whole-table tests still share one scan of the table.
+                measure_params = params
+                if td.subset_condition:
+                    flag = self._subset_flag(td)
+                    in_subset = f"{flag} = 1"
+                    measure_params = {**params, "SUBSET_CONDITION": in_subset, "SUBSET_ROW": flag}
+                    for name in ROW_LEVEL_PARAMS:
+                        if name in params:
+                            wrapped = f"(CASE WHEN {in_subset} THEN {params[name]} END)"
+                            measure_params[name] = FinalParam(wrapped) if isinstance(params[name], FinalParam) else wrapped
+
+                measure = replace_params(td.measure, measure_params)
                 measure = replace_templated_functions(measure, self.flavor)
                 condition = replace_params(condition_template, params)
                 condition = replace_templated_functions(condition, self.flavor)
@@ -636,15 +664,23 @@ class TestExecutionSQL:
                     null_value=self.null_value,
                 )
 
+        # Every subset of a table is evaluated once per record in the FROM clause; reserve room for all of them
+        subset_columns_by_table: dict[tuple[str, str], dict[str, None]] = {}
+        for td in test_defs:
+            if td.subset_condition:
+                subset_columns_by_table.setdefault((td.schema_name, td.table_name), {})[self._subset_column(td)] = None
         max_query_chars = (self.connection.max_query_chars or DEFAULT_MAX_QUERY_CHARS) - 400
+        max_query_chars -= max(
+            (len(self._from_clause(schema, table, columns)) for (schema, table), columns in subset_columns_by_table.items()),
+            default=0,
+        )
         groups = group_cat_tests(test_defs, max_query_chars, concat_operator, single)
 
         aggregate_queries: list[tuple[str, None]] = []
         aggregate_test_defs: list[list[TestExecutionDef]] = []
         for group in groups:
-            table_ref = self.flavor_service.get_table_ref(
-                group[0].schema_name, group[0].table_name, self.connection.sql_flavor_code
-            )
+            subset_columns = dict.fromkeys(self._subset_column(td) for td in group if td.subset_condition)
+            table_ref = self._from_clause(group[0].schema_name, group[0].table_name, subset_columns)
             query = (
                 f"SELECT {len(aggregate_queries)} AS query_index, "
                 f"{concat_operator.join([td.measure_expression for td in group])} AS result_measures, "
@@ -657,6 +693,32 @@ class TestExecutionSQL:
             aggregate_test_defs.append(group)
 
         return aggregate_queries, aggregate_test_defs
+
+    def _from_clause(self, schema_name: str, table_name: str, subset_columns: Iterable[str]) -> str:
+        """Return the FROM target of an aggregate query: the table, or a derived table adding ``subset_columns``."""
+        table_ref = self.flavor_service.get_table_ref(schema_name, table_name, self.connection.sql_flavor_code)
+        if not (columns := "".join(subset_columns)):
+            return table_ref
+        # Aliased by the table's own name, so a subset naming the table still resolves
+        alias = f"{self.flavor_service.quote_character}{table_name}{self.flavor_service.quote_character}"
+        return f"(SELECT {alias}.*{columns} FROM {table_ref} {alias}) {alias}"
+
+    def _subset_flag(self, test_def: TestExecutionDef) -> str:
+        """Return the quoted column that is 1 on the records in ``test_def``'s subset and NULL on the others.
+
+        Tests with the same subset condition on a table share the column.
+        """
+        digest = hashlib.md5(self._expanded_subset(test_def).encode(), usedforsecurity=False).hexdigest()[:12]
+        quote = self.flavor_service.quote_character
+        return f"{quote}tg_subset_{digest}{quote}"
+
+    def _subset_column(self, test_def: TestExecutionDef) -> str:
+        """Return the select-list entry that computes ``test_def``'s subset flag column, with a leading comma."""
+        return f", CASE WHEN ({self._expanded_subset(test_def)}) THEN 1 END AS {self._subset_flag(test_def)}"
+
+    def _expanded_subset(self, test_def: TestExecutionDef) -> str:
+        # Written into the query directly, so no later parameter pass expands DATA_SCHEMA in it
+        return expand_subset(test_def.subset_condition, test_def.schema_name)
 
     def get_cat_test_results(
         self,

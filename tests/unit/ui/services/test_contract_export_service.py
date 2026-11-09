@@ -23,12 +23,12 @@ def _export(version: SuiteVersion, exported: ExportedDocument | Exception, is_ac
     suite = _suite()
     with (
         patch(f"{MODULE}.contract_service.version_for_export", return_value=version) as for_export,
-        patch(f"{MODULE}.contract_service.export_version", side_effect=[exported]) as export_version,
+        patch(f"{MODULE}.contract_service.export_file", side_effect=[exported]) as export_file,
         patch(f"{MODULE}.SuiteVersion.is_active", return_value=is_active),
     ):
         result = contract_export(suite, requested)
     for_export.assert_called_once_with(suite, requested)
-    export_version.assert_called_once_with(version, contract_name="orders_contract")
+    export_file.assert_called_once_with(version, contract_name="orders_contract")
     return result
 
 
@@ -81,7 +81,7 @@ def test_a_file_name_keeps_only_safe_characters():
     draft = SuiteVersion(id=uuid4(), version=1, frozen_at=None)
     with (
         patch(f"{MODULE}.contract_service.version_for_export", return_value=draft),
-        patch(f"{MODULE}.contract_service.export_version", return_value=ExportedDocument(DOCUMENT, [])),
+        patch(f"{MODULE}.contract_service.export_file", return_value=ExportedDocument(DOCUMENT, [])),
         patch(f"{MODULE}.SuiteVersion.is_active", return_value=False),
     ):
         assert contract_export(suite, None)["file_name"] == "sales_orders_EU_v1_draft.yaml"

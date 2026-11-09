@@ -6,20 +6,21 @@ describes work that did not happen, so it is written at once.
 """
 
 import logging
-from collections.abc import Callable, Collection, Iterable
+from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import event
+from sqlalchemy import event, inspect, select
 from sqlalchemy.orm import Session as SQLAlchemySession
 from sqlalchemy.orm import SessionTransaction
+from sqlalchemy.sql.elements import ColumnElement
 
 from testgen.common.audit.actions import CHANGE_ACTIONS, AuditAction, AuditTargetType, Outcome
 from testgen.common.audit.fields import AuditFields, FieldChange, current_values, pending_changes, to_record
 from testgen.common.audit.record import Actor, AuditRecord
-from testgen.common.audit.safety import never_raises
+from testgen.common.audit.safety import isolated_read, never_raises
 from testgen.common.audit.sinks import get_sink
 from testgen.common.enums import JobSource
 from testgen.common.models import Session, get_current_session
@@ -109,8 +110,8 @@ def record(
         targets = targets or (getattr(subject, declaration.id),)
         if target_name is None:
             target_name = _name_of(declaration, subject)
-        if project_code is None and declaration.project:
-            project_code = getattr(subject, declaration.project)
+        if project_code is None:
+            project_code = _project_of(declaration, subject)
         if changes is None:
             changes = _changes_of(session, subject, only, exclude)
     changes = {
@@ -168,6 +169,47 @@ def created_changes(subject: object, *, only: Collection[str] | None = None) -> 
     declaration: AuditFields = type(subject).__audit__
     names = tuple(name for name in declaration.declared() if only is None or name in only)
     return to_record(subject, declaration, current_values(subject, names))
+
+
+@never_raises(dict)
+def changes_since(
+    subject: object,
+    stored: Mapping[str, Any],
+    *,
+    only: Collection[str] | None = None,
+    exclude: Collection[str] = (),
+) -> dict[str, dict[str, Any]]:
+    """The changed fields of ``subject`` against ``stored``, its values as last saved, as ``record`` would write them.
+
+    For an object built from a form rather than loaded, whose history knows no previous values. Only the fields the
+    object holds are compared.
+
+    :param only: limits the changed fields to these.
+    :param exclude: leaves these out.
+    """
+    declaration: AuditFields = type(subject).__audit__
+    held = inspect(subject).dict
+    changes = {
+        name: FieldChange(before=stored[name], after=held[name])
+        for name in declaration.declared()
+        if name in held and name in stored and (only is None or name in only) and name not in exclude
+    }
+    return to_record(subject, declaration, changes)
+
+
+@never_raises(dict)
+def stored_values(model: type, identifier: object, *clauses: ColumnElement[bool]) -> dict[str, Any]:
+    """The declared fields of ``model``'s row ``identifier`` as stored, read without flushing the session.
+
+    :param clauses: further conditions the row must meet.
+    """
+    declaration: AuditFields = model.__audit__
+    columns = [getattr(model, name) for name in declaration.declared()]
+    with isolated_read() as session:
+        row = session.execute(
+            select(*columns).where(getattr(model, declaration.id) == identifier, *clauses)
+        ).first()
+    return dict(row._mapping) if row else {}
 
 
 @never_raises()
@@ -230,6 +272,11 @@ def _subject_changes(
 @never_raises()
 def _name_of(declaration: AuditFields, subject: object) -> str | None:
     return declaration.name_of(subject)
+
+
+@never_raises()
+def _project_of(declaration: AuditFields, subject: object) -> str | None:
+    return declaration.project_of(subject)
 
 
 def _context_of(session: SQLAlchemySession | None) -> AuditContext:

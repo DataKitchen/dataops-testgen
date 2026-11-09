@@ -137,6 +137,18 @@ def test_a_required_term_projects_a_null_values_library_rule():
     assert not validate_document(_wrap(rule, RuleScope.COLUMN))
 
 
+def test_a_term_with_a_record_subset_projects_a_custom_rule_carrying_the_subset():
+    term = _term(test_type="Required", threshold_value="0", subset_condition="status = 'SHIPPED'")
+    test_type = _test_type(
+        "Required", dq_dimension="Completeness", default_parm_columns="threshold_value,subset_condition"
+    )
+    rule = project_rule(term, test_type, SqlFlavorCode.POSTGRESQL)
+
+    assert rule["type"] == "custom"
+    assert rule["implementation"]["subset_condition"] == "status = 'SHIPPED'"
+    assert not validate_document(_wrap(rule, RuleScope.COLUMN))
+
+
 def test_a_library_rule_names_its_metric_and_never_a_rule_key():
     rule = project_rule(_term(test_type="Required", threshold_value="3"), _test_type("Required"), SqlFlavorCode.POSTGRESQL)
     assert "rule" not in rule

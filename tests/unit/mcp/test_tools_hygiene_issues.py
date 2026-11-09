@@ -981,3 +981,17 @@ def test_search_issue_type_filter_resolved(mock_search, mock_resolve, db_session
 
     sql = _compiled_clauses(mock_search.call_args)
     assert "profile_anomaly_results.anomaly_id =" in sql
+
+
+@patch("testgen.mcp.tools.hygiene_issues.record_issue_dispositions")
+@patch("testgen.mcp.tools.hygiene_issues.resolve_hygiene_issue")
+def test_update_hygiene_issue_records_the_previous_disposition(
+    mock_resolve, mock_record, db_session_mock, disposition_perms,
+):
+    from testgen.mcp.tools.hygiene_issues import update_hygiene_issue
+
+    issue = MagicMock(id=uuid4(), disposition="Confirmed")
+    mock_resolve.return_value = issue
+    update_hygiene_issue(issue_id=str(issue.id), disposition="Dismissed")
+
+    mock_record.assert_called_once_with({issue.id: "Confirmed"}, Disposition.DISMISSED)

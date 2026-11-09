@@ -163,7 +163,7 @@ def _run_version(job_id: UUID) -> TestRunVersion | None:
     summary = summaries[0]
     if summary.version_discarded:
         return TestRunVersion(
-            number=None, state=VersionState.DRAFT, counts_as_status=False, preview=True, discarded=True
+            number=None, state=VersionState.DRAFT, counts_as_status=False, preview=True, out_of_force=False, discarded=True
         )
     if (run_version := summary.run_version) is None:
         return None
@@ -172,6 +172,7 @@ def _run_version(job_id: UUID) -> TestRunVersion | None:
         state=run_version.state,
         counts_as_status=run_version.counts_as_status,
         preview=summary.is_preview,
+        out_of_force=summary.is_out_of_force,
         discarded=False,
     )
 

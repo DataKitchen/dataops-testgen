@@ -272,7 +272,7 @@ def export_contract(
     suite = resolve_contract(test_suite_id)
     try:
         target = contract_service.version_for_export(suite, version)
-        exported = contract_service.export_version(target, contract_name=suite.test_suite)
+        exported = contract_service.export_file(target, contract_name=suite.test_suite)
     except ValueError as e:
         # Covers the renderer's own refusals too -- an orphaned term, an unmapped flavor, a
         # test type excluded from contracts -- each of which names what to fix.

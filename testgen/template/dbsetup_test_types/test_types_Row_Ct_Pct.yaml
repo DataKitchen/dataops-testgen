@@ -17,12 +17,13 @@ test_types:
   dq_score_risk_factor: '1.0'
   column_name_prompt: null
   column_name_help: null
-  default_parm_columns: baseline_ct,threshold_value
+  default_parm_columns: baseline_ct,threshold_value,subset_condition
   default_parm_values: null
   default_parm_prompts: |-
-    Baseline Record Count,Threshold Pct Above or Below Baseline
-  default_parm_help: null
-  default_parm_required: Y,N
+    Baseline Record Count,Threshold Pct Above or Below Baseline,Record Subset Condition
+  default_parm_help: |-
+    ||Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.
+  default_parm_required: Y,N,N
   default_severity: Fail
   run_type: CAT
   test_scope: table
@@ -43,7 +44,7 @@ test_types:
     test_type: Row_Ct_Pct
     sql_flavor: bigquery
     measure: |-
-      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT}) / {BASELINE_CT}, 2))
+      ABS(ROUND(100.0 * (COUNT({SUBSET_ROW}) - {BASELINE_CT}) / {BASELINE_CT}, 2))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -51,7 +52,7 @@ test_types:
     test_type: Row_Ct_Pct
     sql_flavor: databricks
     measure: |-
-      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT})::FLOAT / {BASELINE_CT}::FLOAT, 2))
+      ABS(ROUND(100.0 * (COUNT({SUBSET_ROW}) - {BASELINE_CT})::FLOAT / {BASELINE_CT}::FLOAT, 2))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -59,7 +60,7 @@ test_types:
     test_type: Row_Ct_Pct
     sql_flavor: mssql
     measure: |-
-      ABS(ROUND(100.0 * CAST((COUNT(*) - {BASELINE_CT} ) AS FLOAT)/ CAST({BASELINE_CT} AS FLOAT), 2))
+      ABS(ROUND(100.0 * CAST((COUNT({SUBSET_ROW}) - {BASELINE_CT} ) AS FLOAT)/ CAST({BASELINE_CT} AS FLOAT), 2))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -67,7 +68,7 @@ test_types:
     test_type: Row_Ct_Pct
     sql_flavor: postgresql
     measure: |-
-      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT})::DECIMAL(18,4) / {BASELINE_CT}::DECIMAL(18,4), 2))
+      ABS(ROUND(100.0 * (COUNT({SUBSET_ROW}) - {BASELINE_CT})::DECIMAL(18,4) / {BASELINE_CT}::DECIMAL(18,4), 2))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -75,7 +76,7 @@ test_types:
     test_type: Row_Ct_Pct
     sql_flavor: redshift
     measure: |-
-      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT})::FLOAT / {BASELINE_CT}::FLOAT, 2))
+      ABS(ROUND(100.0 * (COUNT({SUBSET_ROW}) - {BASELINE_CT})::FLOAT / {BASELINE_CT}::FLOAT, 2))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -83,7 +84,7 @@ test_types:
     test_type: Row_Ct_Pct
     sql_flavor: redshift_spectrum
     measure: |-
-      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT})::FLOAT / {BASELINE_CT}::FLOAT, 2))
+      ABS(ROUND(100.0 * (COUNT({SUBSET_ROW}) - {BASELINE_CT})::FLOAT / {BASELINE_CT}::FLOAT, 2))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -91,7 +92,7 @@ test_types:
     test_type: Row_Ct_Pct
     sql_flavor: snowflake
     measure: |-
-      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT})::FLOAT / {BASELINE_CT}::FLOAT, 2))
+      ABS(ROUND(100.0 * (COUNT({SUBSET_ROW}) - {BASELINE_CT})::FLOAT / {BASELINE_CT}::FLOAT, 2))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -99,7 +100,7 @@ test_types:
     test_type: Row_Ct_Pct
     sql_flavor: oracle
     measure: |-
-      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT}) / {BASELINE_CT}, 2))
+      ABS(ROUND(100.0 * (COUNT({SUBSET_ROW}) - {BASELINE_CT}) / {BASELINE_CT}, 2))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -107,7 +108,7 @@ test_types:
     test_type: Row_Ct_Pct
     sql_flavor: sap_hana
     measure: |-
-      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT}) / {BASELINE_CT}, 2))
+      ABS(ROUND(100.0 * (COUNT({SUBSET_ROW}) - {BASELINE_CT}) / {BASELINE_CT}, 2))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -115,7 +116,7 @@ test_types:
     test_type: Row_Ct_Pct
     sql_flavor: salesforce_data360
     measure: |-
-      ABS(ROUND(100.0 * CAST((COUNT(*) - {BASELINE_CT}) AS DECIMAL(18,4)) / CAST({BASELINE_CT} AS DECIMAL(18,4)), 2))
+      ABS(ROUND(100.0 * CAST((COUNT({SUBSET_ROW}) - {BASELINE_CT}) AS DECIMAL(18,4)) / CAST({BASELINE_CT} AS DECIMAL(18,4)), 2))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -123,7 +124,7 @@ test_types:
     test_type: Row_Ct_Pct
     sql_flavor: duckdb
     measure: |-
-      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT})::DECIMAL(18,4) / {BASELINE_CT}::DECIMAL(18,4), 2))
+      ABS(ROUND(100.0 * (COUNT({SUBSET_ROW}) - {BASELINE_CT})::DECIMAL(18,4) / {BASELINE_CT}::DECIMAL(18,4), 2))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -136,7 +137,7 @@ test_types:
     lookup_query: |-
       WITH cte AS (
         SELECT COUNT(*) AS current_count
-        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE}
       )
       SELECT current_count, {BASELINE_CT} AS baseline_count,
              ABS(ROUND(100 * (current_count - {BASELINE_CT}) / CAST({BASELINE_CT} AS FLOAT64), 2)) AS row_count_pct_difference
@@ -148,7 +149,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
     error_type: Test Results
   - id: '1164'
     test_id: '1032'
@@ -156,7 +157,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(CAST(100 * (current_count - {BASELINE_CT}) AS NUMERIC) / CAST({BASELINE_CT} AS NUMERIC) ,2)) AS row_count_pct_difference FROM cte;
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(CAST(100 * (current_count - {BASELINE_CT}) AS NUMERIC) / CAST({BASELINE_CT} AS NUMERIC) ,2)) AS row_count_pct_difference FROM cte;
     error_type: Test Results
   - id: '1107'
     test_id: '1032'
@@ -164,7 +165,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: NUMERIC / {BASELINE_CT} :: NUMERIC,2)) AS row_count_pct_difference FROM cte;
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: NUMERIC / {BASELINE_CT} :: NUMERIC,2)) AS row_count_pct_difference FROM cte;
     error_type: Test Results
   - id: '1025'
     test_id: '1032'
@@ -172,7 +173,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
     error_type: Test Results
   - id: '1425'
     test_id: '1032'
@@ -180,7 +181,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
     error_type: Test Results
   - id: '1221'
     test_id: '1032'
@@ -188,7 +189,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
     error_type: Test Results
   - id: '8025'
     test_id: '1032'
@@ -196,7 +197,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) / {BASELINE_CT}, 2)) AS row_count_pct_difference FROM cte
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) / {BASELINE_CT}, 2)) AS row_count_pct_difference FROM cte
     error_type: Test Results
   - id: '8025'
     test_id: '1032'
@@ -204,7 +205,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) / {BASELINE_CT}, 2)) AS row_count_pct_difference FROM cte
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) / {BASELINE_CT}, 2)) AS row_count_pct_difference FROM cte
     error_type: Test Results
   - id: '10033'
     test_id: 1032
@@ -212,7 +213,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT COUNT(*) AS current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * CAST((COUNT(*) - {BASELINE_CT}) AS NUMERIC) / CAST({BASELINE_CT} AS NUMERIC), 2)) AS row_count_pct_difference FROM "{TABLE_NAME}";
+      SELECT COUNT(*) AS current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * CAST((COUNT(*) - {BASELINE_CT}) AS NUMERIC) / CAST({BASELINE_CT} AS NUMERIC), 2)) AS row_count_pct_difference FROM "{TABLE_NAME}" {SUBSET_WHERE};
     error_type: Test Results
   - id: '11068'
     test_id: '1032'
@@ -220,6 +221,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: NUMERIC / {BASELINE_CT} :: NUMERIC,2)) AS row_count_pct_difference FROM cte;
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: NUMERIC / {BASELINE_CT} :: NUMERIC,2)) AS row_count_pct_difference FROM cte;
     error_type: Test Results
   test_templates: []

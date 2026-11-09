@@ -16,13 +16,13 @@ test_types:
   dq_score_risk_factor: '1.0'
   column_name_prompt: null
   column_name_help: null
-  default_parm_columns: baseline_value,threshold_value
+  default_parm_columns: baseline_value,threshold_value,subset_condition
   default_parm_values: null
   default_parm_prompts: |-
-    Maximum Date at Baseline,Threshold Failure Count
+    Maximum Date at Baseline,Threshold Failure Count,Record Subset Condition
   default_parm_help: |-
-    The latest date allowed. The comparison is exact, so on a timestamp column a date entered without a time means midnight at the start of that day, and later times on that day count as after it.|The number of dates after the maximum that the test allows.
-  default_parm_required: Y,N
+    The latest date allowed. The comparison is exact, so on a timestamp column a date entered without a time means midnight at the start of that day, and later times on that day count as after it.|The number of dates after the maximum that the test allows.|Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.
+  default_parm_required: Y,N,N
   default_severity: Fail
   run_type: CAT
   test_scope: column
@@ -135,7 +135,7 @@ test_types:
     sql_flavor: bigquery
     lookup_type: null
     lookup_query: |-
-      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` > CAST(CAST('{BASELINE_VALUE}' AS DATETIME) AS {COLUMN_TYPE}) GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` > CAST(CAST('{BASELINE_VALUE}' AS DATETIME) AS {COLUMN_TYPE}) {SUBSET_AND} GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
     error_type: Test Results
   - id: '1503'
     test_id: '1518'
@@ -143,7 +143,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` > '{BASELINE_VALUE}' GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` > '{BASELINE_VALUE}' {SUBSET_AND} GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
     error_type: Test Results
   - id: '1507'
     test_id: '1518'
@@ -151,7 +151,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}";
+      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' {SUBSET_AND} GROUP BY "{COLUMN_NAME}";
     error_type: Test Results
   - id: '1511'
     test_id: '1518'
@@ -159,7 +159,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1515'
     test_id: '1518'
@@ -167,7 +167,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1519'
     test_id: '1518'
@@ -175,7 +175,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1523'
     test_id: '1518'
@@ -183,7 +183,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '8517'
     test_id: '1518'
@@ -191,7 +191,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > TO_DATE('{BASELINE_VALUE}', 'YYYY-MM-DD HH24:MI:SS') GROUP BY "{COLUMN_NAME}" FETCH FIRST {LIMIT} ROWS ONLY
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > TO_DATE('{BASELINE_VALUE}', 'YYYY-MM-DD HH24:MI:SS') {SUBSET_AND} GROUP BY "{COLUMN_NAME}" FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Test Results
   - id: '8517'
     test_id: '1518'
@@ -199,7 +199,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > CAST('{BASELINE_VALUE}' AS {COLUMN_TYPE}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > CAST('{BASELINE_VALUE}' AS {COLUMN_TYPE}) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Test Results
   - id: '10049'
     test_id: '1518'
@@ -207,7 +207,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE CAST("{COLUMN_NAME}" AS TIMESTAMP) > CAST('{BASELINE_VALUE}' AS TIMESTAMP) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE CAST("{COLUMN_NAME}" AS TIMESTAMP) > CAST('{BASELINE_VALUE}' AS TIMESTAMP) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '11103'
     test_id: '1518'
@@ -215,6 +215,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

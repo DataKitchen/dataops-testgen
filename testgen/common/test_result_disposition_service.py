@@ -12,7 +12,7 @@ reported. Used by both the Streamlit UI
 """
 from collections import defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -59,13 +59,17 @@ class DispositionUpdate:
     the number of Passed results that matched but were left unchanged; ``managed_skipped``
     is the number of non-Passed results of a managed test type left unmuted. ``contract_drafts``
     holds, for each contract whose tests changed in its draft rather than in the version in force,
-    that draft and how many of its tests changed.
+    that draft and how many of its tests changed. ``changed`` maps each result whose disposition changed to its
+    previous disposition; ``switched`` and ``relocked`` are the test definitions whose active state and lock changed.
     """
 
     matched: int
     passed_skipped: int
     managed_skipped: int = 0
     contract_drafts: tuple[ContractDraftChange, ...] = ()
+    changed: dict[UUID, str | None] = field(default_factory=dict)
+    switched: tuple[UUID, ...] = ()
+    relocked: tuple[UUID, ...] = ()
 
 
 def coupled_test_definition_state(disposition: Disposition | None) -> tuple[bool, bool]:
@@ -127,11 +131,13 @@ def set_test_results_disposition(
         ) or 0
         writable = (*non_passed, unmanaged)
 
-    tr_stmt = (
-        update(TestResult)
-        .where(*writable)
-        .values(disposition=disposition.value if disposition is not None else None)
-    )
+    new_value = disposition.value if disposition is not None else None
+    changed = {
+        row.id: row.disposition
+        for row in session.execute(select(TestResult.id, TestResult.disposition).where(*writable))
+        if row.disposition != new_value
+    }
+    tr_stmt = update(TestResult).where(*writable).values(disposition=new_value)
     matched = session.execute(tr_stmt).rowcount
 
     test_active, lock_refresh = coupled_test_definition_state(disposition)
@@ -200,6 +206,17 @@ def set_test_results_disposition(
         else:
             targets.update(mapping.values())
 
+    switched: tuple[UUID, ...] = ()
+    relocked: tuple[UUID, ...] = ()
+    if coupled_ids := writable_td_ids | lock_kept_td_ids:
+        states = session.execute(
+            select(TestDefinition.id, TestDefinition.test_active, TestDefinition.lock_refresh).where(
+                TestDefinition.id.in_(coupled_ids), TestDefinition.version_clause()
+            )
+        ).all()
+        switched = tuple(row.id for row in states if row.test_active != test_active)
+        relocked = tuple(row.id for row in states if row.id in writable_td_ids and row.lock_refresh != lock_refresh)
+
     now = datetime.now(UTC).replace(tzinfo=None)
     for td_ids, lock_values in ((writable_td_ids, {"lock_refresh": lock_refresh}), (lock_kept_td_ids, {})):
         if td_ids:
@@ -214,6 +231,9 @@ def set_test_results_disposition(
         passed_skipped=passed_skipped,
         managed_skipped=managed_skipped,
         contract_drafts=tuple(contract_drafts),
+        changed=changed,
+        switched=switched,
+        relocked=relocked,
     )
 
 

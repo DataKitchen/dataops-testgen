@@ -285,8 +285,9 @@ class TestDefinitionExport(BaseModel):
     # Subset / grouping
     subset_condition: str | None = Field(
         default=None,
-        description="Referential tests and some table-level tests only. A condition selecting the records to test, "
-        "written like a SQL `WHERE` clause, e.g. `status = 'SHIPPED'`.",
+        description="A condition selecting the records to test, written like a SQL `WHERE` clause, e.g. "
+        "`status = 'SHIPPED'`. A test type that takes no record subset, such as Custom Condition, reports it as an "
+        "`invalid_field` on import.",
     )
     groupby_names: str | None = Field(
         default=None,

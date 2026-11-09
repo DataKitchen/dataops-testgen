@@ -16,13 +16,13 @@ test_types:
   dq_score_risk_factor: '1.0'
   column_name_prompt: null
   column_name_help: null
-  default_parm_columns: baseline_value,threshold_value
+  default_parm_columns: baseline_value,threshold_value,subset_condition
   default_parm_values: null
   default_parm_prompts: |-
-    List of Expected Values,Threshold Mismatch Count
+    List of Expected Values,Threshold Mismatch Count,Record Subset Condition
   default_parm_help: |-
-    Comma-separated list of every value expected in the column, in any order, matched exactly. Enclose a value in double quotes if it contains a comma, and use "" for the empty string.|The number of mismatched values that are acceptable before the test fails.
-  default_parm_required: Y,N
+    Comma-separated list of every value expected in the column, in any order, matched exactly. Enclose a value in double quotes if it contains a comma, and use "" for the empty string.|The number of mismatched values that are acceptable before the test fails.|Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.
+  default_parm_required: Y,N,N
   default_severity: Fail
   run_type: CAT
   test_scope: column
@@ -137,12 +137,12 @@ test_types:
       SELECT listed_value AS `{COLUMN_NAME}`, mismatch_ct AS count FROM (
         SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct
         FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
-        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS})
+        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) {SUBSET_AND}
         GROUP BY {VALUE_LIST_DISTINCT}
         UNION ALL
         SELECT expected.expected_value, 0
         FROM ({VALUE_LIST_ROWS}) expected
-        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) found
+        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE}) found
           ON found.value_key = expected.value_key
         WHERE found.value_key IS NULL
       ) mismatches
@@ -157,12 +157,12 @@ test_types:
       SELECT listed_value AS `{COLUMN_NAME}`, mismatch_ct AS count FROM (
         SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct
         FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
-        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS})
+        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) {SUBSET_AND}
         GROUP BY {VALUE_LIST_DISTINCT}
         UNION ALL
         SELECT expected.expected_value, 0
         FROM ({VALUE_LIST_ROWS}) expected
-        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) found
+        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE}) found
           ON found.value_key = expected.value_key
         WHERE found.value_key IS NULL
       ) mismatches
@@ -177,12 +177,12 @@ test_types:
       SELECT TOP {LIMIT} listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (
         SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct
         FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS})
+        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) {SUBSET_AND}
         GROUP BY {VALUE_LIST_DISTINCT}
         UNION ALL
         SELECT expected.expected_value, 0
         FROM ({VALUE_LIST_ROWS}) expected
-        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") found
+        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) found
           ON found.value_key = expected.value_key
         WHERE found.value_key IS NULL
       ) mismatches;
@@ -196,12 +196,12 @@ test_types:
       SELECT listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (
         SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct
         FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS})
+        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) {SUBSET_AND}
         GROUP BY {VALUE_LIST_DISTINCT}
         UNION ALL
         SELECT expected.expected_value, 0
         FROM ({VALUE_LIST_ROWS}) expected
-        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") found
+        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) found
           ON found.value_key = expected.value_key
         WHERE found.value_key IS NULL
       ) mismatches
@@ -216,12 +216,12 @@ test_types:
       SELECT listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (
         SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct
         FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS})
+        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) {SUBSET_AND}
         GROUP BY {VALUE_LIST_DISTINCT}
         UNION ALL
         SELECT expected.expected_value, 0
         FROM ({VALUE_LIST_ROWS}) expected
-        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") found
+        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) found
           ON found.value_key = expected.value_key
         WHERE found.value_key IS NULL
       ) mismatches
@@ -236,12 +236,12 @@ test_types:
       SELECT listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (
         SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct
         FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS})
+        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) {SUBSET_AND}
         GROUP BY {VALUE_LIST_DISTINCT}
         UNION ALL
         SELECT expected.expected_value, 0
         FROM ({VALUE_LIST_ROWS}) expected
-        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") found
+        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) found
           ON found.value_key = expected.value_key
         WHERE found.value_key IS NULL
       ) mismatches
@@ -256,12 +256,12 @@ test_types:
       SELECT listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (
         SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct
         FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS})
+        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) {SUBSET_AND}
         GROUP BY {VALUE_LIST_DISTINCT}
         UNION ALL
         SELECT expected.expected_value, 0
         FROM ({VALUE_LIST_ROWS}) expected
-        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") found
+        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) found
           ON found.value_key = expected.value_key
         WHERE found.value_key IS NULL
       ) mismatches
@@ -276,12 +276,12 @@ test_types:
       SELECT listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (
         SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct
         FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS})
+        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) {SUBSET_AND}
         GROUP BY {VALUE_LIST_DISTINCT}
         UNION ALL
         SELECT expected.expected_value, 0
         FROM ({VALUE_LIST_ROWS}) expected
-        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") found
+        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) found
           ON found.value_key = expected.value_key
         WHERE found.value_key IS NULL
       ) mismatches
@@ -296,12 +296,12 @@ test_types:
       SELECT listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (
         SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct
         FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS})
+        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) {SUBSET_AND}
         GROUP BY {VALUE_LIST_DISTINCT}
         UNION ALL
         SELECT expected.expected_value, 0
         FROM ({VALUE_LIST_ROWS}) expected
-        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") found
+        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) found
           ON found.value_key = expected.value_key
         WHERE found.value_key IS NULL
       ) mismatches
@@ -316,12 +316,12 @@ test_types:
       SELECT listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (
         SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct
         FROM "{TABLE_NAME}"
-        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS})
+        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) {SUBSET_AND}
         GROUP BY {VALUE_LIST_DISTINCT}
         UNION ALL
         SELECT expected.expected_value, 0
         FROM ({VALUE_LIST_ROWS}) expected
-        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TABLE_NAME}") found
+        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TABLE_NAME}" {SUBSET_WHERE}) found
           ON found.value_key = expected.value_key
         WHERE found.value_key IS NULL
       ) mismatches
@@ -336,12 +336,12 @@ test_types:
       SELECT listed_value AS "{COLUMN_NAME}", mismatch_ct AS count FROM (
         SELECT MIN({VALUE_LIST_VALUE}) AS listed_value, COUNT(*) AS mismatch_ct
         FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS})
+        WHERE {VALUE_LIST_COLUMN} NOT IN ({VALUE_LIST_LITERALS}) {SUBSET_AND}
         GROUP BY {VALUE_LIST_DISTINCT}
         UNION ALL
         SELECT expected.expected_value, 0
         FROM ({VALUE_LIST_ROWS}) expected
-        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") found
+        LEFT JOIN (SELECT DISTINCT {VALUE_LIST_DISTINCT} AS value_key FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) found
           ON found.value_key = expected.value_key
         WHERE found.value_key IS NULL
       ) mismatches

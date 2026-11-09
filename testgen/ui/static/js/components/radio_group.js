@@ -7,7 +7,7 @@
  *
  * @typedef Properties
  * @type {object}
- * @property {string} label
+ * @property {string?} label
  * @property {string?} help
  * @property {Option[]} options
  * @property {string | number | boolean | null} value
@@ -32,16 +32,18 @@ const RadioGroup = (/** @type Properties */ props) => {
 
     return div(
         { class: () => `tg-radio-group--wrapper ${layout}${disabled ? ' disabled' : ''}`, style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}`, 'data-testid': 'radio-group' },
-        div(
-            { class: 'text-caption tg-radio-group--label flex-row fx-gap-1' },
-            props.label,
-            () => getValue(props.help)
-                ? withTooltip(
-                    Icon({ size: 16, classes: 'text-disabled' }, 'help'),
-                    { text: props.help, position: 'top', width: 200 }
-                )
-                : null,
-        ),
+        props.label
+            ? div(
+                { class: 'text-caption tg-radio-group--label flex-row fx-gap-1' },
+                props.label,
+                () => getValue(props.help)
+                    ? withTooltip(
+                        Icon({ size: 16, classes: 'text-disabled' }, 'help'),
+                        { text: props.help, position: 'top', width: 200 }
+                    )
+                    : null,
+            )
+            : null,
         () => div(
             { class: 'tg-radio-group' },
             getValue(props.options).map(option => label(

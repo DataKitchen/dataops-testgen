@@ -17,12 +17,13 @@ test_types:
   dq_score_risk_factor: '1.0'
   column_name_prompt: null
   column_name_help: null
-  default_parm_columns: threshold_value
+  default_parm_columns: threshold_value,subset_condition
   default_parm_values: null
   default_parm_prompts: |-
-    Threshold Minimum Record Count
-  default_parm_help: null
-  default_parm_required: N
+    Threshold Minimum Record Count,Record Subset Condition
+  default_parm_help: |-
+    |Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.
+  default_parm_required: N,N
   default_severity: Fail
   run_type: CAT
   test_scope: table
@@ -45,7 +46,7 @@ test_types:
     test_type: Row_Ct
     sql_flavor: bigquery
     measure: |-
-      COUNT(*)
+      COUNT({SUBSET_ROW})
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -53,7 +54,7 @@ test_types:
     test_type: Row_Ct
     sql_flavor: databricks
     measure: |-
-      COUNT(*)
+      COUNT({SUBSET_ROW})
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -61,7 +62,7 @@ test_types:
     test_type: Row_Ct
     sql_flavor: mssql
     measure: |-
-      COUNT(*)
+      COUNT({SUBSET_ROW})
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -69,7 +70,7 @@ test_types:
     test_type: Row_Ct
     sql_flavor: postgresql
     measure: |-
-      COUNT(*)
+      COUNT({SUBSET_ROW})
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -77,7 +78,7 @@ test_types:
     test_type: Row_Ct
     sql_flavor: redshift
     measure: |-
-      COUNT(*)
+      COUNT({SUBSET_ROW})
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -85,7 +86,7 @@ test_types:
     test_type: Row_Ct
     sql_flavor: redshift_spectrum
     measure: |-
-      COUNT(*)
+      COUNT({SUBSET_ROW})
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -93,7 +94,7 @@ test_types:
     test_type: Row_Ct
     sql_flavor: snowflake
     measure: |-
-      COUNT(*)
+      COUNT({SUBSET_ROW})
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -101,7 +102,7 @@ test_types:
     test_type: Row_Ct
     sql_flavor: oracle
     measure: |-
-      COUNT(*)
+      COUNT({SUBSET_ROW})
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -109,14 +110,14 @@ test_types:
     test_type: Row_Ct
     sql_flavor: sap_hana
     measure: |-
-      COUNT(*)
+      COUNT({SUBSET_ROW})
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
   - id: '10025'
     test_type: Row_Ct
     sql_flavor: salesforce_data360
-    measure: COUNT(*)
+    measure: COUNT({SUBSET_ROW})
     test_operator: '<'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -124,7 +125,7 @@ test_types:
     test_type: Row_Ct
     sql_flavor: duckdb
     measure: |-
-      COUNT(*)
+      COUNT({SUBSET_ROW})
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -137,7 +138,7 @@ test_types:
     lookup_query: |-
       WITH cte AS (
         SELECT COUNT(*) AS current_count
-        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE}
       )
       SELECT current_count,
              ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) / CAST({THRESHOLD_VALUE} AS FLOAT64), 2)) AS row_count_pct_decrease
@@ -150,7 +151,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) SELECT current_count, ABS(ROUND(100 *(current_count - {THRESHOLD_VALUE}) :: FLOAT / {THRESHOLD_VALUE} :: FLOAT,2))  AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
+      WITH CTE AS (SELECT COUNT(*) AS current_count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE}) SELECT current_count, ABS(ROUND(100 *(current_count - {THRESHOLD_VALUE}) :: FLOAT / {THRESHOLD_VALUE} :: FLOAT,2))  AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
     error_type: Test Results
   - id: '1163'
     test_id: '1031'
@@ -158,7 +159,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, ABS(ROUND(CAST(100 * (current_count - {THRESHOLD_VALUE}) AS NUMERIC) / CAST({THRESHOLD_VALUE} AS NUMERIC) ,2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, ABS(ROUND(CAST(100 * (current_count - {THRESHOLD_VALUE}) AS NUMERIC) / CAST({THRESHOLD_VALUE} AS NUMERIC) ,2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
     error_type: Test Results
   - id: '1106'
     test_id: '1031'
@@ -166,7 +167,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) :: NUMERIC / {THRESHOLD_VALUE} :: NUMERIC,2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) :: NUMERIC / {THRESHOLD_VALUE} :: NUMERIC,2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
     error_type: Test Results
   - id: '1024'
     test_id: '1031'
@@ -174,7 +175,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) :: FLOAT / {THRESHOLD_VALUE} :: FLOAT,2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) :: FLOAT / {THRESHOLD_VALUE} :: FLOAT,2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
     error_type: Test Results
   - id: '1424'
     test_id: '1031'
@@ -182,7 +183,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) :: FLOAT / {THRESHOLD_VALUE} :: FLOAT,2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) :: FLOAT / {THRESHOLD_VALUE} :: FLOAT,2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
     error_type: Test Results
   - id: '1220'
     test_id: '1031'
@@ -190,7 +191,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, ABS(ROUND(100 *(current_count - {THRESHOLD_VALUE}) :: FLOAT / {THRESHOLD_VALUE} :: FLOAT,2))  AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
+      WITH CTE AS (SELECT COUNT(*) AS current_count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, ABS(ROUND(100 *(current_count - {THRESHOLD_VALUE}) :: FLOAT / {THRESHOLD_VALUE} :: FLOAT,2))  AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
     error_type: Test Results
   - id: '8024'
     test_id: '1031'
@@ -198,7 +199,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) / {THRESHOLD_VALUE}, 2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE}
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) / {THRESHOLD_VALUE}, 2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE}
     error_type: Test Results
   - id: '8024'
     test_id: '1031'
@@ -206,7 +207,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) / {THRESHOLD_VALUE}, 2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE}
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) / {THRESHOLD_VALUE}, 2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE}
     error_type: Test Results
   - id: '10032'
     test_id: 1031
@@ -214,7 +215,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      WITH cte AS (SELECT COUNT(*) AS current_count FROM "{TABLE_NAME}") SELECT current_count, ABS(ROUND(100 * CAST((current_count - {THRESHOLD_VALUE}) AS NUMERIC) / CAST({THRESHOLD_VALUE} AS NUMERIC),2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
+      WITH cte AS (SELECT COUNT(*) AS current_count FROM "{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, ABS(ROUND(100 * CAST((current_count - {THRESHOLD_VALUE}) AS NUMERIC) / CAST({THRESHOLD_VALUE} AS NUMERIC),2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
     error_type: Test Results
   - id: '11066'
     test_id: '1031'
@@ -222,6 +223,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) :: NUMERIC / {THRESHOLD_VALUE} :: NUMERIC,2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) :: NUMERIC / {THRESHOLD_VALUE} :: NUMERIC,2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
     error_type: Test Results
   test_templates: []

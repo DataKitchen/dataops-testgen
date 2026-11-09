@@ -4,6 +4,7 @@ from typing import Annotated
 from pydantic import Field
 from sqlalchemy import exists, select
 
+from testgen.common.audit.test_definitions import describe_tests, record_test_saved, record_tests_deleted
 from testgen.common.custom_test_validation import InvalidMetricQuery, validate_aggregate_expression
 from testgen.common.enums import MonitorCalculation, MonitorType
 from testgen.common.models import get_current_session, with_database_session
@@ -93,6 +94,7 @@ def create_metric_monitor(
         last_manual_update=datetime.now(UTC),
     )
     monitor.save()
+    record_test_saved(monitor, created=True)
 
     return _render_created(monitor, tg.table_groups_name)
 
@@ -149,6 +151,7 @@ def update_metric_monitor(
     monitor.lock_refresh = True
     monitor.last_manual_update = datetime.now(UTC)
     monitor.save()
+    record_test_saved(monitor, created=False)
     return doc.render()
 
 
@@ -173,7 +176,9 @@ def delete_metric_monitor(
     doc.field("Table", monitor.table_name)
     doc.field("Metric name", monitor.column_name)
 
+    deleted = describe_tests([monitor.id])
     monitor.delete()
+    record_tests_deleted(deleted)
 
     return doc.render()
 

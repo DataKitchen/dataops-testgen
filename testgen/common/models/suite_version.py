@@ -380,9 +380,14 @@ def version_state(frozen_at: datetime | None, is_active: bool) -> VersionState:
     return VersionState.ACTIVE if is_active else VersionState.SUPERSEDED
 
 
-def format_version(number: int, state: VersionState) -> str:
-    """A contract version as every surface names it, e.g. ``v3 active``."""
-    return f"v{number} {state.value}"
+def format_version(number: int, state: VersionState, label: str | None = None) -> str:
+    """A contract version as every surface names it, e.g. ``v3 active``.
+
+    :param label: the version's label; when given, it follows the name, e.g. ``v2 active · Production``
+    """
+    name = f"v{number} {state.value}"
+    label = (label or "").strip()
+    return f"{name} · {label}" if label else name
 
 
 class FrozenVersionError(Exception):

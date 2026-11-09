@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from typing import ClassVar
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -22,9 +23,11 @@ from sqlalchemy import (
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql.elements import ColumnElement
 
+from testgen.common.audit.actions import AuditTargetType
+from testgen.common.audit.fields import AuditFields
 from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.models import get_current_session
-from testgen.common.models.data_column import DataColumnChars
+from testgen.common.models.data_column import CATALOG_TAG_FIELDS, DataColumnChars
 from testgen.common.models.entity import Entity
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.job_execution import JobExecution
@@ -129,6 +132,11 @@ class TableCatalogSummary:
 
 class DataTable(Entity):
     __tablename__ = "data_table_chars"
+    __audit__: ClassVar = AuditFields(
+        target_type=AuditTargetType.CATALOG_TABLE,
+        name="table_name",
+        values=("description", "critical_data_element", *CATALOG_TAG_FIELDS),
+    )
 
     id: UUID = Column("table_id", postgresql.UUID(as_uuid=True), primary_key=True, default=uuid4)
     table_groups_id: UUID = Column(postgresql.UUID(as_uuid=True), ForeignKey("table_groups.id"))

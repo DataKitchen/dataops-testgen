@@ -614,7 +614,7 @@ def test_get_table_sample_rejects_out_of_range_limit(mock_tg_cls, bad_limit, db_
         get_table_sample(str(uuid4()), "orders", limit=bad_limit)
 
 
-def _current_values(fetch_result, mock_tg_cls, mock_dc, mock_conn, mock_fetch, column_found=True):
+def _current_values(fetch_result, mock_tg_cls, mock_dc, mock_conn, mock_fetch, column_found=True, **kwargs):
     mock_tg_cls.get.return_value = _mock_table_group()
     mock_dc.list_for_create_script.return_value = ("demo", [])
     mock_dc.select_general_types.return_value = {("orders", "status"): "A"} if column_found else {}
@@ -623,7 +623,7 @@ def _current_values(fetch_result, mock_tg_cls, mock_dc, mock_conn, mock_fetch, c
 
     from testgen.mcp.tools.source_data import get_current_values
 
-    return get_current_values(str(uuid4()), "orders", "status")
+    return get_current_values(str(uuid4()), "orders", "status", **kwargs)
 
 
 @patch("testgen.mcp.tools.source_data.fetch_current_values")
@@ -637,6 +637,19 @@ def test_get_current_values_returns_the_list(mock_tg_cls, mock_dc, mock_conn, mo
 
     assert 'A,B,"a,b"' in result
     assert mock_fetch.call_args.args[2:] == ("demo", "orders", "status")
+
+
+@patch("testgen.mcp.tools.source_data.fetch_current_values")
+@patch("testgen.mcp.tools.source_data.Connection")
+@patch("testgen.mcp.tools.source_data.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_current_values_reads_only_the_records_of_a_subset(mock_tg_cls, mock_dc, mock_conn, mock_fetch, db_session_mock):
+    _current_values(
+        CurrentValuesResult("OK", value_list="A"), mock_tg_cls, mock_dc, mock_conn, mock_fetch,
+        subset_condition="region = 'EU'",
+    )
+
+    assert mock_fetch.call_args.kwargs["subset_condition"] == "region = 'EU'"
 
 
 @patch("testgen.mcp.tools.source_data.fetch_current_values")

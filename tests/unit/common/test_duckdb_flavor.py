@@ -1751,22 +1751,25 @@ def test_the_attached_database_still_needs_its_schema(customer_database):
         engine.dispose()
 
 
-# --- The run cache an object-storage connection keeps ---
+# --- The run cache a file data source keeps ---
 
 
-@pytest.fixture
-def storage_connection(data_directory, monkeypatch):
-    """A connection that takes the object-storage path in ``init``, reading the local data directory."""
-    class LocalStore:
-        def base_location(self, parameters):
-            return parameters["base_path"]
+@pytest.fixture(params=["local", "object_storage"])
+def storage_connection(request, data_directory, monkeypatch):
+    """A file data source over the local data directory, opened through ``init``'s local or object-storage path."""
+    if request.param == "object_storage":
+        class LocalStore:
+            def base_location(self, parameters):
+                return parameters["base_path"]
 
-        def storage_error_message(self, _parameters, error):
-            return str(error).splitlines()[0]
+            def storage_error_message(self, _parameters, error):
+                return str(error).splitlines()[0]
 
-    store = LocalStore()
-    monkeypatch.setattr(duckdb_flavor_service.object_storage, "store_for", lambda code: store if code == "files" else None)
-    monkeypatch.setattr(DuckdbFlavorService, "_register_storage_secret", lambda *_args: None)
+        store = LocalStore()
+        monkeypatch.setattr(
+            duckdb_flavor_service.object_storage, "store_for", lambda code: store if code == "files" else None
+        )
+        monkeypatch.setattr(DuckdbFlavorService, "_register_storage_secret", lambda *_args: None)
     service = DuckdbFlavorService()
     params = files_params(data_directory)
     declarations = [
@@ -1853,7 +1856,7 @@ def test_a_copy_that_cannot_be_written_stops_the_rest(storage_connection, caplog
 
     assert _reads_source(connection, "claims")
     assert _reads_source(connection, "notes")
-    assert "not copied locally, so read from storage: notes" in caplog.text
+    assert "not copied locally, so read in place: notes" in caplog.text
     assert duckdb_flavor_service._RUN_CACHE_DIRECTORY_KEY not in connection.info
     assert not cache_directory.exists()
     assert "Could not detach" not in caplog.text
@@ -1901,15 +1904,31 @@ def test_the_copies_are_named_like_a_spill_directory(storage_connection):
     assert duckdb_flavor_service._SPILL_DIRECTORY_PATTERN.fullmatch(cache_directory.name)
 
 
-def test_a_connection_that_reads_files_in_place_copies_nothing(data_directory):
+def test_a_database_file_connection_copies_nothing(customer_database):
+    service = DuckdbFlavorService()
+    params = connection_params(customer_database)
+    engine = service.create_engine(params)
+    connection = engine.connect()
+    try:
+        service.init(connection, resolve_connection_params(params), [])
+        assert not service.caches_tables("duckdb")
+        assert duckdb_flavor_service._RUN_CACHE_DIRECTORY_KEY not in connection.info
+    finally:
+        connection.close()
+        engine.dispose()
+
+
+def test_a_local_files_connection_still_cannot_read_outside_its_base_path(data_directory):
     service = DuckdbFlavorService()
     params = files_params(data_directory)
     declarations = [{"name": "claims", "uri": "claims_*.csv", "format": "csv"}]
     engine, connection = open_files_connection(service, params, declarations)
     try:
-        assert not service.caches_tables("files")
         service.cache_tables(connection, resolve_connection_params(params), parse_file_declarations(declarations), ["claims"])
-        assert _reads_source(connection, "claims")
+        assert not _reads_source(connection, "claims")
+        outside = data_directory.parent / "outside" / "secret.csv"
+        with pytest.raises(SQLAlchemyError, match="Permission Error"):
+            connection.execute(text(f"SELECT * FROM read_csv('{outside}')")).fetchall()
     finally:
         connection.close()
         engine.dispose()
@@ -1940,8 +1959,8 @@ def test_a_cache_database_that_cannot_be_attached_leaves_every_table_on_storage(
     assert "no local copy could be set up" in caplog.text
 
 
-@pytest.mark.parametrize("code", ["s3", "azure_blob"])
-def test_object_storage_connections_cache_their_tables(code):
+@pytest.mark.parametrize("code", ["files", "s3", "azure_blob"])
+def test_file_data_sources_cache_their_tables(code):
     assert DuckdbFlavorService().caches_tables(code)
 
 
@@ -2023,3 +2042,163 @@ def test_a_connection_closed_mid_transaction_still_detaches_its_copies(storage_c
 
     assert "Could not detach" not in caplog.text
     assert not cache_directory.exists()
+
+
+# --- Memory and threads sized from the container ---
+
+
+@pytest.fixture
+def cgroup(tmp_path, monkeypatch):
+    """A fake cgroup filesystem and /proc/self/cgroup. Returns a writer: write(relative_path, value)."""
+    root = tmp_path / "cgroup"
+    root.mkdir()
+    proc = tmp_path / "proc_self_cgroup"
+    proc.write_text("0::/\n")
+    monkeypatch.setattr(duckdb_flavor_service, "_CGROUP_ROOT", root)
+    monkeypatch.setattr(duckdb_flavor_service, "_PROC_SELF_CGROUP", proc)
+    monkeypatch.setattr(duckdb_flavor_service, "_machine_memory_bytes", lambda: 64 * 2**30)
+    monkeypatch.setattr(duckdb_flavor_service.os, "process_cpu_count", lambda: 16, raising=False)
+
+    def write(relative: str, value: str) -> None:
+        if relative == "/proc/self/cgroup":
+            proc.write_text(value)
+            return
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{value}\n")
+
+    return write
+
+
+def test_a_container_memory_limit_is_read(cgroup):
+    cgroup("memory.max", "3000000000")
+
+    assert duckdb_flavor_service.container_memory_bytes() == 3_000_000_000
+
+
+def test_a_memory_limit_is_read_from_the_process_cgroup_path(cgroup):
+    """A container sharing the host's cgroup namespace sees the host's root, with its own cgroup below it."""
+    cgroup("/proc/self/cgroup", "0::/docker/abc\n")
+    cgroup("docker/abc/memory.max", "3000000000")
+
+    assert duckdb_flavor_service.container_memory_bytes() == 3_000_000_000
+
+
+def test_the_tightest_ancestor_memory_limit_wins(cgroup):
+    cgroup("/proc/self/cgroup", "0::/kubepods/pod1/ctr\n")
+    cgroup("kubepods/pod1/memory.max", "2000000000")
+    cgroup("kubepods/pod1/ctr/memory.max", "max")
+
+    assert duckdb_flavor_service.container_memory_bytes() == 2_000_000_000
+
+
+def test_a_cgroup_v1_memory_limit_is_read(cgroup):
+    cgroup("/proc/self/cgroup", "4:memory:/docker/abc\n3:cpu,cpuacct:/docker/abc\n")
+    # Mounted with the container's own cgroup at the root, so its path does not exist below the mount.
+    cgroup("memory/memory.limit_in_bytes", "2000000000")
+
+    assert duckdb_flavor_service.container_memory_bytes() == 2_000_000_000
+
+
+def test_with_both_cgroup_versions_the_tighter_memory_limit_wins(cgroup):
+    cgroup("/proc/self/cgroup", "4:memory:/\n0::/\n")
+    cgroup("memory/memory.limit_in_bytes", "2000000000")
+    cgroup("memory.max", "3000000000")
+
+    assert duckdb_flavor_service.container_memory_bytes() == 2_000_000_000
+
+
+@pytest.mark.parametrize(
+    ("proc", "relative", "value"),
+    [
+        ("0::/\n", "memory.max", "max"),
+        ("4:memory:/\n", "memory/memory.limit_in_bytes", "9223372036854771712"),
+        ("0::/\n", None, None),
+        (None, None, None),
+    ],
+    ids=["v2-max", "v1-unlimited", "no-file", "no-proc-cgroup"],
+)
+def test_without_a_memory_limit_there_is_none(cgroup, tmp_path, monkeypatch, proc, relative, value):
+    if proc is None:
+        monkeypatch.setattr(duckdb_flavor_service, "_PROC_SELF_CGROUP", tmp_path / "missing")
+    else:
+        cgroup("/proc/self/cgroup", proc)
+    if relative:
+        cgroup(relative, value)
+
+    assert duckdb_flavor_service.container_memory_bytes() is None
+
+
+@pytest.mark.parametrize(
+    ("cpu_max", "expected"),
+    [("400000 100000", 4), ("150000 100000", 2), ("50000 100000", 1), ("max 100000", 16)],
+)
+def test_a_cgroup_v2_cpu_quota_caps_the_cpus(cgroup, cpu_max, expected):
+    cgroup("cpu.max", cpu_max)
+
+    assert duckdb_flavor_service.available_cpus() == expected
+
+
+def test_a_cpu_quota_is_read_from_the_process_cgroup_path(cgroup):
+    cgroup("/proc/self/cgroup", "0::/docker/abc\n")
+    cgroup("docker/abc/cpu.max", "200000 100000")
+
+    assert duckdb_flavor_service.available_cpus() == 2
+
+
+@pytest.mark.parametrize(("quota", "expected"), [("300000", 3), ("-1", 16)])
+def test_a_cgroup_v1_cpu_quota_caps_the_cpus(cgroup, quota, expected):
+    cgroup("/proc/self/cgroup", "3:cpu,cpuacct:/\n")
+    cgroup("cpu,cpuacct/cpu.cfs_quota_us", quota)
+    cgroup("cpu,cpuacct/cpu.cfs_period_us", "100000")
+
+    assert duckdb_flavor_service.available_cpus() == expected
+
+
+def test_the_cpus_the_process_may_run_on_cap_the_threads(cgroup, monkeypatch):
+    """A pinned CPU set with no quota, as with --cpuset-cpus or a static CPU manager."""
+    monkeypatch.setattr(duckdb_flavor_service.os, "process_cpu_count", lambda: 2, raising=False)
+    cgroup("cpu.max", "max 100000")
+
+    assert duckdb_flavor_service.available_cpus() == 2
+
+
+@pytest.mark.parametrize(
+    ("available", "expected"),
+    [
+        (3 * 2**30, f"{2 * 1024}MiB"),  # a small container keeps 1 GiB outside DuckDB
+        (32 * 2**30, f"{int(32 * 1024 * 0.8)}MiB"),  # a large one keeps a fifth, as DuckDB's own default does
+        (2**30, f"{1024 // 4}MiB"),  # never below a quarter, however little there is
+        (None, None),
+    ],
+)
+def test_duckdb_keeps_headroom_outside_its_memory_limit(available, expected):
+    assert duckdb_flavor_service.duckdb_memory_limit(available) == expected
+
+
+def _connection_settings(customer_database) -> tuple[int, str]:
+    service = DuckdbFlavorService()
+    params = connection_params(customer_database)
+    engine = service.create_engine(params)
+    try:
+        with engine.connect() as connection:
+            service.init(connection, resolve_connection_params(params), [])
+            return (
+                connection.execute(text("SELECT current_setting('threads')")).scalar(),
+                connection.execute(text("SELECT current_setting('memory_limit')")).scalar(),
+            )
+    finally:
+        engine.dispose()
+
+
+def test_a_connection_takes_the_container_memory_and_cpus(customer_database, cgroup):
+    cgroup("memory.max", str(3 * 2**30))
+    cgroup("cpu.max", "200000 100000")
+
+    assert _connection_settings(customer_database) == (2, "2.0 GiB")
+
+
+def test_outside_a_memory_limited_container_duckdb_keeps_its_own_memory_limit(customer_database, cgroup):
+    default = duckdb.connect().execute("SELECT current_setting('memory_limit')").fetchone()[0]
+
+    assert _connection_settings(customer_database)[1] == default

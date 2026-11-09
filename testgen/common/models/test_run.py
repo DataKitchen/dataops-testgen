@@ -72,17 +72,12 @@ class RunVersion:
     frozen_at: datetime | None
     active_number: int | None
     test_starttime: datetime | None
-    in_force_at_start: int | None = None
+    checked_version_in_force: bool = False
     status: JobStatus | None = None
 
     @property
     def state(self) -> VersionState:
         return version_state(self.frozen_at, self.number == self.active_number)
-
-    @property
-    def checked_version_in_force(self) -> bool:
-        """Whether the run's version was the highest frozen when the run started."""
-        return not self.is_preview and self.number == self.in_force_at_start
 
     @property
     def counts_as_status(self) -> bool:
@@ -97,6 +92,11 @@ class RunVersion:
         if self.test_starttime is None:
             return False
         return self.test_starttime.replace(tzinfo=UTC) < self.frozen_at
+
+    @property
+    def is_out_of_force(self) -> bool:
+        """Whether the run checked a frozen version already superseded when it started."""
+        return not self.is_preview and not self.checked_version_in_force
 
 
 @dataclass
@@ -127,7 +127,7 @@ class TestRunSummary(EntityMinimal):
     version_frozen_at: datetime | None = None
     active_version_number: int | None = None
     test_starttime: datetime | None = None
-    version_in_force_at_start: int | None = None
+    version_checked_in_force: bool = False
     version_discarded: bool = False
 
     STATUS_LABEL: ClassVar[dict[str, str]] = JOB_STATUS_LABEL
@@ -142,7 +142,7 @@ class TestRunSummary(EntityMinimal):
             self.version_frozen_at,
             self.active_version_number,
             self.test_starttime,
-            self.version_in_force_at_start,
+            self.version_checked_in_force,
             self.status,
         )
 
@@ -161,6 +161,13 @@ class TestRunSummary(EntityMinimal):
         if self.version_discarded:
             return True
         return self.run_version is not None and self.run_version.is_preview
+
+    @property
+    def is_out_of_force(self) -> bool:
+        """Whether the run checked a frozen version already superseded when it started."""
+        if self.version_discarded:
+            return False
+        return self.run_version is not None and self.run_version.is_out_of_force
 
     @property
     def status_label(self) -> str:
@@ -446,7 +453,7 @@ class TestRun(Entity):
         ended = JobExecution.status.in_(JobStatus.terminal())
         # test_starttime is stored as UTC without a zone.
         starttime = func.timezone("UTC", cls.test_starttime)
-        run_version, active, in_force, discarded = (aliased(SuiteVersion) for _ in range(4))
+        run_version, active, discarded = (aliased(SuiteVersion) for _ in range(3))
 
         query = (
             select(
@@ -480,10 +487,7 @@ class TestRun(Entity):
                 .scalar_subquery()
                 .label("active_version_number"),
                 cls.test_starttime,
-                select(func.max(in_force.version))
-                .where(in_force.test_suite_id == TestSuite.id, in_force.frozen_at <= starttime)
-                .scalar_subquery()
-                .label("version_in_force_at_start"),
+                SuiteVersion.in_force_at(cls.version_id, starttime).label("version_checked_in_force"),
                 and_(cls.version_id.is_not(None), ~exists().where(discarded.id == cls.version_id)).label(
                     "version_discarded"
                 ),

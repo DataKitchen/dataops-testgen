@@ -16,13 +16,13 @@ test_types:
   dq_score_risk_factor: '1.0'
   column_name_prompt: null
   column_name_help: null
-  default_parm_columns: lower_tolerance,upper_tolerance,threshold_value
+  default_parm_columns: lower_tolerance,upper_tolerance,threshold_value,subset_condition
   default_parm_values: null
   default_parm_prompts: |-
-    Minimum Length,Maximum Length,Threshold Failure Count
+    Minimum Length,Maximum Length,Threshold Failure Count,Record Subset Condition
   default_parm_help: |-
-    The minimum acceptable length of a value. Leave blank for no minimum.|The maximum acceptable length of a value. Leave blank for no maximum.|The number of failing records that are acceptable before the test fails.
-  default_parm_required: A,A,N
+    The minimum acceptable length of a value. Leave blank for no minimum.|The maximum acceptable length of a value. Leave blank for no maximum.|The number of failing records that are acceptable before the test fails.|Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.
+  default_parm_required: A,A,N,N
   default_severity: Fail
   run_type: CAT
   test_scope: column
@@ -134,7 +134,7 @@ test_types:
     sql_flavor: bigquery
     lookup_type: null
     lookup_query: |-
-      SELECT `{COLUMN_NAME}`, LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) AS value_length, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) < {LOWER_TOLERANCE} OR LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) > {UPPER_TOLERANCE} GROUP BY `{COLUMN_NAME}`, LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) LIMIT {LIMIT};
+      SELECT `{COLUMN_NAME}`, LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) AS value_length, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE (LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) < {LOWER_TOLERANCE} OR LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) > {UPPER_TOLERANCE}) {SUBSET_AND} GROUP BY `{COLUMN_NAME}`, LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) LIMIT {LIMIT};
     error_type: Test Results
   - id: '1504'
     test_id: '1519'
@@ -142,7 +142,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT `{COLUMN_NAME}`, LEN(`{COLUMN_NAME}`) AS value_length, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE LEN(`{COLUMN_NAME}`) < {LOWER_TOLERANCE} OR LEN(`{COLUMN_NAME}`) > {UPPER_TOLERANCE} GROUP BY `{COLUMN_NAME}`, LEN(`{COLUMN_NAME}`) LIMIT {LIMIT};
+      SELECT `{COLUMN_NAME}`, LEN(`{COLUMN_NAME}`) AS value_length, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE (LEN(`{COLUMN_NAME}`) < {LOWER_TOLERANCE} OR LEN(`{COLUMN_NAME}`) > {UPPER_TOLERANCE}) {SUBSET_AND} GROUP BY `{COLUMN_NAME}`, LEN(`{COLUMN_NAME}`) LIMIT {LIMIT};
     error_type: Test Results
   - id: '1508'
     test_id: '1519'
@@ -150,7 +150,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP {LIMIT} "{COLUMN_NAME}", (LEN(CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) + N'.') - 1) AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (LEN(CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) + N'.') - 1) < {LOWER_TOLERANCE} OR (LEN(CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) + N'.') - 1) > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", (LEN(CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) + N'.') - 1);
+      SELECT TOP {LIMIT} "{COLUMN_NAME}", (LEN(CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) + N'.') - 1) AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE ((LEN(CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) + N'.') - 1) < {LOWER_TOLERANCE} OR (LEN(CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) + N'.') - 1) > {UPPER_TOLERANCE}) {SUBSET_AND} GROUP BY "{COLUMN_NAME}", (LEN(CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) + N'.') - 1);
     error_type: Test Results
   - id: '1512'
     test_id: '1519'
@@ -158,7 +158,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) < {LOWER_TOLERANCE} OR LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) < {LOWER_TOLERANCE} OR LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) > {UPPER_TOLERANCE}) {SUBSET_AND} GROUP BY "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) LIMIT {LIMIT};
     error_type: Test Results
   - id: '1516'
     test_id: '1519'
@@ -166,7 +166,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", LEN("{COLUMN_NAME}") AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LEN("{COLUMN_NAME}") < {LOWER_TOLERANCE} OR LEN("{COLUMN_NAME}") > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", LEN("{COLUMN_NAME}") LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", LEN("{COLUMN_NAME}") AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (LEN("{COLUMN_NAME}") < {LOWER_TOLERANCE} OR LEN("{COLUMN_NAME}") > {UPPER_TOLERANCE}) {SUBSET_AND} GROUP BY "{COLUMN_NAME}", LEN("{COLUMN_NAME}") LIMIT {LIMIT};
     error_type: Test Results
   - id: '1520'
     test_id: '1519'
@@ -174,7 +174,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", LEN("{COLUMN_NAME}") AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LEN("{COLUMN_NAME}") < {LOWER_TOLERANCE} OR LEN("{COLUMN_NAME}") > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", LEN("{COLUMN_NAME}") LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", LEN("{COLUMN_NAME}") AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (LEN("{COLUMN_NAME}") < {LOWER_TOLERANCE} OR LEN("{COLUMN_NAME}") > {UPPER_TOLERANCE}) {SUBSET_AND} GROUP BY "{COLUMN_NAME}", LEN("{COLUMN_NAME}") LIMIT {LIMIT};
     error_type: Test Results
   - id: '1524'
     test_id: '1519'
@@ -182,7 +182,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", LEN("{COLUMN_NAME}") AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LEN("{COLUMN_NAME}") < {LOWER_TOLERANCE} OR LEN("{COLUMN_NAME}") > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", LEN("{COLUMN_NAME}") LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", LEN("{COLUMN_NAME}") AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (LEN("{COLUMN_NAME}") < {LOWER_TOLERANCE} OR LEN("{COLUMN_NAME}") > {UPPER_TOLERANCE}) {SUBSET_AND} GROUP BY "{COLUMN_NAME}", LEN("{COLUMN_NAME}") LIMIT {LIMIT};
     error_type: Test Results
   - id: '8518'
     test_id: '1519'
@@ -190,7 +190,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", LENGTH(TO_CHAR("{COLUMN_NAME}")) AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LENGTH(TO_CHAR("{COLUMN_NAME}")) < {LOWER_TOLERANCE} OR LENGTH(TO_CHAR("{COLUMN_NAME}")) > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", LENGTH(TO_CHAR("{COLUMN_NAME}")) FETCH FIRST {LIMIT} ROWS ONLY
+      SELECT "{COLUMN_NAME}", LENGTH(TO_CHAR("{COLUMN_NAME}")) AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (LENGTH(TO_CHAR("{COLUMN_NAME}")) < {LOWER_TOLERANCE} OR LENGTH(TO_CHAR("{COLUMN_NAME}")) > {UPPER_TOLERANCE}) {SUBSET_AND} GROUP BY "{COLUMN_NAME}", LENGTH(TO_CHAR("{COLUMN_NAME}")) FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Test Results
   - id: '8518'
     test_id: '1519'
@@ -198,7 +198,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", LENGTH(TO_VARCHAR("{COLUMN_NAME}")) AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LENGTH(TO_VARCHAR("{COLUMN_NAME}")) < {LOWER_TOLERANCE} OR LENGTH(TO_VARCHAR("{COLUMN_NAME}")) > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", LENGTH(TO_VARCHAR("{COLUMN_NAME}")) LIMIT {LIMIT}
+      SELECT "{COLUMN_NAME}", LENGTH(TO_VARCHAR("{COLUMN_NAME}")) AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (LENGTH(TO_VARCHAR("{COLUMN_NAME}")) < {LOWER_TOLERANCE} OR LENGTH(TO_VARCHAR("{COLUMN_NAME}")) > {UPPER_TOLERANCE}) {SUBSET_AND} GROUP BY "{COLUMN_NAME}", LENGTH(TO_VARCHAR("{COLUMN_NAME}")) LIMIT {LIMIT}
     error_type: Test Results
   - id: '10050'
     test_id: '1519'
@@ -206,7 +206,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS VARCHAR)) AS value_length, COUNT(*) AS count FROM "{TABLE_NAME}" WHERE LENGTH(CAST("{COLUMN_NAME}" AS VARCHAR)) < {LOWER_TOLERANCE} OR LENGTH(CAST("{COLUMN_NAME}" AS VARCHAR)) > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS VARCHAR)) LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS VARCHAR)) AS value_length, COUNT(*) AS count FROM "{TABLE_NAME}" WHERE (LENGTH(CAST("{COLUMN_NAME}" AS VARCHAR)) < {LOWER_TOLERANCE} OR LENGTH(CAST("{COLUMN_NAME}" AS VARCHAR)) > {UPPER_TOLERANCE}) {SUBSET_AND} GROUP BY "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS VARCHAR)) LIMIT {LIMIT};
     error_type: Test Results
   - id: '11105'
     test_id: '1519'
@@ -214,6 +214,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) < {LOWER_TOLERANCE} OR LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) < {LOWER_TOLERANCE} OR LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) > {UPPER_TOLERANCE}) {SUBSET_AND} GROUP BY "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

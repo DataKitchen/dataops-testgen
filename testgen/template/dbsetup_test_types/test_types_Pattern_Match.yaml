@@ -18,13 +18,14 @@ test_types:
   dq_score_risk_factor: '1.0'
   column_name_prompt: null
   column_name_help: null
-  default_parm_columns: baseline_value,threshold_value
+  default_parm_columns: baseline_value,threshold_value,subset_condition
   default_parm_values: |-
-    TRIM(REPLACE(REPLACE(REPLACE(REGEXP_REPLACE(fn_frequent_value(frequent_patterns, 1), '([*+\-%_])', '[\1]', 'g'), 'A', '[A-Z]'), 'N', '[0-9]'), 'a', '[a-z]')),0
+    TRIM(REPLACE(REPLACE(REPLACE(REGEXP_REPLACE(fn_frequent_value(frequent_patterns, 1), '([*+\-%_])', '[\1]', 'g'), 'A', '[A-Z]'), 'N', '[0-9]'), 'a', '[a-z]')),0,NULL
   default_parm_prompts: |-
-    Pattern at Baseline,Threshold Failure Count
-  default_parm_help: null
-  default_parm_required: Y,N
+    Pattern at Baseline,Threshold Failure Count,Record Subset Condition
+  default_parm_help: |-
+    ||Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.
+  default_parm_required: Y,N,N
   default_severity: Fail
   run_type: CAT
   test_scope: column
@@ -141,7 +142,7 @@ test_types:
     lookup_query: |-
       SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
       FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
-      WHERE NOT REGEXP_CONTAINS(NULLIF(CAST(`{COLUMN_NAME}` AS STRING), ''), r'{BASELINE_VALUE}')
+      WHERE NOT REGEXP_CONTAINS(NULLIF(CAST(`{COLUMN_NAME}` AS STRING), ''), r'{BASELINE_VALUE}') {SUBSET_AND}
       GROUP BY `{COLUMN_NAME}`
       LIMIT {LIMIT};
     error_type: Test Results
@@ -151,7 +152,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE REGEXP_LIKE(NULLIF(`{COLUMN_NAME}`::STRING, ''),'{BASELINE_VALUE}') != 1 GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE REGEXP_LIKE(NULLIF(`{COLUMN_NAME}`::STRING, ''),'{BASELINE_VALUE}') != 1 {SUBSET_AND} GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
     error_type: Test Results
   - id: '1160'
     test_id: '1026'
@@ -159,7 +160,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT LIKE '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}";
+      SELECT DISTINCT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT LIKE '{BASELINE_VALUE}' {SUBSET_AND} GROUP BY "{COLUMN_NAME}";
     error_type: Test Results
   - id: '1103'
     test_id: '1026'
@@ -167,7 +168,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1021'
     test_id: '1026'
@@ -175,7 +176,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1421'
     test_id: '1026'
@@ -183,7 +184,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1217'
     test_id: '1026'
@@ -191,7 +192,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REGEXP_LIKE(NULLIF("{COLUMN_NAME}"::VARCHAR, ''),'{BASELINE_VALUE}') != 1 GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REGEXP_LIKE(NULLIF("{COLUMN_NAME}"::VARCHAR, ''),'{BASELINE_VALUE}') != 1 {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '8021'
     test_id: '1026'
@@ -199,7 +200,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NOT REGEXP_LIKE(NULLIF(TO_CHAR("{COLUMN_NAME}"), ''), '{BASELINE_VALUE}') GROUP BY "{COLUMN_NAME}" FETCH FIRST {LIMIT} ROWS ONLY
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NOT REGEXP_LIKE(NULLIF(TO_CHAR("{COLUMN_NAME}"), ''), '{BASELINE_VALUE}') {SUBSET_AND} GROUP BY "{COLUMN_NAME}" FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Test Results
   - id: '8021'
     test_id: '1026'
@@ -207,7 +208,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NOT NULLIF(TO_VARCHAR("{COLUMN_NAME}"), '') LIKE_REGEXPR '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NOT NULLIF(TO_VARCHAR("{COLUMN_NAME}"), '') LIKE_REGEXPR '{BASELINE_VALUE}' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Test Results
   - id: '10029'
     test_id: 1026
@@ -215,7 +216,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE NOT REGEXP_LIKE(CAST(NULLIF("{COLUMN_NAME}", '') AS VARCHAR), '{BASELINE_VALUE}') GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE NOT REGEXP_LIKE(CAST(NULLIF("{COLUMN_NAME}", '') AS VARCHAR), '{BASELINE_VALUE}') {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '11060'
     test_id: '1026'
@@ -223,6 +224,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

@@ -20,6 +20,9 @@ FROZEN = datetime(2026, 9, 12, tzinfo=UTC)
 AFTER = (FROZEN + timedelta(days=1)).replace(tzinfo=None)
 BEFORE = (FROZEN - timedelta(days=1)).replace(tzinfo=None)
 PREVIEW_TOOLTIP = "{} was not frozen when this run started. A preview does not count as the contract's status."
+OUT_OF_FORCE_TOOLTIP = (
+    "{} was already superseded when this run started. A run out of force does not count as the contract's status."
+)
 
 
 def _run(**overrides) -> TestRunSummary:
@@ -36,18 +39,34 @@ def _run(**overrides) -> TestRunSummary:
 
 
 def test_an_active_verification():
-    run = _run(version_number=3, version_frozen_at=FROZEN, active_version_number=3, test_starttime=AFTER)
+    run = _run(
+        version_number=3, version_frozen_at=FROZEN, active_version_number=3, test_starttime=AFTER,
+        version_checked_in_force=True,
+    )
     assert run_version_block(run) == {"value": "v3 active · Verification", "tooltip": "v3 is the agreement in force."}
     assert run_version_caption(run) == "v3 active"
 
 
 def test_a_superseded_verification():
-    run = _run(version_number=2, version_frozen_at=FROZEN, active_version_number=3, test_starttime=AFTER)
+    run = _run(
+        version_number=2, version_frozen_at=FROZEN, active_version_number=3, test_starttime=AFTER,
+        version_checked_in_force=True,
+    )
     assert run_version_block(run) == {
         "value": "v2 superseded · Verification",
         "tooltip": "The contract has since moved on. v3 is the agreement in force.",
     }
     assert run_version_caption(run) == "v2 superseded"
+
+
+def test_a_run_of_a_version_already_superseded_is_out_of_force():
+    run = _run(
+        version_number=2, version_frozen_at=FROZEN, active_version_number=3, test_starttime=AFTER,
+        version_checked_in_force=False,
+    )
+    assert run.is_out_of_force is True
+    assert run_version_block(run) == {"value": "v2 superseded · Out of force", "tooltip": OUT_OF_FORCE_TOOLTIP.format("v2")}
+    assert run_version_caption(run) == "v2 superseded · Out of force"
 
 
 def test_a_draft_preview():
@@ -64,26 +83,29 @@ def test_a_preview_stays_a_preview_after_its_version_is_frozen():
 
 def test_a_preview_of_a_since_superseded_version():
     run = _run(version_number=2, version_frozen_at=FROZEN, active_version_number=3, test_starttime=BEFORE)
+    assert run.is_out_of_force is False
     assert run_version_block(run) == {"value": "v2 superseded · Preview", "tooltip": PREVIEW_TOOLTIP.format("v2")}
     assert run_version_caption(run) == "v2 superseded · Preview"
 
 
 def test_a_run_started_at_the_freeze_instant_is_a_verification():
     run = _run(
-        version_number=3, version_frozen_at=FROZEN, active_version_number=3, test_starttime=FROZEN.replace(tzinfo=None)
+        version_number=3, version_frozen_at=FROZEN, active_version_number=3, test_starttime=FROZEN.replace(tzinfo=None),
+        version_checked_in_force=True,
     )
     assert run_version_block(run)["value"] == "v3 active · Verification"
     assert run_version_caption(run) == "v3 active"
 
 
 def test_a_queued_run_of_a_frozen_version_is_a_verification():
-    run = _run(version_number=3, version_frozen_at=FROZEN, active_version_number=3)
+    run = _run(version_number=3, version_frozen_at=FROZEN, active_version_number=3, version_checked_in_force=True)
     assert run_version_block(run)["value"] == "v3 active · Verification"
     assert run_version_caption(run) == "v3 active"
 
 
 def test_a_discarded_draft():
     run = _run(version_discarded=True, active_version_number=3, test_starttime=AFTER)
+    assert run.is_out_of_force is False
     assert run_version_block(run) == {
         "value": "Discarded draft · Preview",
         "tooltip": "This run checked a draft that was later discarded. A preview does not count as the contract's status.",

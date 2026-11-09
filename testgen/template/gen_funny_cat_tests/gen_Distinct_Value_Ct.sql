@@ -131,6 +131,7 @@ DO UPDATE SET
   profile_run_id       = EXCLUDED.profile_run_id,
   baseline_value_ct    = EXCLUDED.baseline_value_ct,
   threshold_value      = EXCLUDED.threshold_value,
+  subset_condition     = NULL,
   skip_errors          = EXCLUDED.skip_errors
 -- Ignore locked tests
 WHERE test_definitions.lock_refresh = 'N';

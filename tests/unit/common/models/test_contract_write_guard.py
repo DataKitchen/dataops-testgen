@@ -155,6 +155,28 @@ def test_set_status_attribute_with_no_rows_issues_no_statement_beyond_the_lookup
     session.execute.assert_not_called()
 
 
+def test_set_status_attribute_returns_only_the_rows_whose_value_changed():
+    changed_row, unchanged_row, suite_id = uuid4(), uuid4(), uuid4()
+    session = _routed_session((changed_row, suite_id), (unchanged_row, suite_id))
+    Written = namedtuple("Written", "id changed")
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch.object(
+            TestDefinition, "resolve_writable",
+            return_value=(NIL_UUID, {changed_row: changed_row, unchanged_row: unchanged_row}),
+        ),
+    ):
+        session.execute.return_value.__iter__.return_value = iter(
+            [Written(changed_row, True), Written(unchanged_row, False)]
+        )
+        changed = TestDefinition.set_status_attribute("lock_refresh", [str(changed_row), str(unchanged_row)], True)
+
+    assert changed == [changed_row]
+    sql = " ".join(str(session.execute.call_args.args[0]).split())
+    # The self-joined alias holds the row before the update; the target table already holds the new value.
+    assert "RETURNING test_definitions.id, td.lock_refresh IS DISTINCT FROM :value AS changed" in sql
+
+
 def test_delete_where_on_a_frozen_only_contract_deletes_the_drafts_copy_not_the_frozen_row():
     frozen_row, draft_row, suite_id = uuid4(), uuid4(), uuid4()
     session = _routed_session((frozen_row, suite_id))
