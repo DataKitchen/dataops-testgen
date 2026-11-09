@@ -222,13 +222,14 @@ SELECT *
   FROM "{DATA_SCHEMA}"."{DATA_TABLE}") measures
 -- TG-ENDIF
 -- TG-IF is_not_A_or_X
-  , (SELECT COUNT(DISTINCT "{COL_NAME}") AS distinct_value_ct
-       FROM "{DATA_SCHEMA}"."{DATA_TABLE}") distinct_values
+  CROSS JOIN (SELECT COUNT(DISTINCT "{COL_NAME}") AS distinct_value_ct
+                FROM "{DATA_SCHEMA}"."{DATA_TABLE}") distinct_values
 -- TG-ENDIF
 -- TG-IF is_N_exact_pctile
-  , (SELECT
+  -- An outer join: on an empty table, PERCENTILE_CONT returns no row rather than one row of NULLs.
+  LEFT JOIN (SELECT
              PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS percentile_25,
              PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS percentile_50,
              PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS percentile_75
-        FROM "{DATA_SCHEMA}"."{DATA_TABLE}") pctile
+        FROM "{DATA_SCHEMA}"."{DATA_TABLE}") pctile ON 1 = 1
 -- TG-ENDIF

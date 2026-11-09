@@ -204,6 +204,7 @@ def test_hana_reads_the_distinct_count_and_percentiles_apart_from_the_other_meas
     # A date column's day, week and month counts are distinct counts of derived values, read with the rest.
     assert select_lists["measures"].count("COUNT(DISTINCT") == (3 if general_type == "D" else 0)
     if general_type == "N":
+        assert re.search(r"\bLEFT JOIN \(SELECT\s+PERCENTILE_CONT", query), "an empty table must still give one row"
         percentiles = select_lists["pctile"].split(",")
         assert len(percentiles) == 3
         assert all(re.fullmatch(r'\s*PERCENTILE_CONT\(0\.\d+\) WITHIN GROUP \(ORDER BY "c"\) AS percentile_\d+', p)
