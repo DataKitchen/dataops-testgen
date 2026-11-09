@@ -58,7 +58,7 @@ def test_the_history_lists_every_version_newest_first_with_its_state():
     ]
     assert history["options"] == [
         {"value": 4, "label": "v4 draft"},
-        {"value": 3, "label": "v3 active"},
+        {"value": 3, "label": "v3 active · Q3 agreement"},
         {"value": 2, "label": "v2 superseded"},
         {"value": 1, "label": "v1 superseded"},
     ]
@@ -143,7 +143,7 @@ def _compare(source, target, documents):
     suite = _suite()
     versions = {
         4: SuiteVersion(id=uuid4(), version=4, frozen_at=None),
-        3: SuiteVersion(id=uuid4(), version=3, frozen_at=FROZEN),
+        3: SuiteVersion(id=uuid4(), version=3, frozen_at=FROZEN, label="Production"),
     }
     with (
         patch.object(service.contract_service, "version_for_export", side_effect=lambda _, number: _version(versions, number)),
@@ -155,13 +155,13 @@ def _compare(source, target, documents):
     return result
 
 
-def test_a_comparison_carries_both_documents_named_by_version():
+def test_a_comparison_carries_both_documents_named_by_version_and_label():
     result = _compare(3, 4, [ExportedDocument("a: 1\n", []), ExportedDocument("a: 2\n", [])])
 
     assert result == {
         "source": 3,
         "target": 4,
-        "source_label": "v3 active",
+        "source_label": "v3 active · Production",
         "target_label": "v4 draft",
         "source_document": "a: 1\n",
         "target_document": "a: 2\n",
