@@ -60,6 +60,18 @@ class AuditAction(StrEnum):
     TEST_RUN_LAUNCHED = "test_run.launched"
     TEST_RUN_CANCELED = "test_run.canceled"
     TEST_RUN_DELETED = "test_run.deleted"
+    TEST_DEFINITION_CREATED = "test_definition.created"
+    TEST_DEFINITION_UPDATED = "test_definition.updated"
+    TEST_DEFINITION_ENABLED = "test_definition.enabled"
+    TEST_DEFINITION_DISABLED = "test_definition.disabled"
+    TEST_DEFINITION_DELETED = "test_definition.deleted"
+    MONITOR_CREATED = "monitor.created"
+    MONITOR_UPDATED = "monitor.updated"
+    MONITOR_DELETED = "monitor.deleted"
+    TEST_RESULT_UPDATED = "test_result.updated"
+    HYGIENE_ISSUE_UPDATED = "hygiene_issue.updated"
+    CATALOG_TABLE_UPDATED = "catalog_table.updated"
+    CATALOG_COLUMN_UPDATED = "catalog_column.updated"
 
 
 class AuditTargetType(StrEnum):
@@ -83,6 +95,14 @@ class AuditTargetType(StrEnum):
     SCORECARD = "scorecard"
     PROFILING_RUN = "profiling_run"
     TEST_RUN = "test_run"
+    TEST_DEFINITION = "test_definition"
+    TEST_DEFINITION_STATE = "test_definition.state"
+    TEST_DEFINITION_PLACEMENT = "test_definition.placement"
+    MONITOR = "monitor"
+    TEST_RESULT = "test_result"
+    HYGIENE_ISSUE = "hygiene_issue"
+    CATALOG_TABLE = "catalog_table"
+    CATALOG_COLUMN = "catalog_column"
 
 
 CHANGE_ACTIONS = frozenset({

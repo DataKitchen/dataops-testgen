@@ -247,6 +247,10 @@ class TestRunVersion(BaseModel):
     preview: bool = Field(
         description="Whether the run checked the version before it was frozen, including a draft since discarded."
     )
+    out_of_force: bool = Field(
+        description="Whether the run checked a frozen version that was out of force: a later version had already been "
+        "frozen when the run started."
+    )
     discarded: bool = Field(
         description="Whether the version is a draft that was discarded after the run. Its tests and number are gone; "
         "the run and its results remain."

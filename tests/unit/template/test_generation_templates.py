@@ -3,6 +3,8 @@
 import re
 from pathlib import Path
 
+import yaml
+
 import testgen
 
 TEMPLATE_ROOT = Path(testgen.__file__).parent / "template"
@@ -124,3 +126,23 @@ def test_every_read_of_profiling_results_leaves_out_dropped_columns():
         "a generation template reads profile_results without leaving out the columns the data catalog marks "
         "dropped, so it generates tests that error on every run. Offenders: " + ", ".join(offenders)
     )
+
+
+def test_every_regenerated_aggregate_test_drops_its_record_subset():
+    subset_types = set()
+    for yaml_path in (TEMPLATE_ROOT / "dbsetup_test_types").glob("*.yaml"):
+        test_type = yaml.safe_load(yaml_path.read_text())["test_types"]
+        if test_type["run_type"] == "CAT" and "subset_condition" in (test_type["default_parm_columns"] or ""):
+            subset_types.add(test_type["test_type"])
+    subset_types.discard("Volume_Trend")  # Its generator writes the subset into its own query
+
+    checked, offenders = set(), []
+    for path in _generation_templates():
+        text = path.read_text()
+        for test_type in set(re.findall(r"'(\w+)'\s+AS test_type", text)) & subset_types:
+            checked.add(test_type)
+            if not re.search(r"\bsubset_condition\s*=\s*NULL\b", text):
+                offenders.append(str(path.relative_to(TEMPLATE_ROOT)))
+
+    assert checked == {"Constant", "Distinct_Value_Ct", "Row_Ct"}
+    assert offenders == []

@@ -8,6 +8,9 @@ import pandas as pd
 import streamlit as st
 
 from testgen.common import date_service
+from testgen.common.audit.findings import record_result_dispositions
+from testgen.common.audit.recorder import stored_values
+from testgen.common.audit.test_definitions import record_status_changed, record_test_saved
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
@@ -356,10 +359,11 @@ class TestResultsPage(Page):
                 test_definition_ids = test_result_queries.get_test_definition_ids_for_results(test_result_ids)
             if test_definition_ids:
                 try:
-                    TestDefinition.set_status_attribute("flagged", test_definition_ids, value)
+                    flagged = TestDefinition.set_status_attribute("flagged", test_definition_ids, value)
                 except CONTRACT_VERSION_ERRORS:
                     st.toast(CONTRACT_VERSION_MESSAGE, icon=":material/error:")
                     return
+                record_status_changed("flagged", value, flagged)
                 st.cache_data.clear()
 
         @with_database_session
@@ -383,10 +387,11 @@ class TestResultsPage(Page):
             )
             if all_def_ids:
                 try:
-                    TestDefinition.set_status_attribute("flagged", all_def_ids, value)
+                    flagged = TestDefinition.set_status_attribute("flagged", all_def_ids, value)
                 except CONTRACT_VERSION_ERRORS:
                     st.toast(CONTRACT_VERSION_MESSAGE, icon=":material/error:")
                     return
+                record_status_changed("flagged", value, flagged)
                 st.cache_data.clear()
 
         def on_notes_clicked(payload: dict) -> None:
@@ -472,6 +477,7 @@ class TestResultsPage(Page):
                     table_group,
                     qualifies_table_refs=table_group_qualifies_table_refs(table_group.id),
                 )
+            stored = stored_values(TestDefinition, definition.id, TestDefinition.version_clause())
             try:
                 error = save_from_dialog(definition, test_suite)
             except CONTRACT_VERSION_ERRORS:
@@ -480,6 +486,7 @@ class TestResultsPage(Page):
             if error:
                 st.session_state[VALIDATE_RESULT_KEY] = {"success": False, "message": error}
                 return
+            record_test_saved(definition, created=False, stored=stored)
             st.session_state.pop(EDIT_TEST_KEY, None)
             st.session_state.pop(VALIDATE_RESULT_KEY, None)
             st.cache_data.clear()
@@ -1047,7 +1054,10 @@ def update_result_disposition(
     test_result_ids: list[str],
     disposition: str,
 ) -> DispositionUpdate:
-    return set_test_results_disposition(test_result_ids, coerce_ui_disposition(disposition))
+    value = coerce_ui_disposition(disposition)
+    update = set_test_results_disposition(test_result_ids, value)
+    record_result_dispositions(update, value)
+    return update
 
 
 def _toast_contract_drafts(update: DispositionUpdate) -> None:

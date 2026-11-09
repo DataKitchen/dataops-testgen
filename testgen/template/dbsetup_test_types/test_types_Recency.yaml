@@ -18,13 +18,14 @@ test_types:
   dq_score_risk_factor: '0.75'
   column_name_prompt: null
   column_name_help: null
-  default_parm_columns: threshold_value
+  default_parm_columns: threshold_value,subset_condition
   default_parm_values: |-
-    CASE WHEN DATEDIFF( 'DAY' , max_date, run_date) <= 3 THEN DATEDIFF('DAY', max_date, run_date) + 3 WHEN DATEDIFF('DAY', max_date, run_date) <= 7 then DATEDIFF('DAY', max_date, run_date) + 7 WHEN DATEDIFF( 'DAY' , max_date, run_date) <= 31 THEN CEILING( DATEDIFF( 'DAY' , max_date, run_date)::FLOAT / 7.0) * 7 WHEN DATEDIFF( 'DAY' , max_date, run_date) > 31 THEN CEILING( DATEDIFF( 'DAY' , max_date, run_date)::FLOAT / 30.0) * 30 END
+    CASE WHEN DATEDIFF( 'DAY' , max_date, run_date) <= 3 THEN DATEDIFF('DAY', max_date, run_date) + 3 WHEN DATEDIFF('DAY', max_date, run_date) <= 7 then DATEDIFF('DAY', max_date, run_date) + 7 WHEN DATEDIFF( 'DAY' , max_date, run_date) <= 31 THEN CEILING( DATEDIFF( 'DAY' , max_date, run_date)::FLOAT / 7.0) * 7 WHEN DATEDIFF( 'DAY' , max_date, run_date) > 31 THEN CEILING( DATEDIFF( 'DAY' , max_date, run_date)::FLOAT / 30.0) * 30 END,NULL
   default_parm_prompts: |-
-    Threshold Maximum Days before Test
-  default_parm_help: null
-  default_parm_required: N
+    Threshold Maximum Days before Test,Record Subset Condition
+  default_parm_help: |-
+    |Condition selecting the records to test, written like a SQL WHERE clause. Example: status = 'SHIPPED'.
+  default_parm_required: N,N
   default_severity: Warning
   run_type: CAT
   test_scope: column
@@ -143,7 +144,7 @@ test_types:
     lookup_redactable_columns: latest_date_available
     lookup_query: |-
       SELECT DISTINCT col AS latest_date_available, CAST(CAST('{TEST_DATE}' AS DATETIME) AS {COLUMN_TYPE}) AS test_run_date
-      FROM (SELECT DATE_TRUNC(MAX(`{COLUMN_NAME}`), DAY) AS col FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`)
+      FROM (SELECT DATE_TRUNC(MAX(`{COLUMN_NAME}`), DAY) AS col FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE})
       WHERE DATETIME_DIFF(CAST(CAST('{TEST_DATE}' AS DATETIME) AS {COLUMN_TYPE}), col, DAY) > {THRESHOLD_VALUE}
       LIMIT {LIMIT};
     error_type: Test Results
@@ -154,7 +155,7 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: latest_date_available
     lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX(`{COLUMN_NAME}`) AS col FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) WHERE ABS(<%DATEDIFF_DAY;col;'{TEST_DATE}'::DATE%>) > {THRESHOLD_VALUE} LIMIT {LIMIT};
+      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX(`{COLUMN_NAME}`) AS col FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE}) WHERE ABS(<%DATEDIFF_DAY;col;'{TEST_DATE}'::DATE%>) > {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   - id: '1161'
     test_id: '1028'
@@ -163,7 +164,7 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: latest_date_available
     lookup_query: |-
-      SELECT DISTINCT TOP {LIMIT} col AS latest_date_available, CAST('{TEST_DATE}' AS DATE) AS test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a WHERE DATEDIFF(day, col, CAST('{TEST_DATE}' AS DATE)) > {THRESHOLD_VALUE};
+      SELECT DISTINCT TOP {LIMIT} col AS latest_date_available, CAST('{TEST_DATE}' AS DATE) AS test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) a WHERE DATEDIFF(day, col, CAST('{TEST_DATE}' AS DATE)) > {THRESHOLD_VALUE};
     error_type: Test Results
   - id: '1104'
     test_id: '1028'
@@ -172,7 +173,7 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: latest_date_available
     lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a WHERE <%DATEDIFF_DAY;col;'{TEST_DATE}'::DATE%> > {THRESHOLD_VALUE} LIMIT {LIMIT};
+      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) a WHERE <%DATEDIFF_DAY;col;'{TEST_DATE}'::DATE%> > {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   - id: '1022'
     test_id: '1028'
@@ -181,7 +182,7 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: latest_date_available
     lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE} LIMIT {LIMIT};
+      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   - id: '1422'
     test_id: '1028'
@@ -190,7 +191,7 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: latest_date_available
     lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE} LIMIT {LIMIT};
+      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   - id: '1218'
     test_id: '1028'
@@ -199,7 +200,7 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: latest_date_available
     lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE} LIMIT {LIMIT};
+      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   - id: '8022'
     test_id: '1028'
@@ -208,7 +209,7 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: latest_date_available
     lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS') AS test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") WHERE <%DATEDIFF_DAY;col;TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> > {THRESHOLD_VALUE} FETCH FIRST {LIMIT} ROWS ONLY
+      SELECT DISTINCT col AS latest_date_available, TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS') AS test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) WHERE <%DATEDIFF_DAY;col;TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> > {THRESHOLD_VALUE} FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Test Results
   - id: '8022'
     test_id: '1028'
@@ -217,7 +218,7 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: latest_date_available
     lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS') AS test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") WHERE <%DATEDIFF_DAY;col;TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> > {THRESHOLD_VALUE} LIMIT {LIMIT}
+      SELECT DISTINCT col AS latest_date_available, TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS') AS test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) WHERE <%DATEDIFF_DAY;col;TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> > {THRESHOLD_VALUE} LIMIT {LIMIT}
     error_type: Test Results
   - id: '10030'
     test_id: 1028
@@ -225,7 +226,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, CAST('{TEST_DATE}' AS DATE) as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TABLE_NAME}") a WHERE DATEDIFF('day', CAST(col AS DATE), CAST('{TEST_DATE}' AS DATE)) > {THRESHOLD_VALUE} LIMIT {LIMIT};
+      SELECT DISTINCT col AS latest_date_available, CAST('{TEST_DATE}' AS DATE) as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TABLE_NAME}" {SUBSET_WHERE}) a WHERE DATEDIFF('day', CAST(col AS DATE), CAST('{TEST_DATE}' AS DATE)) > {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   - id: '11062'
     test_id: '1028'
@@ -234,6 +235,6 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: latest_date_available
     lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a WHERE <%DATEDIFF_DAY;col;'{TEST_DATE}'::DATE%> > {THRESHOLD_VALUE} LIMIT {LIMIT};
+      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) a WHERE <%DATEDIFF_DAY;col;'{TEST_DATE}'::DATE%> > {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

@@ -24,9 +24,9 @@ def _stored(obj):
     return obj
 
 
-def _names(module: str, name: str | None):
-    """Answer every name lookup ``module`` makes with ``name``."""
-    patcher = patch(f"testgen.common.models.{module}.get_current_session")
+def _names(name: str | None):
+    """Answer every name lookup with ``name``."""
+    patcher = patch("testgen.common.audit.safety.get_current_session")
     session = patcher.start()
     session.return_value.scalar.return_value = name
     return patcher
@@ -36,8 +36,8 @@ def _names(module: str, name: str | None):
 def lookups():
     patchers = []
 
-    def answer(module: str, name: str | None) -> None:
-        patchers.append(_names(module, name))
+    def answer(name: str | None) -> None:
+        patchers.append(_names(name))
 
     yield answer
     for patcher in patchers:
@@ -62,13 +62,13 @@ def _target_name(audit_session, audit_log, subject) -> str | None:
 def test_a_schedule_is_named_after_its_job_and_what_it_runs_for(
     audit_session, audit_log, lookups, key, kwargs, expected
 ):
-    lookups("scheduler", "Sales")
+    lookups("Sales")
 
     assert _target_name(audit_session, audit_log, _schedule(key, kwargs)) == expected
 
 
 def test_a_schedule_whose_target_is_gone_is_named_with_its_id(audit_session, audit_log, lookups):
-    lookups("scheduler", None)
+    lookups(None)
 
     assert _target_name(
         audit_session, audit_log, _schedule(JobKey.run_profile, {"table_group_id": "tg-1"})
@@ -96,7 +96,7 @@ def _notification(cls, event: NotificationEvent, **scope):
 def test_a_notification_is_named_after_its_event_and_what_it_watches(
     audit_session, audit_log, lookups, notification, expected
 ):
-    lookups("notification_settings", "Sales")
+    lookups("Sales")
 
     assert _target_name(audit_session, audit_log, notification()) == expected
 
