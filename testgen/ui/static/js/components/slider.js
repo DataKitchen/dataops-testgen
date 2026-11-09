@@ -1,4 +1,9 @@
 /**
+ * @typedef Mark
+ * @type {object}
+ * @property {number} value
+ * @property {string} note
+ *
  * @typedef Properties
  * @type {object}
  * @property {string} label
@@ -6,37 +11,71 @@
  * @property {number} min
  * @property {number} max
  * @property {number} step
+ * @property {boolean?} ticks
+ * @property {Mark?} mark
  * @property {function(number)?} onChange
  * @property {string?} hint
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';
 
-const { input, label, span } = van.tags;
+const { div, input, label, span } = van.tags;
 
 const Slider = (/** @type Properties */ props) => {
     loadStylesheet('slider', stylesheet);
 
     const value = van.state(getValue(props.value) ?? getValue(props.min) ?? 0);
+    van.derive(() => {
+        const external = getValue(props.value);
+        if (external != null) {
+            value.val = external;
+        }
+    });
 
     const handleInput = e => {
         value.val = Number(e.target.value);
         props.onChange?.(value.val);
     };
 
+    const min = props.min ?? 0;
+    const max = props.max ?? 100;
+    const step = props.step ?? 1;
+
     return label(
         { class: 'flex-col fx-gap-1 clickable tg-slider--label text-caption', 'data-testid': 'slider' },
         props.label,
         input({
             type: "range",
-            min: props.min ?? 0,
-            max: props.max ?? 100,
-            step: props.step ?? 1,
+            min,
+            max,
+            step,
             value: value,
             oninput: handleInput,
             class: 'tg-slider--input',
         }),
-        span({ class: "tg-slider--value" }, () => value.val),
+        props.ticks
+            ? () => {
+                const mark = getValue(props.mark);
+                const count = Math.floor((max - min) / step);
+                return div(
+                    { class: 'tg-slider--ticks' },
+                    Array.from({ length: count + 1 }, (_, index) => {
+                        const tick = min + index * step;
+                        return span(
+                            {
+                                class: () => `tg-slider--tick ${tick === value.val ? 'tg-slider--tick-selected' : ''}`,
+                                style: `left: calc(10px + (100% - 20px) * ${count ? index / count : 0});`,
+                            },
+                            `${tick}${mark?.value === tick ? '*' : ''}`,
+                        );
+                    }),
+                );
+            }
+            : span({ class: "tg-slider--value" }, () => value.val),
+        () => {
+            const mark = getValue(props.mark);
+            return mark ? span({ class: "tg-slider--hint" }, `* ${mark.note}`) : '';
+        },
         props.hint && span({ class: "tg-slider--hint" }, props.hint)
     );
 };
@@ -53,6 +92,23 @@ stylesheet.replace(`
 .tg-slider--value {
     font-size: 0.9em;
     color: var(--primary-text-color);
+}
+
+.tg-slider--ticks {
+    position: relative;
+    height: 1.2em;
+    font-size: 0.9em;
+}
+
+.tg-slider--tick {
+    position: absolute;
+    transform: translateX(-50%);
+    color: var(--secondary-text-color);
+}
+
+.tg-slider--tick-selected {
+    color: var(--primary-text-color);
+    font-weight: 500;
 }
 
 .tg-slider--hint {

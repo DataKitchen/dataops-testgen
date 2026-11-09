@@ -139,6 +139,37 @@ def fixed_max_threads(sql_flavor_code: str | None) -> int | None:
     return FLAVOR_FIXED_MAX_THREADS.get(sql_flavor_code) if sql_flavor_code else None
 
 
+MAX_THREADS_MIN = 1
+MAX_THREADS_MAX = 16
+DEFAULT_MAX_THREADS = 4
+
+# Only engines measured or reasoned about closely enough to recommend a value. SQL Server and
+# Redshift statements already keep many cores busy, so running several at once stretches each
+# one; BigQuery's slots scale with the number of queries in flight.
+FLAVOR_RECOMMENDED_MAX_THREADS: dict[str, int] = {
+    SqlFlavorCode.MSSQL: 2,
+    SqlFlavorCode.AZURE_MSSQL: 2,
+    SqlFlavorCode.REDSHIFT: 2,
+    SqlFlavorCode.ORACLE: 2,
+    SqlFlavorCode.BIGQUERY: 8,
+}
+
+
+def recommended_max_threads(sql_flavor_code: str | None) -> int | None:
+    """The thread count recommended for a flavor, or None when it has no recommendation."""
+    return FLAVOR_RECOMMENDED_MAX_THREADS.get(sql_flavor_code) if sql_flavor_code else None
+
+
+def default_max_threads(sql_flavor_code: str | None) -> int:
+    """The thread count a connection of this flavor gets when the user chooses none."""
+    return fixed_max_threads(sql_flavor_code) or recommended_max_threads(sql_flavor_code) or DEFAULT_MAX_THREADS
+
+
+def clamp_max_threads(max_threads: int) -> int:
+    """``max_threads`` cut to the range a user can choose."""
+    return max(MAX_THREADS_MIN, min(MAX_THREADS_MAX, max_threads))
+
+
 # The schema every table group on a flavor code stores, where the user does not pick one. Every
 # declaration on the files code becomes a view in DuckDB's default schema, so the form does not
 # show the field and the value is written here instead.

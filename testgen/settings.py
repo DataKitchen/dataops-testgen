@@ -268,13 +268,13 @@ from env variable: `PROJECT_CONNECTION_NAME`
 defaults to: `default`
 """
 
-PROJECT_CONNECTION_MAX_THREADS: int = int(getenv("PROJECT_CONNECTION_MAX_THREADS", "4"))
+PROJECT_CONNECTION_MAX_THREADS: int | None = int(getenv("PROJECT_CONNECTION_MAX_THREADS", 0)) or None
 """
 Maximum number of concurrent queries executed when fetching data from
 the project database.
 
 from env variable: `PROJECT_CONNECTION_MAX_THREADS`
-defaults to: `4`
+defaults to: the value for the connection type
 """
 
 PROJECT_CONNECTION_MAX_QUERY_CHAR: int = int(getenv("PROJECT_CONNECTION_MAX_QUERY_CHAR", "5000"))

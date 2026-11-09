@@ -38,10 +38,12 @@ from testgen.common.enums import (
     run_duration_seconds,
 )
 from testgen.common.flavors import (
+    DEFAULT_MAX_THREADS,
     FLAVOR_CODE_TO_FAMILY,
     FLAVOR_CODE_TO_LABEL,
     SqlFlavorLabel,
     fixed_max_threads,
+    recommended_max_threads,
 )
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
@@ -1423,6 +1425,20 @@ def apply_connection_params(
         connection.connect_by_url = False
 
 
+def format_max_threads(connection: Connection) -> str:
+    """The thread count a connection runs at, with the value its type recommends or defaults to.
+
+    Reports the pinned count, not the stored column, for a type that fixes it.
+    """
+    code = connection.sql_flavor_code or connection.sql_flavor
+    threads = connection.effective_max_threads
+    if fixed_max_threads(code) is not None:
+        return f"{threads} (fixed)"
+    if (recommended := recommended_max_threads(code)) is not None:
+        return f"{threads} (recommended)" if threads == recommended else f"{threads} ({recommended} recommended)"
+    return f"{threads} (default)" if threads == DEFAULT_MAX_THREADS else f"{threads} ({DEFAULT_MAX_THREADS} default)"
+
+
 def reject_fixed_max_threads(sql_flavor_code: str, max_threads: int | None) -> None:
     """Raise when ``max_threads`` is a value other than the one its flavor fixes.
 
@@ -1466,11 +1482,7 @@ def render_connection_body(doc: MdDoc, connection: Connection) -> None:
 
     if (authentication := authentication_label(connection)) is not None:
         doc.field("Authentication", authentication)
-    if connection.max_threads is not None:
-        # The pinned value, not the stored column: a flavor that fixes its thread count runs at
-        # that count whatever the column says, and reporting the column sends an operator looking
-        # for a parallelism they never had.
-        doc.field("Max Threads", connection.effective_max_threads)
+    doc.field("Max Threads", format_max_threads(connection))
     if connection.max_query_chars is not None:
         doc.field("Max Expression Length", connection.max_query_chars)
 
