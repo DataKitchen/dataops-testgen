@@ -36,7 +36,7 @@ def freeze(suite: TestSuite, label: str | None, username: str | None) -> dict[st
     if draft is None:
         return {"success": False, "message": "This contract has no draft to freeze.", "problems": []}
     try:
-        frozen = contract_service.freeze_version(suite, label=(label or "").strip() or None, username=username)
+        frozen = contract_service.freeze_version(suite, label=label, username=username)
     except InvalidContractDocumentError as e:
         return {
             "success": False,

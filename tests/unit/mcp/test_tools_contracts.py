@@ -11,7 +11,12 @@ import pytest
 import yaml
 
 from testgen import settings
-from testgen.common.contract_service import CheckableRuleError, InvalidContractDocumentError, SavedMetadata
+from testgen.common.contract_service import (
+    EXPORT_BANNER,
+    CheckableRuleError,
+    InvalidContractDocumentError,
+    SavedMetadata,
+)
 from testgen.common.enums import JobStatus
 from testgen.common.models.suite_version import SuiteVersion, SuiteVersionListItem
 from testgen.common.models.test_definition import TestDefinition
@@ -213,10 +218,10 @@ def test_a_version_the_contract_does_not_have_is_a_user_error(db_session_mock):
 # --- the response is a file an agent can write ---
 
 
-def test_the_document_sits_in_a_yaml_fence(db_session_mock):
+def test_the_document_sits_in_a_yaml_fence_under_the_testgen_banner(db_session_mock):
     out = _export(_contract(), _frozen())
 
-    assert f"```yaml\n{FROZEN_YAML}" in out
+    assert f"```yaml\n{EXPORT_BANNER}{FROZEN_YAML}" in out
 
 
 def test_a_document_containing_a_triple_backtick_escalates_the_fence(db_session_mock):
@@ -332,7 +337,7 @@ def test_the_chunks_reassemble_into_the_stored_bytes(db_session_mock):
         body = out.split("```yaml\n", 1)[1].rsplit("\n```", 1)[0]
         rebuilt += body + "\n" if not body.endswith("\n") else body
 
-    assert rebuilt == document
+    assert rebuilt == f"{EXPORT_BANNER}{document}"
 
 
 def test_the_last_chunk_does_not_invite_another(db_session_mock):
@@ -374,7 +379,7 @@ def test_every_chunk_carries_the_digest_of_the_whole_document(db_session_mock):
     pieces it holds came from one document."""
     document = _big_contract()
     count = len(split_document(document, 2_000))
-    digest = hashlib.sha256(document.encode()).hexdigest()
+    digest = hashlib.sha256(f"{EXPORT_BANNER}{document}".encode()).hexdigest()
 
     for index in range(1, count + 1):
         assert digest in _export_chunked(document, 2_000, chunk=index)
@@ -384,8 +389,10 @@ def test_a_changed_document_carries_a_different_digest(db_session_mock):
     document = _big_contract()
     changed = document + "# edited\n"
 
-    assert hashlib.sha256(changed.encode()).hexdigest() in _export_chunked(changed, 2_000, chunk=2)
-    assert hashlib.sha256(document.encode()).hexdigest() not in _export_chunked(changed, 2_000, chunk=2)
+    assert hashlib.sha256(f"{EXPORT_BANNER}{changed}".encode()).hexdigest() in _export_chunked(changed, 2_000, chunk=2)
+    assert hashlib.sha256(f"{EXPORT_BANNER}{document}".encode()).hexdigest() not in _export_chunked(
+        changed, 2_000, chunk=2
+    )
 
 
 # --- get_contract_metadata ---
