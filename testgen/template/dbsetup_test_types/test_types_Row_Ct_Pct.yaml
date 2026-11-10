@@ -157,7 +157,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(CAST(100 * (current_count - {BASELINE_CT}) AS NUMERIC) / CAST({BASELINE_CT} AS NUMERIC) ,2)) AS row_count_pct_difference FROM cte;
+      WITH CTE AS (SELECT COUNT_BIG(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(CAST(100 * (current_count - {BASELINE_CT}) AS NUMERIC) / CAST({BASELINE_CT} AS NUMERIC) ,2)) AS row_count_pct_difference FROM cte;
     error_type: Test Results
   - id: '1107'
     test_id: '1032'

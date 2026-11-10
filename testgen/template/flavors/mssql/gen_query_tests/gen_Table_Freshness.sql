@@ -133,7 +133,7 @@ selected_tables AS (
         REPLACE(
           CASE
             WHEN general_type = 'D' THEN 'CAST(MIN(@@@) AS NVARCHAR) + ''|'' + CAST(MAX(@@@) AS NVARCHAR) + ''|'' + CAST(COUNT_BIG(DISTINCT @@@) AS NVARCHAR)'
-            WHEN general_type = 'A' THEN 'CAST(MIN(@@@) AS NVARCHAR) + ''|'' + CAST(MAX(@@@) AS NVARCHAR) + ''|'' + CAST(COUNT_BIG(DISTINCT @@@) AS NVARCHAR) + ''|'' + CAST(SUM(LEN(@@@)) AS NVARCHAR)'
+            WHEN general_type = 'A' THEN 'CAST(MIN(@@@) AS NVARCHAR) + ''|'' + CAST(MAX(@@@) AS NVARCHAR) + ''|'' + CAST(COUNT_BIG(DISTINCT @@@) AS NVARCHAR) + ''|'' + CAST(SUM(CAST(LEN(@@@) AS BIGINT)) AS NVARCHAR)'
             WHEN general_type = 'N' THEN 'CONCAT_WS(''|'',
               CAST(COUNT_BIG(@@@) AS VARCHAR(20)),
               CAST(COUNT_BIG(DISTINCT CAST(CAST(CAST(COALESCE(@@@,0) AS DECIMAL(38,6)) * 1000000 AS DECIMAL(38,0)) % 1000003 AS INT)) AS VARCHAR(20)),

@@ -70,7 +70,7 @@ test_types:
     test_type: Outlier_Pct_Above
     sql_flavor: mssql
     measure: |-
-      CAST(SUM(CASE WHEN CAST({COLUMN_NAME} AS FLOAT) > {BASELINE_AVG}+(2.0*{BASELINE_SD}) THEN 1 ELSE 0 END) AS FLOAT) / CAST(COUNT({COLUMN_NAME}) AS FLOAT)
+      CAST(SUM(CASE WHEN CAST({COLUMN_NAME} AS FLOAT) > {BASELINE_AVG}+(2.0*{BASELINE_SD}) THEN 1 ELSE 0 END) AS FLOAT) / CAST(NULLIF(COUNT({COLUMN_NAME}), 0) AS FLOAT)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}

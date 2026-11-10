@@ -65,7 +65,7 @@ test_types:
     test_type: Street_Addr_Pattern
     sql_flavor: mssql
     measure: |-
-      CAST(100.0*SUM(CASE WHEN UPPER({COLUMN_NAME}) LIKE '[1-9]% [A-Z]% %' AND CHARINDEX(' ', {COLUMN_NAME}) BETWEEN 2 AND 6 THEN 1 ELSE 0 END) as FLOAT) /CAST(COUNT({COLUMN_NAME}) AS FLOAT)
+      CAST(100.0*SUM(CASE WHEN UPPER({COLUMN_NAME}) LIKE '[1-9]% [A-Z]% %' AND CHARINDEX(' ', {COLUMN_NAME}) BETWEEN 2 AND 6 THEN 1 ELSE 0 END) as FLOAT) /CAST(NULLIF(COUNT({COLUMN_NAME}), 0) AS FLOAT)
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
