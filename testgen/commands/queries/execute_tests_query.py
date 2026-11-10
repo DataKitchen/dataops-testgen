@@ -85,6 +85,7 @@ class TestExecutionDef(InputParameters):
     lock_refresh: str
     skip_errors: int
     history_calculation: str
+    default_parm_columns: str
     prediction: dict | str | None
     run_type: TestRunType
     test_scope: TestScope
@@ -117,6 +118,11 @@ class TestExecutionDef(InputParameters):
     @property
     def source_table(self) -> str:
         return self.read_table_name or self.table_name
+
+    @property
+    def param_columns(self) -> set[str]:
+        """The columns the test type declares as parameters a user sets."""
+        return {column.strip() for column in (self.default_parm_columns or "").split(",") if column.strip()}
 
     def __post_init__(self) -> None:
         if self.subset_condition is not None and not self.subset_condition.strip():
@@ -448,13 +454,48 @@ class TestExecutionSQL:
         return test_def.test_operator, test_def.test_condition
 
     def _get_input_parameters(self, test_def: TestExecutionDef) -> str:
-        # Every value is folded onto one line: this string is templated into a single-quoted SQL
+        """Return the parameter values this test ran with, for its result row to record.
+
+        Args:
+            test_def: The test being executed.
+
+        Returns:
+            The values as ``name=value`` pairs, for a row written straight to the application
+            database. A template writing them into the target's SQL takes
+            ``_input_parameters_literal`` instead.
+        """
+        # A type that does not declare custom_query as a parameter builds one of its own — a
+        # fingerprint or a measure expression — which describes the type, not how the test was
+        # set up, and runs to thousands of characters.
+        skipped = set() if "custom_query" in test_def.param_columns else {"custom_query"}
+        # Every value is folded onto one line: a template writes this into a single-quoted SQL
         # literal, and some flavors, BigQuery among them, end such a literal at a line break.
         return "; ".join(
             f"{field.name}={' '.join(str(getattr(test_def, field.name)).split())}"
             for field in dataclasses.fields(InputParameters)
-            if getattr(test_def, field.name, None) not in [None, ""]
+            if field.name not in skipped and getattr(test_def, field.name, None) not in [None, ""]
         ).replace("'", "`")
+
+    def _input_parameters_literal(self, test_def: TestExecutionDef) -> str:
+        """Return the recorded parameters as a template writes them between quotes on the target.
+
+        Args:
+            test_def: The test being executed.
+
+        Returns:
+            The recorded values escaped and cut so the flavor reads back what went in. Both only
+            matter inside a quoted literal, so a row written straight to the application database
+            takes the plain form.
+        """
+        recorded = self._get_input_parameters(test_def)
+        # The template supplies the quotes, so where a flavor reads a backslash as an escape it
+        # has to be doubled. Left alone, the backslash of a regex forms an escape sequence the
+        # flavor rejects, and the test errors rather than running.
+        if self.flavor_service.literal_escapes_backslash:
+            recorded = recorded.replace("\\", "\\\\")
+        # A custom query runs to thousands of characters; where the flavor caps a string literal,
+        # an uncut record errors the test instead of being recorded by it.
+        return self.flavor_service.fit_string_literal(recorded)
 
     def _get_params(self, test_def: TestExecutionDef | None = None) -> dict:
         quote = self.flavor_service.quote_character
@@ -530,7 +571,7 @@ class TestExecutionSQL:
                 "COLUMN_NUM": self.flavor_service.numeric_value(
                     f"{quote}{test_def.column_name or ''}{quote}", test_def.column_type
                 ),
-                "INPUT_PARAMETERS": self._get_input_parameters(test_def),
+                "INPUT_PARAMETERS": self._input_parameters_literal(test_def),
                 # Only the metadata test types read it, and building it for the rest would render
                 # a table's whole column list per test.
                 "OBSERVED_COLUMNS": (

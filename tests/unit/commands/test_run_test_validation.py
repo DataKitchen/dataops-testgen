@@ -28,6 +28,7 @@ def _make_td(**overrides) -> TestExecutionDef:
         "lock_refresh": "N",
         "skip_errors": 0,
         "history_calculation": "NONE",
+        "default_parm_columns": "",
         "custom_query": "",
         "prediction": None,
         "run_type": "CAT",

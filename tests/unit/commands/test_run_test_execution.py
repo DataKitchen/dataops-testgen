@@ -26,6 +26,7 @@ def _td(**overrides) -> TestExecutionDef:
         "id": uuid4(), "test_type": "Combo_Match", "schema_name": "staging_a",
         "table_name": "orders", "column_name": "customer_id", "lock_refresh": "N",
         "skip_errors": 0, "history_calculation": "NONE", "custom_query": "", "prediction": None,
+        "default_parm_columns": "",
         "run_type": "CAT", "test_scope": "referential", "template": "", "measure": "COUNT(*)",
         "test_operator": ">=", "test_condition": "0",
         "baseline_ct": "", "baseline_unique_ct": "", "baseline_value": "", "baseline_value_ct": "",

@@ -32,6 +32,7 @@ def _make_td(**overrides) -> TestExecutionDef:
         "skip_errors": 0,
         "history_calculation": "NONE",
         "custom_query": "",
+        "default_parm_columns": "",
         "prediction": None,
         "run_type": "CAT",
         "test_scope": "column",
@@ -1152,3 +1153,118 @@ def test_only_a_template_that_reads_observed_columns_is_given_them():
 
     other = _make_td(table_name="orders", template="SELECT COUNT(*) FROM {DATA_SCHEMA}.orders")
     assert sql_generator._get_params(other)["OBSERVED_COLUMNS"] == ""
+
+
+# --- the parameters a result records ---
+
+
+def _input_params_sql(flavor: str) -> TestExecutionSQL:
+    instance = _make_params_execution_sql()
+    instance.flavor = flavor
+    instance.flavor_service = get_flavor_service(flavor)
+    return instance
+
+
+def test_a_type_that_declares_a_custom_query_records_the_one_it_ran():
+    """The query is the test, and a run giving one of its variables a value changes what ran, so
+    the result carries the text that ran rather than the declaration."""
+    instance = _input_params_sql("postgresql")
+    td = _make_td(
+        test_type="CUSTOM",
+        default_parm_columns="custom_query,match_column_names,skip_errors",
+        custom_query="SELECT id FROM orders WHERE total < 0",
+    )
+
+    assert "custom_query=SELECT id FROM orders WHERE total < 0" in instance._get_input_parameters(td)
+
+
+def test_a_type_that_builds_its_own_query_records_none():
+    """Freshness_Trend keeps a generated fingerprint expression in the same column. It describes
+    the type rather than how the test was set up, and runs to thousands of characters."""
+    instance = _input_params_sql("postgresql")
+    td = _make_td(
+        test_type="Freshness_Trend",
+        default_parm_columns="threshold_value,history_calculation",
+        custom_query='COUNT(*)::VARCHAR || \'|\' || MIN("sale_date")::VARCHAR',
+    )
+
+    assert "custom_query" not in instance._get_input_parameters(td)
+
+
+def test_the_parameters_a_user_set_are_recorded_either_way():
+    """Only the query is held back, so a type that generates one still reports its own setup."""
+    instance = _input_params_sql("postgresql")
+    td = _make_td(
+        test_type="Freshness_Trend",
+        default_parm_columns="threshold_value",
+        custom_query="MIN(x)",
+        threshold_value="7",
+    )
+
+    assert "threshold_value=7" in instance._get_input_parameters(td)
+
+
+@pytest.mark.parametrize("flavor", ["bigquery", "databricks", "snowflake", "redshift"])
+def test_a_backslash_is_doubled_where_the_flavor_reads_one_as_an_escape(flavor):
+    """The template wraps this string in quotes of its own. Left alone, the backslash of a regex
+    forms an escape sequence the flavor rejects, and a trailing one escapes the closing quote."""
+    instance = _input_params_sql(flavor)
+    td = _make_td(
+        test_type="SQL_Metric",
+        default_parm_columns="custom_query",
+        custom_query=r"SELECT COUNT(*) FROM t WHERE REGEXP_CONTAINS(code, r'\d+')",
+    )
+
+    assert r"r`\\d+`" in instance._input_parameters_literal(td)
+
+
+def test_a_backslash_stands_where_the_flavor_reads_it_literally():
+    instance = _input_params_sql("postgresql")
+    td = _make_td(
+        test_type="SQL_Metric",
+        default_parm_columns="custom_query",
+        custom_query=r"SELECT COUNT(*) FROM t WHERE path LIKE 'a\b'",
+    )
+
+    assert r"`a\b`" in instance._input_parameters_literal(td)
+
+
+def test_a_long_record_is_cut_to_what_the_flavor_accepts():
+    """Oracle rejects a string literal over 4,000 bytes with ORA-01704, which would error the
+    test rather than shorten its record of what it ran."""
+    instance = _input_params_sql("oracle")
+    td = _make_td(
+        test_type="CUSTOM",
+        default_parm_columns="custom_query",
+        custom_query="SELECT id FROM orders WHERE note = `" + "a" * 5000 + "`",
+    )
+
+    recorded = instance._input_parameters_literal(td)
+
+    assert len(recorded.encode()) == 4000
+    assert recorded.endswith("...")
+
+
+def test_a_record_the_flavor_accepts_is_left_whole():
+    instance = _input_params_sql("oracle")
+    td = _make_td(test_type="CUSTOM", default_parm_columns="custom_query", custom_query="SELECT 1")
+
+    assert instance._input_parameters_literal(td) == "custom_query=SELECT 1"
+
+
+@pytest.mark.parametrize("flavor", ["bigquery", "oracle"])
+def test_a_row_written_to_the_application_database_is_neither_escaped_nor_cut(flavor):
+    """A CAT result and an error row are written by COPY in CSV, which reads a backslash as a
+    backslash, so escaping one would store text the query never held. The cut goes with it: the
+    length a flavor caps is the literal in its own SQL, not a column of the application's."""
+    instance = _input_params_sql(flavor)
+    td = _make_td(
+        test_type="Condition_Flag",
+        default_parm_columns="threshold_value,custom_query",
+        custom_query=r"code ~ '\d+' AND note <> '" + "a" * 5000 + "'",
+    )
+
+    recorded = instance._get_input_parameters(td)
+
+    assert r"`\d+`" in recorded
+    assert len(recorded.encode()) > 5000

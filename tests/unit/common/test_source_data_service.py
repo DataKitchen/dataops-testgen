@@ -74,7 +74,12 @@ def _run_input_parameters(**values: str) -> str:
     """Build an ``input_parameters`` blob with the writer that test execution uses."""
     fields = {field.name: "" for field in dataclasses.fields(InputParameters)}
     fields.update(values)
-    return TestExecutionSQL._get_input_parameters(MagicMock(), SimpleNamespace(**fields))
+    # A type that declares its query, on a flavor that reads a backslash literally and caps no
+    # literal: the writer holds nothing back and rewrites nothing, so the blob reads as the
+    # values given here.
+    test_def = SimpleNamespace(param_columns={"custom_query"}, **fields)
+    writer = SimpleNamespace(flavor_service=get_flavor_service("postgresql"))
+    return TestExecutionSQL._get_input_parameters(writer, test_def)
 
 
 def _custom_issue_data(**overrides):
