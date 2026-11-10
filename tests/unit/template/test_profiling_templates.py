@@ -38,6 +38,8 @@ PERCENTILE_SUBQUERY = re.compile(
 )
 # A percentile aggregated in the column's main read, one line per percentile.
 INLINE_PERCENTILE = re.compile(r"^.*\bAS percentile_\d+,?$", re.MULTILINE)
+# A derived table over the profiled table with no hint or sampling clause: its select list and its alias.
+DERIVED_TABLE = re.compile(r'\(SELECT\s+((?:(?!\(SELECT).)*?)\s+FROM "s"\."t"\)\s*(\w+)', re.DOTALL)
 # The sampling clauses the flavors use. Placeholders are rendered by then, so this matches the SQL.
 SAMPLING_CLAUSE = re.compile(r"\bSAMPLE\b|\bTABLESAMPLE\b|\bRAND(?:OM)?\s*\(", re.IGNORECASE)
 
@@ -187,6 +189,26 @@ def test_a_floating_point_type_the_catalog_marks_decimal_profiles_no_sum():
     column = replace(_column("N", is_decimal=True), logical_type="number", column_type="numeric")
     query, _ = _profiling_sql("sap_hana").run_column_profiling(column)
     assert "sum_value" not in _aliases(query)
+
+
+@pytest.mark.parametrize("general_type", ("N", "D", "B", "T"))
+def test_hana_reads_the_distinct_count_and_percentiles_apart_from_the_other_measures(general_type):
+    query = _render("sap_hana", general_type, sampled=False)
+    select_lists = {alias: select_list for select_list, alias in DERIVED_TABLE.findall(query)}
+    statement = "\n".join(line for line in query.splitlines() if not line.lstrip().startswith("--")).strip()
+
+    assert set(select_lists) == {"measures", "distinct_values"} | ({"pctile"} if general_type == "N" else set())
+    assert statement.startswith("SELECT *\n"), "the outer query must not aggregate over the derived tables"
+    assert select_lists["distinct_values"] == 'COUNT(DISTINCT "c") AS distinct_value_ct'
+    assert "PERCENTILE_CONT" not in select_lists["measures"]
+    # A date column's day, week and month counts are distinct counts of derived values, read with the rest.
+    assert select_lists["measures"].count("COUNT(DISTINCT") == (3 if general_type == "D" else 0)
+    if general_type == "N":
+        assert re.search(r"\bLEFT JOIN \(SELECT\s+PERCENTILE_CONT", query), "an empty table must still give one row"
+        percentiles = select_lists["pctile"].split(",")
+        assert len(percentiles) == 3
+        assert all(re.fullmatch(r'\s*PERCENTILE_CONT\(0\.\d+\) WITHIN GROUP \(ORDER BY "c"\) AS percentile_\d+', p)
+                   for p in percentiles)
 
 
 def test_a_data360_number_profiles_its_sum():
