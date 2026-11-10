@@ -158,7 +158,7 @@ default: `default`
 
 #### `PROJECT_CONNECTION_MAX_THREADS`
 
-Maximum number of concurrent queries executed when fetching data from the project database. Accepted values are 1 to 16.
+Maximum number of concurrent queries executed when fetching data from the project database. Values outside 1 to 16 are capped to that range.
 
 default: the default for the connection type
 

@@ -538,6 +538,8 @@ def test_get_connection_raises_not_found_for_inaccessible(mock_conn_cls, db_sess
         ("bigquery", 4, "4 (8 recommended)"),
         ("postgresql", 4, "4 (default)"),
         ("postgresql", 6, "6 (4 default)"),
+        ("snowflake", 4, "4 (recommended)"),
+        ("snowflake", 6, "6 (4 recommended)"),
         ("s3", 4, "1 (fixed)"),
     ],
 )

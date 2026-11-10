@@ -145,13 +145,20 @@ DEFAULT_MAX_THREADS = 4
 
 # Only engines measured or reasoned about closely enough to recommend a value. SQL Server and
 # Redshift statements already keep many cores busy, so running several at once stretches each
-# one; BigQuery's slots scale with the number of queries in flight.
+# one; BigQuery's slots scale with the number of queries in flight. On the engines at 4, more
+# than 4 at a time gained little or nothing, and Synapse's dedicated pools have few concurrency
+# slots.
 FLAVOR_RECOMMENDED_MAX_THREADS: dict[str, int] = {
     SqlFlavorCode.MSSQL: 2,
     SqlFlavorCode.AZURE_MSSQL: 2,
     SqlFlavorCode.REDSHIFT: 2,
     SqlFlavorCode.ORACLE: 2,
     SqlFlavorCode.BIGQUERY: 8,
+    SqlFlavorCode.REDSHIFT_SPECTRUM: 4,
+    SqlFlavorCode.SYNAPSE_MSSQL: 4,
+    SqlFlavorCode.DATABRICKS: 4,
+    SqlFlavorCode.SNOWFLAKE: 4,
+    SqlFlavorCode.SAP_HANA: 4,
 }
 
 

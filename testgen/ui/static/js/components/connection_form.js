@@ -462,7 +462,7 @@ const ConnectionForm = (props, saveButton) => {
                         hint: 'How many queries TestGen runs against the data source at a time.',
                         value: maxThreads,
                         min: 1,
-                        max: selectedFlavor.val?.max_threads_limit ?? 16,
+                        max: selectedFlavor.rawVal?.max_threads_limit ?? 16,
                         ticks: true,
                         mark: maxThreadsMark,
                         onChange: (value) => chosenMaxThreads.val = value,
