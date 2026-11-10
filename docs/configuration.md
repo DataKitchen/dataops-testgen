@@ -120,7 +120,7 @@ default: unset
 
 #### `TG_METADATA_DB_SSLROOTCERT`
 
-Certificate authority used to verify the testgen application postgres database's server certificate. Either a path to a PEM bundle, or `system` for the operating system trust store, which carries the public authorities that managed postgres services chain to.
+Certificate authority used to verify the testgen application postgres database's server certificate. Either a path to a PEM bundle, or `system` for the operating system trust store, which carries the public authorities. A server whose certificate chains to a private authority, such as Amazon RDS, needs that authority's PEM bundle.
 
 `system` pairs only with `verify-full`, so `verify-ca` needs a PEM path. A PEM path suits any mode, and `require` verifies the certificate chain against it in the same way as `verify-ca`.
 
