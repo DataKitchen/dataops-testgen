@@ -245,6 +245,15 @@ def test_an_inline_generation_reports_the_resolved_set_list(generation_mocks):
     assert event_kwargs["generation_sets"] == ["Standard", "Plugin_Set"]
 
 
+def test_a_generation_is_reported_with_its_suite_type(generation_mocks):
+    generation_mocks["suite"].suite_type = SuiteType.CONTRACT
+    with patch(f"{MODULE}.run_contract_generation"):
+        run_test_generation_and_report(JobSource.ui, "suite-1", None)
+
+    event_kwargs = generation_mocks["mixpanel"].return_value.send_event.call_args.kwargs
+    assert event_kwargs["suite_type"] == SuiteType.CONTRACT
+
+
 def test_run_test_generation_defaults_to_none_requested(generation_mocks):
     run_test_generation("suite-1")
 

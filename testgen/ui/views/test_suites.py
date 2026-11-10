@@ -35,6 +35,7 @@ from testgen.common.generation_set_service import (
     list_generation_sets,
     resolve_generation_sets,
 )
+from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import database_session, get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.notification_settings import TestRunNotificationSettings
@@ -823,6 +824,7 @@ def _add_contract_from_file(suite: TestSuite, table_group: TableGroup, content: 
     plan = prepare_import(content, table_group, connection, None)
     created = create_contract_from_import(suite, table_group, connection, plan)
     record_contract_created(created.suite)
+    MixpanelService().send_event("import-contract", new_contract=True)
     text = f"Contract {created.suite.test_suite} created{_with_tests(created.suite.id)}."
     if unverifiable := len(plan.unverifiable_rules):
         text += f" {unverifiable} {'rule cannot' if unverifiable == 1 else 'rules cannot'} be verified."

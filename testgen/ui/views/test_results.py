@@ -432,7 +432,9 @@ class TestResultsPage(Page):
             result_df = test_result_queries.get_test_results_by_ids([item_id])
             if not result_df.empty:
                 row = result_df.where(result_df.notna(), None).to_dict(orient="records")[0]
-                MixpanelService().send_event("view-source-data", page=PAGE_PATH, test_type=row.get("test_name_short"))
+                MixpanelService().send_event(
+                    "view-source-data", page=PAGE_PATH, test_type=row.get("test_name_short"), suite_type=suite.suite_type,
+                )
                 mask_pii = not session.auth.user_has_permission("view_pii")
                 st.session_state[SOURCE_DATA_KEY] = _build_source_data(row, mask_pii=mask_pii)
 
@@ -527,7 +529,9 @@ class TestResultsPage(Page):
             if result_df.empty:
                 return
             rows = result_df.where(result_df.notna(), None).to_dict(orient="records")
-            MixpanelService().send_event("download-issue-report", page=PAGE_PATH, issue_count=len(rows))
+            MixpanelService().send_event(
+                "download-issue-report", page=PAGE_PATH, issue_count=len(rows), suite_type=suite.suite_type,
+            )
             st.session_state[ISSUE_REPORT_KEY] = rows
 
         @with_database_session

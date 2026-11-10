@@ -230,6 +230,7 @@ def _report_test_generation(
         "generate-tests",
         source=source.upper(),
         sql_flavor=connection.sql_flavor if connection else None,
+        suite_type=test_suite.suite_type if test_suite else None,
         generation_sets=generation_sets,
         status=status,
     )

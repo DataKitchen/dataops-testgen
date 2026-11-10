@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import streamlit as st
 
+from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.suite_version import SuiteVersion
@@ -97,6 +98,10 @@ def contract_props(
             _clear_state(dialog)
         return close_dialog
 
+    def on_export_opened(*_) -> None:
+        _set_state(suite, _Dialog.EXPORT, {})
+        MixpanelService().send_event("export-contract")
+
     @with_database_session
     def on_import_file(payload: dict) -> None:
         state: dict[str, Any] = {}
@@ -121,6 +126,7 @@ def contract_props(
             state["text"], suite, bool(payload.get("delete_confirmed")),
         )
         if state["result"]["success"]:
+            MixpanelService().send_event("import-contract", new_contract=False)
             st.cache_data.clear()
             follow_editable_version(suite)
 
@@ -243,7 +249,7 @@ def contract_props(
         "on_ContractHistoryOpened_change": on_history_opened,
         "on_ContractHistoryClosed_change": closer(_Dialog.HISTORY),
         "on_ContractCompare_change": on_compare,
-        "on_ContractExportOpened_change": opener(_Dialog.EXPORT),
+        "on_ContractExportOpened_change": on_export_opened,
         "on_ContractExportClosed_change": closer(_Dialog.EXPORT),
         "on_ContractImportOpened_change": opener(_Dialog.IMPORT),
         "on_ContractImportClosed_change": closer(_Dialog.IMPORT),
