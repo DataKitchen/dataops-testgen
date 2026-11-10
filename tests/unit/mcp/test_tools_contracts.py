@@ -628,6 +628,20 @@ def test_freezing_records_the_mcp_user_as_who_froze_it(db_session_mock):
     assert freeze.call_args.kwargs["username"] == "alice"
 
 
+def test_freezing_records_the_version_frozen(db_session_mock):
+    suite = _contract()
+    frozen = SuiteVersion(id=uuid4(), version=4, frozen_at=datetime(2026, 10, 8, tzinfo=UTC))
+    with patch(f"{MODULE}.record_version_frozen") as recorded:
+        _freeze(suite, frozen=frozen)
+    recorded.assert_called_once_with(suite, frozen)
+
+
+def test_a_refused_freeze_records_nothing(db_session_mock):
+    with patch(f"{MODULE}.record_version_frozen") as recorded, pytest.raises(MCPUserError):
+        _freeze(_contract(), error=ValueError("no"))
+    recorded.assert_not_called()
+
+
 def test_freezing_with_no_draft_says_so_rather_than_succeeding(db_session_mock):
     previous = SuiteVersion(id=uuid4(), version=3)
     with pytest.raises(MCPUserError, match="has no draft to freeze. v3 active is already frozen"):
@@ -662,6 +676,13 @@ def test_discarding_reports_tests_removed_and_the_version_returned_to(db_session
     assert "Discarded v4 draft of contract `Orders`" in out
     assert "**Tests removed besides schema conformance:** 41" in out
     assert "**Contract is now at:** v3 active" in out
+
+
+def test_discarding_records_the_draft_discarded(db_session_mock):
+    suite = _contract()
+    with patch(f"{MODULE}.record_draft_discarded") as recorded:
+        _discard(suite, count=1, now_at=SuiteVersion(id=uuid4(), version=3))
+    recorded.assert_called_once_with(suite, 4)
 
 
 def test_discarding_when_the_service_refuses_is_a_user_error(db_session_mock):
@@ -770,6 +791,7 @@ def _saved(version_id, **fields):
         overridden_declarations=fields.get("overridden_declarations", []),
         unchecked_paths=fields.get("unchecked_paths", []),
         problems=fields.get("problems", []),
+        conformance_failed=fields.get("conformance_failed", False),
     )
 
 
@@ -795,6 +817,28 @@ def test_a_merge_patch_changes_one_field_and_keeps_every_other_section(db_sessio
     document = save.call_args.args[1]
     assert document == {**_WIDE_DOCUMENT, "description": {"purpose": "Orders"}}
     assert "**Version:** v5 draft" in out
+
+
+def test_updating_metadata_records_the_change_against_the_document_stored_before(db_session_mock):
+    suite = _contract()
+    with (
+        patch(f"{MODULE}.stored_document", return_value={"description": {"purpose": "before"}}),
+        patch(f"{MODULE}.record_document_updated") as recorded,
+    ):
+        _, save = _update(suite, _draft(document=_WIDE_DOCUMENT), patch={"description": {"purpose": "Orders"}})
+    recorded.assert_called_once_with(suite, save.return_value.version_id, {"description": {"purpose": "before"}})
+
+
+def test_a_refused_metadata_update_records_nothing(db_session_mock):
+    with patch(f"{MODULE}.record_document_updated") as recorded, pytest.raises(MCPUserError):
+        _update(_contract(), _draft(document=_WIDE_DOCUMENT), error=ValueError("no"), patch={"tags": ["x"]})
+    recorded.assert_not_called()
+
+
+def test_a_metadata_update_whose_conformance_failed_says_so(db_session_mock):
+    current = _draft(document=_WIDE_DOCUMENT)
+    out, _ = _update(_contract(), current, saved=_saved(uuid4(), conformance_failed=True), patch={"tags": ["x"]})
+    assert "updating its schema conformance tests failed" in out
 
 
 def test_a_merge_patch_after_a_rename_applies_to_the_contracts_name(db_session_mock):

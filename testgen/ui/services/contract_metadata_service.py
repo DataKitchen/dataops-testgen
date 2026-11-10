@@ -11,6 +11,7 @@ from typing import Any
 import yaml
 
 from testgen.common import contract_service
+from testgen.common.audit.contracts import record_document_updated, stored_document
 from testgen.common.contract_document import catalog_table_names, declared_tables, physical_name
 from testgen.common.contract_rules import document_rules
 from testgen.common.contract_service import (
@@ -543,6 +544,7 @@ def _store(
     text: str | None = None,
     warnings: Callable[[SavedMetadata], list[str]] | None = None,
 ) -> dict[str, Any]:
+    stored = stored_document(suite.id)
     try:
         saved = contract_service.save_metadata_document(suite, document)
     except CheckableRuleError as e:
@@ -556,9 +558,12 @@ def _store(
         return _refused_with_problems("No changes saved. The document would not be valid ODCS:", text, e.problems)
     except ValueError as e:
         return _refused(str(e))
+    record_document_updated(suite, saved.version_id, stored)
 
     version = SuiteVersion.get(saved.version_id)
     message = f"{label} saved to {format_version(version.version, VersionState.DRAFT)}."
+    if saved.conformance_failed:
+        message += " Its schema conformance tests were not updated. Generate Tests updates them."
     if rules := len(saved.unverifiable_rules):
         message += (
             f" {rules} {'rule' if rules == 1 else 'rules'} no test type checks "
@@ -618,6 +623,7 @@ def save_tables(suite: TestSuite, selected: list[str]) -> dict[str, Any]:
         return {"success": True, "message": "No tables changed.", "version": None}
 
     session = get_current_session()
+    stored = stored_document(suite.id)
     sentences = []
     generated, not_profiled, tests = [], [], 0
     failure = None
@@ -653,9 +659,11 @@ def save_tables(suite: TestSuite, selected: list[str]) -> dict[str, Any]:
     if not_profiled:
         has = "has" if len(not_profiled) == 1 else "have"
         sentences.append(f"No quality tests were generated for {_series(not_profiled)}, which {has} not been profiled.")
+    draft = SuiteVersion.draft_for(suite.id)
+    if draft is not None:
+        record_document_updated(suite, draft.id, stored)
     if failure:
         return {"success": False, "message": " ".join([*sentences, failure])}
-    draft = SuiteVersion.draft_for(suite.id)
     return {"success": True, "message": " ".join(sentences), "version": draft.version if draft else None}
 
 

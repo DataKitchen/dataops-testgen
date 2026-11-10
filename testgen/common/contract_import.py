@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import yaml
 from sqlalchemy import delete, select, update
@@ -737,6 +737,7 @@ def _invalid_terms(changes: list[TermChange], test_types: dict[str, TestType], s
 class AppliedImport:
     version_id: UUID
     conformance_failed: bool
+    written: dict[ImportAction, list[UUID]] = field(default_factory=dict)
 
 
 def apply_import(
@@ -745,8 +746,8 @@ def apply_import(
     """Write ``plan`` to ``suite``'s draft, opening one when it has none, then bring its schema
     conformance tests in line with the tables the document declares. Commits the session.
 
-    Returns the draft's version id, and whether bringing schema conformance in line failed after
-    the import was saved.
+    Returns the draft's version id, whether bringing schema conformance in line failed after
+    the import was saved, and the ids of the terms written, by what the import did to them.
     """
     session = get_current_session()
     version_id, copied = resolve_write_target(suite)
@@ -764,21 +765,25 @@ def apply_import(
     version.odcs_api_version = ODCS_API_VERSION
     flag_modified(version, "metadata_document")
 
-    _write_terms(plan.changes, suite, table_group, version_id, copied)
+    written = _write_terms(plan.changes, suite, table_group, version_id, copied)
     session.commit()
     try:
         reconcile_contract_conformance(suite.id)
     except Exception:
         LOG.exception(f"Reconciling schema conformance for contract {suite.id} failed after import")
-        return AppliedImport(version_id=version_id, conformance_failed=True)
-    return AppliedImport(version_id=version_id, conformance_failed=False)
+        session.rollback()
+        return AppliedImport(version_id=version_id, conformance_failed=True, written=written)
+    return AppliedImport(version_id=version_id, conformance_failed=False, written=written)
 
 
 def _write_terms(
     changes: list[TermChange], suite: TestSuite, table_group: TableGroup, version_id: UUID, copied: dict[UUID, UUID]
-) -> None:
+) -> dict[ImportAction, list[UUID]]:
     """Write ``changes`` to the draft ``version_id``. Every term the document states is locked, so
-    that a later generation run does not overwrite or delete what the document agreed."""
+    that a later generation run does not overwrite or delete what the document agreed.
+
+    Returns the ids of the terms created, updated, and deleted, by action.
+    """
     session = get_current_session()
     now = datetime.now(UTC)
     qualifies_table_refs = table_group_qualifies_table_refs(table_group.id)
@@ -826,10 +831,12 @@ def _write_terms(
             .values(lock_refresh=True)
         )
 
+    created = []
     for change in changes:
         if change.action is not ImportAction.create:
             continue
         definition = TestDefinition(
+            id=uuid4(),
             test_suite_id=suite.id,
             version_id=version_id,
             table_groups_id=suite.table_groups_id,
@@ -840,9 +847,15 @@ def _write_terms(
         )
         apply_test_definition_flavor_rules(definition, table_group, qualifies_table_refs=qualifies_table_refs)
         session.add(definition)
+        created.append(definition)
 
     session.flush()
     TestDefinition.assign_missing_term_ids(version_id)
+    return {
+        ImportAction.create: [definition.id for definition in created],
+        ImportAction.update: [target_of(change) for change in updates],
+        ImportAction.delete: deleted,
+    }
 
 
 def _term_values(

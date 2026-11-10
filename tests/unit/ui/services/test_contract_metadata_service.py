@@ -533,6 +533,45 @@ def _save_tables(selected, declared, generations=(), removed_terms=0, side_effec
     return result, remove, add, suite
 
 
+def test_saving_records_the_change_against_the_document_stored_before():
+    with (
+        patch.object(service, "stored_document", return_value={"description": {"purpose": "before"}}),
+        patch.object(service, "record_document_updated") as recorded,
+    ):
+        _, save, suite = _save(DOCUMENT_TEXT)
+
+    recorded.assert_called_once_with(suite, save.return_value.version_id, {"description": {"purpose": "before"}})
+
+
+def test_a_refused_save_records_nothing():
+    with patch.object(service, "record_document_updated") as recorded:
+        result, *_ = _save(DOCUMENT_TEXT, side_effect=ValueError("This contract has no version to write to."))
+
+    assert result["success"] is False
+    recorded.assert_not_called()
+
+
+def test_a_save_whose_conformance_failed_says_so():
+    saved = SavedMetadata(
+        version_id=uuid4(), unverifiable_rules=[], unresolved_declarations=[], untested_declarations=[],
+        overridden_declarations=[], unchecked_paths=[], problems=[], conformance_failed=True,
+    )
+    result, *_ = _save(DOCUMENT_TEXT, saved=saved)
+
+    assert result["message"].endswith("Its schema conformance tests were not updated. Generate Tests updates them.")
+
+
+def test_saving_tables_records_the_drafts_document_against_the_one_stored_before():
+    with (
+        patch.object(service, "stored_document", return_value={"schema": []}),
+        patch.object(service, "record_document_updated") as recorded,
+    ):
+        _, _, _, suite = _save_tables(["orders"], ["orders", "order_lines"], removed_terms=2)
+
+    [(recorded_suite, _, before)] = [call.args for call in recorded.call_args_list]
+    assert (recorded_suite, before) == (suite, {"schema": []})
+
+
 def test_saving_tables_removes_dropped_ones_and_adds_new_ones():
     result, remove, add, suite = _save_tables(
         ["orders", "shipments"], ["orders", "order_lines"], [_generation(12, ["shipments"])], removed_terms=23,

@@ -108,6 +108,26 @@ def test_applying_onto_a_contract_writes_its_draft(db_session_mock):
     assert "v4 draft" in out
 
 
+def test_applying_onto_a_contract_records_what_it_wrote_against_the_document_it_replaced(db_session_mock):
+    suite = _contract()
+    with (
+        patch(f"{MODULE}.SuiteVersion.get", return_value=MagicMock(version=4, frozen_at=None)),
+        patch(f"{MODULE}.stored_document", return_value={"description": {"purpose": "before"}}),
+        patch(f"{MODULE}.record_document_imported") as recorded,
+    ):
+        _, apply_import = _run(test_suite_id=str(suite.id), suite=suite, mode="apply")
+
+    applied = apply_import.return_value
+    recorded.assert_called_once_with(suite, applied.version_id, {"description": {"purpose": "before"}}, applied.written)
+
+
+def test_a_preview_records_nothing(db_session_mock):
+    with patch(f"{MODULE}.record_document_imported") as recorded:
+        _run(test_suite_id=str(uuid4()))
+
+    recorded.assert_not_called()
+
+
 def test_a_document_onto_another_contract_is_refused(db_session_mock):
     error = ContractIdentityError("orders-contract", "billing-contract")
     with pytest.raises(MCPUserError) as excinfo:

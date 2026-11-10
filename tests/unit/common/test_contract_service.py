@@ -446,6 +446,18 @@ def test_saving_a_document_writes_it_to_the_draft_and_returns_the_version():
     assert saved.problems == []
 
 
+def test_a_conformance_failure_after_the_document_is_saved_is_reported_not_raised():
+    with (
+        _save_stubs(_metadata()) as (suite, _, _),
+        patch("testgen.common.contract_service.reconcile_contract_conformance", side_effect=RuntimeError("boom")),
+        patch("testgen.common.contract_service.get_current_session") as current_session,
+    ):
+        saved = contract_service.save_metadata_document(suite, _metadata(description={"purpose": "Order facts"}))
+
+    assert saved.conformance_failed is True
+    current_session.return_value.rollback.assert_called_once()
+
+
 def test_saving_a_document_marks_it_modified_even_when_it_is_the_drafts_own_object():
     """A caller that edits the draft's document in place and passes it back hands the column the
     object it already holds; without the flag no UPDATE is issued and the commit stores nothing."""

@@ -31,6 +31,9 @@ class AuditAction(StrEnum):
     TEST_SUITE_CREATED = "test_suite.created"
     TEST_SUITE_UPDATED = "test_suite.updated"
     TEST_SUITE_DELETED = "test_suite.deleted"
+    CONTRACT_VERSION_UPDATED = "contract_version.updated"
+    CONTRACT_VERSION_FROZEN = "contract_version.frozen"
+    CONTRACT_VERSION_DELETED = "contract_version.deleted"
     MONITOR_SUITE_CREATED = "monitor_suite.created"
     MONITOR_SUITE_UPDATED = "monitor_suite.updated"
     MONITOR_SUITE_PAUSED = "monitor_suite.paused"
@@ -88,6 +91,7 @@ class AuditTargetType(StrEnum):
     CONNECTION = "connection"
     TABLE_GROUP = "table_group"
     TEST_SUITE = "test_suite"
+    CONTRACT_VERSION = "contract_version"
     MONITOR_SUITE = "monitor_suite"
     SCHEDULE = "schedule"
     NOTIFICATION = "notification"
@@ -115,6 +119,7 @@ CHANGE_ACTIONS = frozenset({
     AuditAction.CONNECTION_UPDATED,
     AuditAction.TABLE_GROUP_UPDATED,
     AuditAction.TEST_SUITE_UPDATED,
+    AuditAction.CONTRACT_VERSION_UPDATED,
     AuditAction.MONITOR_SUITE_UPDATED,
     AuditAction.SCHEDULE_UPDATED,
     AuditAction.NOTIFICATION_UPDATED,

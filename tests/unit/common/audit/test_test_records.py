@@ -48,7 +48,6 @@ def named_definitions(monkeypatch):
             project=lambda _definition: "demo",
         ),
     )
-    monkeypatch.setattr(f"{MODULE}._is_contract", lambda _test_suite_id: False)
 
 
 def _entries(audit_log) -> list[tuple]:
@@ -373,51 +372,3 @@ def test_a_real_change_is_reported_as_the_column_stores_it(audit_session, audit_
         "window_days": {"from": 7, "to": 8},
         "threshold_value": {"from": "10", "to": "12"},
     }
-
-
-def test_the_tests_of_a_contract_are_left_out_of_a_selection(audit_session, audit_log):
-    record_tests_deleted([_test(), _test(in_contract=True)])
-    audit_session.commit()
-
-    [entry] = audit_log.records()
-    assert entry["target_count"] == 1
-
-
-def test_a_selection_of_only_contract_tests_records_nothing(audit_session, audit_log):
-    with patch(f"{MODULE}.describe_tests", return_value=[_test(in_contract=True)]):
-        record_status_changed("lock_refresh", True, [uuid4()])
-    audit_session.commit()
-
-    assert audit_log.records() == []
-
-
-def test_saving_a_test_of_a_contract_records_nothing(audit_session, audit_log, monkeypatch):
-    monkeypatch.setattr(f"{MODULE}._is_contract", lambda _test_suite_id: True)
-    definition = _definition(threshold_value="60")
-
-    record_test_saved(definition, created=False, stored=_stored_of(definition, threshold_value="58"))
-    audit_session.commit()
-
-    assert audit_log.records() == []
-
-
-@pytest.mark.parametrize(("source_in_contract", "target_is_contract"), [(True, False), (False, True)])
-def test_a_move_into_or_out_of_a_contract_records_nothing(
-    audit_session, audit_log, monkeypatch, source_in_contract, target_is_contract
-):
-    monkeypatch.setattr(f"{MODULE}._is_contract", lambda _test_suite_id: target_is_contract)
-    moving = [_test(test_suite_id=uuid4(), table_groups_id=uuid4(), in_contract=source_in_contract)]
-
-    record_tests_moved(moving, [moving[0].id], uuid4(), uuid4())
-    audit_session.commit()
-
-    assert audit_log.records() == []
-
-
-def test_an_import_into_a_contract_records_nothing(audit_session, audit_log):
-    suite = type("Suite", (), {"id": uuid4(), "project_code": "demo", "suite_type": "contract"})()
-    with patch(f"{MODULE}.describe_tests", return_value=[_test()]):
-        record_import(suite, _import_config(ImportMode.apply), _import_response(update=[uuid4()]))
-    audit_session.commit()
-
-    assert audit_log.records() == []

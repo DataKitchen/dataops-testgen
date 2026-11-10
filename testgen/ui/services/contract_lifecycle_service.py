@@ -3,6 +3,7 @@
 from typing import Any
 
 from testgen.common import contract_service
+from testgen.common.audit.contracts import record_draft_discarded, record_version_frozen
 from testgen.common.contract_service import InvalidContractDocumentError
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_suite import TestSuite
@@ -45,6 +46,7 @@ def freeze(suite: TestSuite, label: str | None, username: str | None) -> dict[st
         }
     except ValueError as e:
         return {"success": False, "message": str(e), "problems": []}
+    record_version_frozen(suite, frozen)
     return {"success": True, "message": f"Version {frozen.version} of {suite.test_suite} frozen.", "problems": []}
 
 
@@ -83,4 +85,5 @@ def discard(suite: TestSuite) -> dict[str, Any]:
         contract_service.discard_draft(suite)
     except ValueError as e:
         return {"success": False, "message": str(e)}
+    record_draft_discarded(suite, draft.version)
     return {"success": True, "message": f"Draft v{draft.version} of {suite.test_suite} discarded."}

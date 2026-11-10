@@ -11,7 +11,7 @@ from testgen.common.audit.names import object_name
 from testgen.common.audit.recorder import changes_of, changes_since, record
 from testgen.common.audit.safety import isolated_read, never_raises
 from testgen.common.audit.selections import AuditedObject, record_selection
-from testgen.common.enums import MonitorType, SuiteType
+from testgen.common.enums import MonitorType
 from testgen.common.models.test_definition import (
     AUDIT_PLACEMENT_FIELDS,
     AUDIT_STATE_FIELDS,
@@ -49,7 +49,6 @@ class AuditedTest(AuditedObject):
     test_suite_id: UUID | None = None
     table_groups_id: UUID | None = None
     test_type: str | None = None
-    in_contract: bool = False
 
     @property
     def is_monitor(self) -> bool:
@@ -74,7 +73,6 @@ def describe_tests(test_definition_ids: Iterable[UUID | str]) -> list[AuditedTes
                 TestDefinition.test_suite_id,
                 TestDefinition.table_groups_id,
                 TestSuite.project_code,
-                TestSuite.suite_type,
                 TestType.test_name_short,
             )
             .join(TestSuite, TestSuite.id == TestDefinition.test_suite_id)
@@ -89,7 +87,6 @@ def describe_tests(test_definition_ids: Iterable[UUID | str]) -> list[AuditedTes
             test_suite_id=row.test_suite_id,
             table_groups_id=row.table_groups_id,
             test_type=row.test_type,
-            in_contract=row.suite_type == SuiteType.CONTRACT,
         )
         for row in rows
     }
@@ -104,10 +101,7 @@ def record_tests(
     changes: dict[str, dict[str, Any]] | None = None,
     single_changes: Callable[[AuditedObject], dict[str, dict[str, Any]]] | None = None,
 ) -> None:
-    """Record ``action`` on ``tests``, one record per project, leaving out the tests of contracts. See
-    ``record_selection``.
-    """
-    tests = [test for test in tests if not test.in_contract]
+    """Record ``action`` on ``tests``, one record per project. See ``record_selection``."""
     record_selection(action, tests, target_type, changes=changes, single_changes=single_changes)
 
 
@@ -142,13 +136,9 @@ def record_tests_moved(
 ) -> None:
     """Record tests moved into a test suite: where they came from, when they shared it, and where they went.
 
-    A move out of or into a contract records nothing.
-
     :param moving: the tests as they were before the move, as ``describe_tests`` read them.
     :param moved_ids: the rows the move wrote.
     """
-    if any(test.in_contract for test in moving) or _is_contract(target_test_suite_id):
-        return
     changes: dict[str, dict[str, Any]] = {}
     for name, target, before in (
         ("test_suite_id", target_test_suite_id, {test.test_suite_id for test in moving}),
@@ -180,14 +170,12 @@ def record_test_saved(definition: TestDefinition, *, created: bool, stored: Mapp
     """Record a test definition, or a monitor, created or changed through a form or a tool.
 
     A test's update records its changed fields, then its lock or flag as an update of its state, and its switch on or
-    off, each as its own record. A save that changed nothing, or a test of a contract, records nothing.
+    off, each as its own record. A save that changed nothing records nothing.
 
     :param created: whether the save created the test.
     :param stored: the test's values as stored before the save, for an object built from a form rather than loaded;
         without it, the changes are read from the object's history.
     """
-    if _is_contract(definition.test_suite_id):
-        return
     is_monitor = definition.test_type in _MONITOR_TYPES
     target_type = AuditTargetType.MONITOR if is_monitor else AuditTargetType.TEST_DEFINITION
     actions = _ACTIONS[target_type]
@@ -227,26 +215,32 @@ def record_tests_deleted(tests: Collection[AuditedTest]) -> None:
 
 @never_raises()
 def record_import(test_suite: TestSuite, config: ImportConfig, response: ImportResponse) -> None:
-    """Record what an import of test definitions into ``test_suite`` did: the tests it created, updated, and deleted,
-    each as one record. A preview, or an import into a contract, records nothing, and a deleted test is no longer
-    there to be named.
+    """Record what an import of test definitions into ``test_suite`` did, as ``record_imported_tests`` does. A preview
+    records nothing.
     """
-    if config.mode == ImportMode.preview or test_suite.suite_type == SuiteType.CONTRACT:
+    if config.mode == ImportMode.preview:
         return
     ids: dict[ImportAction, list[UUID]] = defaultdict(list)
     for item in response.items:
         ids[item.action].extend(td.target_id for td in item.tds if td.target_id is not None)
-    record_tests(AuditAction.TEST_DEFINITION_CREATED, describe_tests(ids[ImportAction.create]))
-    record_tests(AuditAction.TEST_DEFINITION_UPDATED, describe_tests(ids[ImportAction.update]))
+    record_imported_tests(test_suite.id, test_suite.project_code, ids)
+
+
+@never_raises()
+def record_imported_tests(
+    test_suite_id: UUID, project_code: str, ids: Mapping[ImportAction, Collection[UUID]]
+) -> None:
+    """Record the tests an import wrote into a test suite: those it created, updated, and deleted, each as one record.
+    A deleted test is no longer there to be named.
+
+    :param ids: the ids of the tests written, by what the import did to them.
+    """
+    record_tests(AuditAction.TEST_DEFINITION_CREATED, describe_tests(ids.get(ImportAction.create, ())))
+    record_tests(AuditAction.TEST_DEFINITION_UPDATED, describe_tests(ids.get(ImportAction.update, ())))
     record_tests(
         AuditAction.TEST_DEFINITION_DELETED,
         [
-            AuditedTest(id=identifier, project_code=test_suite.project_code, name=None, test_suite_id=test_suite.id)
-            for identifier in dict.fromkeys(ids[ImportAction.delete])
+            AuditedTest(id=identifier, project_code=project_code, name=None, test_suite_id=test_suite_id)
+            for identifier in dict.fromkeys(ids.get(ImportAction.delete, ()))
         ],
     )
-
-
-def _is_contract(test_suite_id: UUID | str) -> bool:
-    with isolated_read() as session:
-        return session.scalar(select(TestSuite.suite_type).where(TestSuite.id == test_suite_id)) == SuiteType.CONTRACT

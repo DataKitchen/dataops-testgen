@@ -832,7 +832,11 @@ def test_applying_writes_the_draft_then_commits_then_reconciles_conformance():
 
         result = contract_import.apply_import(plan, MagicMock(), table_group, SqlFlavorCode.POSTGRESQL)
 
-    assert result == contract_import.AppliedImport(version_id=draft_id, conformance_failed=False)
+    assert (result.version_id, result.conformance_failed) == (draft_id, False)
+    assert {action: len(ids) for action, ids in result.written.items()} == {
+        ImportAction.create: 3, ImportAction.update: 0, ImportAction.delete: 0,
+    }
+    assert all(result.written[ImportAction.create])
     assert "status" not in version.metadata_document
     assert calls == ["commit", "conformance"]
     assert version.metadata_document["apiVersion"] == "v3.2.0"
@@ -879,6 +883,33 @@ def test_a_conformance_failure_after_the_import_is_saved_is_reported_not_raised(
 
     assert result.conformance_failed is True
     session.commit.assert_called_once()
+    session.rollback.assert_called_once()
+
+
+def test_applying_onto_a_draft_just_opened_returns_the_ids_of_the_draft_copies_it_wrote():
+    updated = _baseline(test_type="SQL_Metric", column=None, term_id="amount-check", custom_query="SELECT 1")
+    deleted = _baseline(term_id="email-nulls")
+    changes = _plan(
+        [_incoming(test_type="Max_Val", column="amount", term_id="amount-check", baseline_value="500",
+                   threshold_value="0")],
+        [updated, deleted],
+    )
+    copies = {change.target_id: uuid4() for change in changes}
+    with ExitStack() as stack:
+        session = _db_stubs(stack)
+        _apply_stubs(stack, session, uuid4())
+        stack.enter_context(patch(f"{MODULE}.resolve_write_target", return_value=(uuid4(), copies)))
+        stack.enter_context(patch(f"{MODULE}.reconcile_contract_conformance"))
+        plan = contract_import.ContractImportPlan(
+            document_id="x", document_name="x", metadata_document={}, changes=changes,
+            unverifiable_rules=[], unresolved_declarations=[],
+        )
+
+        result = contract_import.apply_import(plan, MagicMock(), MagicMock(table_group_schema="public"), SqlFlavorCode.POSTGRESQL)
+
+    by_action = {change.action: copies[change.target_id] for change in changes}
+    assert result.written[ImportAction.update] == [by_action[ImportAction.update]]
+    assert result.written[ImportAction.delete] == [by_action[ImportAction.delete]]
 
 
 def test_an_update_clears_the_previous_types_parameters_and_locks_the_term():

@@ -64,16 +64,18 @@ def _freeze(label, side_effect=None, draft_version=4, username="alice"):
         draft,
         active,
         patch.object(service.contract_service, "freeze_version", return_value=frozen, side_effect=side_effect) as freeze,
+        patch.object(service, "record_version_frozen") as recorded,
     ):
         result = service.freeze(suite, label, username)
-    return result, freeze, suite
+    return result, freeze, suite, recorded
 
 
 def test_freezing_reports_the_version_frozen():
-    result, freeze, suite = _freeze("Q4 agreement")
+    result, freeze, suite, recorded = _freeze("Q4 agreement")
 
     assert result == {"success": True, "message": "Version 4 of orders_contract frozen.", "problems": []}
     freeze.assert_called_once_with(suite, label="Q4 agreement", username="alice")
+    recorded.assert_called_once_with(suite, freeze.return_value)
 
 
 def test_a_document_that_does_not_validate_is_refused_with_its_problems():
@@ -88,7 +90,9 @@ def test_a_document_that_does_not_validate_is_refused_with_its_problems():
 
 
 def test_any_other_refusal_is_reported():
-    result, *_ = _freeze(None, side_effect=ValueError("Term 12 names a column the contract does not declare."))
+    result, *_, recorded = _freeze(None, side_effect=ValueError("Term 12 names a column the contract does not declare."))
+
+    recorded.assert_not_called()
 
     assert result == {
         "success": False, "message": "Term 12 names a column the contract does not declare.", "problems": [],
@@ -144,20 +148,32 @@ def test_a_contract_offers_no_discard_without_a_draft_and_a_version_behind_it(dr
 def test_discarding_reports_the_draft_discarded():
     suite = _suite()
     draft, active = _versions(4, 3)
-    with draft, active, patch.object(service.contract_service, "discard_draft", return_value=147) as discard:
+    with (
+        draft,
+        active,
+        patch.object(service.contract_service, "discard_draft", return_value=147) as discard,
+        patch.object(service, "record_draft_discarded") as recorded,
+    ):
         result = service.discard(suite)
 
     assert result == {"success": True, "message": "Draft v4 of orders_contract discarded."}
     discard.assert_called_once_with(suite)
+    recorded.assert_called_once_with(suite, 4)
 
 
 def test_a_refused_discard_is_reported():
     draft, active = _versions(1, None)
     refusal = ValueError("This contract has no frozen version behind its draft.")
-    with draft, active, patch.object(service.contract_service, "discard_draft", side_effect=refusal):
+    with (
+        draft,
+        active,
+        patch.object(service.contract_service, "discard_draft", side_effect=refusal),
+        patch.object(service, "record_draft_discarded") as recorded,
+    ):
         result = service.discard(_suite())
 
     assert result == {"success": False, "message": "This contract has no frozen version behind its draft."}
+    recorded.assert_not_called()
 
 
 def test_a_contract_without_a_draft_is_refused_without_discarding():
