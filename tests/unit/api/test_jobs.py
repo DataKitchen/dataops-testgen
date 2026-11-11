@@ -147,6 +147,46 @@ def test_submit_test_run_omits_the_schema_key_when_not_given(mock_launch, body):
 
 
 @patch(f"{MODULE}.launch_run")
+def test_submit_test_run_passes_every_override(mock_launch):
+    """Each override reaches the job's payload under its own key, so the handler binds them all."""
+    test_suite = _mock_test_suite()
+    mock_launch.return_value = _mock_job(job_key="run-tests")
+
+    submit_test_run(
+        test_suite,
+        TestRunRequest(
+            schema_name="build_20261104",
+            table_names={"orders": "build_orders"},
+            match_schema_name="reference_2026_09_10",
+            match_table_names={"*": "prod_*"},
+            variables={"END_DATE": "2026-10-17"},
+        ),
+    )
+
+    assert mock_launch.call_args.kwargs["kwargs"] == {
+        "test_suite_id": str(test_suite.id),
+        "schema_name": "build_20261104",
+        "table_names": {"orders": "build_orders"},
+        "match_schema_name": "reference_2026_09_10",
+        "match_table_names": {"*": "prod_*"},
+        "variables": {"END_DATE": "2026-10-17"},
+    }
+
+
+@patch(f"{MODULE}.unsupported_schema_override", return_value="`schema_name` does not apply.")
+@patch(f"{MODULE}.launch_run")
+def test_submit_test_run_refuses_a_schema_override_the_connection_cannot_take(mock_launch, _refusal):
+    """The refusal depends on the table group's connection rather than the body's shape, so it is
+    a coded 400 and no job is queued."""
+    with pytest.raises(HTTPException) as excinfo:
+        submit_test_run(_mock_test_suite(), TestRunRequest(schema_name="build_20261104"))
+
+    assert excinfo.value.status_code == 400
+    assert excinfo.value.detail["errors"][0]["code"] == "schema_override_not_supported"
+    mock_launch.assert_not_called()
+
+
+@patch(f"{MODULE}.launch_run")
 def test_submit_test_run_passes_caller_metadata(mock_launch):
     test_suite = _mock_test_suite()
     mock_launch.return_value = _mock_job(job_key="run-tests")

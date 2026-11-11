@@ -561,3 +561,28 @@ def test_table_set_is_split_into_in_lists_of_at_most_1000():
     in_lists = criteria.split(" OR ")
     assert len(in_lists) == 3
     assert [in_list.count("'") // 2 for in_list in in_lists] == [1000, 1000, 1]
+
+
+def test_an_explicit_table_set_is_split_into_in_lists_of_at_most_1000():
+    """The tables a run reads are named outright, and there can be more of them than Oracle takes
+    in one IN list."""
+    table_group = TableGroup(table_group_schema="test_schema")
+    table_names = [f"t{i:04d}" for i in range(2001)]
+
+    criteria = RefreshDataCharsSQL(
+        Connection(sql_flavor="oracle"), table_group, table_names=table_names
+    )._get_table_criteria()
+
+    in_lists = criteria.split(" OR ")
+    assert len(in_lists) == 3
+    assert [in_list.count("'") // 2 for in_list in in_lists] == [1000, 1000, 1]
+
+
+def test_no_tables_to_read_matches_nothing():
+    table_group = TableGroup(table_group_schema="test_schema")
+
+    criteria = RefreshDataCharsSQL(
+        Connection(sql_flavor="postgresql"), table_group, table_names=[]
+    )._get_table_criteria()
+
+    assert criteria == " AND 1=0"

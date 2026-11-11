@@ -327,3 +327,28 @@ def test_a_run_a_restart_ended_reports_no_duration(mocked_collaborators, monkeyp
     event = mixpanel.return_value.send_event.call_args.kwargs
     assert event["status"] == JobStatus.ERROR
     assert "run_duration" not in event
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"match_schema_name": "build_123"},
+        {"schema_name": "build_123"},
+        {"table_names": {"orders": "build_orders"}},
+        {"match_table_names": {"orders": "build_orders"}},
+        {"variables": {"END_DATE": "2026-01-01"}},
+    ],
+    ids=lambda o: next(iter(o)),
+)
+def test_an_overridden_run_still_refreshes_its_thresholds(monkeypatch, mocked_collaborators, override):
+    """Both writeback steps read the history the suite has already recorded, which an override
+    does not change. Holding them back leaves every test of the suite on the thresholds of
+    whenever a run last went without one, and a prediction that never leaves training."""
+    prediction = MagicMock()
+    monkeypatch.setattr(run_test_execution, "TestThresholdsPrediction", prediction)
+    sql_generator = run_test_execution.TestExecutionSQL.return_value
+
+    run_test_execution.run_test_execution(uuid4(), **override)
+
+    assert sql_generator.update_history_calc_thresholds.called
+    assert prediction.called

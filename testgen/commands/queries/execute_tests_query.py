@@ -73,6 +73,7 @@ class InputParameters:
     match_subset_condition: str
     match_groupby_names: str
     match_having_condition: str
+    custom_query: str
 
 @dataclasses.dataclass
 class TestExecutionDef(InputParameters):
@@ -84,7 +85,7 @@ class TestExecutionDef(InputParameters):
     lock_refresh: str
     skip_errors: int
     history_calculation: str
-    custom_query: str
+    default_parm_columns: str
     prediction: dict | str | None
     run_type: TestRunType
     test_scope: TestScope
@@ -101,6 +102,27 @@ class TestExecutionDef(InputParameters):
     measure_expression: str = None
     condition_expression: str = None
     errors: list[str] = dataclasses.field(default_factory=list)
+    # Where this run reads the test's own table. A run-scoped override sets these; otherwise they
+    # follow the definition. Kept apart from schema_name and table_name because a result reports
+    # those two as its own identity, which stays where the test is defined, and off
+    # InputParameters because a result's own location is not what the run read. The match fields
+    # carry their override directly, since they are reported as input parameters rather than
+    # identity.
+    read_schema_name: str | None = None
+    read_table_name: str | None = None
+
+    @property
+    def source_schema(self) -> str:
+        return self.read_schema_name or self.schema_name
+
+    @property
+    def source_table(self) -> str:
+        return self.read_table_name or self.table_name
+
+    @property
+    def param_columns(self) -> set[str]:
+        """The columns the test type declares as parameters a user sets."""
+        return {column.strip() for column in (self.default_parm_columns or "").split(",") if column.strip()}
 
     def __post_init__(self) -> None:
         if self.subset_condition is not None and not self.subset_condition.strip():
@@ -265,7 +287,42 @@ def parse_cat_results(
     return test_results
 
 
+def _app_sql_text(value: str | None) -> str:
+    """Return ``value`` with its quotes doubled, for a single-quoted application-database literal."""
+    return (value or "").replace("'", "''")
+
+
+def _app_sql_literal(value: str | None) -> str:
+    """Return ``value`` as an application-database literal, typed when it is NULL."""
+    return "CAST(NULL AS VARCHAR)" if value is None else f"'{_app_sql_text(value)}'"
+
+
+def _columns_of_table(columns: list[ColumnChars], schema_name: str, table_name: str) -> list[ColumnChars]:
+    """Return a table's columns, matched by exact name, else case-insensitively.
+
+    Args:
+        columns: The columns read at one location.
+        schema_name: The schema the table is read from.
+        table_name: The table as the run reads it.
+
+    Returns:
+        The columns of that table, in the order they were read.
+    """
+    exact = [c for c in columns if c.schema_name == schema_name and c.table_name == table_name]
+    if exact:
+        return exact
+    return [
+        c
+        for c in columns
+        if c.schema_name.lower() == schema_name.lower() and c.table_name.lower() == table_name.lower()
+    ]
+
+
 class TestExecutionSQL:
+
+    # The columns of the location this run reads, when it reads somewhere other than the table
+    # group. Metadata tests describe the table group's catalog without it.
+    run_columns: list[ColumnChars] | None = None
 
     null_value = "<NULL>"
     test_results_table = "test_results"
@@ -397,11 +454,48 @@ class TestExecutionSQL:
         return test_def.test_operator, test_def.test_condition
 
     def _get_input_parameters(self, test_def: TestExecutionDef) -> str:
+        """Return the parameter values this test ran with, for its result row to record.
+
+        Args:
+            test_def: The test being executed.
+
+        Returns:
+            The values as ``name=value`` pairs, for a row written straight to the application
+            database. A template writing them into the target's SQL takes
+            ``_input_parameters_literal`` instead.
+        """
+        # A type that does not declare custom_query as a parameter builds one of its own — a
+        # fingerprint or a measure expression — which describes the type, not how the test was
+        # set up, and runs to thousands of characters.
+        skipped = set() if "custom_query" in test_def.param_columns else {"custom_query"}
+        # Every value is folded onto one line: a template writes this into a single-quoted SQL
+        # literal, and some flavors, BigQuery among them, end such a literal at a line break.
         return "; ".join(
-            f"{field.name}={getattr(test_def, field.name)}"
+            f"{field.name}={' '.join(str(getattr(test_def, field.name)).split())}"
             for field in dataclasses.fields(InputParameters)
-            if getattr(test_def, field.name, None) not in [None, ""]
+            if field.name not in skipped and getattr(test_def, field.name, None) not in [None, ""]
         ).replace("'", "`")
+
+    def _input_parameters_literal(self, test_def: TestExecutionDef) -> str:
+        """Return the recorded parameters as a template writes them between quotes on the target.
+
+        Args:
+            test_def: The test being executed.
+
+        Returns:
+            The recorded values escaped and cut so the flavor reads back what went in. Both only
+            matter inside a quoted literal, so a row written straight to the application database
+            takes the plain form.
+        """
+        recorded = self._get_input_parameters(test_def)
+        # The template supplies the quotes, so where a flavor reads a backslash as an escape it
+        # has to be doubled. Left alone, the backslash of a regex forms an escape sequence the
+        # flavor rejects, and the test errors rather than running.
+        if self.flavor_service.literal_escapes_backslash:
+            recorded = recorded.replace("\\", "\\\\")
+        # A custom query runs to thousands of characters; where the flavor caps a string literal,
+        # an uncut record errors the test instead of being recorded by it.
+        return self.flavor_service.fit_string_literal(recorded)
 
     def _get_params(self, test_def: TestExecutionDef | None = None) -> dict:
         quote = self.flavor_service.quote_character
@@ -421,8 +515,12 @@ class TestExecutionSQL:
                 "TEST_TYPE": test_def.test_type,
                 "TEST_DEFINITION_ID": test_def.id,
                 "APP_SCHEMA_NAME": get_tg_schema(),
-                "SCHEMA_NAME": test_def.schema_name,
-                "TABLE_NAME": test_def.table_name,
+                "SCHEMA_NAME": test_def.source_schema,
+                "TABLE_NAME": test_def.source_table,
+                # The data catalog and a contract's declared schema both describe the table group
+                # whatever a run reads, so a template querying either matches on the name the
+                # definition carries.
+                "CATALOG_TABLE_NAME": test_def.table_name,
                 "COLUMN_NAME": f"{quote}{test_def.column_name or ''}{quote}",
                 "COLUMN_NAME_NO_QUOTES": test_def.column_name,
                 "CONCAT_COLUMNS": concat_columns(test_def.column_name, self.null_value) if test_def.column_name else "",
@@ -473,14 +571,19 @@ class TestExecutionSQL:
                 "COLUMN_NUM": self.flavor_service.numeric_value(
                     f"{quote}{test_def.column_name or ''}{quote}", test_def.column_type
                 ),
-                "INPUT_PARAMETERS": self._get_input_parameters(test_def),
+                "INPUT_PARAMETERS": self._input_parameters_literal(test_def),
+                # Only the metadata test types read it, and building it for the rest would render
+                # a table's whole column list per test.
+                "OBSERVED_COLUMNS": (
+                    self._observed_columns(test_def) if "{OBSERVED_COLUMNS}" in (test_def.template or "") else ""
+                ),
             })
 
             params.update(self._freshness_exclusion_params(test_def))
             params.update(self.flavor_service.value_hash_params(test_def.column_chars, test_def.key_column_chars))
 
             # After every user-supplied parameter, since any of them may contain {DATA_SCHEMA}
-            params["DATA_SCHEMA"] = test_def.schema_name
+            params["DATA_SCHEMA"] = test_def.source_schema
 
             # Substituted last, in one pass, so placeholder text in a listed value is never expanded
             params["BASELINE_VALUE_LIST"] = FinalParam(
@@ -498,6 +601,42 @@ class TestExecutionSQL:
                 params.update({key: FinalParam(value) for key, value in value_list_params.items()})
 
         return params
+
+    def _observed_columns(self, test_def: TestExecutionDef) -> str:
+        """Return the derived table a metadata test reads a table's observed columns from.
+
+        Args:
+            test_def: The test being executed.
+
+        Returns:
+            A ``FROM`` item aliased ``oc``, holding ``column_name``, ``general_type``,
+            ``db_data_type``, and ``logical_type``. It selects the data catalog's record of the
+            table group's table, or, for a run reading another location, the columns read there.
+        """
+        if self.run_columns is None:
+            return (
+                "(SELECT column_name, general_type, db_data_type, logical_type"
+                f" FROM {get_tg_schema()}.data_column_chars"
+                f" WHERE table_groups_id = '{self.table_group.id}'"
+                f" AND table_name = '{_app_sql_text(test_def.table_name)}'"
+                " AND drop_date IS NULL) oc"
+            )
+
+        columns = _columns_of_table(self.run_columns, test_def.source_schema, test_def.source_table)
+        if not columns:
+            # VALUES needs a row. A table the run does not hold has none, and the tests read it
+            # as the catalog reads a table it has no record of.
+            return (
+                "(SELECT CAST(NULL AS VARCHAR) AS column_name, CAST(NULL AS VARCHAR) AS general_type,"
+                " CAST(NULL AS VARCHAR) AS db_data_type, CAST(NULL AS VARCHAR) AS logical_type"
+                " WHERE FALSE) oc"
+            )
+
+        rows = ", ".join(
+            f"({_app_sql_literal(column.column_name)}, {_app_sql_literal(column.general_type)}, {_app_sql_literal(column.db_data_type)}, {_app_sql_literal(column.logical_type)})"
+            for column in columns
+        )
+        return f"(VALUES {rows}) oc(column_name, general_type, db_data_type, logical_type)"
 
     def _freshness_exclusion_params(self, test_def: TestExecutionDef) -> dict:
         """Freshness exclusion parameters for a test at this run's date.
@@ -566,12 +705,15 @@ class TestExecutionSQL:
         # Runs on App database
         return self._get_query("get_active_test_definitions.sql")
 
-    def get_target_identifiers(self, schemas: Iterable[str]) -> tuple[str, dict]:
+    def get_target_identifiers(self, schema: str) -> tuple[str, dict]:
         # Runs on Target database
         filename = "get_target_identifiers.sql"
         params = {
-            "DATA_SCHEMA": self.table_group.table_group_schema,
-            "TEST_SCHEMAS": ", ".join([f"'{item}'" for item in schemas]),
+            # Both name the one schema being read. A flavor whose information schema is scoped to
+            # a single schema, such as BigQuery, introspects DATA_SCHEMA and would find nothing
+            # for a TEST_SCHEMAS naming any other.
+            "DATA_SCHEMA": schema,
+            "TEST_SCHEMAS": f"'{schema}'",
         }
         try:
             return self._get_query(filename, f"flavors/{self.connection.sql_flavor}/validate_tests", extra_params=params)
@@ -668,7 +810,7 @@ class TestExecutionSQL:
         subset_columns_by_table: dict[tuple[str, str], dict[str, None]] = {}
         for td in test_defs:
             if td.subset_condition:
-                subset_columns_by_table.setdefault((td.schema_name, td.table_name), {})[self._subset_column(td)] = None
+                subset_columns_by_table.setdefault((td.source_schema, td.source_table), {})[self._subset_column(td)] = None
         max_query_chars = (self.connection.max_query_chars or DEFAULT_MAX_QUERY_CHARS) - 400
         max_query_chars -= max(
             (len(self._from_clause(schema, table, columns)) for (schema, table), columns in subset_columns_by_table.items()),
@@ -679,8 +821,9 @@ class TestExecutionSQL:
         aggregate_queries: list[tuple[str, None]] = []
         aggregate_test_defs: list[list[TestExecutionDef]] = []
         for group in groups:
+            # Grouped by the definition's table, so every member of a group reads the same one.
             subset_columns = dict.fromkeys(self._subset_column(td) for td in group if td.subset_condition)
-            table_ref = self._from_clause(group[0].schema_name, group[0].table_name, subset_columns)
+            table_ref = self._from_clause(group[0].source_schema, group[0].source_table, subset_columns)
             query = (
                 f"SELECT {len(aggregate_queries)} AS query_index, "
                 f"{concat_operator.join([td.measure_expression for td in group])} AS result_measures, "
@@ -718,7 +861,7 @@ class TestExecutionSQL:
 
     def _expanded_subset(self, test_def: TestExecutionDef) -> str:
         # Written into the query directly, so no later parameter pass expands DATA_SCHEMA in it
-        return expand_subset(test_def.subset_condition, test_def.schema_name)
+        return expand_subset(test_def.subset_condition, test_def.source_schema)
 
     def get_cat_test_results(
         self,

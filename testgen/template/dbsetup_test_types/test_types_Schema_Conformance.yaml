@@ -50,17 +50,14 @@ test_types:
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{CATALOG_TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
-            SELECT dcc.column_name AS live_column,
-                  dcc.db_data_type AS live_physical,
-                  dcc.logical_type AS live_logical
-            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
-            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
-                  AND dcc.drop_date IS NULL
+            SELECT oc.column_name AS live_column,
+                  oc.db_data_type AS live_physical,
+                  oc.logical_type AS live_logical
+      FROM {OBSERVED_COLUMNS}
       ),
       column_differences AS (
             SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
@@ -119,17 +116,14 @@ test_types:
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{CATALOG_TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
-            SELECT dcc.column_name AS live_column,
-                  dcc.db_data_type AS live_physical,
-                  dcc.logical_type AS live_logical
-            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
-            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
-                  AND dcc.drop_date IS NULL
+            SELECT oc.column_name AS live_column,
+                  oc.db_data_type AS live_physical,
+                  oc.logical_type AS live_logical
+      FROM {OBSERVED_COLUMNS}
       ),
       column_differences AS (
             SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
@@ -188,17 +182,14 @@ test_types:
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{CATALOG_TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
-            SELECT dcc.column_name AS live_column,
-                  dcc.db_data_type AS live_physical,
-                  dcc.logical_type AS live_logical
-            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
-            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
-                  AND dcc.drop_date IS NULL
+            SELECT oc.column_name AS live_column,
+                  oc.db_data_type AS live_physical,
+                  oc.logical_type AS live_logical
+      FROM {OBSERVED_COLUMNS}
       ),
       column_differences AS (
             SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
@@ -257,17 +248,14 @@ test_types:
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{CATALOG_TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
-            SELECT dcc.column_name AS live_column,
-                  dcc.db_data_type AS live_physical,
-                  dcc.logical_type AS live_logical
-            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
-            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
-                  AND dcc.drop_date IS NULL
+            SELECT oc.column_name AS live_column,
+                  oc.db_data_type AS live_physical,
+                  oc.logical_type AS live_logical
+      FROM {OBSERVED_COLUMNS}
       ),
       column_differences AS (
             SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
@@ -326,17 +314,14 @@ test_types:
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{CATALOG_TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
-            SELECT dcc.column_name AS live_column,
-                  dcc.db_data_type AS live_physical,
-                  dcc.logical_type AS live_logical
-            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
-            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
-                  AND dcc.drop_date IS NULL
+            SELECT oc.column_name AS live_column,
+                  oc.db_data_type AS live_physical,
+                  oc.logical_type AS live_logical
+      FROM {OBSERVED_COLUMNS}
       ),
       column_differences AS (
             SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
@@ -395,17 +380,14 @@ test_types:
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{CATALOG_TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
-            SELECT dcc.column_name AS live_column,
-                  dcc.db_data_type AS live_physical,
-                  dcc.logical_type AS live_logical
-            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
-            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
-                  AND dcc.drop_date IS NULL
+            SELECT oc.column_name AS live_column,
+                  oc.db_data_type AS live_physical,
+                  oc.logical_type AS live_logical
+      FROM {OBSERVED_COLUMNS}
       ),
       column_differences AS (
             SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
@@ -464,17 +446,14 @@ test_types:
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{CATALOG_TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
-            SELECT dcc.column_name AS live_column,
-                  dcc.db_data_type AS live_physical,
-                  dcc.logical_type AS live_logical
-            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
-            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
-                  AND dcc.drop_date IS NULL
+            SELECT oc.column_name AS live_column,
+                  oc.db_data_type AS live_physical,
+                  oc.logical_type AS live_logical
+      FROM {OBSERVED_COLUMNS}
       ),
       column_differences AS (
             SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
@@ -533,17 +512,14 @@ test_types:
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{CATALOG_TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
-            SELECT dcc.column_name AS live_column,
-                  dcc.db_data_type AS live_physical,
-                  dcc.logical_type AS live_logical
-            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
-            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
-                  AND dcc.drop_date IS NULL
+            SELECT oc.column_name AS live_column,
+                  oc.db_data_type AS live_physical,
+                  oc.logical_type AS live_logical
+      FROM {OBSERVED_COLUMNS}
       ),
       column_differences AS (
             SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
@@ -602,17 +578,14 @@ test_types:
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{CATALOG_TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
-            SELECT dcc.column_name AS live_column,
-                  dcc.db_data_type AS live_physical,
-                  dcc.logical_type AS live_logical
-            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
-            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
-                  AND dcc.drop_date IS NULL
+            SELECT oc.column_name AS live_column,
+                  oc.db_data_type AS live_physical,
+                  oc.logical_type AS live_logical
+      FROM {OBSERVED_COLUMNS}
       ),
       column_differences AS (
             SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
@@ -671,17 +644,14 @@ test_types:
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{CATALOG_TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
-            SELECT dcc.column_name AS live_column,
-                  dcc.db_data_type AS live_physical,
-                  dcc.logical_type AS live_logical
-            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
-            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
-                  AND dcc.drop_date IS NULL
+            SELECT oc.column_name AS live_column,
+                  oc.db_data_type AS live_physical,
+                  oc.logical_type AS live_logical
+      FROM {OBSERVED_COLUMNS}
       ),
       column_differences AS (
             SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,
@@ -740,17 +710,14 @@ test_types:
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(sv.metadata_document -> 'schema') = 'array' THEN sv.metadata_document -> 'schema' ELSE '[]'::JSONB END) AS tbl
                   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(tbl -> 'properties') = 'array' THEN tbl -> 'properties' ELSE '[]'::JSONB END) AS prop
             WHERE sv.id = '{VERSION_ID}'::UUID
-                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{TABLE_NAME}'
+                  AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = '{CATALOG_TABLE_NAME}'
                   AND prop ->> 'name' IS NOT NULL
       ),
       live AS (
-            SELECT dcc.column_name AS live_column,
-                  dcc.db_data_type AS live_physical,
-                  dcc.logical_type AS live_logical
-            FROM {APP_SCHEMA_NAME}.data_column_chars dcc
-            WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                  AND dcc.table_name = '{TABLE_NAME}'
-                  AND dcc.drop_date IS NULL
+            SELECT oc.column_name AS live_column,
+                  oc.db_data_type AS live_physical,
+                  oc.logical_type AS live_logical
+      FROM {OBSERVED_COLUMNS}
       ),
       column_differences AS (
             SELECT COALESCE(d.declared_column, l.live_column) AS diff_column,

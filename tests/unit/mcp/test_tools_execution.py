@@ -197,6 +197,67 @@ def test_run_tests_passes_a_match_schema_override(mock_suite_cls, mock_job_exec,
 
 @patch("testgen.common.run_service.JobExecution")
 @patch("testgen.mcp.tools.common.TestSuite")
+def test_run_tests_passes_every_override(mock_suite_cls, mock_job_exec, db_session_mock):
+    """Each override reaches the job's payload under its own key, so the handler binds them all."""
+    suite_id = uuid4()
+    mock_suite_cls.get.return_value = _mock_test_suite(suite_id=suite_id)
+    mock_job_exec.submit.return_value = MagicMock(id=uuid4())
+
+    from testgen.mcp.tools.execution import run_tests
+
+    run_tests(
+        str(suite_id),
+        schema_name="build_20261104",
+        table_names={"orders": "build_orders"},
+        match_schema_name="reference_2026_09_10",
+        match_table_names={"*": "prod_*"},
+        variables={"END_DATE": "2026-10-17"},
+    )
+
+    assert mock_job_exec.submit.call_args.kwargs["kwargs"] == {
+        "test_suite_id": str(suite_id),
+        "schema_name": "build_20261104",
+        "table_names": {"orders": "build_orders"},
+        "match_schema_name": "reference_2026_09_10",
+        "match_table_names": {"*": "prod_*"},
+        "variables": {"END_DATE": "2026-10-17"},
+    }
+
+
+@patch("testgen.mcp.tools.execution.unsupported_schema_override", return_value="`schema_name` does not apply.")
+@patch("testgen.common.run_service.JobExecution")
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_run_tests_refuses_a_schema_override_the_connection_cannot_take(
+    mock_suite_cls, mock_job_exec, _refusal, db_session_mock
+):
+    suite_id = uuid4()
+    mock_suite_cls.get.return_value = _mock_test_suite(suite_id=suite_id)
+
+    from testgen.mcp.tools.execution import run_tests
+
+    with pytest.raises(MCPUserError, match="does not apply"):
+        run_tests(str(suite_id), schema_name="build_20261104")
+
+    mock_job_exec.submit.assert_not_called()
+
+
+@patch("testgen.common.run_service.JobExecution")
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_run_tests_names_the_table_map_its_error_is_about(mock_suite_cls, mock_job_exec, db_session_mock):
+    """Two arguments take the same shape, so the message has to say which one was rejected."""
+    suite_id = uuid4()
+    mock_suite_cls.get.return_value = _mock_test_suite(suite_id=suite_id)
+
+    from testgen.mcp.tools.execution import run_tests
+
+    with pytest.raises(MCPUserError, match="^match_table_names: "):
+        run_tests(str(suite_id), match_table_names={"a*b*": "x"})
+
+    mock_job_exec.submit.assert_not_called()
+
+
+@patch("testgen.common.run_service.JobExecution")
+@patch("testgen.mcp.tools.common.TestSuite")
 def test_run_tests_passes_caller_metadata(mock_suite_cls, mock_job_exec, db_session_mock):
     suite_id = uuid4()
     mock_suite_cls.get.return_value = _mock_test_suite(suite_id=suite_id)

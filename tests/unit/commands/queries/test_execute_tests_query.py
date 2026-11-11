@@ -32,6 +32,7 @@ def _make_td(**overrides) -> TestExecutionDef:
         "skip_errors": 0,
         "history_calculation": "NONE",
         "custom_query": "",
+        "default_parm_columns": "",
         "prediction": None,
         "run_type": "CAT",
         "test_scope": "column",
@@ -544,6 +545,25 @@ def test_aggregate_cat_tests_handles_null_max_query_chars():
     assert grouped_defs == [[td]]
 
 
+def test_aggregate_cat_tests_read_the_location_the_run_points_at():
+    """CAT builds its FROM in Python rather than through a template, so it has to follow the
+    run's override the way a templated {SCHEMA_NAME} does."""
+    instance = _make_execution_sql()
+    instance.connection = Connection(sql_flavor="postgresql", max_query_chars=None)
+    instance.flavor = "postgresql"
+    instance.flavor_service = get_flavor_service("postgresql")
+
+    td = _make_td(measure_expression="m_expr", condition_expression="c_expr")
+    td.schema_name, td.table_name = "staging_a", "orders"
+    td.read_schema_name, td.read_table_name = "build123", "build_orders"
+
+    (query, _), *_ = instance.aggregate_cat_tests([td], single=True)[0]
+
+    assert "build123" in query
+    assert "build_orders" in query
+    assert "staging_a" not in query
+
+
 # --- TestExecutionSQL._get_params baseline guards ---
 
 
@@ -558,6 +578,7 @@ def _make_params_execution_sql() -> TestExecutionSQL:
     instance.table_group = MagicMock(id=uuid4())
     instance.test_run = MagicMock(test_suite_id=uuid4(), id=uuid4())
     instance.run_date = datetime(2026, 1, 1, tzinfo=UTC)
+    instance.variables = None
     return instance
 
 
@@ -948,9 +969,10 @@ def _make_schema_execution_sql() -> TestExecutionSQL:
 def test_the_table_group_schema_reaches_the_validation_query():
     """Validation resolves identifiers in the schema the table group reads, which is the one its
     tests run against."""
-    _query, params = _make_schema_execution_sql().get_target_identifiers(["test_schema"])
+    _query, params = _make_schema_execution_sql().get_target_identifiers("test_schema")
 
     assert params["DATA_SCHEMA"] == "test_schema"
+    assert params["TEST_SCHEMAS"] == "'test_schema'"
 
 
 def test_the_test_definition_drives_the_executed_sql():
@@ -994,3 +1016,255 @@ def test_the_match_schema_is_independent_of_the_test_s_own():
 
     assert params["SCHEMA_NAME"] == "onboard_2026_09_10"
     assert params["MATCH_SCHEMA_NAME"] == "reference_2026_09_16"
+
+
+# --- the location a run reads ---
+
+
+def _column(table_name: str, column_name: str, **overrides) -> ColumnChars:
+    defaults = {
+        "schema_name": "build_20261104",
+        "table_name": table_name,
+        "column_name": column_name,
+        "general_type": "A",
+        "db_data_type": "varchar(50)",
+        "logical_type": "string",
+    }
+    defaults.update(overrides)
+    return ColumnChars(**defaults)
+
+
+def test_a_retargeted_test_reads_its_run_s_table_and_reports_its_own():
+    """The two names are separate parameters: the FROM clause takes the table the run reads, and
+    anything scoped to the table group takes the one the test is defined on."""
+    sql_generator = _make_schema_execution_sql()
+    td = _make_td(schema_name="public", table_name="orders")
+    td.read_schema_name = "build_20261104"
+    td.read_table_name = "build_orders"
+
+    params = sql_generator._get_params(td)
+
+    assert params["SCHEMA_NAME"] == "build_20261104"
+    assert params["TABLE_NAME"] == "build_orders"
+    assert params["DATA_SCHEMA"] == "build_20261104"
+    assert params["CATALOG_TABLE_NAME"] == "orders"
+
+
+def test_a_test_the_run_leaves_alone_reads_its_own_table():
+    sql_generator = _make_schema_execution_sql()
+    params = sql_generator._get_params(_make_td(schema_name="public", table_name="orders"))
+
+    assert params["TABLE_NAME"] == "orders"
+    assert params["CATALOG_TABLE_NAME"] == "orders"
+
+
+def test_observed_columns_come_from_the_catalog_when_the_run_reads_the_table_group():
+    """The catalog describes the table group, so it is matched on the definition's table name."""
+    sql_generator = _make_schema_execution_sql()
+    td = _make_td(table_name="orders")
+
+    source = sql_generator._observed_columns(td)
+
+    assert "data_column_chars" in source
+    assert "table_name = 'orders'" in source
+    assert "drop_date IS NULL" in source
+
+
+def test_observed_columns_come_from_the_run_when_it_reads_elsewhere():
+    """A metadata test describes what the run read, not what the catalog holds."""
+    sql_generator = _make_schema_execution_sql()
+    sql_generator.run_columns = [
+        _column("build_orders", "id", general_type="N", db_data_type="integer", logical_type="integer"),
+        _column("build_orders", "name"),
+        _column("other_table", "unrelated"),
+    ]
+    td = _make_td(table_name="orders")
+    td.read_schema_name = "build_20261104"
+    td.read_table_name = "build_orders"
+
+    source = sql_generator._observed_columns(td)
+
+    assert "data_column_chars" not in source
+    assert source.startswith("(VALUES ")
+    assert "('id', 'N', 'integer', 'integer')" in source
+    assert "('name', 'A', 'varchar(50)', 'string')" in source
+    assert "unrelated" not in source
+    assert source.endswith(") oc(column_name, general_type, db_data_type, logical_type)")
+
+
+def test_observed_columns_are_empty_when_the_run_s_table_is_missing():
+    """A table the run does not hold yields no rows, so a count fails and a conformance test
+    reports the table missing."""
+    sql_generator = _make_schema_execution_sql()
+    sql_generator.run_columns = [_column("something_else", "id")]
+    td = _make_td(table_name="orders")
+    td.read_schema_name = "build_20261104"
+    td.read_table_name = "build_orders"
+
+    source = sql_generator._observed_columns(td)
+
+    assert "WHERE FALSE" in source
+    assert "VALUES" not in source
+
+
+def test_observed_columns_match_a_table_case_insensitively_when_no_name_matches_exactly():
+    """A flavor that folds identifiers returns them in its own case."""
+    sql_generator = _make_schema_execution_sql()
+    sql_generator.run_columns = [_column("BUILD_ORDERS", "ID", schema_name="BUILD_20261104")]
+    td = _make_td(table_name="orders")
+    td.read_schema_name = "build_20261104"
+    td.read_table_name = "build_orders"
+
+    assert "'ID'" in sql_generator._observed_columns(td)
+
+
+def test_a_quote_in_an_observed_column_name_is_escaped():
+    sql_generator = _make_schema_execution_sql()
+    sql_generator.run_columns = [_column("build_orders", "it's")]
+    td = _make_td(table_name="orders")
+    td.read_schema_name = "build_20261104"
+    td.read_table_name = "build_orders"
+
+    assert "'it''s'" in sql_generator._observed_columns(td)
+
+
+def test_an_unknown_observed_type_is_a_typed_null():
+    """An untyped NULL in a VALUES list leaves the column with no type."""
+    sql_generator = _make_schema_execution_sql()
+    sql_generator.run_columns = [_column("build_orders", "id", logical_type=None)]
+    td = _make_td(table_name="orders")
+    td.read_schema_name = "build_20261104"
+    td.read_table_name = "build_orders"
+
+    source = sql_generator._observed_columns(td)
+
+    # The empty source is all typed NULLs, so the row has to be there for this to mean anything.
+    assert source.startswith("(VALUES ")
+    assert "('id', 'A', 'varchar(50)', CAST(NULL AS VARCHAR))" in source
+
+
+def test_only_a_template_that_reads_observed_columns_is_given_them():
+    """Rendering a table's whole column list for every test in a run would be wasted on the ones
+    that never reference it."""
+    sql_generator = _make_schema_execution_sql()
+
+    reader = _make_td(table_name="orders", template="SELECT COUNT(*) FROM {OBSERVED_COLUMNS}")
+    assert "data_column_chars" in sql_generator._get_params(reader)["OBSERVED_COLUMNS"]
+
+    other = _make_td(table_name="orders", template="SELECT COUNT(*) FROM {DATA_SCHEMA}.orders")
+    assert sql_generator._get_params(other)["OBSERVED_COLUMNS"] == ""
+
+
+# --- the parameters a result records ---
+
+
+def _input_params_sql(flavor: str) -> TestExecutionSQL:
+    instance = _make_params_execution_sql()
+    instance.flavor = flavor
+    instance.flavor_service = get_flavor_service(flavor)
+    return instance
+
+
+def test_a_type_that_declares_a_custom_query_records_the_one_it_ran():
+    """The query is the test, and a run giving one of its variables a value changes what ran, so
+    the result carries the text that ran rather than the declaration."""
+    instance = _input_params_sql("postgresql")
+    td = _make_td(
+        test_type="CUSTOM",
+        default_parm_columns="custom_query,match_column_names,skip_errors",
+        custom_query="SELECT id FROM orders WHERE total < 0",
+    )
+
+    assert "custom_query=SELECT id FROM orders WHERE total < 0" in instance._get_input_parameters(td)
+
+
+def test_a_type_that_builds_its_own_query_records_none():
+    """Freshness_Trend keeps a generated fingerprint expression in the same column. It describes
+    the type rather than how the test was set up, and runs to thousands of characters."""
+    instance = _input_params_sql("postgresql")
+    td = _make_td(
+        test_type="Freshness_Trend",
+        default_parm_columns="threshold_value,history_calculation",
+        custom_query='COUNT(*)::VARCHAR || \'|\' || MIN("sale_date")::VARCHAR',
+    )
+
+    assert "custom_query" not in instance._get_input_parameters(td)
+
+
+def test_the_parameters_a_user_set_are_recorded_either_way():
+    """Only the query is held back, so a type that generates one still reports its own setup."""
+    instance = _input_params_sql("postgresql")
+    td = _make_td(
+        test_type="Freshness_Trend",
+        default_parm_columns="threshold_value",
+        custom_query="MIN(x)",
+        threshold_value="7",
+    )
+
+    assert "threshold_value=7" in instance._get_input_parameters(td)
+
+
+@pytest.mark.parametrize("flavor", ["bigquery", "databricks", "snowflake", "redshift"])
+def test_a_backslash_is_doubled_where_the_flavor_reads_one_as_an_escape(flavor):
+    """The template wraps this string in quotes of its own. Left alone, the backslash of a regex
+    forms an escape sequence the flavor rejects, and a trailing one escapes the closing quote."""
+    instance = _input_params_sql(flavor)
+    td = _make_td(
+        test_type="SQL_Metric",
+        default_parm_columns="custom_query",
+        custom_query=r"SELECT COUNT(*) FROM t WHERE REGEXP_CONTAINS(code, r'\d+')",
+    )
+
+    assert r"r`\\d+`" in instance._input_parameters_literal(td)
+
+
+def test_a_backslash_stands_where_the_flavor_reads_it_literally():
+    instance = _input_params_sql("postgresql")
+    td = _make_td(
+        test_type="SQL_Metric",
+        default_parm_columns="custom_query",
+        custom_query=r"SELECT COUNT(*) FROM t WHERE path LIKE 'a\b'",
+    )
+
+    assert r"`a\b`" in instance._input_parameters_literal(td)
+
+
+def test_a_long_record_is_cut_to_what_the_flavor_accepts():
+    """Oracle rejects a string literal over 4,000 bytes with ORA-01704, which would error the
+    test rather than shorten its record of what it ran."""
+    instance = _input_params_sql("oracle")
+    td = _make_td(
+        test_type="CUSTOM",
+        default_parm_columns="custom_query",
+        custom_query="SELECT id FROM orders WHERE note = `" + "a" * 5000 + "`",
+    )
+
+    recorded = instance._input_parameters_literal(td)
+
+    assert len(recorded.encode()) == 4000
+    assert recorded.endswith("...")
+
+
+def test_a_record_the_flavor_accepts_is_left_whole():
+    instance = _input_params_sql("oracle")
+    td = _make_td(test_type="CUSTOM", default_parm_columns="custom_query", custom_query="SELECT 1")
+
+    assert instance._input_parameters_literal(td) == "custom_query=SELECT 1"
+
+
+@pytest.mark.parametrize("flavor", ["bigquery", "oracle"])
+def test_a_row_written_to_the_application_database_is_neither_escaped_nor_cut(flavor):
+    """A CAT result and an error row are written by COPY in CSV, which reads a backslash as a
+    backslash, so escaping one would store text the query never held. The cut goes with it: the
+    length a flavor caps is the literal in its own SQL, not a column of the application's."""
+    instance = _input_params_sql(flavor)
+    td = _make_td(
+        test_type="Condition_Flag",
+        default_parm_columns="threshold_value,custom_query",
+        custom_query=r"code ~ '\d+' AND note <> '" + "a" * 5000 + "'",
+    )
+
+    recorded = instance._get_input_parameters(td)
+
+    assert r"`\d+`" in recorded
+    assert len(recorded.encode()) > 5000

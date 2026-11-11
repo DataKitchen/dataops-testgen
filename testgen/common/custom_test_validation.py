@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.engine import RowMapping
 
+from testgen.common import query_variables
 from testgen.common.clean_sql import strip_trailing_semicolons
 from testgen.common.database.database_service import fetch_dict_from_db, get_flavor_service, replace_params
 from testgen.common.models.connection import Connection
@@ -49,6 +50,8 @@ def validate_custom_query(
     Returns the failure-criteria row count and (optionally) the preview rows. DB errors
     propagate as-is — the caller decides how to surface them.
     """
+    # A validation run gives every declared variable its default; only a test run overrides one.
+    custom_sql = query_variables.render(custom_sql)
     sql_with_schema = strip_trailing_semicolons(replace_params(custom_sql, {"DATA_SCHEMA": schema}))
     flavor_service = get_flavor_service(connection.sql_flavor)
 
@@ -176,7 +179,8 @@ def validate_metric_query(
     if not templates:
         raise InvalidMetricQuery("The metric test is not available for this connection.")
 
-    query = render_metric_validation_query(templates[0]["template"], schema, metric_sql)
+    # As above: defaults stand in for the values a test run would give.
+    query = render_metric_validation_query(templates[0]["template"], schema, query_variables.render(metric_sql))
     rows = fetch_from_target_db(connection, query, table_group=table_group)
     result = rows[0]
     if result["result_code"] is None:
