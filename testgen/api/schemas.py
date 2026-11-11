@@ -1289,7 +1289,12 @@ class ConnectionResponse(BaseModel):
             "`access_keys`, `iam_role`, `account_key`, or `public`. `public` reads without credentials."
         ),
     )
-    max_threads: int | None = Field(default=None, description="Queries TestGen runs against the connection at a time.")
+    max_threads: int = Field(
+        description=(
+            "Queries TestGen runs against the connection at a time: 1 for DuckDB, Local Files, Amazon S3, and "
+            "Azure Blob Storage connections, otherwise the stored value, from 1 to 16."
+        )
+    )
     max_expression_length: int | None = Field(
         default=None, description="Maximum character length of a generated query expression."
     )

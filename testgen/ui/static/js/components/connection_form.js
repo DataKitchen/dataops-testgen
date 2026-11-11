@@ -9,6 +9,10 @@
  * @property {string} icon
  * @property {string} flavor
  * @property {string} connection_string
+ * @property {number?} fixed_max_threads
+ * @property {number} default_max_threads
+ * @property {boolean} recommends_max_threads
+ * @property {number} max_threads_limit
  *
  * @typedef ConnectionStatus
  * @type {object}
@@ -121,7 +125,14 @@ const ConnectionForm = (props, saveButton) => {
 
     const connectionFlavor = van.state(connection?.sql_flavor_code);
     const connectionName = van.state(connection?.connection_name ?? '');
-    const connectionMaxThreads = van.state(connection?.max_threads ?? 4);
+    const initialFlavor = getValue(props.flavors).find(f => f.value === connection?.sql_flavor_code);
+    // null follows the selected connection type's default; a stored value equal to that default is
+    // not told apart from one the user left alone.
+    const chosenMaxThreads = van.state(
+        connection?.max_threads != null && connection.max_threads !== initialFlavor?.default_max_threads
+            ? connection.max_threads
+            : null,
+    );
     const connectionQueryChars = van.state(connection?.max_query_chars ?? defaultMaxQueryChars(connection?.sql_flavor_code));
     const privateKeyFile = van.state(getValue(props.cachedPrivateKeyFile) ?? null);
     const serviceAccountKeyFile = van.state(getValue(props.cachedServiceAccountKeyFile) ?? null);
@@ -149,7 +160,7 @@ const ConnectionForm = (props, saveButton) => {
         secrets: {},
         sql_flavor_code: connectionFlavor.rawVal ?? '',
         connection_name: connectionName.rawVal ?? '',
-        max_threads: connectionMaxThreads.rawVal ?? 4,
+        max_threads: chosenMaxThreads.rawVal ?? initialFlavor?.default_max_threads,
         max_query_chars: connectionQueryChars.rawVal ?? defaultMaxQueryChars(connectionFlavor.rawVal),
     });
     const dynamicConnectionUrl = van.state(props.dynamicConnectionUrl?.rawVal ?? '');
@@ -373,9 +384,19 @@ const ConnectionForm = (props, saveButton) => {
         return authenticationForms[flavor.value]();
     });
 
-    const fixedMaxThreads = van.derive(
-        () => getValue(props.flavors).find(f => f.value === connectionFlavor.val)?.fixed_max_threads ?? null,
-    );
+    const selectedFlavor = van.derive(() => getValue(props.flavors).find(f => f.value === connectionFlavor.val));
+    const fixedMaxThreads = van.derive(() => selectedFlavor.val?.fixed_max_threads ?? null);
+    const maxThreads = van.derive(() => chosenMaxThreads.val ?? selectedFlavor.val?.default_max_threads);
+    const maxThreadsMark = van.derive(() => {
+        const flavor = selectedFlavor.val;
+        if (!flavor) {
+            return null;
+        }
+        return {
+            value: flavor.default_max_threads,
+            note: flavor.recommends_max_threads ? `Recommended for ${flavor.label}` : 'Default',
+        };
+    });
 
     van.derive(() => {
         const selectedFlavor = connectionFlavor.val;
@@ -386,7 +407,7 @@ const ConnectionForm = (props, saveButton) => {
             sql_flavor: flavorObject.flavor,
             sql_flavor_code: flavorObject.value,
             connection_name: connectionName.val,
-            max_threads: flavorObject.fixed_max_threads ?? connectionMaxThreads.val,
+            max_threads: flavorObject.fixed_max_threads ?? maxThreads.val,
             max_query_chars: connectionQueryChars.val,
         };
     });
@@ -430,7 +451,7 @@ const ConnectionForm = (props, saveButton) => {
                 title: 'Advanced Tuning',
             },
             div(
-                { class: 'flex-row fx-gap-3' },
+                { class: 'flex-row fx-gap-3 fx-align-flex-start' },
                 // Kept mounted and hidden with CSS rather than swapped out: the slider's own
                 // reactive bindings do not survive being detached. `display: contents` leaves
                 // the slider itself as the flex child while it is shown.
@@ -438,11 +459,13 @@ const ConnectionForm = (props, saveButton) => {
                     { style: () => fixedMaxThreads.val ? 'display: none;' : 'display: contents;' },
                     Slider({
                         label: 'Max Threads',
-                        hint: 'Maximum number of concurrent threads that run tests. Default values should be retained unless test queries are failing.',
-                        value: connectionMaxThreads.rawVal,
+                        hint: 'How many queries TestGen runs against the data source at a time.',
+                        value: maxThreads,
                         min: 1,
-                        max: 8,
-                        onChange: (value) => connectionMaxThreads.val = value,
+                        max: selectedFlavor.rawVal?.max_threads_limit ?? 16,
+                        ticks: true,
+                        mark: maxThreadsMark,
+                        onChange: (value) => chosenMaxThreads.val = value,
                     }),
                 ),
                 Slider({

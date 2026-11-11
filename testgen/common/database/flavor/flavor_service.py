@@ -12,6 +12,7 @@ from testgen.common.clean_sql import parse_numeric_values
 from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.database.file_declarations import FileDeclaration
 from testgen.common.encrypt import DecryptText
+from testgen.common.flavors import MAX_THREADS_MAX
 
 SQLFlavor = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "postgresql", "databricks", "duckdb", "bigquery", "oracle", "sap_hana", "salesforce_data360"]
 RowLimitingClause = Literal["limit", "top", "fetch"]
@@ -638,10 +639,15 @@ class FlavorService:
         :param table_group_schema: Schema of the table group the engine reads for, or None when it reads for none.
         """
         params = resolve_connection_params(connection_params, table_group_schema)
+        engine_args = self.get_engine_args(params)
+        if "poolclass" not in engine_args:
+            # Every worker of a run checks out its own connection, so the pool has to hold the
+            # largest thread count a connection can be given: SQLAlchemy's default holds 15.
+            engine_args = {"max_overflow": MAX_THREADS_MAX, **engine_args}
         return sqlalchemy_create_engine(
             self.get_connection_string(params),
             connect_args=self.get_connect_args(params),
-            **self.get_engine_args(params),
+            **engine_args,
         )
 
     def get_connection_string(self, params: ResolvedConnectionParams) -> str:
