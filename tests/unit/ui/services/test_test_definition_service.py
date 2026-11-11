@@ -9,6 +9,7 @@ from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.ui.services.test_definition_service import (
     MANAGED_ADD_MESSAGE,
     MANAGED_EDIT_MESSAGE,
+    dialog_catalog,
     dialog_table_columns,
     save_from_dialog,
 )
@@ -177,6 +178,14 @@ def test_dialog_offers_the_declared_tables_and_the_edited_tests_table_on_a_contr
             "payments",
         ]
 
+
+
+def test_dialog_catalog_lists_every_catalog_table_beside_the_offered_columns():
+    with patch(f"{SERVICE_MODULE}.writable_tables", return_value=["orders"]):
+        catalog = dialog_catalog(CONTRACT, TABLE_COLUMNS)
+
+    assert [c["table_name"] for c in catalog["table_columns"]] == ["orders"]
+    assert catalog["catalog_tables"] == ["customers", "orders", "payments"]
 
 LOV_ALL = TestType(
     test_type="LOV_All",

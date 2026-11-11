@@ -1,11 +1,12 @@
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
 
 from testgen.common.enums import SuiteType
-from testgen.common.models.test_definition import MISSING_TEST_DEFINITION_MESSAGE
+from testgen.common.models.test_definition import MISSING_TEST_DEFINITION_MESSAGE, TestDefinitionSummary
 from testgen.ui.queries import test_result_queries
 from testgen.ui.services.test_definition_service import MANAGED_EDIT_MESSAGE
 from testgen.ui.views.test_results import (
@@ -37,6 +38,25 @@ def test_build_edit_test_dialog_data_refuses_a_managed_definition():
 
     assert data == {"open": True, "error": MANAGED_EDIT_MESSAGE}
 
+
+
+def test_build_edit_test_dialog_data_lists_the_catalog_tables():
+    row = SimpleNamespace(**dict.fromkeys(TestDefinitionSummary.columns()))
+    row.test_type, row.table_name = "Row_Ct", "orders"
+    columns = [{"table_name": "orders", "column_name": "id"}, {"table_name": "customers", "column_name": "id"}]
+    with (
+        patch(f"{MODULE}.select_test_definitions_where", return_value=[row]),
+        patch(f"{MODULE}.get_test_suite", return_value=MagicMock(suite_type=SuiteType.REGULAR)),
+        patch(f"{MODULE}.get_table_group_minimal"),
+        patch(f"{MODULE}.get_connection", return_value=None),
+        patch("testgen.ui.views.test_definitions.get_columns", return_value=columns),
+        patch("testgen.ui.views.test_definitions.run_test_type_lookup_query"),
+        patch("testgen.ui.services.test_definition_service.writable_tables", return_value=None),
+    ):
+        data = _build_edit_test_dialog_data("cfa5ef26-0000-0000-0000-000000000000", MagicMock())
+
+    assert data["catalog_tables"] == ["customers", "orders"]
+    assert data["table_columns"] == columns
 
 def test_load_notes_dialog_data_carries_the_error_and_draft():
     df = pd.DataFrame([{

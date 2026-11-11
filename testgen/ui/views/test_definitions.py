@@ -63,6 +63,7 @@ from testgen.common.test_definition_export_import_service import (
     OnAbsence,
     OnMatch,
     OnNew,
+    OnNotInCatalog,
     Origin,
     export_definitions,
     import_definitions,
@@ -92,7 +93,7 @@ from testgen.ui.services.query_cache import (
     select_test_definitions_where,
     select_test_suites_minimal_where,
 )
-from testgen.ui.services.test_definition_service import dialog_table_columns, save_from_dialog
+from testgen.ui.services.test_definition_service import dialog_catalog, save_from_dialog
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.contract_dialogs import contract_props, follow_editable_version
 from testgen.ui.views.test_runs import run_started_message
@@ -294,7 +295,7 @@ class TestDefinitionsPage(Page):
             add_dialog = {
                 "open": True,
                 "test_types": test_types,
-                "table_columns": dialog_table_columns(test_suite, table_columns),
+                **dialog_catalog(test_suite, table_columns),
                 "table_groups_id": str(table_group.id),
                 "table_group_schema": table_group.table_group_schema,
                 "test_suite": test_suite_info,
@@ -309,7 +310,7 @@ class TestDefinitionsPage(Page):
                 "open": True,
                 "test_definition": selected_def,
                 "test_types": test_types,
-                "table_columns": dialog_table_columns(test_suite, table_columns, selected_def.get("table_name")),
+                **dialog_catalog(test_suite, table_columns, selected_def.get("table_name")),
                 "table_group_schema": table_group.table_group_schema,
                 "test_suite": test_suite_info,
                 "qualifies_table_refs_with_schema": qualifies_table_refs_with_schema,
@@ -1137,12 +1138,14 @@ IMPORT_POLICY_AXES: dict[str, type[StrEnum]] = {
     "on_new": OnNew,
     "on_match": OnMatch,
     "on_absence": OnAbsence,
+    "on_not_in_catalog": OnNotInCatalog,
 }
 
 IMPORT_POLICY_DEFAULTS: dict[str, StrEnum] = {
     "on_new": OnNew.create,
     "on_match": OnMatch.overwrite_unlocked,
     "on_absence": OnAbsence.do_nothing,
+    "on_not_in_catalog": OnNotInCatalog.skip,
 }
 
 IMPORT_PREVIEW_ROW_LIMIT = 500
@@ -1160,7 +1163,7 @@ IMPORT_ACTION_ORDER = {
 
 
 def _import_policy(payload: dict) -> dict[str, StrEnum]:
-    """Read the three import policy axes out of an event payload, defaulting each independently."""
+    """Read the import policy axes out of an event payload, defaulting each independently."""
     policy = {}
     for axis, enum_class in IMPORT_POLICY_AXES.items():
         try:

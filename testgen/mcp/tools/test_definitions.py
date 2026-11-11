@@ -69,6 +69,7 @@ from testgen.common.test_definition_export_import_service import (
     OnAbsence,
     OnMatch,
     OnNew,
+    OnNotInCatalog,
     Origin,
     export_definitions,
     import_definitions,
@@ -1545,7 +1546,8 @@ async def delete_tests(
 
 _NOT_IN_CATALOG_HINT = (
     "The data catalog lists the tables and columns TestGen found in the table group's schema. Check the table "
-    "and column names in the import file, or profile the table group to refresh the catalog."
+    "and column names in the import file, or profile the table group to refresh the catalog. To import tests for "
+    "tables or columns that do not exist yet, retry with `on_not_in_catalog='import'`."
 )
 _NOT_IN_CATALOG_REASONS = (ImportReason.invalid_table, ImportReason.invalid_column)
 
@@ -1701,6 +1703,10 @@ def import_tests(
             "``delete_all``, or ``delete_unlocked``.",
         ),
     ] = "do_nothing",
+    on_not_in_catalog: Annotated[
+        str,
+        Field(description=ImportConfig.model_fields["on_not_in_catalog"].description),
+    ] = OnNotInCatalog.skip.value,
 ) -> str:
     """Apply an export document from ``export_tests`` to a test suite."""
     config = ImportConfig(
@@ -1708,6 +1714,7 @@ def import_tests(
         on_match=parse_enum(on_match, OnMatch, "on_match"),
         on_new=parse_enum(on_new, OnNew, "on_new"),
         on_absence=parse_enum(on_absence, OnAbsence, "on_absence"),
+        on_not_in_catalog=parse_enum(on_not_in_catalog, OnNotInCatalog, "on_not_in_catalog"),
     )
     suite = resolve_test_suite(test_suite_id)
     parsed_payload = _parse_import_payload(payload)

@@ -72,6 +72,16 @@ class OnAbsence(StrEnum):
     delete_unlocked = "delete_unlocked"
 
 
+class OnNotInCatalog(StrEnum):
+    skip = "skip"
+    import_ = "import"
+
+
+TESTS_FAIL_VALIDATION_ON_EACH_RUN = (
+    "report an error on each test run, or are deactivated if the test suite deactivates tests that fail validation"
+)
+
+
 class ImportAction(StrEnum):
     create = "create"
     update = "update"
@@ -183,7 +193,7 @@ class TestDefinitionExport(BaseModel):
     table_name: str | None = Field(
         default=None,
         description="The table the test checks. It must be in the target table group's data catalog; an import "
-        "skips the test otherwise.",
+        "skips the test otherwise, unless `on_not_in_catalog` is `import`.",
     )
     column_name: str | None = Field(
         default=None,
@@ -191,7 +201,7 @@ class TestDefinitionExport(BaseModel):
         "checks, the aggregate expression or comma-separated categorical columns a referential test compares, or a "
         "short label describing a custom test, unique within the test suite. Blank for table-level tests. For a "
         "column test, the column must be in the target table group's data catalog; an import skips the test "
-        "otherwise.",
+        "otherwise, unless `on_not_in_catalog` is `import`.",
     )
     test_description: str | None = Field(
         default=None, description="A description of the test."
@@ -441,6 +451,13 @@ class ImportConfig(BaseModel):
         "`delete_all` (even locked ones), or `delete_unlocked`. Tests of a type TestGen creates and removes itself, "
         "such as schema conformance tests, are never deleted."
     )
+    on_not_in_catalog: OnNotInCatalog = Field(
+        default=OnNotInCatalog.skip,
+        description="What to do with a definition whose table, or whose column for a column test, is not in the "
+        "table group's data catalog: `skip` (the default) leaves it out, and `import` creates or updates it like any "
+        "other definition. Until the table or column exists, its tests "
+        f"{TESTS_FAIL_VALIDATION_ON_EACH_RUN}.",
+    )
 
 
 class ImportPayload(BaseModel):
@@ -483,11 +500,12 @@ class ImportItem(BaseModel):
         description="Why the action applies: `matched` (matches an existing test), `no_match` (matches none), "
         "`policy` (`on_match` is `skip`), `locked` (the matched test is locked and `on_match` is "
         "`overwrite_unlocked`), `invalid_test_type` (no such test type), `managed_test_type` (a test type TestGen "
-        "creates itself), `managed_test` (the matched test is one TestGen manages), `invalid_table` (the table is not in the table group's data catalog), `invalid_column` "
-        "(the column is not in its table in the data catalog), `missing_external_id` (a manual test without "
-        "`external_id`), `missing_required_field` (a field the test type requires is blank), `invalid_field` (a "
-        "field the test type does not use, or a value it does not accept), or `absent` (an existing test the file "
-        "does not include)."
+        "creates itself), `managed_test` (the matched test is one TestGen manages), `invalid_table` (the table is not "
+        "in the table group's data catalog), `invalid_column` (the column is not in its table in the data catalog), "
+        "`missing_external_id` (a manual test without `external_id`), `missing_required_field` (a field the test "
+        "type requires is blank), `invalid_field` (a field the test type does not use, or a value it does not "
+        "accept), or `absent` (an existing test the file does not include). `invalid_table` and `invalid_column` "
+        "come with `create` or `update` when `on_not_in_catalog` is `import`, and with `skip` otherwise."
     )
     tds: list[ImportItemTD] = Field(description="The test definitions this action and reason apply to.")
 
@@ -732,9 +750,13 @@ def import_definitions(
 
         table_name = _value_as_saved(td_import, target, "table_name")
         column_name = _value_as_saved(td_import, target, "column_name")
+        import_outside_catalog = config.on_not_in_catalog == OnNotInCatalog.import_
+        catalog_reason: ImportReason | None = None
         if table_name is not None and table_name not in profiled_tables:
-            actions.append(_PlannedAction(ImportAction.skip, ImportReason.invalid_table, idx, td_import, target))
-            continue
+            if not import_outside_catalog:
+                actions.append(_PlannedAction(ImportAction.skip, ImportReason.invalid_table, idx, td_import, target))
+                continue
+            catalog_reason = ImportReason.invalid_table
 
         if (
             contract_tables is not None
@@ -744,9 +766,13 @@ def import_definitions(
             actions.append(_PlannedAction(ImportAction.skip, ImportReason.undeclared_table, idx, td_import, target))
             continue
 
-        if not _is_column_profiled(table_name, column_name, test_types[td_import.test_type], profiled_columns):
-            actions.append(_PlannedAction(ImportAction.skip, ImportReason.invalid_column, idx, td_import, target))
-            continue
+        if catalog_reason is None and not _is_column_profiled(
+            table_name, column_name, test_types[td_import.test_type], profiled_columns
+        ):
+            if not import_outside_catalog:
+                actions.append(_PlannedAction(ImportAction.skip, ImportReason.invalid_column, idx, td_import, target))
+                continue
+            catalog_reason = ImportReason.invalid_column
 
         test_type = test_types[td_import.test_type]
         if target is None or "baseline_value" in td_import.model_fields_set:
@@ -775,6 +801,8 @@ def import_definitions(
             action, reason = _resolve_new_action(config)
         else:
             action, reason = _resolve_match_action(config, target)
+        if catalog_reason is not None and action != ImportAction.skip:
+            reason = catalog_reason
 
         actions.append(_PlannedAction(action, reason, idx, td_import, target))
 

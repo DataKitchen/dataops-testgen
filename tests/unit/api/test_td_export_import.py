@@ -46,6 +46,7 @@ from testgen.common.test_definition_export_import_service import (
     OnAbsence,
     OnMatch,
     OnNew,
+    OnNotInCatalog,
     Origin,
     TestDefinitionExport,
     _create_td,
@@ -254,8 +255,11 @@ def _make_config(
     on_match=OnMatch.overwrite_unlocked,
     on_new=OnNew.create,
     on_absence=OnAbsence.do_nothing,
+    on_not_in_catalog=OnNotInCatalog.skip,
 ) -> ImportConfig:
-    return ImportConfig(mode=mode, on_match=on_match, on_new=on_new, on_absence=on_absence)
+    return ImportConfig(
+        mode=mode, on_match=on_match, on_new=on_new, on_absence=on_absence, on_not_in_catalog=on_not_in_catalog
+    )
 
 
 def _make_payload(*tds: TestDefinitionExport) -> ImportPayload:
@@ -1310,6 +1314,155 @@ class Test_import_strict_mode:
         assert result.summary.created == 1
         # session.add was called — the create was applied
         session.add.assert_called_once()
+
+
+class Test_import_not_in_catalog:
+
+    @pytest.fixture
+    def catalog(self, column_catalog):
+        """A catalog holding table t1 with column c1."""
+        with (
+            patch(f"{SERVICE_MODULE}.DataTable") as data_table,
+            patch(f"{SERVICE_MODULE}.TableGroup") as table_group_cls,
+            patch(f"{SERVICE_MODULE}.get_current_session") as session_fn,
+        ):
+            data_table.select_table_names.return_value = ["t1"]
+            column_catalog.select_column_names.return_value = {("t1", "c1")}
+            table_group_cls.get.return_value = _make_table_group()
+            session = MagicMock()
+            session.execute.return_value.all.return_value = []
+            session_fn.return_value = session
+            yield session
+
+    def _import(self, td, config, test_types=None):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=test_types or _test_types("Alpha")):
+            return import_definitions(_make_test_suite(), config, _make_payload(td))
+
+    def test_the_policy_defaults_to_skip(self):
+        config = ImportConfig(
+            mode=ImportMode.preview, on_match=OnMatch.overwrite_unlocked, on_new=OnNew.create,
+            on_absence=OnAbsence.do_nothing,
+        )
+        assert config.on_not_in_catalog is OnNotInCatalog.skip
+
+    @pytest.mark.parametrize(
+        ("td_overrides", "reason"),
+        [
+            pytest.param({"table_name": "t9"}, ImportReason.invalid_table, id="table"),
+            pytest.param({"column_name": "c9"}, ImportReason.invalid_column, id="column"),
+            pytest.param({"table_name": "t9", "column_name": "c9"}, ImportReason.invalid_table, id="table_first"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        ("policy", "action"),
+        [(OnNotInCatalog.skip, ImportAction.skip), (OnNotInCatalog.import_, ImportAction.create)],
+    )
+    @pytest.mark.usefixtures("catalog")
+    def test_a_new_definition_follows_the_policy(self, td_overrides, reason, policy, action):
+        td = _make_import_td(test_type="Alpha", **td_overrides)
+
+        result = self._import(td, _make_config(on_not_in_catalog=policy))
+
+        assert [(item.action, item.reason) for item in result.items] == [(action, reason)]
+
+    def test_a_matched_definition_is_updated_with_the_catalog_reason(self, catalog):
+        catalog.execute.return_value.all.return_value = [_make_existing_row(table_name="t9")]
+        td = _make_import_td(test_type="Alpha", table_name="t9")
+
+        result = self._import(td, _make_config(on_not_in_catalog=OnNotInCatalog.import_))
+
+        assert [(item.action, item.reason) for item in result.items] == [
+            (ImportAction.update, ImportReason.invalid_table)
+        ]
+
+    @pytest.mark.parametrize(
+        ("existing", "config_overrides", "reason"),
+        [
+            pytest.param([], {"on_new": OnNew.skip}, ImportReason.no_match, id="on_new_skip"),
+            pytest.param(
+                [_make_existing_row(table_name="t9")], {"on_match": OnMatch.skip}, ImportReason.policy,
+                id="on_match_skip",
+            ),
+            pytest.param(
+                [_make_existing_row(table_name="t9", lock_refresh=True)], {}, ImportReason.locked, id="locked",
+            ),
+        ],
+    )
+    def test_the_other_policies_still_skip(self, catalog, existing, config_overrides, reason):
+        catalog.execute.return_value.all.return_value = existing
+        td = _make_import_td(test_type="Alpha", table_name="t9")
+
+        result = self._import(td, _make_config(on_not_in_catalog=OnNotInCatalog.import_, **config_overrides))
+
+        assert [(item.action, item.reason) for item in result.items] == [(ImportAction.skip, reason)]
+
+    @pytest.mark.parametrize(
+        ("td_overrides", "reason"),
+        [
+            pytest.param({"test_type": "Nope"}, ImportReason.invalid_test_type, id="unknown_test_type"),
+            pytest.param(
+                {"last_auto_gen_date": None}, ImportReason.missing_external_id, id="missing_external_id",
+            ),
+            pytest.param({"column_name": None}, ImportReason.missing_required_field, id="missing_required_field"),
+        ],
+    )
+    @pytest.mark.usefixtures("catalog")
+    def test_the_other_checks_still_skip(self, td_overrides, reason):
+        td = _make_import_td(**({"test_type": "Alpha", "table_name": "t9"} | td_overrides))
+
+        result = self._import(td, _make_config(on_not_in_catalog=OnNotInCatalog.import_))
+
+        assert [(item.action, item.reason) for item in result.items] == [(ImportAction.skip, reason)]
+
+    def test_strict_mode_applies_a_definition_imported_outside_the_catalog(self, catalog):
+        catalog.scalar.return_value = None
+        td = _make_import_td(test_type="Alpha", table_name="t9")
+        config = _make_config(mode=ImportMode.apply_strict, on_not_in_catalog=OnNotInCatalog.import_)
+
+        with _patched_td_class() as mock_td_cls:
+            mock_td_cls.return_value = MagicMock(id=uuid4())
+            result = self._import(td, config)
+
+        assert result.summary.created == 1
+        assert result.summary.skipped == 0
+        catalog.add.assert_called_once()
+        assert catalog.add.call_args.args[0].table_name == "t9"
+
+    def _import_into_contract(self, td, config):
+        with (
+            patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")),
+            patch(f"{SERVICE_MODULE}.contract_service.import_destination", return_value=(3, VersionState.DRAFT)),
+            patch(f"{SERVICE_MODULE}.writable_tables", return_value=["t1", "t5"]),
+        ):
+            return import_definitions(_contract_suite(), config, _make_payload(td))
+
+    @pytest.mark.parametrize(
+        ("table_name", "expected"),
+        [
+            ("t5", (ImportAction.create, ImportReason.invalid_table)),
+            ("t9", (ImportAction.skip, ImportReason.undeclared_table)),
+        ],
+        ids=["declared-table", "undeclared-table"],
+    )
+    @pytest.mark.usefixtures("catalog")
+    def test_a_contract_imports_only_tables_it_declares(self, table_name, expected):
+        td = _make_import_td(test_type="Alpha", table_name=table_name)
+
+        result = self._import_into_contract(
+            td, _make_config(mode=ImportMode.preview, on_not_in_catalog=OnNotInCatalog.import_)
+        )
+
+        assert [(item.action, item.reason) for item in result.items] == [expected]
+
+    @pytest.mark.usefixtures("catalog")
+    def test_strict_mode_refuses_an_undeclared_table_outside_the_catalog(self):
+        td = _make_import_td(test_type="Alpha", table_name="t9")
+        config = _make_config(mode=ImportMode.apply_strict, on_not_in_catalog=OnNotInCatalog.import_)
+
+        with pytest.raises(ImportStrictViolation) as refused:
+            self._import_into_contract(td, config)
+
+        assert _reasons(refused.value.result, ImportAction.skip) == {ImportReason.undeclared_table}
 
 
 # --- Import: apply — create behavior ---
