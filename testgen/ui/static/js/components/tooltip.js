@@ -11,6 +11,7 @@
  * @property {boolean} show
  * @property {TooltipPosition?} position
  * @property {number} width
+ * @property {string?} classes
  * @property {string?} style
  */
 import van from '../van.min.js';
@@ -18,6 +19,9 @@ import { getValue, loadStylesheet } from '../utils.js';
 
 const { div, span } = van.tags;
 const defaultPosition = 'top';
+
+/** The `max-width` of a tooltip given one as a number, or none, leaving it to the stylesheet. */
+const maxWidthStyle = (width) => (getValue(width) ? `max-width: ${getValue(width)}px; ` : '');
 const STREAMLIT_DIALOG_ZINDEX = 1000060;
 const STREAMLIT_DIALOG_CLASS = 'stDialog';
 
@@ -26,8 +30,8 @@ const Tooltip = (/** @type Properties */ props) => {
 
     return span(
         {
-            class: () => `tg-tooltip ${getValue(props.position) || defaultPosition} ${getValue(props.show) ? '' : 'hidden'}`,
-            style: () => `opacity: ${getValue(props.show) ? 1 : 0}; max-width: ${getValue(props.width) || '400'}px; ${getValue(props.style) ?? ''}`,
+            class: () => `tg-tooltip ${getValue(props.position) || defaultPosition} ${getValue(props.classes) ?? ''} ${getValue(props.show) ? '' : 'hidden'}`,
+            style: () => `opacity: ${getValue(props.show) ? 1 : 0}; ${maxWidthStyle(props.width)}${getValue(props.style) ?? ''}`,
         },
         props.text,
         div({ class: 'tg-tooltip--triangle' }),
@@ -82,8 +86,8 @@ const withTooltip = (/** @type HTMLElement */ component, /** @type Properties */
 
     const tooltipEl = span(
         {
-            class: () => `tg-tooltip portal ${getValue(tooltipProps.position) || defaultPosition} ${showTooltip.val ? '' : 'hidden'}`,
-            style: () => `opacity: ${showTooltip.val ? 1 : 0}; pointer-events: none; z-index: ${zIndex.val ?? 9999}; max-width: ${getValue(tooltipProps.width) || '400'}px; ${positionStyle.val}${getValue(tooltipProps.style) ?? ''}`,
+            class: () => `tg-tooltip portal ${getValue(tooltipProps.position) || defaultPosition} ${getValue(tooltipProps.classes) ?? ''} ${showTooltip.val ? '' : 'hidden'}`,
+            style: () => `opacity: ${showTooltip.val ? 1 : 0}; pointer-events: none; z-index: ${zIndex.val ?? 9999}; ${maxWidthStyle(tooltipProps.width)}${positionStyle.val}${getValue(tooltipProps.style) ?? ''}`,
         },
         tooltipProps.text,
         div({ class: 'tg-tooltip--triangle' }),
@@ -164,6 +168,17 @@ stylesheet.replace(`
     text-align: center;
     text-wrap: wrap;
     transition: opacity 0.3s;
+    max-width: 400px;
+}
+
+/* A form field's help icon: narrow, so the text stays beside the field rather than across it. */
+.tg-tooltip--help {
+    max-width: 200px;
+}
+
+/* Help with more than a line or two to say, such as what a custom query may hold. */
+.tg-tooltip--help-wide {
+    max-width: 420px;
 }
 
 .tg-tooltip.portal {
