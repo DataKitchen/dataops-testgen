@@ -10,9 +10,9 @@ WITH whole_table_measures AS (
     COUNT_BIG("{COL_NAME}") AS value_ct,
     COUNT_BIG(DISTINCT "{COL_NAME}") AS distinct_value_ct,
     SUM(CASE WHEN "{COL_NAME}" IS NULL THEN CAST(1 AS BIGINT) ELSE 0 END) AS null_value_ct,
-    MIN((LEN(CAST("{COL_NAME}" AS NVARCHAR(MAX)) + N'.') - 1)) AS min_length,
-    MAX((LEN(CAST("{COL_NAME}" AS NVARCHAR(MAX)) + N'.') - 1)) AS max_length,
-    AVG(CAST(NULLIF((LEN(CAST("{COL_NAME}" AS NVARCHAR(MAX)) + N'.') - 1), 0) AS FLOAT)) AS avg_length,
+    MIN((CASE WHEN DATALENGTH("{COL_NAME}") < 4000 THEN LEN(CAST("{COL_NAME}" AS NVARCHAR(4000)) + N'.') ELSE LEN(CAST("{COL_NAME}" AS NVARCHAR(MAX)) + N'.') END - 1)) AS min_length,
+    MAX((CASE WHEN DATALENGTH("{COL_NAME}") < 4000 THEN LEN(CAST("{COL_NAME}" AS NVARCHAR(4000)) + N'.') ELSE LEN(CAST("{COL_NAME}" AS NVARCHAR(MAX)) + N'.') END - 1)) AS max_length,
+    AVG(CAST(NULLIF((CASE WHEN DATALENGTH("{COL_NAME}") < 4000 THEN LEN(CAST("{COL_NAME}" AS NVARCHAR(4000)) + N'.') ELSE LEN(CAST("{COL_NAME}" AS NVARCHAR(MAX)) + N'.') END - 1), 0) AS FLOAT)) AS avg_length,
     SUM(CASE
           WHEN LTRIM(RTRIM("{COL_NAME}")) LIKE '0([.]0*)' THEN CAST(1 AS BIGINT) ELSE 0
         END) AS zero_value_ct,
@@ -95,9 +95,13 @@ WITH whole_table_measures AS (
           ELSE 0
         END) AS non_alpha_ct,
     -- Binary collation: Windows collations ignore zero-width characters
-    COUNT_BIG(CASE WHEN TRANSLATE(CAST("{COL_NAME}" AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2,
-                                  NCHAR(160) + NCHAR(8201) + NCHAR(8203) + NCHAR(8204) + NCHAR(8205) + NCHAR(8206) + NCHAR(8207) + NCHAR(8239) + NCHAR(12288) + NCHAR(65279), N'XXXXXXXXXX')
-                      <> CAST("{COL_NAME}" AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2 THEN 1 END) AS non_printing_ct,
+    COUNT_BIG(CASE WHEN DATALENGTH("{COL_NAME}") < 4000
+                     THEN CASE WHEN TRANSLATE(CAST("{COL_NAME}" AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2,
+                                     NCHAR(160) + NCHAR(8201) + NCHAR(8203) + NCHAR(8204) + NCHAR(8205) + NCHAR(8206) + NCHAR(8207) + NCHAR(8239) + NCHAR(12288) + NCHAR(65279), N'XXXXXXXXXX')
+                           <> CAST("{COL_NAME}" AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2 THEN 1 END
+                   WHEN TRANSLATE(CAST("{COL_NAME}" AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2,
+                                     NCHAR(160) + NCHAR(8201) + NCHAR(8203) + NCHAR(8204) + NCHAR(8205) + NCHAR(8206) + NCHAR(8207) + NCHAR(8239) + NCHAR(12288) + NCHAR(65279), N'XXXXXXXXXX')
+                           <> CAST("{COL_NAME}" AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2 THEN 1 END) AS non_printing_ct,
     SUM(CAST(<%IS_NUM;LEFT("{COL_NAME}", 31)%> AS BIGINT)) AS numeric_ct,
     SUM(CAST(<%IS_DATE;LEFT("{COL_NAME}", 26)%> AS BIGINT)) AS date_ct,
     CASE
@@ -112,13 +116,21 @@ WITH whole_table_measures AS (
       WHEN CAST(SUM(CASE WHEN "{COL_NAME}" LIKE '%[_a-zA-Z0-9.-]%@%[a-zA-Z0-9.-]%.[a-zA-Z][a-zA-Z]%'
                 AND "{COL_NAME}" NOT LIKE '%://%'
            THEN CAST(1 AS BIGINT) END) AS FLOAT)/CAST(COUNT_BIG("{COL_NAME}") AS FLOAT) > 0.9 THEN 'EMAIL'
-      WHEN CAST(SUM(CASE WHEN TRANSLATE("{COL_NAME}" COLLATE Latin1_General_BIN,'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') IN ('99999', '999999999', '99999-9999', 'A9A 9A9', 'A9A9A9')
+      WHEN CAST(SUM(CASE WHEN RTRIM("{COL_NAME}" COLLATE Latin1_General_BIN) LIKE '[0-9][0-9][0-9][0-9][0-9]'
+                        OR RTRIM("{COL_NAME}" COLLATE Latin1_General_BIN) LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+                        OR RTRIM("{COL_NAME}" COLLATE Latin1_General_BIN) LIKE '[0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]'
+                        OR RTRIM("{COL_NAME}" COLLATE Latin1_General_BIN) LIKE '[A-Za-z][0-9][A-Za-z] [0-9][A-Za-z][0-9]'
+                        OR RTRIM("{COL_NAME}" COLLATE Latin1_General_BIN) LIKE '[A-Za-z][0-9][A-Za-z][0-9][A-Za-z][0-9]'
            THEN CAST(1 AS BIGINT) END) AS FLOAT)/CAST(COUNT_BIG("{COL_NAME}") AS FLOAT) > 0.9
-       AND CAST(SUM(CASE WHEN TRANSLATE("{COL_NAME}" COLLATE Latin1_General_BIN,'012345678ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz','999999999AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA') IN ('A9A 9A9', 'A9A9A9')
+       AND CAST(SUM(CASE WHEN RTRIM("{COL_NAME}" COLLATE Latin1_General_BIN) LIKE '[A-Za-z][0-9][A-Za-z] [0-9][A-Za-z][0-9]'
+                        OR RTRIM("{COL_NAME}" COLLATE Latin1_General_BIN) LIKE '[A-Za-z][0-9][A-Za-z][0-9][A-Za-z][0-9]'
            THEN CAST(1 AS BIGINT) END) AS FLOAT)/CAST(COUNT_BIG("{COL_NAME}") AS FLOAT) >= 0.01 THEN 'ZIP_US_CA'
-      WHEN CAST(SUM(CASE WHEN TRANSLATE("{COL_NAME}",'012345678','999999999') IN ('99999', '999999999', '99999-9999')
+      WHEN CAST(SUM(CASE WHEN RTRIM("{COL_NAME}" COLLATE Latin1_General_BIN) LIKE '[0-9][0-9][0-9][0-9][0-9]'
+                        OR RTRIM("{COL_NAME}" COLLATE Latin1_General_BIN) LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+                        OR RTRIM("{COL_NAME}" COLLATE Latin1_General_BIN) LIKE '[0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]'
            THEN CAST(1 AS BIGINT) END) AS FLOAT)/CAST(COUNT_BIG("{COL_NAME}") AS FLOAT) > 0.9 THEN 'ZIP_USA'
-      WHEN CAST(SUM(CASE WHEN "{COL_NAME}" COLLATE SQL_Latin1_General_CP1_CI_AS NOT LIKE ' %'
+      WHEN CAST(SUM(CASE WHEN "{COL_NAME}" COLLATE SQL_Latin1_General_CP1_CI_AS LIKE '%.%'
+                          THEN CASE WHEN "{COL_NAME}" COLLATE SQL_Latin1_General_CP1_CI_AS NOT LIKE ' %'
                             AND "{COL_NAME}" COLLATE SQL_Latin1_General_CP1_CI_AS LIKE '[a-z0-9 _-]%'
                             AND ("{COL_NAME}" COLLATE SQL_Latin1_General_CP1_CI_AS LIKE '%.txt'
                             OR "{COL_NAME}" COLLATE SQL_Latin1_General_CP1_CI_AS LIKE '%.csv'
@@ -127,7 +139,7 @@ WITH whole_table_measures AS (
                             OR "{COL_NAME}" COLLATE SQL_Latin1_General_CP1_CI_AS LIKE '%.doc'
                             OR "{COL_NAME}" COLLATE SQL_Latin1_General_CP1_CI_AS LIKE '%.pdf'
                             OR "{COL_NAME}" COLLATE SQL_Latin1_General_CP1_CI_AS LIKE '%.xlsx')
-           THEN CAST(1 AS BIGINT) END) AS FLOAT)/CAST(COUNT_BIG("{COL_NAME}") AS FLOAT) > 0.9 THEN 'FILE_NAME'
+           THEN CAST(1 AS BIGINT) END END) AS FLOAT)/CAST(COUNT_BIG("{COL_NAME}") AS FLOAT) > 0.9 THEN 'FILE_NAME'
       WHEN CAST(SUM(CASE WHEN "{COL_NAME}" LIKE '[0-9][0-9][0-9][0-9][- ][0-9][0-9][0-9][0-9][- ][0-9][0-9][0-9][0-9][- ][0-9][0-9][0-9][0-9]'
                         OR "{COL_NAME}" LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
            THEN CAST(1 AS BIGINT) END) AS FLOAT)/CAST(COUNT_BIG("{COL_NAME}") AS FLOAT) > 0.8 THEN 'CREDIT_CARD'
@@ -160,7 +172,7 @@ WITH whole_table_measures AS (
                       THEN TRANSLATE(v COLLATE Latin1_General_BIN,
                              'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN' )
                   END AS pattern,
-                  (LEN(CAST(v AS NVARCHAR(MAX)) + N'.') - 1) AS value_length
+                  (CASE WHEN DATALENGTH(v) < 4000 THEN LEN(CAST(v AS NVARCHAR(4000)) + N'.') ELSE LEN(CAST(v AS NVARCHAR(MAX)) + N'.') END - 1) AS value_length
              FROM pattern_rows ) patterned
    GROUP BY pattern
 )
