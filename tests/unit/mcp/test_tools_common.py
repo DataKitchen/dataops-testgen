@@ -147,7 +147,7 @@ def test_parse_severity_accepts_any_casing(supplied):
 def test_parse_suite_type_valid():
     from testgen.mcp.tools.common import parse_suite_type
 
-    assert parse_suite_type("Regular") == SuiteType.REGULAR
+    assert parse_suite_type("Standard") == SuiteType.STANDARD
     assert parse_suite_type("Contract") == SuiteType.CONTRACT
 
 
@@ -168,7 +168,7 @@ def test_parse_suite_type_invalid_names_value():
 def test_parse_suite_type_invalid_lists_only_regular_and_contract():
     from testgen.mcp.tools.common import parse_suite_type
 
-    with pytest.raises(MCPUserError, match="Valid values: Regular, Contract") as exc_info:
+    with pytest.raises(MCPUserError, match="Valid values: Standard, Contract") as exc_info:
         parse_suite_type("nope")
     assert "Monitor" not in str(exc_info.value)
 
@@ -177,7 +177,7 @@ def test_parse_suite_type_rejects_monitor():
     """Monitor suites are created through monitoring setup, not this path."""
     from testgen.mcp.tools.common import parse_suite_type
 
-    with pytest.raises(MCPUserError, match="Valid values: Regular, Contract"):
+    with pytest.raises(MCPUserError, match="Valid values: Standard, Contract"):
         parse_suite_type("Monitor")
 
 
@@ -1542,7 +1542,7 @@ def test_resolve_monitor_scopes_to_a_version(mock_session_fn, mock_permissions):
 @patch("testgen.mcp.tools.common.get_current_session")
 def test_resolve_test_note_reads_a_note_on_any_version_of_a_contract(mock_session_fn, mock_permissions):
     """A note stays editable on whichever row it belongs to, so a contract's note resolves on any
-    of its versions while a regular suite's stays scoped to the resolved version."""
+    of its versions while a standard suite's stays scoped to the resolved version."""
     session = _version_scoped_session()
     mock_session_fn.return_value = session
     mock_permissions.return_value.allowed_codes = ["demo"]
@@ -1573,7 +1573,7 @@ def test_resolvers_include_contracts_and_still_reject_a_monitor_suite(mock_sessi
     getattr(common, resolver_name)(str(uuid4()))
 
     sql = _compiled(session.scalars.call_args[0][0])
-    assert "test_suites.suite_type IN ('regular', 'contract')" in sql
+    assert "test_suites.suite_type IN ('standard', 'contract')" in sql
     assert "'monitor'" not in sql
 
 
@@ -1603,7 +1603,7 @@ def test_resolve_test_suite_includes_contracts(mock_get, mock_permissions):
     resolve_test_suite(str(uuid4()))
 
     clauses = [_compiled(clause) for clause in mock_get.call_args.args[1:]]
-    assert "test_suites.suite_type IN ('regular', 'contract')" in clauses
+    assert "test_suites.suite_type IN ('standard', 'contract')" in clauses
 
 
 # --- FLAVOR_CONNECTION_SCHEMA ---
@@ -1737,7 +1737,7 @@ def test_resolve_contract_looks_up_only_regular_suites_and_contracts(mock_get_pe
         resolve_contract(str(uuid4()))
 
     clauses = " ".join(_compiled(clause) for clause in get.call_args.args[1:])
-    assert "test_suites.suite_type IN ('regular', 'contract')" in clauses
+    assert "test_suites.suite_type IN ('standard', 'contract')" in clauses
 
 
 @patch("testgen.mcp.tools.common.get_project_permissions")
@@ -1747,7 +1747,7 @@ def test_resolve_contract_rejects_a_regular_suite_as_keeping_no_versions(
 ):
     """Named rather than collapsed: the caller passed the access check, so the suite is one
     they can already see, and `not found` would send them looking for a typo."""
-    mock_suite_cls.get.return_value = _mock_contract(SuiteType.REGULAR)
+    mock_suite_cls.get.return_value = _mock_contract(SuiteType.STANDARD)
     mock_get_perms.return_value = _mock_perms()
 
     with pytest.raises(MCPUserError, match="not a contract"):
@@ -1760,7 +1760,7 @@ def test_resolve_contract_invalid_uuid():
 
 
 def test_mcp_suite_types_hold_regular_and_contract_but_not_monitor():
-    assert set(MCP_SUITE_TYPES) == {SuiteType.REGULAR, SuiteType.CONTRACT}
+    assert set(MCP_SUITE_TYPES) == {SuiteType.STANDARD, SuiteType.CONTRACT}
 
 
 def test_mcp_suite_types_are_the_test_suite_types():
@@ -1782,12 +1782,12 @@ def test_no_version_resolves_to_none():
 
 
 def test_a_regular_suite_without_a_version_resolves_to_none():
-    assert resolve_contract_version(_suite(SuiteType.REGULAR), None) is None
+    assert resolve_contract_version(_suite(SuiteType.STANDARD), None) is None
 
 
 def test_a_version_on_a_regular_suite_is_a_user_error():
     with pytest.raises(MCPUserError, match="is not a contract, so it keeps no versions"):
-        resolve_contract_version(_suite(SuiteType.REGULAR), 2)
+        resolve_contract_version(_suite(SuiteType.STANDARD), 2)
 
 
 def test_a_known_version_number_resolves_to_that_version():

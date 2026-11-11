@@ -161,7 +161,7 @@ def test_applying_a_new_contract_refuses_a_name_the_project_already_holds(db_ses
         _run(table_group_id=str(uuid4()), test_suite_name="Vendor orders", mode="apply")
 
     assert str(exc.value) == (
-        "A test suite or contract named Vendor orders already exists in this project. No changes saved."
+        "A test suite named Vendor orders already exists in this project. No changes saved."
     )
 
 

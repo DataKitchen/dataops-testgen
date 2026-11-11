@@ -16,10 +16,10 @@ def test_a_contract_term_that_errors_stays_active():
 
 
 def test_every_other_suite_kind_is_still_deactivated():
-    # Deliberately filtered against contract rather than for regular: monitors are deactivated
+    # Deliberately filtered against contract rather than for standard: monitors are deactivated
     # today, and a suite kind added later should inherit that rather than escape it.
     sql = _template()
-    assert "= 'regular'" not in sql
+    assert "= 'standard'" not in sql
     assert "suite_type IN" not in sql
 
 

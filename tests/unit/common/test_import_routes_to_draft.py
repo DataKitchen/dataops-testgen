@@ -154,7 +154,7 @@ def test_a_contract_export_names_the_version_it_holds():
 
 
 def test_a_regular_export_names_no_version():
-    document, get_version = _export_document(SuiteType.REGULAR)
+    document, get_version = _export_document(SuiteType.STANDARD)
     assert document.source.contract_version is None
     get_version.assert_not_called()
 
@@ -172,5 +172,5 @@ def test_a_contract_import_reports_where_it_lands(preview):
 
 def test_a_regular_import_reports_no_version():
     with patch.object(service.contract_service, "import_destination") as destination:
-        assert service._contract_version(MagicMock(suite_type=SuiteType.REGULAR), preview=True) is None
+        assert service._contract_version(MagicMock(suite_type=SuiteType.STANDARD), preview=True) is None
     destination.assert_not_called()

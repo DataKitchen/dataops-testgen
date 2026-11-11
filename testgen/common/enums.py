@@ -368,12 +368,12 @@ class SuiteType(StrEnum):
     Set at creation and never subsequently edited. Internal: the value is not displayed,
     and a surface offering the choice picks its own labels.
     """
-    REGULAR = "regular"
+    STANDARD = "standard"
     MONITOR = "monitor"
     CONTRACT = "contract"
 
 
-TEST_SUITE_TYPES: tuple[SuiteType, ...] = (SuiteType.REGULAR, SuiteType.CONTRACT)
+TEST_SUITE_TYPES: tuple[SuiteType, ...] = (SuiteType.STANDARD, SuiteType.CONTRACT)
 
 # Test types whose definitions TestGen creates and removes itself, never a user or a generation
 # set. Schema_Conformance follows the tables a contract declares, one definition per table.

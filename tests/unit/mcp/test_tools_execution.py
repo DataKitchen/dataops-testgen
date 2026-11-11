@@ -78,23 +78,23 @@ def test_running_a_contract_without_a_version_stamps_the_run_version(db_session_
     out, submit = _run(_contract_suite(), target=None, loaded=v3)
     assert submit.call_args.kwargs["kwargs"]["version_id"] == str(v3.id)
     assert "**Version:** v3 active" in out
-    assert "will not count" not in out
+    assert "will not update the contract's results" not in out
 
 
-def test_running_the_draft_says_it_will_not_count(db_session_mock):
+def test_running_the_draft_says_it_will_not_update_results(db_session_mock):
     draft = SuiteVersion(id=uuid4(), version=4)
     out, submit = _run(_contract_suite(), version=4, target=draft)
     assert submit.call_args.kwargs["kwargs"]["version_id"] == str(draft.id)
     assert "**Version:** v4 draft" in out
-    assert "will not count as the contract's status" in out
-    assert out.index("**Version:**") < out.index("will not count") < out.index("Use `list_test_runs`")
+    assert "will not update the contract's results" in out
+    assert out.index("**Version:**") < out.index("will not update the contract's results") < out.index("Use `list_test_runs`")
 
 
-def test_running_a_superseded_version_says_it_will_not_count(db_session_mock):
+def test_running_a_superseded_version_says_it_will_not_update_results(db_session_mock):
     v2 = SuiteVersion(id=uuid4(), version=2, frozen_at=datetime(2026, 1, 1, tzinfo=UTC))
     out, _ = _run(_contract_suite(), version=2, target=v2, active=False)
     assert "v2 superseded" in out
-    assert "will not count" in out
+    assert "will not update the contract's results" in out
 
 
 def test_running_a_version_with_no_active_tests_is_refused(db_session_mock):
@@ -120,7 +120,7 @@ def test_only_active_tests_count_toward_a_runnable_version(db_session_mock):
 
 def test_running_a_regular_suite_is_unchanged(db_session_mock):
     suite = _contract_suite()
-    suite.suite_type = SuiteType.REGULAR
+    suite.suite_type = SuiteType.STANDARD
     out, submit = _run(suite)
     assert submit.call_args.kwargs["kwargs"] == {"test_suite_id": str(suite.id)}
     assert "Version" not in out
@@ -130,7 +130,7 @@ def test_running_a_version_of_a_regular_suite_is_refused(db_session_mock):
     from testgen.mcp.tools.execution import run_tests
 
     suite = _mock_test_suite()
-    suite.suite_type = SuiteType.REGULAR
+    suite.suite_type = SuiteType.STANDARD
     with (
         patch("testgen.mcp.tools.execution.resolve_test_suite", return_value=suite),
         patch("testgen.mcp.tools.execution.JobExecution.submit") as submit,
@@ -498,7 +498,7 @@ def test_generate_tests_resolves_regular_and_contract_suites_only(mock_suite_cls
         generate_tests(str(uuid4()))
 
     clauses = mock_suite_cls.get.call_args.args[1:]
-    admitted = RealTestSuite.suite_type.in_((SuiteType.REGULAR, SuiteType.CONTRACT))
+    admitted = RealTestSuite.suite_type.in_((SuiteType.STANDARD, SuiteType.CONTRACT))
     assert any(clause.compare(admitted) for clause in clauses)
 
 
@@ -599,7 +599,7 @@ def test_generating_a_contract_refuses_an_invalid_choice_of_groups(db_session_mo
 
 def test_generating_a_regular_suite_refuses_regeneration_groups(db_session_mock):
     suite = _mock_test_suite()
-    suite.suite_type = SuiteType.REGULAR
+    suite.suite_type = SuiteType.STANDARD
 
     with pytest.raises(MCPUserError, match="applies to contracts only"):
         _generate(suite, draft=SuiteVersion(id=uuid4(), version=1), regenerate=["tests"])
@@ -607,7 +607,7 @@ def test_generating_a_regular_suite_refuses_regeneration_groups(db_session_mock)
 
 def test_generating_for_a_regular_suite_opens_no_draft_and_names_no_version(db_session_mock):
     suite = _mock_test_suite()
-    suite.suite_type = SuiteType.REGULAR
+    suite.suite_type = SuiteType.STANDARD
     out, route, submit, _ = _generate(suite, draft=SuiteVersion(id=uuid4(), version=1))
     route.assert_not_called()
     submit.assert_called_once()

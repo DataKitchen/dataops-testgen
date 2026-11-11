@@ -498,7 +498,7 @@ def _mock_test_suite(**overrides):
     suite.severity = overrides.get("severity", "Warning")
     suite.export_to_observability = overrides.get("export_to_observability", True)
     suite.deactivate_invalid_tests = overrides.get("deactivate_invalid_tests", False)
-    suite.suite_type = overrides.get("suite_type", SuiteType.REGULAR)
+    suite.suite_type = overrides.get("suite_type", SuiteType.STANDARD)
     return suite
 
 
@@ -515,7 +515,7 @@ def _stats(total=47, locked=3, counts_by_type=None):
     )
 
 
-@patch("testgen.mcp.tools.discovery.list_generation_sets", return_value=["Standard"])
+@patch("testgen.mcp.tools.discovery.available_generation_sets", return_value=["Standard"])
 @patch("testgen.mcp.tools.discovery.TestSuite")
 @patch("testgen.mcp.tools.discovery.resolve_table_group")
 @patch("testgen.mcp.tools.discovery.resolve_connection")
@@ -569,7 +569,7 @@ def test_get_test_suite_rejects_inaccessible_id(mock_common_suite, db_session_mo
 @patch("testgen.mcp.tools.common.TestSuite")
 def test_get_test_suite_rejects_actual_monitor_suite(mock_common_suite, db_session_mock):
     """A monitor suite is rejected because resolve_test_suite passes a
-    ``suite_type IN (regular, contract)`` clause.
+    ``suite_type IN (standard, contract)`` clause.
 
     Simulates the real DB filter behaviour: ``TestSuite.get`` returns the monitor
     suite when called without the filter clause, ``None`` when the clause is present.
@@ -583,10 +583,10 @@ def test_get_test_suite_rejects_actual_monitor_suite(mock_common_suite, db_sessi
     exclusion = RealTestSuite.suite_type.in_(MCP_SUITE_TYPES)
 
     def filtered_get(_uuid, *clauses):
-        # The resolver's contract: pass the regular-suite clause to TestSuite.get.
+        # The resolver's contract: pass the standard-suite clause to TestSuite.get.
         # If the clause is present, a DB query against it would not match this monitor row.
         # Compared structurally, not as text: the value sits in a bound parameter, so
-        # `str(clause)` cannot tell `= 'regular'` from `= 'monitor'`.
+        # `str(clause)` cannot tell `= 'standard'` from `= 'monitor'`.
         if any(clause.compare(exclusion) for clause in clauses):
             return None
         return monitor_suite
@@ -608,7 +608,7 @@ def test_get_test_suite_rejects_invalid_uuid(mock_common_suite, db_session_mock)
         get_test_suite("not-a-uuid")
 
 
-@patch("testgen.mcp.tools.discovery.list_generation_sets", return_value=["Standard"])
+@patch("testgen.mcp.tools.discovery.available_generation_sets", return_value=["Standard"])
 @patch("testgen.mcp.tools.discovery.TestSuite")
 @patch("testgen.mcp.tools.discovery.resolve_table_group")
 @patch("testgen.mcp.tools.discovery.resolve_connection")
@@ -658,7 +658,7 @@ def test_get_data_inventory_forwards_identity_and_roles(
 # --- generation sets on the read surfaces ---
 
 
-@patch("testgen.mcp.tools.discovery.list_generation_sets", return_value=["Plugin_Set", "Standard"])
+@patch("testgen.mcp.tools.discovery.available_generation_sets", return_value=["Plugin_Set", "Standard"])
 @patch("testgen.mcp.tools.discovery.TestSuite")
 @patch("testgen.mcp.tools.discovery.resolve_table_group")
 @patch("testgen.mcp.tools.discovery.resolve_connection")
@@ -685,7 +685,7 @@ def test_get_test_suite_shows_stored_and_available_sets(
     assert "**Available generation sets:** Plugin_Set, Standard" in out
 
 
-@patch("testgen.mcp.tools.discovery.list_generation_sets", return_value=["Plugin_Set", "Standard"])
+@patch("testgen.mcp.tools.discovery.available_generation_sets", return_value=["Plugin_Set", "Standard"])
 @patch("testgen.mcp.tools.discovery.TestSuite")
 @patch("testgen.mcp.tools.discovery.resolve_table_group")
 @patch("testgen.mcp.tools.discovery.resolve_connection")
@@ -772,7 +772,7 @@ def test_get_data_inventory_forwards_global_admin_flag(
     assert kwargs["is_global_admin"] is True
 
 
-def _summary(name, suite_type="regular"):
+def _summary(name, suite_type="standard"):
     s = MagicMock()
     s.id = uuid4()
     s.test_suite = name
@@ -890,7 +890,7 @@ def _get(suite, state, verification=None, run_summary=None, latest_verification=
             new=latest_verification or MagicMock(return_value=verification),
         ),
         patch("testgen.common.contract_service.TestRun.select_summary", side_effect=select_summary),
-        patch("testgen.mcp.tools.discovery.list_generation_sets", return_value=[]),
+        patch("testgen.mcp.tools.discovery.available_generation_sets", return_value=["Contract", "Standard"]),
     ):
         return get_test_suite(str(suite.id))
 
@@ -908,9 +908,12 @@ def test_the_block_names_active_draft_and_counted_version(db_session_mock):
     assert "**Tests counted from:** v4 draft" in out
 
 
-def test_a_contract_lists_no_available_generation_sets(db_session_mock):
-    out = _get(_contract_suite(), ContractState(active=None, draft=MagicMock(version=1, frozen_at=None)))
-    assert "Available generation sets" not in out
+def test_a_contract_lists_its_available_generation_sets_and_defaults_to_contract(db_session_mock):
+    suite = _contract_suite()
+    suite.generation_sets = None
+    out = _get(suite, ContractState(active=None, draft=MagicMock(version=1, frozen_at=None)))
+    assert "**Available generation sets:** Contract, Standard" in out
+    assert "**Generation sets:** Not set, defaults to Contract" in out
 
 
 def test_the_verification_is_the_latest_run_of_the_active_version(db_session_mock):
@@ -1009,7 +1012,7 @@ def test_an_unfinished_latest_run_falls_back_to_the_latest_completed_one(db_sess
 
 def test_a_regular_suite_has_no_contract_block(db_session_mock):
     suite = _contract_suite()
-    suite.suite_type = SuiteType.REGULAR
+    suite.suite_type = SuiteType.STANDARD
     latest_verification = MagicMock()
     out = _get(suite, None, latest_verification=latest_verification)
     assert "## Contract" not in out

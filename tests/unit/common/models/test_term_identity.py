@@ -359,7 +359,7 @@ def test_saving_a_new_term_on_a_contract_mints_its_identity():
 
 
 def test_saving_a_new_term_on_a_regular_suite_mints_nothing():
-    """The placeholder is not suite-owned; a regular suite's terms carry no contract identity."""
+    """The placeholder is not suite-owned; a standard suite's terms carry no contract identity."""
     definition = TestDefinition(
         test_suite_id=uuid4(), test_type="Row_Ct", schema_name="public",
         table_name="orders", column_name="order_id", version_id=uuid4(),
@@ -425,7 +425,7 @@ def contract_version():
 
 
 def test_assigning_missing_identities_on_the_placeholder_touches_no_term():
-    """Every regular and monitor suite resolves to the shared placeholder, so a sweep over it
+    """Every standard and monitor suite resolves to the shared placeholder, so a sweep over it
     would mint an identity for every such term in the install."""
     session = MagicMock()
     session.scalar.return_value = None

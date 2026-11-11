@@ -1266,7 +1266,7 @@ class TestDefinition(Entity):
     def writable_ids(cls, row_ids: Iterable[UUID | str]) -> list[UUID]:
         """The rows a write to the named rows lands on, resolving each row's suite through ``resolve_writable``.
 
-        A row of a regular or monitor suite maps to itself. A row of a contract's frozen version maps to
+        A row of a standard or monitor suite maps to itself. A row of a contract's frozen version maps to
         its counterpart in the draft, which is opened when there is none.
         """
         return list(dict.fromkeys(cls._writable_id_map(row_ids).values()))
@@ -1367,7 +1367,7 @@ class TestDefinition(Entity):
         identifier: UUID,
         project_codes: list[str] | None = None,
         *,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
     ) -> TestDefinitionSummary | None:
         """Fetch a test definition with project-level access check.
 
@@ -1440,7 +1440,7 @@ class TestDefinition(Entity):
         page: int = 1,
         limit: int = 50,
         *,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
         version_id: UUID | None = None,
     ) -> tuple[list[TestDefinitionSummary], int]:
         """Paginated test definitions for a suite, with optional filters.
@@ -1477,7 +1477,7 @@ class TestDefinition(Entity):
         test_definition_ids: Iterable[UUID],
         project_codes: list[str] | None = None,
         *,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
     ) -> list[TestDefinitionMinimal]:
         """Test definitions for the given ids, in one statement.
 
@@ -1840,7 +1840,7 @@ class TestDefinition(Entity):
         test_definition_id: UUID,
         project_codes: list[str] | None = None,
         *,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
     ) -> dict | None:
         """Get the fields needed by the source data service for a given test definition.
 
@@ -1990,7 +1990,7 @@ class TestDefinition(Entity):
         so the sweep costs two queries whatever the number of terms and tells apart two terms
         sharing a natural key within the sweep.
 
-        A version no suite owns -- the placeholder that regular and monitor suites share --
+        A version no suite owns -- the placeholder that standard and monitor suites share --
         holds no contract terms, so nothing is minted on it.
         """
         if not SuiteVersion.is_suite_owned(version_id):

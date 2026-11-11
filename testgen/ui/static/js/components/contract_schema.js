@@ -291,7 +291,7 @@ stylesheet.replace(`
 .tg-contract-schema--tree {
     position: relative;
     width: 280px;
-    min-height: 280px;
+    min-height: 480px;
     flex-shrink: 0;
 }
 

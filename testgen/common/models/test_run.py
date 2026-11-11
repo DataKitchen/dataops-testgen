@@ -365,7 +365,7 @@ class TestRun(Entity):
         page: int = 1,
         page_size: int = 20,
         *,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
         version_id: UUID | str | None = None,
         all_versions: bool = True,
     ) -> tuple[list[TestRunSummary], int]:
@@ -394,7 +394,7 @@ class TestRun(Entity):
         table_group_id: str | None = None,
         test_suite_id: str | None = None,
         *,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
     ) -> RunVersionScope:
         """Whether the runs the filters select include a contract's, and how many of them
         ``select_summary(all_versions=False)`` leaves out.

@@ -774,7 +774,7 @@ class TableGroup(Entity):
             FROM test_runs tr
                 JOIN test_suites ts ON ts.id = tr.test_suite_id
                 LEFT JOIN job_executions je ON je.id = tr.id
-            WHERE ts.suite_type IN ('regular', 'contract')
+            WHERE ts.suite_type IN ('standard', 'contract')
                 -- A contract's preview run: it checked a version not frozen when it started
                 AND (tr.version_id IS NULL OR EXISTS (
                     SELECT 1 FROM suite_versions sv
@@ -1321,7 +1321,7 @@ class TableGroup(Entity):
         query = """
         WITH suites AS (SELECT id, suite_type FROM test_suites WHERE table_groups_id = :table_group_id)
         SELECT
-            (SELECT COUNT(*) FROM suites WHERE suite_type = 'regular') AS test_suites,
+            (SELECT COUNT(*) FROM suites WHERE suite_type = 'standard') AS test_suites,
             (SELECT COUNT(*) FROM suites WHERE suite_type = 'contract') AS contracts,
             (SELECT COUNT(*) FROM suites WHERE suite_type = 'monitor') AS monitor_suites,
             (SELECT COUNT(*) FROM test_definitions d JOIN suites s ON s.id = d.test_suite_id

@@ -193,7 +193,7 @@ def test_update_monitoring_whitelists_suite_attrs_and_edits_schedule_in_place():
         suite_attrs={
             "predict_sensitivity": "high",
             "predict_holiday_codes": None,
-            "suite_type": SuiteType.REGULAR,
+            "suite_type": SuiteType.STANDARD,
         },
         cron_expr="0 */12 * * *",
         active=False,

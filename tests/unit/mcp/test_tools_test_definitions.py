@@ -332,7 +332,7 @@ def test_get_test_shows_the_severity_execution_applies(
     mock_td.get_for_project.return_value = td
     mock_notes.get_notes.return_value = []
     mock_tr.select_history.return_value = []
-    mock_suite.get.return_value = MagicMock(suite_type=SuiteType.REGULAR, severity=suite_severity)
+    mock_suite.get.return_value = MagicMock(suite_type=SuiteType.STANDARD, severity=suite_severity)
 
     from testgen.mcp.tools.test_definitions import get_test
 
@@ -345,7 +345,7 @@ def test_get_test_shows_the_severity_execution_applies(
 def test_list_tests_shows_the_suite_default_severity_for_a_test_without_one(
     mock_td, mock_notes, mock_resolve, db_session_mock,
 ):
-    mock_resolve.return_value = MagicMock(id=uuid4(), suite_type=SuiteType.REGULAR, severity="Log")
+    mock_resolve.return_value = MagicMock(id=uuid4(), suite_type=SuiteType.STANDARD, severity="Log")
     item = MagicMock(
         display_name="Row Count", table_name="orders", column_name=None, test_active=True, severity=None,
         default_severity="Fail", lock_refresh=False, flagged=False, last_auto_gen_date=None, last_manual_update=None,
@@ -1724,7 +1724,7 @@ def test_validate_custom_test_missing_connection(mock_resolve_suite, mock_conn, 
 
 @pytest.fixture
 def routes_in_place():
-    """Route every named row to itself, as for a regular suite, and read its suite as one."""
+    """Route every named row to itself, as for a standard suite, and read its suite as one."""
     with (
         patch.object(
             TestDefinition,
@@ -2269,7 +2269,7 @@ def test_create_test_on_a_contract_that_declares_no_tables_says_so(
 @patch("testgen.mcp.tools.test_definitions.TestType")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
 def test_update_test_allows_existing_non_public_test_type(mock_resolve_td, mock_tt_model, db_session_mock):
-    """A Volume Trend test already in a regular suite stays editable, though new ones cannot be created."""
+    """A Volume Trend test already in a standard suite stays editable, though new ones cannot be created."""
     from testgen.common.enums import MonitorType
     from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES
 
@@ -3118,7 +3118,7 @@ def test_list_tests_with_a_version_reads_that_version(mock_resolve, mock_list, m
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
 def test_list_tests_on_a_regular_suite_names_no_version(mock_resolve, mock_list, mock_notes, db_session_mock):
     suite = _contract_suite()
-    suite.suite_type = SuiteType.REGULAR
+    suite.suite_type = SuiteType.STANDARD
     mock_resolve.return_value = suite
     mock_list.return_value = ([_summary_row()], 1)
     mock_notes.get_notes_count_by_ids.return_value = {}
@@ -3130,7 +3130,7 @@ def test_list_tests_on_a_regular_suite_names_no_version(mock_resolve, mock_list,
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
 def test_list_tests_with_a_version_on_a_regular_suite_is_refused(mock_resolve, db_session_mock):
     suite = _contract_suite()
-    suite.suite_type = SuiteType.REGULAR
+    suite.suite_type = SuiteType.STANDARD
     mock_resolve.return_value = suite
     with pytest.raises(MCPUserError, match="is not a contract"):
         list_tests(str(suite.id), version=1)
@@ -3319,7 +3319,7 @@ def test_delete_of_active_tests_the_draft_cannot_match_names_only_those(db_sessi
 def test_update_on_a_regular_suite_names_no_version(db_session_mock):
     td = _orm_td(id=uuid4(), version_id=uuid4())
     suite = _contract_suite()
-    suite.suite_type = SuiteType.REGULAR
+    suite.suite_type = SuiteType.STANDARD
     with _update_context(td, suite=suite):
         out = update_test(str(td.id), fields={"severity": "Warning"})
     assert "Version" not in out
@@ -3667,7 +3667,7 @@ def test_import_whose_target_vanished_is_a_user_error(db_session_mock):
 
 def test_import_on_a_regular_suite_names_no_version(db_session_mock):
     suite = _contract_suite()
-    suite.suite_type = SuiteType.REGULAR
+    suite.suite_type = SuiteType.STANDARD
     with (
         patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
         patch("testgen.mcp.tools.test_definitions.import_definitions", return_value=_make_import_response(created=2)),
@@ -3708,7 +3708,7 @@ def test_resolved_version_is_the_contract_services_default_version():
 
 
 def test_resolved_version_is_none_for_a_regular_suite():
-    assert resolved_version(MagicMock(suite_type=SuiteType.REGULAR)) is None
+    assert resolved_version(MagicMock(suite_type=SuiteType.STANDARD)) is None
 
 
 def test_resolved_version_reports_a_contract_with_no_version_to_read():

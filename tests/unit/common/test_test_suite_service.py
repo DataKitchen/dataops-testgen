@@ -20,7 +20,7 @@ def _suite(**overrides) -> TestSuite:
     defaults = {
         "project_code": "demo",
         "test_suite": "Orders",
-        "suite_type": SuiteType.REGULAR,
+        "suite_type": SuiteType.STANDARD,
     }
     defaults.update(overrides)
     return TestSuite(**defaults)
@@ -85,7 +85,7 @@ def test_validate_accepts_defined_generation_sets(generation_sets):
     ("requested", "fragment"),
     [
         (["Nope"], "Unknown generation sets: Nope."),
-        (["Monitor"], "'Monitor' cannot be used for a regular test suite."),
+        (["Monitor"], "'Monitor' is reserved for monitor suites."),
         ([], "At least one generation set is required."),
     ],
 )
@@ -144,4 +144,4 @@ def test_is_duplicate_name_error_recognizes_only_the_name_index():
 
 
 def test_duplicate_name_message_names_the_suite():
-    assert duplicate_name_message("Orders") == "A test suite or contract named Orders already exists in this project."
+    assert duplicate_name_message("Orders") == "A test suite named Orders already exists in this project."

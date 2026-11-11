@@ -19,9 +19,9 @@ pytestmark = pytest.mark.unit
 FROZEN = datetime(2026, 9, 12, tzinfo=UTC)
 AFTER = (FROZEN + timedelta(days=1)).replace(tzinfo=None)
 BEFORE = (FROZEN - timedelta(days=1)).replace(tzinfo=None)
-PREVIEW_TOOLTIP = "{} was not frozen when this run started. A preview does not count as the contract's status."
+PREVIEW_TOOLTIP = "{} was not frozen when this run started. Only a verification updates the contract's results."
 OUT_OF_FORCE_TOOLTIP = (
-    "{} was already superseded when this run started. A run out of force does not count as the contract's status."
+    "{} was already superseded when this run started. Only a verification updates the contract's results."
 )
 
 
@@ -43,7 +43,7 @@ def test_an_active_verification():
         version_number=3, version_frozen_at=FROZEN, active_version_number=3, test_starttime=AFTER,
         version_checked_in_force=True,
     )
-    assert run_version_block(run) == {"value": "v3 active · Verification", "tooltip": "v3 is the agreement in force."}
+    assert run_version_block(run) == {"value": "v3 active · Verification", "tooltip": "v3 is the active version."}
     assert run_version_caption(run) == "v3 active"
 
 
@@ -54,7 +54,7 @@ def test_a_superseded_verification():
     )
     assert run_version_block(run) == {
         "value": "v2 superseded · Verification",
-        "tooltip": "The contract has since moved on. v3 is the agreement in force.",
+        "tooltip": "v3 is the active version.",
     }
     assert run_version_caption(run) == "v2 superseded"
 
@@ -108,7 +108,7 @@ def test_a_discarded_draft():
     assert run.is_out_of_force is False
     assert run_version_block(run) == {
         "value": "Discarded draft · Preview",
-        "tooltip": "This run checked a draft that was later discarded. A preview does not count as the contract's status.",
+        "tooltip": "This run checked a draft that was later discarded. Only a verification updates the contract's results.",
     }
     assert run_version_caption(run) == "discarded draft · Preview"
 
@@ -130,24 +130,24 @@ def test_the_run_line_of_the_active_version():
 
 def test_the_run_line_of_a_draft_says_it_is_a_preview():
     assert run_version_line(_version(4, False), _version(3, True)) == (
-        "Version: v4 draft. This run is a preview and does not count as the contract's status."
+        "Version: v4 draft. This run is a preview. Only a verification updates the contract's results."
     )
 
 
 def test_the_run_line_of_a_first_draft_says_it_is_a_preview():
     assert run_version_line(_version(1, False), None) == (
-        "Version: v1 draft. This run is a preview and does not count as the contract's status."
+        "Version: v1 draft. This run is a preview. Only a verification updates the contract's results."
     )
 
 
 def test_the_run_line_of_a_superseded_version_names_the_agreement_in_force():
     assert run_version_line(_version(2, True), _version(3, True)) == (
-        "Version: v2 superseded. v3 is the agreement in force."
+        "Version: v2 superseded. v3 is the active version."
     )
 
 
 def test_run_options_name_each_contracts_default_version():
-    regular = SimpleNamespace(id=uuid4(), test_suite="orders_tests", suite_type=SuiteType.REGULAR)
+    regular = SimpleNamespace(id=uuid4(), test_suite="orders_tests", suite_type=SuiteType.STANDARD)
     frozen = SimpleNamespace(id=uuid4(), test_suite="orders_contract", suite_type=SuiteType.CONTRACT)
     first = SimpleNamespace(id=uuid4(), test_suite="new_contract", suite_type=SuiteType.CONTRACT)
     states = {
@@ -156,11 +156,11 @@ def test_run_options_name_each_contracts_default_version():
     }
 
     assert run_test_suite_options([regular, frozen, first], states) == [
-        {"value": str(regular.id), "label": "orders_tests", "suite_type": SuiteType.REGULAR, "version_line": None},
+        {"value": str(regular.id), "label": "orders_tests", "suite_type": SuiteType.STANDARD, "version_line": None},
         {"value": str(frozen.id), "label": "orders_contract", "suite_type": SuiteType.CONTRACT,
          "version_line": "Version: v3 active"},
         {"value": str(first.id), "label": "new_contract", "suite_type": SuiteType.CONTRACT,
-         "version_line": "Version: v1 draft. This run is a preview and does not count as the contract's status."},
+         "version_line": "Version: v1 draft. This run is a preview. Only a verification updates the contract's results."},
     ]
 
 

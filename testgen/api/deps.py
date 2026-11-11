@@ -202,7 +202,7 @@ def resolve_table_group(permission: str):
     return Depends(dependency)
 
 
-def resolve_test_suite(permission: str, suite_types: tuple[SuiteType, ...] = (SuiteType.REGULAR,)):
+def resolve_test_suite(permission: str, suite_types: tuple[SuiteType, ...] = (SuiteType.STANDARD,)):
     """Resolve a TestSuite of one of ``suite_types`` by ``test_suite_id`` path param and verify project permission."""
     def dependency(test_suite_id: UUID, user: User = _require_user) -> TestSuite:
         suite = TestSuite.get(test_suite_id, TestSuite.suite_type.in_(suite_types))

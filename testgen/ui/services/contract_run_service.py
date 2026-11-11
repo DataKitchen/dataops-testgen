@@ -18,8 +18,7 @@ from testgen.common.models.suite_version import (
 )
 from testgen.common.models.test_run import TestRunSummary
 
-PREVIEW_NOTE = "A preview does not count as the contract's status."
-OUT_OF_FORCE_NOTE = "A run out of force does not count as the contract's status."
+VERIFICATION_NOTE = "Only a verification updates the contract's results."
 
 
 def run_list_args(test_suite_id: UUID | str, version_id: UUID | str | None) -> dict[str, str]:
@@ -56,15 +55,15 @@ def run_version_block(run: TestRunSummary) -> dict[str, str] | None:
         return None
     text = "Discarded draft" if run.version_discarded else label
     if run.version_discarded:
-        tooltip = f"This run checked a draft that was later discarded. {PREVIEW_NOTE}"
+        tooltip = f"This run checked a draft that was later discarded. {VERIFICATION_NOTE}"
     elif run.is_preview:
-        tooltip = f"v{run.version_number} was not frozen when this run started. {PREVIEW_NOTE}"
+        tooltip = f"v{run.version_number} was not frozen when this run started. {VERIFICATION_NOTE}"
     elif run.is_out_of_force:
-        tooltip = f"v{run.version_number} was already superseded when this run started. {OUT_OF_FORCE_NOTE}"
+        tooltip = f"v{run.version_number} was already superseded when this run started. {VERIFICATION_NOTE}"
     elif run.version_number == run.active_version_number:
-        tooltip = f"v{run.version_number} is the agreement in force."
+        tooltip = f"v{run.version_number} is the active version."
     else:
-        tooltip = f"The contract has since moved on. v{run.active_version_number} is the agreement in force."
+        tooltip = f"v{run.active_version_number} is the active version."
     classification = "Preview" if run.is_preview else "Out of force" if run.is_out_of_force else "Verification"
     return {"value": f"{text} · {classification}", "tooltip": tooltip}
 
@@ -76,15 +75,15 @@ def run_version_line(
     is_active = active is not None and version.version == active.version
     label = format_version(version.version, version_state(version.frozen_at, is_active))
     if version.frozen_at is None:
-        return f"Version: {label}. This run is a preview and does not count as the contract's status."
+        return f"Version: {label}. This run is a preview. Only a verification updates the contract's results."
     if not is_active and active is not None:
-        return f"Version: {label}. v{active.version} is the agreement in force."
+        return f"Version: {label}. v{active.version} is the active version."
     return f"Version: {label}"
 
 
 def run_test_suite_options(test_suites: Iterable[Any], states: dict[UUID, ContractState]) -> list[dict[str, Any]]:
     """The Run Tests dialog's suite options, each contract's naming the version a run of it checks by default:
-    the agreement in force, or the draft when none is frozen yet.
+    the active version, or the draft when none is frozen yet.
 
     :param test_suites: suites with ``id``, ``test_suite`` and ``suite_type``
     :param states: each contract's versions, as ``SuiteVersion.states_for`` returns them

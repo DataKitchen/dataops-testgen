@@ -779,7 +779,7 @@ def import_contract(
         str | None,
         Field(
             description="UUID of the contract to import into. The document replaces the contract's draft, and opens "
-            "one when the contract has none. Omit to create a contract instead.",
+            "one when the contract has none. Omit to create a new contract from the document.",
         ),
     ] = None,
     table_group_id: Annotated[

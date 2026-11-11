@@ -20,7 +20,7 @@ def mocked_collaborators(monkeypatch):
     needs to assert on.
     """
     test_suite = MagicMock(last_complete_test_run_id=None)
-    test_suite.suite_type = "regular"
+    test_suite.suite_type = "standard"
     table_group = MagicMock()
     connection = MagicMock()
     session = MagicMock()
@@ -50,7 +50,7 @@ def mocked_collaborators(monkeypatch):
     monkeypatch.setattr(run_test_execution, "TestThresholdsPrediction", MagicMock())
     monkeypatch.setattr(run_test_execution, "MixpanelService", MagicMock())
     monkeypatch.setattr(run_test_execution, "TestRun", test_run_cls)
-    # A regular suite's placeholder version is frozen but owned by no suite, so the default
+    # A standard suite's placeholder version is frozen but owned by no suite, so the default
     # here is the answer every non-contract run gets.
     monkeypatch.setattr(
         run_test_execution.SuiteVersion, "is_frozen_agreement", MagicMock(return_value=False)

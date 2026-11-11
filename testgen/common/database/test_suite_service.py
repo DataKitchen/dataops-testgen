@@ -86,5 +86,5 @@ def is_duplicate_name_error(err: IntegrityError) -> bool:
 
 
 def duplicate_name_message(name: str) -> str:
-    """The message for a test suite name another test suite or contract in the project holds."""
-    return f"A test suite or contract named {name} already exists in this project."
+    """The message for a test suite name another test suite in the project holds."""
+    return f"A test suite named {name} already exists in this project."

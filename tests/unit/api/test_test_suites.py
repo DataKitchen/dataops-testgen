@@ -51,7 +51,7 @@ def _list_item(**overrides) -> TestSuiteListItem:
         "table_groups_id": TG_ID,
         "table_groups_name": "client_42",
         "test_suite_description": "Order checks",
-        "suite_type": SuiteType.REGULAR,
+        "suite_type": SuiteType.STANDARD,
         "test_count": 12,
         "latest_run_id": RUN_ID,
         "latest_run_started_at": NOW,
@@ -82,7 +82,7 @@ def _suite(**overrides):
         "component_type": "dataset",
         "component_name": None,
         "generation_sets": None,
-        "suite_type": SuiteType.REGULAR,
+        "suite_type": SuiteType.STANDARD,
     }
     return MagicMock(**{**defaults, **overrides})
 
@@ -110,7 +110,7 @@ def test_list_test_suites_renames_columns_for_the_consumer(mock_cls, _perm):
         "table_group_id": str(TG_ID),
         "table_group_name": "client_42",
         "description": "Order checks",
-        "suite_type": "regular",
+        "suite_type": "standard",
         "test_count": 12,
         "active_version": None,
         "draft_version": None,
@@ -162,7 +162,7 @@ def test_list_test_suites_turns_the_query_string_into_filters():
 
 @pytest.mark.parametrize(
     ("query", "suite_types"),
-    [("?suite_type=contract", (SuiteType.CONTRACT,)), ("?suite_type=regular", (SuiteType.REGULAR,))],
+    [("?suite_type=contract", (SuiteType.CONTRACT,)), ("?suite_type=standard", (SuiteType.STANDARD,))],
 )
 def test_list_test_suites_narrows_to_one_suite_type(query, suite_types):
     resp, mock_list = _list_clauses(query)
@@ -194,7 +194,7 @@ def test_list_test_suites_names_a_contracts_active_and_draft_versions(mock_cls, 
 
     mock_states.assert_called_once_with([contract_id])
     assert [(item["suite_type"], item["active_version"], item["draft_version"]) for item in items] == [
-        ("regular", None, None),
+        ("standard", None, None),
         ("contract", 3, 4),
     ]
 
@@ -264,7 +264,7 @@ def test_get_test_suite_returns_its_configuration():
     assert resp.json() == {
         "test_suite_id": str(TS_ID),
         "test_suite_name": "Orders",
-        "suite_type": "regular",
+        "suite_type": "standard",
         "project_code": "demo",
         "connection_id": 3,
         "table_group_id": str(TG_ID),
@@ -297,7 +297,7 @@ def test_get_test_suite_is_not_default_when_its_table_group_points_elsewhere():
 
 
 def test_get_test_suite_resolves_regular_suites_and_contracts():
-    """The suite is looked up narrowed to regular suites and contracts, so a monitor suite's id
+    """The suite is looked up narrowed to standard suites and contracts, so a monitor suite's id
     gets the same 404 as a suite that does not exist."""
     resp, mock_deps_cls, _ = _get(None)
 
@@ -451,7 +451,7 @@ def test_create_test_suite_applies_defaults_to_omitted_fields():
     resp, mock_save, _, table_group = _post({"test_suite_name": "Orders"})
 
     saved = _saved(mock_save)
-    assert saved.suite_type == SuiteType.REGULAR
+    assert saved.suite_type == SuiteType.STANDARD
     assert saved.export_to_observability is False
     assert saved.dq_score_exclude is False
     assert saved.deactivate_invalid_tests is False
@@ -571,7 +571,7 @@ def test_create_test_suite_responds_409_when_the_name_is_taken_in_the_project():
     assert _error_entries(resp) == [
         {
             "code": "duplicate_test_suite_name",
-            "detail": "A test suite or contract with this name already exists in the project.",
+            "detail": "A test suite with this name already exists in the project.",
         },
     ]
 
@@ -721,9 +721,9 @@ def test_create_contract_names_why_its_server_entry_is_custom():
     [
         ({"table_names": ["orders", "ghost", "phantom"]}, "unknown_tables"),
         ({"set_as_default": True}, "set_as_default_not_allowed"),
-        ({"generation_sets": ["Standard"]}, "invalid_test_suite"),
+        ({"generation_sets": ["Monitor"]}, "invalid_test_suite"),
     ],
-    ids=["tables-not-in-catalog", "set-as-default", "non-contract-generation-set"],
+    ids=["tables-not-in-catalog", "set-as-default", "monitor-generation-set"],
 )
 def test_create_contract_refuses_fields_that_do_not_apply(body, code):
     resp, mock_create, mock_save, table_group = _post_contract(body)
@@ -753,7 +753,7 @@ def test_create_regular_suite_reports_its_type_and_no_contract():
     resp, _, _, _ = _post({"test_suite_name": "Orders"})
 
     body = resp.json()
-    assert body["suite_type"] == "regular"
+    assert body["suite_type"] == "standard"
     assert body["contract"] is None
     assert (body["generation"], body["generation_failed"], body["custom_server"]) == (None, None, None)
 

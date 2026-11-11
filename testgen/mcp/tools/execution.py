@@ -180,9 +180,9 @@ def generate_tests(
     generation sets. Read ``testgen://generation-sets`` for the available sets and the test types
     each one covers. Test types outside the selected sets are deleted unless they are locked.
 
-    A contract generates its own fixed set of test types and its metadata (read with
-    ``get_contract_metadata``) into its draft, so omit ``generation_sets`` for one. It covers the
-    declared tables, or every table when none are declared. Before its table group is profiled,
+    A contract generates its tests and metadata (``get_contract_metadata``) into its draft. Its sets
+    default to ``Contract``, which only a contract can use. It covers the declared tables, or every
+    table when none are declared. Before its table group is profiled,
     only the catalog metadata and schema conformance tests are written.
 
     Value hash test types (Table Comparison set) need a profiling run with

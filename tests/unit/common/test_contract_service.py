@@ -847,9 +847,15 @@ def test_initializing_a_contract_returns_why_its_server_entry_is_custom():
     assert initialized.draft.metadata_document["servers"] == [{"server": "bq", "type": "custom"}]
 
 
-def test_initializing_a_contract_records_the_contract_generation_set():
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [(None, ["Contract"]), (["Contract", "Table Comparison"], ["Contract", "Table Comparison"])],
+    ids=["defaults-to-contract", "keeps-the-sets-it-was-created-with"],
+)
+def test_initializing_a_contract_records_its_generation_sets(given, expected):
     suite = _suite()
     suite.test_suite = "Orders contract"
+    suite.generation_sets = given
     with (
         patch.object(SuiteVersion, "next_version_for", return_value=1),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
@@ -857,7 +863,7 @@ def test_initializing_a_contract_records_the_contract_generation_set():
     ):
         contract_service.initialize_contract(suite, table_group=MagicMock(), connection=MagicMock())
 
-    assert suite.generation_sets == [contract_service.CONTRACT_GENERATION_SET]
+    assert suite.generation_sets == expected
 
 
 def test_initializing_a_contract_passes_the_connection_and_table_group_to_the_server_builder():
@@ -1203,12 +1209,12 @@ def test_removing_a_table_scopes_the_term_delete_to_the_version_and_the_table():
 
 
 def test_resolving_a_write_target_refuses_a_suite_that_keeps_no_versions():
-    """Only a contract has versions. Resolving a write target for a regular or monitor suite
+    """Only a contract has versions. Resolving a write target for a standard or monitor suite
     inserts a version row it should never own, and every test definition on it -- stamped
     with the placeholder -- then falls outside the suite's resolved version.
     """
     suite = _suite()
-    suite.suite_type = SuiteType.REGULAR
+    suite.suite_type = SuiteType.STANDARD
     with (
         patch.object(SuiteVersion, "draft_for", return_value=None),
         patch.object(contract_service, "_active_version", return_value=None),
@@ -1238,7 +1244,7 @@ def test_adding_a_table_to_a_draft_that_carries_no_document_declares_it():
 
 def test_initializing_a_contract_refuses_a_suite_that_keeps_no_versions():
     suite = _suite()
-    suite.suite_type = SuiteType.REGULAR
+    suite.suite_type = SuiteType.STANDARD
     with (
         patch.object(SuiteVersion, "next_version_for", return_value=1),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
@@ -1624,7 +1630,7 @@ def test_exporting_a_number_the_contract_has_no_version_at_names_the_number():
 
 def test_exporting_a_suite_that_keeps_no_versions_is_refused():
     suite = _suite()
-    suite.suite_type = SuiteType.REGULAR
+    suite.suite_type = SuiteType.STANDARD
     with pytest.raises(ValueError, match="not a contract"):
         contract_service.version_for_export(suite)
 

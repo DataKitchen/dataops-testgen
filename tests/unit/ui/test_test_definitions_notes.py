@@ -17,7 +17,7 @@ def _render(*, can_note: bool = True, **params) -> dict:
     """Render the page with its collaborators stubbed and return the widget's keyword arguments."""
     page = TestDefinitionsPage.__new__(TestDefinitionsPage)
     page.router = MagicMock()
-    suite = MagicMock(suite_type=SuiteType.REGULAR)
+    suite = MagicMock(suite_type=SuiteType.STANDARD)
     columns = pd.DataFrame({"table_name": [], "column_name": [], "test_type": [], "test_name_short": []})
     with (
         patch.object(view, "st") as st_mock,
