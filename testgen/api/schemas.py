@@ -47,6 +47,14 @@ from testgen.common.models.table_group import (
     table_group_defaults,
 )
 from testgen.common.models.test_suite import MONITOR_SETTING_DEFAULTS
+from testgen.common.query_variables import VARIABLES, validate_values
+from testgen.common.run_overrides import (
+    MATCH_SCHEMA_NAME,
+    MATCH_TABLE_NAMES,
+    SCHEMA_NAME,
+    TABLE_NAMES,
+    validate_table_name_map,
+)
 from testgen.common.test_definition_export_import_service import (
     ContractVersion,
     ImportConfig,
@@ -129,17 +137,21 @@ class TestRunRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    schema_name: str | None = Field(
+        default=None,
+        pattern=SCHEMA_NAME_PATTERN,
+        max_length=SCHEMA_NAME_MAX_LENGTH,
+        description=SCHEMA_NAME,
+    )
+    table_names: dict[str, str] | None = Field(default=None, description=TABLE_NAMES)
     match_schema_name: str | None = Field(
         default=None,
         pattern=SCHEMA_NAME_PATTERN,
         max_length=SCHEMA_NAME_MAX_LENGTH,
-        description=(
-            "Schema to read the second table of each referential test from, for this run only. "
-            "Tests without a second table are unaffected, the stored test definitions are not changed, "
-            "and the run deactivates no tests. To read the table group's own tables from another "
-            "schema, change the table group's schema instead."
-        ),
+        description=MATCH_SCHEMA_NAME,
     )
+    match_table_names: dict[str, str] | None = Field(default=None, description=MATCH_TABLE_NAMES)
+    variables: dict[str, str] | None = Field(default=None, description=VARIABLES)
     external_url: str | None = Field(
         default=None,
         max_length=EXTERNAL_URL_MAX_LENGTH,
@@ -167,6 +179,20 @@ class TestRunRequest(BaseModel):
     @classmethod
     def _check_metadata(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
         if error := validate_caller_metadata(value):
+            raise ValueError(error)
+        return value
+
+    @field_validator("table_names", "match_table_names")
+    @classmethod
+    def _check_table_names(cls, value: dict[str, str] | None) -> dict[str, str] | None:
+        if error := validate_table_name_map(value):
+            raise ValueError(error)
+        return value
+
+    @field_validator("variables")
+    @classmethod
+    def _check_variables(cls, value: dict[str, str] | None) -> dict[str, str] | None:
+        if error := validate_values(value):
             raise ValueError(error)
         return value
 
@@ -263,6 +289,16 @@ class TestRunVersion(BaseModel):
     )
 
 
+class TestRunOverrides(BaseModel):
+    """The per-run overrides a test run applied."""
+
+    schema_name: str | None = Field(default=None, description=SCHEMA_NAME)
+    table_names: dict[str, str] | None = Field(default=None, description=TABLE_NAMES)
+    match_schema_name: str | None = Field(default=None, description=MATCH_SCHEMA_NAME)
+    match_table_names: dict[str, str] | None = Field(default=None, description=MATCH_TABLE_NAMES)
+    variables: dict[str, str] | None = Field(default=None, description=VARIABLES)
+
+
 class TestRunResponse(BaseModel):
     """A test run."""
 
@@ -276,6 +312,9 @@ class TestRunResponse(BaseModel):
     metadata: dict[str, Any] | None = None
     result: TestRunResult | None = None
     version: TestRunVersion | None = Field(default=None, description="Contracts only. The version the run checked.")
+    overrides: TestRunOverrides | None = Field(
+        default=None, description="The overrides the run applied. `null` when it applied none."
+    )
 
 
 class TestResultItem(BaseModel):

@@ -65,11 +65,8 @@ test_types:
                ELSE 'Matches baseline.'
              END AS result_message,
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
-         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS}
+       WHERE oc.column_name = '{COLUMN_NAME_NO_QUOTES}';
   - id: '2420'
     test_type: Match_Column_Type
     sql_flavor: databricks
@@ -90,11 +87,8 @@ test_types:
                ELSE 'Matches baseline.'
              END AS result_message,
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
-         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS}
+       WHERE oc.column_name = '{COLUMN_NAME_NO_QUOTES}';
   - id: '2220'
     test_type: Match_Column_Type
     sql_flavor: mssql
@@ -115,11 +109,8 @@ test_types:
                ELSE 'Matches baseline.'
              END AS result_message,
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
-         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS}
+       WHERE oc.column_name = '{COLUMN_NAME_NO_QUOTES}';
   - id: '2320'
     test_type: Match_Column_Type
     sql_flavor: postgresql
@@ -140,11 +131,8 @@ test_types:
                ELSE 'Matches baseline.'
              END AS result_message,
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
-         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS}
+       WHERE oc.column_name = '{COLUMN_NAME_NO_QUOTES}';
   - id: '2020'
     test_type: Match_Column_Type
     sql_flavor: redshift
@@ -165,11 +153,8 @@ test_types:
                ELSE 'Matches baseline.'
              END AS result_message,
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
-         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS}
+       WHERE oc.column_name = '{COLUMN_NAME_NO_QUOTES}';
   - id: '2617'
     test_type: Match_Column_Type
     sql_flavor: redshift_spectrum
@@ -190,11 +175,8 @@ test_types:
                ELSE 'Matches baseline.'
              END AS result_message,
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
-         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS}
+       WHERE oc.column_name = '{COLUMN_NAME_NO_QUOTES}';
   - id: '2120'
     test_type: Match_Column_Type
     sql_flavor: snowflake
@@ -215,11 +197,8 @@ test_types:
                ELSE 'Matches baseline.'
              END AS result_message,
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
-         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS}
+       WHERE oc.column_name = '{COLUMN_NAME_NO_QUOTES}';
   - id: '8017'
     test_type: Match_Column_Type
     sql_flavor: oracle
@@ -240,11 +219,8 @@ test_types:
                ELSE 'Matches baseline.'
              END AS result_message,
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
-         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS}
+       WHERE oc.column_name = '{COLUMN_NAME_NO_QUOTES}';
   - id: '8017'
     test_type: Match_Column_Type
     sql_flavor: sap_hana
@@ -265,11 +241,8 @@ test_types:
                ELSE 'Matches baseline.'
              END AS result_message,
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
-         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS}
+       WHERE oc.column_name = '{COLUMN_NAME_NO_QUOTES}';
   - id: '10096'
     test_type: Match_Column_Type
     sql_flavor: salesforce_data360
@@ -290,11 +263,8 @@ test_types:
                ELSE 'Matches baseline.'
              END AS result_message,
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
-         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS}
+       WHERE oc.column_name = '{COLUMN_NAME_NO_QUOTES}';
   - id: '11111'
     test_type: Match_Column_Type
     sql_flavor: duckdb
@@ -315,8 +285,5 @@ test_types:
                ELSE 'Matches baseline.'
              END AS result_message,
              CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
-        FROM {APP_SCHEMA_NAME}.data_column_chars
-       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-         AND table_name = '{TABLE_NAME}'
-         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
-         AND drop_date IS NULL;
+        FROM {OBSERVED_COLUMNS}
+       WHERE oc.column_name = '{COLUMN_NAME_NO_QUOTES}';

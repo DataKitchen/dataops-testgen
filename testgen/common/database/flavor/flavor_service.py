@@ -194,6 +194,8 @@ class FlavorService:
     quote_character = '"'
     escaped_single_quote = "''"
     literal_escapes_backslash = False
+    # Longest string literal the flavor accepts in query text, where it caps one.
+    max_string_literal_bytes: int | None = None
     string_literal_prefix = ""
     # LIKE patterns for a literal underscore, backslash, and left bracket, before string_literal escapes them
     escaped_underscore = "\\_"
@@ -449,6 +451,28 @@ class FlavorService:
             value = value.replace("\\", "\\\\")
         escaped = value.replace("'", self.escaped_single_quote)
         return f"{self.string_literal_prefix}'{escaped}'"
+
+    def fit_string_literal(self, value: str) -> str:
+        """Return ``value`` cut to a length the flavor accepts in a string literal.
+
+        Args:
+            value: The text that goes between the quotes.
+
+        Returns:
+            ``value`` unchanged where the flavor sets no cap or the text is under it, otherwise
+            the text cut to the cap and marked as cut.
+        """
+        if self.max_string_literal_bytes is None:
+            return value
+        encoded = value.encode()
+        if len(encoded) <= self.max_string_literal_bytes:
+            return value
+        marker = "..."
+        kept = encoded[: self.max_string_literal_bytes - len(marker)].decode(errors="ignore")
+        # A cut landing inside a doubled backslash would leave one escaping the marker.
+        if (len(kept) - len(kept.rstrip("\\"))) % 2:
+            kept = kept[:-1]
+        return kept + marker
 
     def string_literal_or_null(self, value: str | None) -> str:
         """Return ``value`` as a SQL string literal, or ``NULL`` when it is empty."""

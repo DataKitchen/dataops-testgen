@@ -63,19 +63,19 @@ def collect_test_identifiers(
             add_error(td.id, "Invalid test: test type not available for this connection type")
             continue
 
-        if td.schema_name and td.table_name and (td.column_name or td.test_scope in ["table", "custom"]):
+        if td.source_schema and td.source_table and (td.column_name or td.test_scope in ["table", "custom"]):
             if td.test_scope in ["table", "custom"] or td.test_type.startswith("Aggregate_"):
                 # Validate only table for these test types - column is meaningless or uses aggregation functions
-                add_identifiers(td.id, td.schema_name, td.table_name)
+                add_identifiers(td.id, td.source_schema, td.source_table)
             else:
-                add_identifiers(td.id, td.schema_name, td.table_name, td.column_name, single_column=td.test_scope == "column")
+                add_identifiers(td.id, td.source_schema, td.source_table, td.column_name, single_column=td.test_scope == "column")
 
             if td.groupby_names:
-                add_identifiers(td.id, td.schema_name, td.table_name, td.groupby_names)
+                add_identifiers(td.id, td.source_schema, td.source_table, td.groupby_names)
 
             if td.test_scope == "referential":
                 if td.window_date_column:
-                    add_identifiers(td.id, td.schema_name, td.table_name, td.window_date_column)
+                    add_identifiers(td.id, td.source_schema, td.source_table, td.window_date_column)
 
                 if td.match_column_names or td.match_groupby_names:
                     if td.match_schema_name and td.match_table_name:
@@ -117,10 +117,11 @@ def get_target_identifiers(
         return target_tables, target_columns
 
     LOG.info("Getting tables and columns in target schemas for validation")
-    target_identifiers = fetch_dict_from_db(
-        *sql_generator.get_target_identifiers(target_schemas),
-        use_target_db=True,
-    )
+    target_identifiers: list[dict] = []
+    for schema in target_schemas:
+        target_identifiers.extend(
+            fetch_dict_from_db(*sql_generator.get_target_identifiers(schema), use_target_db=True)
+        )
     if not target_identifiers:
         LOG.info("No tables or columns present in target schemas")
 
@@ -205,8 +206,8 @@ def check_column_types(
             continue
 
         column_name = td.column_name.strip(f" {quote_char}")
-        key = (td.schema_name.lower(), td.table_name.lower(), column_name.lower())
-        column = columns.find(td.schema_name, td.table_name, column_name)
+        key = (td.source_schema.lower(), td.source_table.lower(), column_name.lower())
+        column = columns.find(td.source_schema, td.source_table, column_name)
         if not column or column.general_type in _UNCHECKED_GENERAL_TYPES:
             continue
 

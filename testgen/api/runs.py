@@ -60,6 +60,7 @@ from testgen.api.schemas import (
     ResultCounts,
     TestResultItem,
     TestResultListResponse,
+    TestRunOverrides,
     TestRunResponse,
     TestRunResult,
     TestRunVersion,
@@ -83,6 +84,7 @@ from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.models.user import User
 from testgen.common.pii_masking import PII_REDACTED
+from testgen.common.run_overrides import overrides_from_kwargs
 
 _error_responses = {
     404: {"model": ErrorResponse, "description": "Not found"},
@@ -142,6 +144,8 @@ def get_test_run(job: JobExecution = resolve_job("view", JobExecution.job_key ==
             select(TestSuite.table_groups_id).where(TestSuite.id == test_suite_id)
         )
 
+    overrides = overrides_from_kwargs(job.kwargs)
+
     return TestRunResponse(
         id=job.id,
         status=job.status,
@@ -151,6 +155,7 @@ def get_test_run(job: JobExecution = resolve_job("view", JobExecution.job_key ==
         completed_at=job.completed_at,
         external_url=job.external_url,
         metadata=job.caller_metadata,
+        overrides=TestRunOverrides(**overrides) if overrides else None,
         result=result,
         version=_run_version(job.id) if test_run else None,
     )

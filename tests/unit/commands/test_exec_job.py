@@ -24,6 +24,7 @@ from testgen.common.job_context import job_context
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.pausable_job import JobParked, PausableJob
+from testgen.common.run_overrides import OVERRIDE_LABELS
 
 pytestmark = pytest.mark.unit
 
@@ -581,4 +582,10 @@ def test_run_tests_handler_accepts_the_payload_the_submit_routes_build():
     signature against the payload the REST route and the MCP tool produce."""
     signature = inspect.signature(run_test_execution)
     signature.bind(test_suite_id=str(uuid4()))
-    signature.bind(test_suite_id=str(uuid4()), match_schema_name="reference_2026_09_10")
+    # Every override a submit route can put in the payload, taken from the one declaration both
+    # of them render their field text from, so a sixth is checked without editing this.
+    signature.bind(
+        test_suite_id=str(uuid4()),
+        version_id=str(uuid4()),
+        **dict.fromkeys(OVERRIDE_LABELS, "x"),
+    )

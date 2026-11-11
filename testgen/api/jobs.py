@@ -1,5 +1,7 @@
 """API v1 — job submission, status polling, and listing."""
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, Query, status
 
 from testgen.api.deps import (
@@ -33,6 +35,7 @@ from testgen.commands.test_generation import (
 )
 from testgen.common import contract_service
 from testgen.common.audit.runs import RunOperation
+from testgen.common.database.table_group_service import unsupported_schema_override
 from testgen.common.enums import (
     TEST_SUITE_TYPES,
     JobKey,
@@ -83,7 +86,7 @@ def submit_profiling(table_group: TableGroup = resolve_table_group("edit")):  # 
         400: {
             "model": ErrorResponse,
             "description": "A version given for a suite that is not a contract or one the contract does not hold, "
-            "or a contract version with no active tests",
+            "a contract version with no active tests, or a schema override the connection type does not take",
         },
     },
 )
@@ -91,13 +94,25 @@ def submit_test_run(
     test_suite: TestSuite = resolve_test_suite("edit", TEST_SUITE_TYPES),  # noqa: B008
     body: TestRunRequest | None = None,
 ):
-    """Runs against the table group's schema; a contract runs one of its versions. A referential
-    test's comparison schema can be overridden for this run.
+    """Runs against the table group's schema; a contract runs one of its versions.
+
+    `schema_name`, `table_names`, `match_schema_name`, `match_table_names`, and `variables` change
+    what this run reads, for this run only; each one left out keeps the stored value. The test
+    definitions keep the schema, tables, and query they name, the data catalog keeps describing the
+    table group, and the run deactivates no tests. Each test is validated against the table the run
+    reads, and its results report the test's own schema and table names.
 
     A contract runs its active version, or its draft when no version has been frozen, unless
     `version` names another. Only a run of the active version counts as the contract's
     status; a run of the draft or of a superseded version does not.
     """
+    if body and (refusal := unsupported_schema_override(
+        test_suite.table_groups_id,
+        schema_name=body.schema_name,
+        match_schema_name=body.match_schema_name,
+    )):
+        raise api_error(400, "schema_override_not_supported", refusal)
+
     try:
         target = contract_service.run_target(test_suite, body.version if body else None)
     except CONTRACT_VERSION_ERRORS as error:
@@ -109,9 +124,11 @@ def submit_test_run(
             f"{format_version(error.version.version, error.state)} of this contract has no active tests to run.",
         ) from error
 
-    kwargs: dict[str, str] = {"test_suite_id": str(test_suite.id)}
-    if body and body.match_schema_name:
-        kwargs["match_schema_name"] = body.match_schema_name
+    kwargs: dict[str, Any] = {"test_suite_id": str(test_suite.id)}
+    if body:
+        for field in ("schema_name", "table_names", "match_schema_name", "match_table_names", "variables"):
+            if value := getattr(body, field):
+                kwargs[field] = value
     if target is not None:
         kwargs["version_id"] = str(target.version.id)
 
