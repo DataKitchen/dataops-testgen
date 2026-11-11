@@ -1897,7 +1897,8 @@ def test_import_tests_preview(mock_resolve_suite, mock_import, db_session_mock):
 
 _NOT_IN_CATALOG_HINT = (
     "The data catalog lists the tables and columns TestGen found in the table group's schema. Check the table "
-    "and column names in the import file, or profile the table group to refresh the catalog."
+    "and column names in the import file, or profile the table group to refresh the catalog. To import tests for "
+    "tables or columns that do not exist yet, retry with `on_not_in_catalog='import'`."
 )
 
 
@@ -1985,6 +1986,45 @@ def test_import_tests_without_missing_tables_has_no_catalog_hint(mock_resolve_su
 
     assert "Existing test is locked" in result
     assert "data catalog" not in result
+
+
+@pytest.mark.parametrize(
+    ("argument", "policy"),
+    [({}, "skip"), ({"on_not_in_catalog": "import"}, "import")],
+)
+@patch("testgen.mcp.tools.test_definitions.import_definitions")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_import_tests_passes_the_not_in_catalog_policy(
+    mock_resolve_suite, mock_import, db_session_mock, argument, policy,
+):
+    from testgen.common.test_definition_export_import_service import (
+        ImportAction,
+        ImportItem,
+        ImportItemTD,
+        ImportReason,
+    )
+
+    mock_resolve_suite.return_value = _make_suite()
+    mock_import.return_value = _make_import_response(
+        created=1,
+        items=[ImportItem(action=ImportAction.create, reason=ImportReason.invalid_table, tds=[ImportItemTD(idx=0)])],
+    )
+
+    from testgen.mcp.tools.test_definitions import import_tests
+
+    result = import_tests(test_suite_id=str(uuid4()), payload='{"definitions": []}', **argument)
+
+    assert mock_import.call_args.args[1].on_not_in_catalog == policy
+    assert "| Table not in the data catalog | 0 |" in result
+    assert "on_not_in_catalog" not in result
+
+
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_import_tests_invalid_not_in_catalog_policy(mock_resolve_suite, db_session_mock):
+    from testgen.mcp.tools.test_definitions import import_tests
+
+    with pytest.raises(MCPUserError, match="on_not_in_catalog"):
+        import_tests(test_suite_id=str(uuid4()), payload='{"definitions": []}', on_not_in_catalog="maybe")
 
 
 @patch("testgen.mcp.tools.test_definitions.import_definitions")

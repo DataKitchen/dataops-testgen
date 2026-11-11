@@ -133,6 +133,7 @@ const TestDefinitions = (/** @type object */ props) => {
     const importOnNew = van.state('create');
     const importOnMatch = van.state('overwrite_unlocked');
     const importOnAbsence = van.state('do_nothing');
+    const importOnNotInCatalog = van.state('skip');
     const importDeleteConfirmed = van.state(false);
     const importFileValue = van.state(null);
     const importAutoCloseTimer = van.state(null);
@@ -155,6 +156,7 @@ const TestDefinitions = (/** @type object */ props) => {
             importOnNew.val = armed.on_new;
             importOnMatch.val = armed.on_match;
             importOnAbsence.val = armed.on_absence;
+            importOnNotInCatalog.val = armed.on_not_in_catalog ?? 'skip';
         }
     });
 
@@ -604,6 +606,7 @@ const TestDefinitions = (/** @type object */ props) => {
                     importOnNew.val = 'create';
                     importOnMatch.val = 'overwrite_unlocked';
                     importOnAbsence.val = 'do_nothing';
+                    importOnNotInCatalog.val = 'skip';
                     importDeleteConfirmed.val = false;
                     importFileValue.val = null;
                     cancelImportAutoClose();
@@ -815,6 +818,7 @@ const TestDefinitions = (/** @type object */ props) => {
                     onNew: importOnNew,
                     onMatch: importOnMatch,
                     onAbsence: importOnAbsence,
+                    onNotInCatalog: importOnNotInCatalog,
                     deleteConfirmed: importDeleteConfirmed,
                     fileValue: importFileValue,
                     autoCloseTimer: importAutoCloseTimer,
@@ -1184,6 +1188,7 @@ const AddDialogComponent = ({ open, info, validateResult, currentValues, onClose
     // Types not offered for new tests stay in test_types so saved tests of those types can still be edited
     const testTypes = van.derive(() => (getValue(info)?.test_types ?? []).filter(tt => tt.offered));
     const tableColumns = van.derive(() => getValue(info)?.table_columns ?? []);
+    const catalogTables = van.derive(() => getValue(info)?.catalog_tables ?? []);
     const testSuite = van.derive(() => getValue(info)?.test_suite ?? {});
     const tableGroupSchema = van.derive(() => getValue(info)?.table_group_schema ?? '');
     const tableGroupsId = van.derive(() => getValue(info)?.table_groups_id ?? '');
@@ -1600,6 +1605,7 @@ const AddDialogComponent = ({ open, info, validateResult, currentValues, onClose
     const FormView = () => TestDefFormContent({
         formValues: formValues.val,
         tableColumns: tableColumns.rawVal,
+        catalogTables: catalogTables.rawVal,
         testSuite: testSuite.rawVal,
         qualifiesTableRefsWithSchema: qualifiesTableRefsWithSchema.rawVal,
         schemaLabel: schemaLabel.rawVal,
@@ -1627,6 +1633,7 @@ const AddDialogComponent = ({ open, info, validateResult, currentValues, onClose
 const EditDialogComponent = ({ open, info, validateResult: validateResultProp, currentValues, onClose }, emit) => {
     const dialogInfo = van.derive(() => getValue(info) ?? null);
     const tableColumns = van.derive(() => dialogInfo.val?.table_columns ?? []);
+    const catalogTables = van.derive(() => dialogInfo.val?.catalog_tables ?? []);
     const testSuite = van.derive(() => dialogInfo.val?.test_suite ?? {});
     const qualifiesTableRefsWithSchema = van.derive(() => dialogInfo.val?.qualifies_table_refs_with_schema ?? true);
     const schemaLabel = van.derive(() => readSchemaLabel(dialogInfo.val));
@@ -1679,6 +1686,7 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, c
                 TestDefFormContent({
                     formValues: fv,
                     tableColumns: tableColumns.rawVal,
+                    catalogTables: catalogTables.rawVal,
                     testSuite: testSuite.rawVal,
                     qualifiesTableRefsWithSchema: qualifiesTableRefsWithSchema.rawVal,
                     schemaLabel: schemaLabel.rawVal,
@@ -1707,7 +1715,7 @@ const TabLabel = (text, invalid) => span(
 );
 
 // Shared form content for add/edit dialogs
-const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResult, currentValues, mode, qualifiesTableRefsWithSchema, schemaLabel, activeTab, onFormChange, onValidate, onUseCurrentValues, onSave, onCancel, onBack }) => {
+const TestDefFormContent = ({ formValues, tableColumns, catalogTables, testSuite, validateResult, currentValues, mode, qualifiesTableRefsWithSchema, schemaLabel, activeTab, onFormChange, onValidate, onUseCurrentValues, onSave, onCancel, onBack }) => {
     const testScope = formValues.test_scope ?? 'column';
     const testType = formValues.test_type ?? '';
     const isValidatable = ['Condition_Flag', 'CUSTOM', 'SQL_Metric'].includes(testType);
@@ -1823,6 +1831,14 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
         )
         : null;
 
+    const withCatalogFlag = (field, isOutsideCatalog) => div(
+        { class: 'flex-column fx-gap-1' },
+        field,
+        () => isOutsideCatalog()
+            ? span({ class: 'text-caption text-warning' }, 'Not in the data catalog.')
+            : '',
+    );
+
     // Places a main identity field and its match_* counterpart (when the test type has one) side
     // by side on the same row; falls back to the plain field when there's no counterpart to pair.
     const pairWithMatch = (mainField, matchElement) => matchElement
@@ -1891,21 +1907,26 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                                     tableValid.val = state.valid;
                                 },
                             })
-                            : () => Select({
-                                label: 'Table',
-                                value: fv.val.table_name ?? null,
-                                options: tableNameOptions,
-                                allowNull: true,
-                                filterable: true,
-                                required: isTableRequired,
-                                disabled: mode === 'edit',
-                                onChange: (value, state) => {
-                                    updateField('table_name', value);
-                                    updateField('column_name', null);
-                                    columnValid.val = !isColumnRequired;
-                                    tableValid.val = state.valid;
-                                },
-                            }),
+                            : withCatalogFlag(
+                                () => Select({
+                                    label: 'Table',
+                                    value: fv.val.table_name ?? null,
+                                    options: tableNameOptions,
+                                    allowNull: true,
+                                    filterable: true,
+                                    acceptNewOptions: true,
+                                    typedNames: true,
+                                    required: isTableRequired,
+                                    disabled: mode === 'edit',
+                                    onChange: (value, state) => {
+                                        updateField('table_name', value);
+                                        updateField('column_name', null);
+                                        columnValid.val = !isColumnRequired;
+                                        tableValid.val = state.valid;
+                                    },
+                                }),
+                                () => !!fv.val.table_name && !(catalogTables ?? []).includes(fv.val.table_name),
+                            ),
                         renderMatchField(matchTableConfig, matchTableValid),
                     )
                     : null,
@@ -1915,18 +1936,24 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                 showColumnRow
                     ? pairWithMatch(
                         testScope === 'column'
-                            ? () => Select({
-                                label: columnLabel,
-                                value: fv.val.column_name ?? null,
-                                options: columnNameOptions.val,
-                                allowNull: true,
-                                filterable: true,
-                                required: isColumnRequired,
-                                onChange: (value, state) => {
-                                    updateField('column_name', value);
-                                    columnValid.val = state.valid;
-                                },
-                            })
+                            ? withCatalogFlag(
+                                () => Select({
+                                    label: columnLabel,
+                                    value: fv.val.column_name ?? null,
+                                    options: columnNameOptions.val,
+                                    allowNull: true,
+                                    filterable: true,
+                                    acceptNewOptions: true,
+                                    typedNames: true,
+                                    required: isColumnRequired,
+                                    onChange: (value, state) => {
+                                        updateField('column_name', value);
+                                        columnValid.val = state.valid;
+                                    },
+                                }),
+                                () => !!fv.val.column_name
+                                    && !columnNameOptions.val.some(o => o.value === fv.val.column_name),
+                            )
                             : Input({
                                 name: 'column_name',
                                 label: columnLabel,

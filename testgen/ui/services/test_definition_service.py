@@ -81,6 +81,17 @@ def dialog_table_columns(
     return [column for column in table_columns if column["table_name"] in offered]
 
 
+def dialog_catalog(
+    suite: TestSuite | TestSuiteMinimal, table_columns: list[dict], current_table: str | None = None
+) -> dict:
+    """The catalog fields of the Add Test and Edit Test dialog payloads: ``table_columns``, the columns the
+    dialogs offer (see ``dialog_table_columns``), and ``catalog_tables``, every table in the data catalog."""
+    return {
+        "table_columns": dialog_table_columns(suite, table_columns, current_table),
+        "catalog_tables": sorted({column["table_name"] for column in table_columns}),
+    }
+
+
 def _stored_test_type(test_definition_id: object) -> str | None:
     return get_current_session().scalar(
         select(TestDefinition.test_type).where(TestDefinition.id == test_definition_id)

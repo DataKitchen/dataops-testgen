@@ -7,6 +7,7 @@
  * @property {object} onNew
  * @property {object} onMatch
  * @property {object} onAbsence
+ * @property {object} onNotInCatalog
  * @property {object} deleteConfirmed
  * @property {object} fileValue
  * @property {object} autoCloseTimer
@@ -30,7 +31,7 @@ import { sizeLimit } from '/app/static/js/form_validators.js';
 
 const JSON_SIZE_LIMIT = 10 * 1024 * 1024; // 10 MB
 
-// The service's three policy axes, the same ones the REST and MCP surfaces take.
+// The service's policy axes, the same ones the REST and MCP surfaces take.
 const POLICY_OPTIONS = {
     onNew: [
         {
@@ -83,6 +84,18 @@ const POLICY_OPTIONS = {
             caption: 'Permanently delete tests that are not in the file, including locked ones.',
         },
     ],
+    onNotInCatalog: [
+        {
+            label: 'Do not import',
+            value: 'skip',
+            caption: 'Leave these tests out of this test suite.',
+        },
+        {
+            label: 'Import',
+            value: 'import',
+            caption: 'Create or update these tests. They fail validation on each test run until the table or column exists.',
+        },
+    ],
 };
 
 const { div, span } = van.tags;
@@ -91,12 +104,13 @@ const ImportTestDefinitionsDialog = (/** @type Properties */ props) => {
     const emit = props.emit;
     loadStylesheet('import-test-definitions-dialog', stylesheet);
 
-    const { onNew, onMatch, onAbsence, deleteConfirmed, fileValue, autoCloseTimer } = props;
+    const { onNew, onMatch, onAbsence, onNotInCatalog, deleteConfirmed, fileValue, autoCloseTimer } = props;
 
     const policy = () => ({
         on_new: onNew.val,
         on_match: onMatch.val,
         on_absence: onAbsence.val,
+        on_not_in_catalog: onNotInCatalog.val,
     });
 
     const PolicySelect = (label, stateKey) => div(
@@ -160,6 +174,12 @@ const ImportTestDefinitionsDialog = (/** @type Properties */ props) => {
             PolicySelect('Tests in the file with no match', 'onNew'),
             PolicySelect('Tests in the file that match', 'onMatch'),
             PolicySelect('Tests not in the file', 'onAbsence'),
+        ),
+        // Half the row, so its longer label fits on one line.
+        div(
+            { class: 'flex-row fx-gap-3' },
+            PolicySelect('Tests for tables or columns not in the data catalog', 'onNotInCatalog'),
+            div({ class: 'fx-flex' }),
         ),
         span(
             { class: 'text-caption text-secondary' },
