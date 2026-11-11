@@ -284,6 +284,16 @@ def test_a_settled_run_is_reported_with_its_status(mocked_collaborators, monkeyp
     assert event.kwargs["run_duration"] == 12.5
 
 
+def test_a_run_is_reported_with_its_suite_type(mocked_collaborators, monkeypatch):
+    mixpanel = MagicMock()
+    monkeypatch.setattr(run_test_execution, "MixpanelService", mixpanel)
+    mocked_collaborators["test_suite"].suite_type = "contract"
+
+    run_test_execution.report_test_run(_settled_job(uuid4()))
+
+    assert mixpanel.return_value.send_event.call_args.kwargs["suite_type"] == "contract"
+
+
 def test_a_monitor_run_is_reported_as_one(mocked_collaborators, monkeypatch):
     mixpanel = MagicMock()
     monkeypatch.setattr(run_test_execution, "MixpanelService", mixpanel)
