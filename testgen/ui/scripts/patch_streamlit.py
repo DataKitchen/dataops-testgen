@@ -1,6 +1,8 @@
 
 import json
+import os
 import pathlib
+import re
 import shutil
 
 import streamlit
@@ -8,6 +10,7 @@ import streamlit.components.v2.manifest_scanner as streamlit_manifest_scanner
 from bs4 import BeautifulSoup, Tag
 
 from testgen.common.holiday_service import list_holiday_calendars
+from testgen.ui.static_cache import HASH_PARAM, STATIC_FOLDER, STATIC_PATH_PREFIX, hash_static_files
 
 INJECTED_CLASS = "testgen-mods"
 STREAMLIT_ROOT = pathlib.Path(streamlit.__file__).parent
@@ -15,7 +18,7 @@ STREAMLIT_INDEX = STREAMLIT_ROOT / "static" / "index.html"
 STREAMLIT_JS_FOLDER = STREAMLIT_ROOT / "static" / "static" / "js"
 STREAMLIT_CSS_FOLDER = STREAMLIT_ROOT / "static" / "static" / "css"
 TESTGEN_ROOT = pathlib.Path(__file__).parent.parent.parent
-TESTGEN_STATIC_FOLDER = pathlib.Path(__file__).parent.parent.parent / "ui" / "static"
+TESTGEN_STATIC_FOLDER = STATIC_FOLDER
 STATIC_FILES = [
     "css/style.css",
     "css/shared.css",
@@ -30,11 +33,12 @@ STATIC_FILES = [
 
 
 GENERATED_HOLIDAY_MODULE = TESTGEN_STATIC_FOLDER / "js" / "holiday_calendars.js"
+STATIC_URL_REFERENCE = re.compile(rf"""url\((["']?)({STATIC_PATH_PREFIX}[^)"']+)\1\)""")
 
 
 def patch(dev: bool = False) -> None:
-    _patch_streamlit_index(*STATIC_FILES, dev=dev)
     _generate_holiday_calendars_module()
+    patch_index()
     if dev:
         _allow_pyproject_from_editable_installs()
 
@@ -54,54 +58,71 @@ def _backup_path(file_path: pathlib.Path) -> pathlib.Path:
     return file_path.with_name(f"{file_path.name}.{streamlit.__version__}.bak")
 
 
-def _patch_streamlit_index(*static_files: str, dev: bool = False) -> None:
+def patch_index() -> None:
     """
-    Patches the index.html inside streamlit package to inject Testgen's
-    own styles and scripts before rendering time.
+    Rebuilds the index.html inside the streamlit package from its original, injecting TestGen's styles and scripts.
 
-    The new tags are injected with a distinctive class so that on the
-    next streamlit re-run it skips injecting (making it a tag faster
-    than st.markdown method).
+    Every injected URL carries a hash of its file's content, and an import map gives every script import one, so a
+    browser keeps a cached file only until its content changes. Stylesheets that reference other static files are
+    inlined with those references hashed.
+
+    The file is written only when its content changes.
 
     NOTE: keeps a .bak of the original index.html file
-
-    :param filename: list of path to valid .css and .js files
-    :param dev: to use in development while actively changing the
-    injected files to force re-injection
     """
+    streamlit_index_backup = _backup_path(STREAMLIT_INDEX)
+    if not streamlit_index_backup.exists():
+        shutil.copy(STREAMLIT_INDEX, streamlit_index_backup)
 
-    html = BeautifulSoup(STREAMLIT_INDEX.read_text(), features="html.parser")
-    if dev or not html.find_all(attrs={"class": INJECTED_CLASS}):
-        streamlit_index_backup = _backup_path(STREAMLIT_INDEX)
+    html = BeautifulSoup(streamlit_index_backup.read_text(), features="html.parser")
+    head = html.find(name="head")
+    if not head:
+        return
 
-        if not streamlit_index_backup.exists():
-            shutil.copy(STREAMLIT_INDEX, streamlit_index_backup)
-        else:
-            shutil.copy(streamlit_index_backup, STREAMLIT_INDEX)
-            html = BeautifulSoup(STREAMLIT_INDEX.read_text(), features="html.parser")
-
-        head = html.find(name="head")
-        if head:
-            for relative_path in static_files:
-                if (TESTGEN_STATIC_FOLDER / relative_path).exists():
-                    if tag := _create_tag(relative_path, html):
-                        head.append(tag)
-            STREAMLIT_INDEX.write_text(str(html))
-
-
-def _create_tag(relative_filepath: str, html: BeautifulSoup) -> Tag | None:
-    tag_for_ext = {
-        ".css": lambda: html.new_tag(
-            "link", **{"href": f"/app/static/{relative_filepath}", "rel": "stylesheet", "class": INJECTED_CLASS}
-        ),
-        ".js": lambda: html.new_tag(
-            "script", **{"type": "module", "src": f"/app/static/{relative_filepath}", "class": INJECTED_CLASS}
-        ),
+    hashed_urls = {
+        url: f"{url}?{HASH_PARAM}={file_hash}" for url, file_hash in hash_static_files(TESTGEN_STATIC_FOLDER).items()
     }
 
-    extension = f".{relative_filepath.split('.')[-1]}"
-    if extension in tag_for_ext:
-        return tag_for_ext[extension]()
+    # Browsers ignore an import map that follows the first module script, and Streamlit's own bundle is one
+    import_map = html.new_tag("script", attrs={"type": "importmap", "class": INJECTED_CLASS})
+    import_map.string = json.dumps(
+        {"imports": {url: hashed for url, hashed in hashed_urls.items() if url.endswith(".js")}}
+    )
+    if charset := head.find("meta", charset=True):
+        charset.insert_after(import_map)
+    else:
+        head.insert(0, import_map)
+
+    for relative_path in STATIC_FILES:
+        if (TESTGEN_STATIC_FOLDER / relative_path).exists():
+            if tag := _create_tag(relative_path, html, hashed_urls):
+                head.append(tag)
+
+    patched_index = str(html)
+    if STREAMLIT_INDEX.read_text() == patched_index:
+        return
+    staged_index = STREAMLIT_INDEX.with_name(f"{STREAMLIT_INDEX.name}.{os.getpid()}.tmp")
+    try:
+        staged_index.write_text(patched_index)
+        os.replace(staged_index, STREAMLIT_INDEX)
+    finally:
+        staged_index.unlink(missing_ok=True)
+
+
+def _create_tag(relative_filepath: str, html: BeautifulSoup, hashed_urls: dict[str, str]) -> Tag | None:
+    hashed_url = hashed_urls[f"{STATIC_PATH_PREFIX}{relative_filepath}"]
+    if relative_filepath.endswith(".js"):
+        return html.new_tag("script", attrs={"type": "module", "src": hashed_url, "class": INJECTED_CLASS})
+    if relative_filepath.endswith(".css"):
+        stylesheet = (TESTGEN_STATIC_FOLDER / relative_filepath).read_text()
+        if not STATIC_URL_REFERENCE.search(stylesheet):
+            return html.new_tag("link", attrs={"href": hashed_url, "rel": "stylesheet", "class": INJECTED_CLASS})
+        # A relative url() would drop the stylesheet's own hash, so the references are hashed in place
+        style = html.new_tag("style", attrs={"class": INJECTED_CLASS})
+        style.string = STATIC_URL_REFERENCE.sub(
+            lambda match: f"url({match[1]}{hashed_urls.get(match[2], match[2])}{match[1]})", stylesheet
+        )
+        return style
     return None
 
 
