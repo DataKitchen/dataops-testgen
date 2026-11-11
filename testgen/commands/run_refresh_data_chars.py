@@ -43,9 +43,11 @@ def read_target_columns(
             api_columns = sql_generator.flavor_service.get_schema_columns(params, sql_generator.schema_name) or []
             return sql_generator.filter_schema_columns(api_columns)
         rows = fetch_dict_from_db(*sql_generator.get_schema_ddf(), use_target_db=True)
+        # Inside the try: a row the flavor describes with a column this does not take raises here,
+        # and the caller reports only what this wraps.
+        return [ColumnChars(**row) for row in rows]
     except Exception as e:
         raise RuntimeError(f"Error reading columns from {sql_generator.schema_name}. {get_exception_message(e)}") from e
-    return [ColumnChars(**row) for row in rows]
 
 
 def read_run_columns(

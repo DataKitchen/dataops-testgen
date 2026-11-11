@@ -97,10 +97,10 @@ def submit_test_run(
     """Runs against the table group's schema; a contract runs one of its versions.
 
     `schema_name`, `table_names`, `match_schema_name`, `match_table_names`, and `variables` change
-    what this run reads, for this run only; each one left out keeps the stored value. The stored
-    test definitions and the data catalog are not changed, and the run deactivates no tests. Each
-    test is validated against the table the run reads, and its results report the test's own schema
-    and table names.
+    what this run reads, for this run only; each one left out keeps the stored value. The test
+    definitions keep the schema, tables, and query they name, the data catalog keeps describing the
+    table group, and the run deactivates no tests. Each test is validated against the table the run
+    reads, and its results report the test's own schema and table names.
 
     A contract runs its active version, or its draft when no version has been frozen, unless
     `version` names another. Only a run of the active version counts as the contract's

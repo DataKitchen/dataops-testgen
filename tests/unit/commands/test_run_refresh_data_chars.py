@@ -11,7 +11,11 @@ from uuid import UUID
 import pytest
 
 from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
-from testgen.commands.run_refresh_data_chars import run_data_chars_refresh, write_data_chars
+from testgen.commands.run_refresh_data_chars import (
+    read_target_columns,
+    run_data_chars_refresh,
+    write_data_chars,
+)
 from testgen.common.database.column_chars import ObjectType
 from testgen.common.flavors import SqlFlavorCode
 from testgen.common.read_file import read_template_sql_file
@@ -328,3 +332,15 @@ def test_an_empty_table_set_matches_nothing_rather_than_everything():
     query, _ = generator.get_schema_ddf()
 
     assert "1=0" in query
+
+
+@patch(f"{MODULE}.fetch_dict_from_db")
+def test_a_column_the_reader_cannot_take_is_reported_as_a_read_failure(mock_fetch):
+    """The caller catches only RuntimeError, so a row the flavor describes with a field
+    ``ColumnChars`` has no place for has to be wrapped here or it escapes the job bare."""
+    mock_fetch.return_value = [{"column_name": "amount", "a_field_from_the_future": 1}]
+    sql_generator = MagicMock(schema_name="staging")
+    sql_generator.flavor_service.metadata_via_api = False
+
+    with pytest.raises(RuntimeError, match="Error reading columns from staging"):
+        read_target_columns(MagicMock(), sql_generator)

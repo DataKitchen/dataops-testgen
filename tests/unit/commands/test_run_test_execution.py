@@ -300,3 +300,16 @@ def test_the_write_path_restores_identity_before_writing():
     written_rows, written_columns, _table = write_to_app_db.call_args.args
     assert written_columns == QUERY_COLUMNS
     assert _written(written_rows[0]) == ["Dupe_Rows", str(td.id), "staging_a", "orders", "0"]
+
+
+def test_a_retargeted_custom_test_reports_its_table_as_an_unretargeted_one_does():
+    """A CUSTOM test carries no table name, and its template renders the empty string for one.
+    Restoring None instead would make the override decide between '' and NULL."""
+    td = _td(test_type="CUSTOM", table_name=None, schema_name="public")
+    td.read_schema_name = "build_123"
+    columns = ("test_definition_id", "schema_name", "table_name")
+    results = [{"test_definition_id": str(td.id), "schema_name": "build_123", "table_name": ""}]
+
+    restored = restore_result_identity(results, columns, [td])
+
+    assert restored == [[str(td.id), "public", ""]]

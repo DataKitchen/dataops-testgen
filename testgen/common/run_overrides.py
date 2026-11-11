@@ -18,14 +18,15 @@ TABLE_NAME_MAX_LENGTH = 100
 TABLE_NAME_PATTERN_TEXT = (
     "A key is an exact table name or a pattern with one `*`, which matches any run of characters; "
     "a `*` in the value is replaced by what the key's `*` matched. An exact name takes precedence "
-    "over patterns, and patterns apply in the order given. A table no key matches keeps its name. "
-    "Names match exactly, including case."
+    "over patterns, and where two patterns match one table the one matching more of the name "
+    "outside its `*` wins. A table no key matches keeps its name. Names match exactly, including "
+    "case."
 )
 
 SCHEMA_NAME = (
     "Database connections only, other than Salesforce Data 360. Schema to read the table group's "
     "tables from, for this run only. "
-    "The stored test definitions are not changed, the data catalog keeps the table group's own "
+    "The test definitions keep their own schema, the data catalog keeps the table group's own "
     "tables, and the run deactivates no tests. To change the schema for every run, change the "
     "table group's schema instead."
 )
@@ -33,7 +34,7 @@ SCHEMA_NAME = (
 MATCH_SCHEMA_NAME = (
     "Database connections only, other than Salesforce Data 360. Schema to read the second table of "
     "each referential test from, for this run only. Tests without a second table are unaffected, "
-    "the stored test definitions are not changed, and the run deactivates no tests."
+    "the test definitions keep their own match schema, and the run deactivates no tests."
 )
 
 TABLE_NAMES = (
@@ -145,18 +146,27 @@ def resolve_table_name(name: str, mapping: Mapping[str, str] | None) -> str:
     if name in mapping:
         return mapping[name]
 
+    matched_patterns = []
     for key, value in mapping.items():
         if "*" not in key:
             continue
         prefix, suffix = key.split("*", 1)
         if len(name) >= len(prefix) + len(suffix) and name.startswith(prefix) and name.endswith(suffix):
-            matched = name[len(prefix) : len(name) - len(suffix)]
-            resolved = value.replace("*", matched)
-            if not resolved:
-                raise ValueError(
-                    f"Table name pattern `{key}` maps `{name}` to an empty name. "
-                    f"`{name}` matches `{key}` with nothing in place of `*`."
-                )
-            return resolved
+            matched_patterns.append((len(prefix) + len(suffix), key, value, name[len(prefix) : len(name) - len(suffix)]))
 
-    return name
+    if not matched_patterns:
+        return name
+
+    # The most specific pattern wins, measured by how much of the name it fixes outside its `*`.
+    # The caller's writing order decides nothing: the map is carried to the run as a JSON object,
+    # whose keys have no order a caller controls, and a client whose encoder sorts them could not
+    # express one. Equally specific patterns go to the key that sorts first, so one map always
+    # resolves one way.
+    _, key, value, matched = min(matched_patterns, key=lambda pattern: (-pattern[0], pattern[1]))
+    resolved = value.replace("*", matched)
+    if not resolved:
+        raise ValueError(
+            f"Table name pattern `{key}` maps `{name}` to an empty name. "
+            f"`{name}` matches `{key}` with nothing in place of `*`."
+        )
+    return resolved

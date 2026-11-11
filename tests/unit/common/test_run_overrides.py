@@ -1,3 +1,5 @@
+from itertools import permutations
+
 import pytest
 
 from testgen.common.run_overrides import (
@@ -39,13 +41,27 @@ def test_exact_key_wins_over_a_pattern_that_also_matches():
 
 
 @pytest.mark.unit
-def test_patterns_apply_in_the_order_given():
-    """Insertion order decides which pattern wins, so the same keys in the other order differ."""
-    first_wins = {"ord*": "a_*", "*ers": "b_*"}
-    assert resolve_table_name("orders", first_wins) == "a_ers"
+def test_the_most_specific_pattern_wins():
+    """A catch-all alongside a narrower pattern maps only what the narrower one leaves."""
+    mapping = {"orders_*": "archive_*", "*": "build_*"}
 
-    reordered = {"*ers": "b_*", "ord*": "a_*"}
-    assert resolve_table_name("orders", reordered) == "b_ord"
+    assert resolve_table_name("orders_2024", mapping) == "archive_2024"
+    assert resolve_table_name("customers", mapping) == "build_customers"
+
+
+def test_the_same_patterns_resolve_the_same_way_however_they_are_written():
+    """The map reaches the run through a JSONB column, which orders an object's keys itself, so a
+    result that depended on how the caller wrote them would not survive being queued."""
+    pairs = [("ord*", "a_*"), ("*ers", "b_*"), ("o*s", "c_*")]
+    resolved = {resolve_table_name("orders", dict(order)) for order in permutations(pairs)}
+
+    assert len(resolved) == 1
+
+
+def test_a_longer_pattern_wins_from_either_side_of_the_name():
+    """Specificity counts the characters outside the `*`, wherever in the key they sit."""
+    assert resolve_table_name("tt_orders_pass", {"tt_orders_*": "a_*", "tt_*": "b_*"}) == "a_pass"
+    assert resolve_table_name("tt_orders_pass", {"*_orders_pass": "a_*", "*_pass": "b_*"}) == "a_tt"
 
 
 @pytest.mark.unit

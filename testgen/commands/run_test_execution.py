@@ -386,8 +386,11 @@ def restore_result_identity(
     table it selects back, so a run reading elsewhere would otherwise report its results under
     the table it happened to read.
     """
+    # A template renders a name it has none of as the empty string, which is what a result of a
+    # CUSTOM test carries for its table. Restoring None in its place would make an override the
+    # one thing that decides between an empty name and no name.
     retargeted = {
-        str(td.id): (td.schema_name, td.table_name)
+        str(td.id): (td.schema_name or "", td.table_name or "")
         for td in test_defs
         if td.read_schema_name or td.read_table_name
     }
