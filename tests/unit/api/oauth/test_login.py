@@ -20,7 +20,7 @@ def _render(**kwargs):
 def test_login_page_contains_form():
     html = _render()
     assert '<form method="POST"' in html
-    assert 'action="/oauth/authorize"' in html
+    assert 'action="authorize"' in html
 
 
 def test_login_page_contains_hidden_fields():

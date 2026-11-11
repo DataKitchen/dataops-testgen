@@ -63,3 +63,16 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Render a probe from values. When testgen.uiBaseUrl has a path, the UI health check path moves under it.
+*/}}
+{{- define "testgen.probe" -}}
+{{- $probe := deepCopy .probe -}}
+{{- $url := urlParse (.root.Values.testgen.uiBaseUrl | default "") -}}
+{{- $uiPath := trimSuffix "/" $url.path -}}
+{{- if and $url.scheme $url.host $uiPath $probe.httpGet (eq ($probe.httpGet.path | default "") "/_stcore/health") -}}
+{{- $_ := set $probe.httpGet "path" (printf "%s/_stcore/health" $uiPath) -}}
+{{- end -}}
+{{- toYaml $probe -}}
+{{- end -}}

@@ -163,7 +163,7 @@ ingress:
           servicePort: http
   tls: []
 
-# Both probes use the health endpoint on the UI port.
+# Both probes use the health endpoint on the UI port, under the path in testgen.uiBaseUrl when it has one.
 livenessProbe:
   httpGet:
     path: /_stcore/health

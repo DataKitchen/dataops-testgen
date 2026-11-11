@@ -108,9 +108,13 @@ def test_unchanged_index_is_not_rewritten(static):
 def test_import_map_points_every_script_at_its_content_hash(static):
     patch_streamlit.patch_index()
 
-    assert _import_map() == {
-        f"/app/static/{name}": f"/app/static/{name}?h={_hash((static / name).read_bytes())}"
+    hashed = {
+        name: f"./app/static/{name}?h={_hash((static / name).read_bytes())}"
         for name in ["js/components/button.js", "js/scripts.js", "js/van.min.js"]
+    }
+    assert _import_map() == {
+        **{f"/app/static/{name}": url for name, url in hashed.items()},
+        **{f"./app/static/{name}": url for name, url in hashed.items()},
     }
 
 
@@ -133,9 +137,9 @@ def test_injected_tags_carry_the_content_hash(static):
 
     index = _index()
     stylesheet = index.find("link", rel="stylesheet")
-    script = index.find("script", src=re.compile("^/app/static/"))
-    assert stylesheet["href"] == f"/app/static/css/shared.css?h={_hash((static / 'css/shared.css').read_bytes())}"
-    assert script["src"] == f"/app/static/js/scripts.js?h={_hash((static / 'js/scripts.js').read_bytes())}"
+    script = index.find("script", src=re.compile(r"^\./app/static/"))
+    assert stylesheet["href"] == f"./app/static/css/shared.css?h={_hash((static / 'css/shared.css').read_bytes())}"
+    assert script["src"] == f"./app/static/js/scripts.js?h={_hash((static / 'js/scripts.js').read_bytes())}"
     assert script["src"] == _import_map()["/app/static/js/scripts.js"]
 
 
@@ -145,8 +149,8 @@ def test_stylesheet_with_font_urls_is_inlined_with_hashed_urls(static):
     index = _index()
     assert not index.find("link", href=re.compile("fonts.css"))
     style = index.find("style").string
-    assert f'url("/app/static/fonts/quoted.woff2?h={_hash(b"quoted-font")}")' in style
-    assert f"url(/app/static/fonts/bare.woff2?h={_hash(b'bare-font')})" in style
+    assert f'url("./app/static/fonts/quoted.woff2?h={_hash(b"quoted-font")}")' in style
+    assert f"url(./app/static/fonts/bare.woff2?h={_hash(b'bare-font')})" in style
 
 
 def test_repatching_replaces_the_previous_injection(static):
@@ -157,7 +161,7 @@ def test_repatching_replaces_the_previous_injection(static):
     assert len(index.find_all("script", type="importmap")) == 1
     assert len(index.find_all("link", rel="stylesheet")) == 1
     assert len(index.find_all("style")) == 1
-    assert len(index.find_all("script", src=re.compile("^/app/static/"))) == 1
+    assert len(index.find_all("script", src=re.compile(r"^\./app/static/"))) == 1
 
 
 def test_patch_hashes_the_holiday_module_it_generates(static, monkeypatch):

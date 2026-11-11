@@ -294,11 +294,25 @@ default: `default`
 
 Externally-reachable base URL for the TestGen web UI. Used in email notification links and PDF report links so recipients can click through to the correct address.
 
-Must be set in production when TestGen is behind a reverse proxy or load balancer. If not set, defaults to `http://localhost:<STREAMLIT_SERVER_PORT>`.
+Must be set in production when TestGen is behind a reverse proxy or load balancer. If not set, defaults to `http://localhost:<TG_UI_PORT>`.
+
+When the URL includes a path, such as `https://testgen.example.com/testgen`, TestGen serves the UI under that path.
 
 Example: `https://testgen.example.com`
 
 default: `http://localhost:8501`
+
+#### `TG_BASE_URL`
+
+Externally-reachable base URL for the REST API, the MCP server, and the OAuth endpoints. Used as the OAuth issuer and in the MCP server's resource URL, so AI clients and OAuth clients on other machines can reach it.
+
+Must be set in production when TestGen is behind a reverse proxy or load balancer. If not set, defaults to `http://localhost:<TG_API_PORT>`.
+
+When the URL includes a path, such as `https://testgen.example.com/testgen`, TestGen serves the REST API, the MCP server, and the OAuth endpoints under that path.
+
+Example: `https://testgen.example.com`
+
+default: `http://localhost:8530`
 
 ### MCP Server
 

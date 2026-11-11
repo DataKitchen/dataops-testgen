@@ -200,6 +200,7 @@ def test_issue_auth_code_returns_redirect_with_cookie(mock_jwt, mock_server):
     assert "callback?code=ABC" in response.headers["location"]
     cookie_header = response.headers.get("set-cookie", "")
     assert OAUTH_SESSION_COOKIE in cookie_header
+    assert "Path=/oauth" in cookie_header
 
 
 @patch("testgen.api.oauth.routes._server")
@@ -224,11 +225,11 @@ def test_issue_auth_code_returns_json_on_non_302(mock_server):
 # --- GET /oauth/logout ---
 
 
-def test_logout_returns_302_redirect():
-    client = _make_client()
-    resp = client.get("/oauth/logout", follow_redirects=False)
+def test_logout_redirects_to_the_ui_by_default():
+    with patch("testgen.api.oauth.routes.settings.UI_BASE_URL", "https://host/testgen"):
+        resp = _make_client().get("/oauth/logout", follow_redirects=False)
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/"
+    assert resp.headers["location"] == "https://host/testgen/"
 
 
 @patch("testgen.api.oauth.routes._get_existing_user")
@@ -258,6 +259,14 @@ def test_logout_clears_oauth_session_cookie():
     set_cookie = resp.headers["set-cookie"]
     assert OAUTH_SESSION_COOKIE in set_cookie
     assert "Max-Age=0" in set_cookie
+    assert "Path=/oauth" in set_cookie
+
+
+def test_logout_clears_oauth_session_cookie_under_the_base_url_path():
+    with patch("testgen.api.oauth.routes.settings.API_BASE_PATH", "tg-api"):
+        resp = _make_client().get("/oauth/logout", follow_redirects=False)
+
+    assert "Path=/tg-api/oauth" in resp.headers["set-cookie"]
 
 
 def test_logout_redirects_to_custom_uri():
@@ -268,13 +277,13 @@ def test_logout_redirects_to_custom_uri():
 
 
 def test_logout_rejects_external_redirect():
-    client = _make_client()
-    resp = client.get(
-        "/oauth/logout?redirect_uri=https://evil.com/phish",
-        follow_redirects=False,
-    )
+    with patch("testgen.api.oauth.routes.settings.UI_BASE_URL", "https://host/testgen"):
+        resp = _make_client().get(
+            "/oauth/logout?redirect_uri=https://evil.com/phish",
+            follow_redirects=False,
+        )
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/"
+    assert resp.headers["location"] == "https://host/testgen/"
 
 
 def test_logout_allows_relative_path():

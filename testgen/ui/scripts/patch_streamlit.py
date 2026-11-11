@@ -79,15 +79,19 @@ def patch_index() -> None:
     if not head:
         return
 
+    # Page-relative, so the URLs resolve under server.baseUrlPath as well as at the root of the host
     hashed_urls = {
-        url: f"{url}?{HASH_PARAM}={file_hash}" for url, file_hash in hash_static_files(TESTGEN_STATIC_FOLDER).items()
+        url: f".{url}?{HASH_PARAM}={file_hash}" for url, file_hash in hash_static_files(TESTGEN_STATIC_FOLDER).items()
     }
+
+    # A script's own relative imports resolve under the page's path, so each script is also mapped by its
+    # page-relative URL, or a second, unhashed copy of the module would load
+    scripts = {url: hashed for url, hashed in hashed_urls.items() if url.endswith(".js")}
+    imports = {**scripts, **{f".{url}": hashed for url, hashed in scripts.items()}}
 
     # Browsers ignore an import map that follows the first module script, and Streamlit's own bundle is one
     import_map = html.new_tag("script", attrs={"type": "importmap", "class": INJECTED_CLASS})
-    import_map.string = json.dumps(
-        {"imports": {url: hashed for url, hashed in hashed_urls.items() if url.endswith(".js")}}
-    )
+    import_map.string = json.dumps({"imports": imports})
     if charset := head.find("meta", charset=True):
         charset.insert_after(import_map)
     else:

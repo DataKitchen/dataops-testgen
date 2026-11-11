@@ -112,3 +112,23 @@ class SecurityHeadersMiddleware:
             await send(message)
 
         await self.app(scope, receive, send_wrapper)
+
+
+class BasePathMiddleware:
+    """Serve the app under *base_path* as well as at the root.
+
+    A request whose path starts with *base_path* gets it as its ``root_path``, which routing strips before matching.
+    Requests without it pass through unchanged: a proxy that strips the path, and the OAuth discovery documents that
+    RFC 8414 and RFC 9728 place at the root of the host.
+    """
+
+    def __init__(self, app: ASGIApp, base_path: str) -> None:
+        self.app = app
+        self.base_path = f"/{base_path.strip('/')}"
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] in ("http", "websocket"):
+            path = scope["path"]
+            if path == self.base_path or path.startswith(f"{self.base_path}/"):
+                scope = {**scope, "root_path": self.base_path}
+        await self.app(scope, receive, send)

@@ -100,7 +100,7 @@ const AnomaliesSummary = (summary, label = 'Anomalies', options = {}, emit) => {
             {
                 class: `flex-column fx-gap-2 clickable`,
                 style: 'text-decoration: none; color: unset;',
-                href: summary.table_group_id ? `/monitors?project_code=${summary.project_code}&table_group_id=${summary.table_group_id}`: null,
+                href: summary.table_group_id ? `./monitors?project_code=${summary.project_code}&table_group_id=${summary.table_group_id}`: null,
                 onclick: summary.table_group_id ? (event) => {
                     event.preventDefault();
                     event.stopPropagation();

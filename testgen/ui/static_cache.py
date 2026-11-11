@@ -38,11 +38,13 @@ class StaticCacheMiddleware:
     :param app: the ASGI app to wrap
     :param static_folder: the folder served under ``STATIC_PATH_PREFIX``, hashed once when the middleware is created
     :param dev: revalidate every static file instead, hashed or not
+    :param base_path: the path the UI is served under, if any
     """
 
-    def __init__(self, app: ASGIApp, static_folder: pathlib.Path, dev: bool) -> None:
+    def __init__(self, app: ASGIApp, static_folder: pathlib.Path, dev: bool, base_path: str = "") -> None:
         self.app = app
         self.dev = dev
+        self.base_path = f"/{base_path.strip('/')}" if base_path.strip("/") else ""
         self.hashes = {} if dev else hash_static_files(static_folder)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -59,11 +61,14 @@ class StaticCacheMiddleware:
         await self.app(scope, receive, send_with_cache_control)
 
     def _cache_control(self, scope: Scope) -> str | None:
-        if scope["type"] != "http" or not scope["path"].startswith(STATIC_PATH_PREFIX):
+        if scope["type"] != "http":
+            return None
+        path = scope["path"].removeprefix(self.base_path)
+        if not path.startswith(STATIC_PATH_PREFIX):
             return None
         if self.dev:
             return REVALIDATE
         requested_hashes = parse_qs(scope["query_string"].decode("latin-1")).get(HASH_PARAM)
         if not requested_hashes:
             return None
-        return IMMUTABLE if requested_hashes == [self.hashes.get(scope["path"])] else REVALIDATE
+        return IMMUTABLE if requested_hashes == [self.hashes.get(path)] else REVALIDATE

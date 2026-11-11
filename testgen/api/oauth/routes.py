@@ -35,6 +35,10 @@ LOG = logging.getLogger("testgen")
 
 OAUTH_SESSION_COOKIE = "dk_oauth_session"
 
+
+def _session_cookie_path() -> str:
+    return f"/{settings.API_BASE_PATH}/oauth" if settings.API_BASE_PATH else "/oauth"
+
 router = APIRouter(prefix="/oauth", tags=["OAuth"], dependencies=[Depends(db_session, scope="function")])
 
 _server: TestGenAuthorizationServer | None = None
@@ -118,7 +122,7 @@ def _issue_auth_code(request: Request, user: User, body: dict) -> RedirectRespon
         httponly=True,
         samesite="lax",
         secure=settings.BASE_URL.startswith("https"),
-        path="/",
+        path=_session_cookie_path(),
     )
     return response
 
@@ -235,21 +239,22 @@ def authorize_post(
 @router.get("/logout", summary="Sign out")
 def logout(
     request: Request,
-    redirect_uri: str = Query(
-        "/",
-        description="Where to redirect after signing out, on the TestGen origin. A URL on another origin "
-        "redirects to `/` instead.",
+    redirect_uri: str | None = Query(
+        None,
+        description="Where to redirect after signing out, on the TestGen origin. Defaults to the TestGen UI, "
+        "which a URL on another origin also redirects to.",
     ),
 ):
     """Signs the browser out of TestGen and redirects to `redirect_uri`."""
-    parsed = urlparse(redirect_uri)
-    if parsed.netloc and parsed.netloc != request.url.netloc:
-        redirect_uri = "/"
+    if not redirect_uri or urlparse(redirect_uri).netloc not in ("", request.url.netloc):
+        # Under a path, Streamlit answers the path without its slash with an absolute redirect built from the scheme it
+        # sees, which is http behind a proxy that terminates TLS
+        redirect_uri = f"{settings.UI_BASE_URL}/"
     if user := _get_existing_user(request):
         bind(AuditContext(source=JobSource.api, actor=Actor.of(user)))
         record(AuditAction.USER_SIGNED_OUT)
     response = RedirectResponse(url=redirect_uri, status_code=302)
-    response.delete_cookie(key=OAUTH_SESSION_COOKIE, path="/")
+    response.delete_cookie(key=OAUTH_SESSION_COOKIE, path=_session_cookie_path())
     return response
 
 
