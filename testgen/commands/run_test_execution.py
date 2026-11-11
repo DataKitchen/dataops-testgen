@@ -320,6 +320,7 @@ def report_test_run(job_exec: JobExecution) -> None:
     properties = {
         "source": job_exec.source.upper(),
         "sql_flavor": connection.sql_flavor_code if connection else None,
+        "suite_type": test_suite.suite_type if test_suite else None,
         "test_count": test_run.test_ct,
         "status": job_exec.status,
         **measurements_for(job_exec.id),
