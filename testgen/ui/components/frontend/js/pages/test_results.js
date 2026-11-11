@@ -370,7 +370,7 @@ const ContractVersion = (contractVersion) => {
 
 /**
  * What the run carried besides its results: what it was pointed away from its defaults at, and the
- * keys the caller sent, in the order they sent them. Headings appear only when both are present.
+ * keys the caller sent. Headings appear only when both are present.
  */
 const RunMetadataList = (overrides, metadata) => {
     const overrideEntries = Object.entries(overrides ?? {});

@@ -23,7 +23,7 @@ test_types:
   default_parm_prompts: |-
     Threshold Failure Count,Custom SQL Expression (TRUE on failure)
   default_parm_help: |-
-    The number of failing records that are acceptable before the test fails.|Expression should evaluate to TRUE for a failing record or FALSE for a passing record. An expression can reference only columns in the selected table. Enter a condition, not a full query. Example: quantity_shipped > quantity_ordered.
+    The number of failing records that are acceptable before the test fails.|Expression should evaluate to TRUE for a failing record or FALSE for a passing record. An expression can reference only columns in the selected table. Enter a condition, not a full query. Example: quantity_shipped > quantity_ordered. Use {NAME:default} for a value a test run can override, such as {END_DATE:2026-10-10}.
   default_parm_required: N,Y
   default_severity: Fail
   run_type: CAT

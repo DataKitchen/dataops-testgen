@@ -631,3 +631,54 @@ def test_validate_rejects_a_required_field_of_only_whitespace(value):
 )
 def test_validate_one_of_accepts_any_member(fields):
     make_td(column_name="email", **fields).validate(_bounded_test_type())  # no raise
+
+
+# -- custom query variable declarations --------------------------------------
+# Every save path reaches this through test_definition_errors: the Add/Edit Test dialog and
+# contract import call validate(), the MCP tools call validate(), and the import service calls
+# test_definition_errors directly.
+
+
+def _custom_query_errors(query: str | None) -> dict[str, str]:
+    tt = make_test_type(code="CUSTOM", scope="custom", param_columns={"custom_query"},
+                        default_parm_columns="custom_query")
+    td = make_td(custom_query=query, column_name="focus")
+    try:
+        td.validate(tt)
+    except InvalidTestDefinitionFields as error:
+        return error.errors
+    return {}
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT 1",
+        "SELECT * FROM {DATA_SCHEMA}.orders",
+        "WHERE d > '{END_DATE:2026-10-10}'",
+        "WHERE x ~ 'a{2,4}'",
+    ],
+)
+def test_a_query_whose_declarations_are_usable_saves(query):
+    assert "custom_query" not in _custom_query_errors(query)
+
+
+def test_a_variable_without_a_default_is_refused_on_save():
+    assert _custom_query_errors("WHERE d > '{END_DATE}'")["custom_query"] == (
+        "Variable END_DATE needs a default value, written as {END_DATE:value}"
+    )
+
+
+def test_declaring_a_parameter_testgen_fills_in_is_refused_on_save():
+    assert _custom_query_errors("SELECT * FROM {DATA_SCHEMA:public}.t")["custom_query"] == (
+        "DATA_SCHEMA is filled in by TestGen and cannot be used as a variable"
+    )
+
+
+def test_a_test_type_that_takes_no_custom_query_reports_that_instead():
+    """The declaration check is the alternative branch, so the blunter error still wins."""
+    tt = make_test_type(code="Row_Ct", scope="table", param_columns=set(), default_parm_columns=None)
+    td = make_td(custom_query="WHERE d > '{END_DATE}'")
+    with pytest.raises(InvalidTestDefinitionFields) as error:
+        td.validate(tt)
+    assert "does not accept a custom query" in error.value.errors["custom_query"]

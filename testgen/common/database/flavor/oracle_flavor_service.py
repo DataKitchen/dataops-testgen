@@ -23,6 +23,8 @@ class OracleFlavorService(FlavorService):
     escaped_underscore = "\\_"
     escape_clause = "ESCAPE '\\'"
     varchar_type = "VARCHAR2(1000)"
+    # ORA-01704 rejects a longer one, whatever the column it is written to holds.
+    max_string_literal_bytes = 4000
     default_uppercase = True
     row_limiting_clause = "fetch"
     test_query = "SELECT 1 FROM DUAL"

@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 from sqlalchemy import and_, asc, case, desc, func, or_, tuple_
 
-from testgen.common import date_service
+from testgen.common import date_service, query_variables
 from testgen.common.audit.actions import AuditAction
 from testgen.common.audit.recorder import stored_values
 from testgen.common.audit.test_definitions import (
@@ -1662,7 +1662,10 @@ def validate_test(test_definition: dict, table_group: TableGroupMinimal) -> None
     connection = get_connection(table_group.connection_id)
 
     if test_definition["test_type"] == "Condition_Flag":
-        condition = replace_params(test_definition["custom_query"], {"DATA_SCHEMA": schema})
+        # Defaults stand in for the values a test run would give, as the other two branches do.
+        condition = replace_params(
+            query_variables.render(test_definition["custom_query"]), {"DATA_SCHEMA": schema}
+        )
         flavor_service = get_flavor_service(connection.sql_flavor)
         concat_operator = flavor_service.concat_operator
         table_ref = flavor_service.get_table_ref(schema, table_name, connection.sql_flavor_code)

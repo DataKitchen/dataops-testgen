@@ -194,6 +194,9 @@ const renderParamField = (config, getCurrentValue, onValueChange, onValidityChan
                 name: column,
                 label: config.label,
                 help: config.help,
+                // The only textarea parameter is the custom query, whose help has a query to
+                // describe and the variables a run can give it values for.
+                helpClasses: 'tg-tooltip--help-wide',
                 placeholder: config.placeholder,
                 value: getCurrentValue(),
                 height: 100,
