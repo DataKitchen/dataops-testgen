@@ -44,13 +44,13 @@ class FileDeclarationShape(BaseModel):
         str,
         Field(
             description="Name for this table in TestGen. Must start with a letter or underscore and contain only "
-            "letters, numbers and underscores. Unique within the table group.",
+            "letters, numbers, and underscores. Unique within the table group.",
         ),
     ]
     uri: Annotated[
         str,
         Field(
-            description="Path to the data, relative to the connection's base path, base URI or container. Name one "
+            description="Path to the data, relative to the connection's base path, base URI, or container. Name one "
             "file (`sales/orders.csv`) or a glob pattern (`sales/*.csv`, or `sales/**/*.csv` to include "
             "subfolders). A pattern is one table whose rows span every file it matches. A bare folder is rejected.",
         ),

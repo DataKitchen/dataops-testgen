@@ -24,7 +24,7 @@ from testgen.common.database.database_service import (
     get_tg_schema,
     replace_params,
 )
-from testgen.common.enums import VALUE_LIST_TEST_TYPES, MonitorCalculation, SuiteType, TestScope
+from testgen.common.enums import VALUE_LIST_TEST_TYPES, MonitorCalculation, MonitorType, SuiteType, TestScope
 from testgen.common.freshness_service import (
     count_excluded_minutes,
     effective_exclude_weekends,
@@ -689,13 +689,9 @@ class TestExecutionSQL:
 
         return query, None if no_bind else params
 
-    def has_schema_changes(self) -> tuple[dict]:
+    def get_missing_monitors(self, monitor_type: MonitorType) -> tuple[str, dict]:
         # Runs on App database
-        return self._get_query("has_schema_changes.sql")
-
-    def get_missing_freshness_monitors(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_query("get_missing_freshness_monitors.sql")
+        return self._get_query("get_missing_monitors.sql", extra_params={"MONITOR_TYPE": monitor_type.value})
 
     def get_errored_autogen_monitors(self) -> tuple[str, dict]:
         # Runs on App database

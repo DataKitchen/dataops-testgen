@@ -19,6 +19,7 @@ from testgen.commands.test_generation import (
     run_test_generation,
     run_test_generation_and_report,
 )
+from testgen.common.database.database_service import get_flavor_service
 from testgen.common.enums import JobSource, JobStatus, RegenerationGroup, SuiteType
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.suite_version import FrozenVersionError
@@ -330,6 +331,30 @@ def test_run_is_a_no_op_when_no_generation_queries_resolve(_mock_gen, mock_exec)
     tg.run()
 
     mock_exec.assert_not_called()
+
+
+@pytest.mark.parametrize(("flavor", "count"), [("postgresql", "COUNT("), ("mssql", "COUNT_BIG(")])
+def test_volume_monitors_count_rows_with_the_flavor_count(flavor, count):
+    tg = _make_generation()
+    tg.flavor = flavor
+    tg.flavor_service = get_flavor_service(flavor)
+
+    query, _ = tg._get_query("gen_Volume_Trend.sql", "gen_query_tests")
+
+    assert f"'{count}CASE WHEN {{SUBSET_CONDITION}} THEN 1 END)' AS custom_query" in query
+
+
+def test_monitor_generation_binds_the_table_names_it_is_given():
+    tg = _make_generation()
+    with (
+        patch.object(TestGeneration, "_get_generation_queries", return_value=[]) as queries,
+        patch(f"{MODULE}.execute_db_queries"),
+    ):
+        tg.monitor_run("insert", table_names=["o'brien"])
+
+    extra_params = queries.call_args.kwargs["extra_params"]
+    assert extra_params["TABLE_FILTER"] == "AND table_name = ANY(:TABLE_NAMES)"
+    assert extra_params["TABLE_NAMES"] == ["o'brien"]
 
 
 # --- Table scope for contracts ---

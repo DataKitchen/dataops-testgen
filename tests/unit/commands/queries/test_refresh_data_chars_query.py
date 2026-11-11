@@ -281,6 +281,15 @@ def test_get_row_counts_handles_null_max_query_chars():
     assert all(isinstance(query, str) and query for query, _ in result)
 
 
+@pytest.mark.parametrize(("flavor", "count"), [("postgresql", "COUNT(*)"), ("mssql", "COUNT_BIG(*)")])
+def test_row_counts_use_the_flavor_count(flavor, count):
+    sql_generator = RefreshDataCharsSQL(Connection(sql_flavor=flavor), TableGroup(table_group_schema="s"))
+
+    (query, _), = sql_generator.get_row_counts(["orders"])
+
+    assert f"{count} AS row_count" in query
+
+
 @pytest.mark.parametrize("mask", (",", " , ", ",,"))
 def test_a_criterion_of_only_separators_applies_no_filter(mask):
     """A mask of only commas is a truthy string with no parts. The guards branch on the

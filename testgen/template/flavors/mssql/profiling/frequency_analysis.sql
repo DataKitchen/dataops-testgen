@@ -15,8 +15,8 @@ WITH target_table AS (
 ranked_vals
 AS
     (SELECT CAST(MIN(CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX)) AS val,
-            COUNT(*) AS  ct,
-            ROW_NUMBER() OVER (ORDER BY CASE WHEN MIN("{COL_NAME}") > ' ' THEN 0 ELSE 1 END, COUNT(*) DESC,
+            COUNT_BIG(*) AS  ct,
+            ROW_NUMBER() OVER (ORDER BY CASE WHEN MIN("{COL_NAME}") > ' ' THEN 0 ELSE 1 END, COUNT_BIG(*) DESC,
                                         CAST(MIN(CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX))
                                             COLLATE Latin1_General_100_BIN2,
                                         DATALENGTH(MIN(CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX))))) AS rn,
@@ -37,7 +37,7 @@ AS (
 -- distinct as binary because string comparison ignores trailing spaces, even under BIN2.
 hash_input
 AS (
-    SELECT CASE WHEN COUNT(*) <= 70 THEN STRING_AGG(val, N'|') WITHIN GROUP (ORDER BY val, DATALENGTH(val)) END AS agg
+    SELECT CASE WHEN COUNT_BIG(*) <= 70 THEN STRING_AGG(val, N'|') WITHIN GROUP (ORDER BY val, DATALENGTH(val)) END AS agg
     FROM (SELECT CAST(bin AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2 AS val
             FROM (SELECT DISTINCT CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX)) AS bin
                     FROM target_table
@@ -78,7 +78,7 @@ AS (
 SELECT MIN(top_val) AS value,
        SUM(ct) AS value_ct,
        MIN(rn) AS value_rank,
-       CASE WHEN MIN(rn) > 10 THEN COUNT(*) END AS other_distinct_ct,
+       CASE WHEN MIN(rn) > 10 THEN COUNT_BIG(*) END AS other_distinct_ct,
        MAX(sample_value_ct) AS sample_value_ct,
        (SELECT distinct_value_hash FROM value_hash) AS distinct_value_hash
 FROM grouped_vals

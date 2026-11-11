@@ -821,7 +821,7 @@ def test_create_reports_every_failing_declaration_at_once(base_path):
     assert details == [
         "orders: File or Pattern names a folder. Use a pattern to read the files in it, such as sales/*.csv.",
         "Orders: Name is already used by another table in this table group.",
-        "1bad: Name must start with a letter or underscore and contain only letters, numbers and underscores.",
+        "1bad: Name must start with a letter or underscore and contain only letters, numbers, and underscores.",
         "1bad: File or Pattern must be inside the location the connection reads from.",
     ]
     mock_save.assert_not_called()

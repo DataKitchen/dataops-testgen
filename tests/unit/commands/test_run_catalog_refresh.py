@@ -22,6 +22,12 @@ def _table_group():
     return MagicMock(id=uuid4(), project_code="DEFAULT", connection_id=1)
 
 
+@pytest.fixture(autouse=True)
+def monitor_suite():
+    with patch(f"{MODULE}.TestSuite.get", return_value=MagicMock()) as get:
+        yield get
+
+
 @patch("testgen.common.run_service.record_run")
 @patch(f"{MODULE}.JobExecution.submit")
 def test_setup_with_only_profiling_leaves_the_catalog_to_profiling(mock_submit, mock_record):
@@ -260,3 +266,23 @@ def test_profiling_queued_by_setup_keeps_the_id_of_a_user_deleted_since(
 
     [entry] = audit_log.records()
     assert (entry["actor_id"], entry["actor_username"]) == (str(user_id), None)
+
+
+@patch(f"{MODULE}.get_current_session")
+@patch(f"{MODULE}.JobExecution.submit")
+@patch(f"{MODULE}.run_monitor_generation")
+@patch(f"{MODULE}.run_data_chars_refresh")
+@patch(f"{MODULE}.set_target_db_params")
+@patch(f"{MODULE}.Connection.get")
+@patch(f"{MODULE}.TableGroup.get")
+def test_a_deleted_monitor_suite_skips_only_monitor_generation(
+    mock_tg, _conn, _target, mock_refresh, mock_gen, mock_submit, _session, monitor_suite,
+):
+    mock_tg.return_value = _table_group()
+    monitor_suite.return_value = None
+
+    run_catalog_refresh(str(uuid4()), monitor_suite_id=str(uuid4()), run_profiling=True)
+
+    mock_refresh.assert_called_once()
+    mock_gen.assert_not_called()
+    assert mock_submit.call_args.kwargs["job_key"] == JobKey.run_profile

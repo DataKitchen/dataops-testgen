@@ -492,6 +492,8 @@ class TestResultsPage(Page):
             record_test_saved(definition, created=False, stored=stored)
             st.session_state.pop(EDIT_TEST_KEY, None)
             st.session_state.pop(VALIDATE_RESULT_KEY, None)
+            # Dropped so the rerun rebuilds the selection from the saved test
+            st.session_state.pop(SELECTED_ITEM_KEY, None)
             st.cache_data.clear()
 
         @with_database_session

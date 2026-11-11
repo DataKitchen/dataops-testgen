@@ -487,8 +487,8 @@ class TestGeneration:
 
         extra_params = {"INSERT_ONLY": mode == "insert"}
         if table_names:
-            table_list = ", ".join(f"'{table}'" for table in table_names)
-            extra_params["TABLE_FILTER"] = f"AND table_name IN ({table_list})"
+            extra_params["TABLE_NAMES"] = list(table_names)
+            extra_params["TABLE_FILTER"] = "AND table_name = ANY(:TABLE_NAMES)"
 
         LOG.info("Running monitor generation queries")
         execute(self._get_generation_queries(extra_params=extra_params))
@@ -563,6 +563,7 @@ class TestGeneration:
             "AS_OF_DATE": to_sql_timestamp(self.as_of_date),
             "SQL_FLAVOR": self.flavor,
             "QUOTE": self.flavor_service.quote_character,
+            "COUNT_FUNCTION": self.flavor_service.count_function,
             "INSERT_ONLY": False,
             "TABLE_NAMES": self.table_names,
             "TABLE_FILTER": "AND table_name = ANY(:TABLE_NAMES)" if self.table_names is not None else "",

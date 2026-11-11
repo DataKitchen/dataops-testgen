@@ -23,7 +23,7 @@ from testgen.common import (
 )
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import ThreadedProgress
-from testgen.common.enums import JobKey, SuiteType, run_duration_seconds
+from testgen.common.enums import JobKey, MonitorType, SuiteType, run_duration_seconds
 from testgen.common.job_context import job_context, measurements_for, record_measurement
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session, with_database_session
@@ -335,19 +335,16 @@ def report_test_run(job_exec: JobExecution) -> None:
 def _sync_monitor_definitions(sql_generator: TestExecutionSQL, data_chars: list[ColumnChars]) -> None:
     test_suite_id = sql_generator.test_run.test_suite_id
 
-    schema_changes = fetch_dict_from_db(*sql_generator.has_schema_changes())[0]
-    if schema_changes["has_table_drops"]:
-        run_monitor_generation(test_suite_id, ["Freshness_Trend", "Volume_Trend", "Metric_Trend"], mode="delete")
-    if schema_changes["has_table_adds"]:
-        # Freshness monitors will be inserted after profiling
-        run_monitor_generation(test_suite_id, ["Volume_Trend"], mode="insert")
+    run_monitor_generation(test_suite_id, ["Freshness_Trend", "Volume_Trend", "Metric_Trend"], mode="delete")
 
-    # Autogenerate missing freshness monitors if profiling data exists
+    # Freshness monitors are generated from profiling results
+    monitor_types = [MonitorType.VOLUME]
     if sql_generator.table_group.last_complete_profile_run_id:
-        missing_monitors = fetch_dict_from_db(*sql_generator.get_missing_freshness_monitors())
-        if missing_monitors:
+        monitor_types.append(MonitorType.FRESHNESS)
+    for monitor_type in monitor_types:
+        if missing_monitors := fetch_dict_from_db(*sql_generator.get_missing_monitors(monitor_type)):
             table_names = [row["table_name"] for row in missing_monitors]
-            run_monitor_generation(test_suite_id, ["Freshness_Trend"], mode="insert", table_names=table_names)
+            run_monitor_generation(test_suite_id, [monitor_type.value], mode="insert", table_names=table_names)
 
     # Regenerate monitors that errored in previous run or fail validation
     regen_tables_by_type: dict[str, set[str]] = defaultdict(set)

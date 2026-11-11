@@ -98,12 +98,12 @@ def test_move_restamps_the_version_from_the_target_suite():
     with entity_patch, model_patch:
         TestDefinition.move([str(uuid4())], uuid4(), target_suite, target_schema="public", qualifies_table_refs=True)
 
-    resolution = str(
-        session.scalar.call_args_list[0].args[0].compile(
-            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
-        )
+    resolution = " ".join(
+        str(c.args[0].compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+        for c in session.scalar.call_args_list
+        if "suite_versions" in str(c.args[0])
     )
-    assert "suite_versions" in resolution, "move does not resolve the target suite's version"
+    assert resolution, "move does not resolve the target suite's version"
     assert str(target_suite) in resolution, "move resolves a version for the wrong suite"
 
     sql = _emitted_sql(session)
@@ -134,8 +134,8 @@ def test_copy_reads_only_the_rows_of_their_resolved_version():
     with entity_patch, model_patch:
         TestDefinition.copy([str(uuid4())], uuid4(), uuid4(), target_schema="public", qualifies_table_refs=True)
 
-    sql = _emitted_sql(session)
-    assert "suite_versions" in sql, "copy reads definitions from every version of the source suite"
+    [source_read] = [c.args[0] for c in session.scalars.call_args_list]
+    assert scopes_to_a_version(source_read), "copy reads definitions from every version of the source suite"
 
 
 def test_saving_a_new_definition_stamps_the_resolved_version():

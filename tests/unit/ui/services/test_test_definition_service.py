@@ -9,6 +9,7 @@ from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.ui.services.test_definition_service import (
     MANAGED_ADD_MESSAGE,
     MANAGED_EDIT_MESSAGE,
+    copy_move_refusal,
     dialog_catalog,
     dialog_table_columns,
     save_from_dialog,
@@ -226,4 +227,47 @@ def test_value_list_for_a_numeric_column_is_refused_when_it_holds_a_non_number()
     assert _save_on_catalog_column(definition, "N") == (
         "The test could not be saved. List of Expected Values: contains a value that is not a number: x.",
         False,
+    )
+
+
+def _copy_move_refusal(declared: list[str] | None, source_tables: list[str | None], target_table: str | None = None):
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = source_tables
+    with (
+        patch(f"{SERVICE_MODULE}.writable_tables", return_value=declared),
+        patch(f"{SERVICE_MODULE}.get_current_session", return_value=session),
+    ):
+        return copy_move_refusal(CONTRACT, [str(uuid4())], target_table)
+
+
+def test_copy_move_into_a_regular_suite_is_not_checked():
+    assert _copy_move_refusal(None, ["anything"]) is None
+
+
+def test_copy_move_of_tests_on_declared_tables_proceeds():
+    assert _copy_move_refusal(["orders", "customers"], ["orders", "customers"]) is None
+
+
+def test_copy_move_names_the_undeclared_source_table():
+    assert _copy_move_refusal(["orders"], ["orders", "returns"]) == (
+        "The contract does not declare the table returns. Add it under Schema on the Contract Metadata tab, "
+        "or choose a declared table."
+    )
+
+
+def test_copy_move_names_every_undeclared_source_table():
+    assert _copy_move_refusal(["orders"], ["shipments", "returns", "refunds"]) == (
+        "The contract does not declare the tables refunds, returns, and shipments. Add them under Schema on "
+        "the Contract Metadata tab, or choose a declared table."
+    )
+
+
+def test_copy_move_checks_the_target_table_in_place_of_the_source_tables():
+    assert _copy_move_refusal(["orders"], ["returns"], target_table="orders") is None
+    assert "the table returns." in _copy_move_refusal(["orders"], ["orders"], target_table="returns")
+
+
+def test_copy_move_of_a_test_naming_no_table_into_a_contract_is_refused():
+    assert _copy_move_refusal(["orders"], [None]) == (
+        "A test on a contract must name one of the tables the contract declares."
     )

@@ -99,7 +99,7 @@ def list_test_suites(
     summary="Read a test suite",
 )
 def get_test_suite(test_suite: TestSuite = resolve_test_suite("view", TEST_SUITE_TYPES)):  # noqa: B008
-    """A test suite's configuration: its default severity, scoring and Observability
+    """A test suite's configuration: its default severity, its scoring and Observability
     settings, the generation sets test generation uses, and whether it is its table
     group's default suite.
 

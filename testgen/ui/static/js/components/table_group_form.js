@@ -129,7 +129,7 @@ const declarationNameValidators = (rows, row) => [
     (value) => (String(value ?? '').trim() ? null : 'Name is required.'),
     (value) => (!value || DECLARATION_NAME_PATTERN.test(String(value).trim())
         ? null
-        : 'Name must start with a letter or underscore and contain only letters, numbers and underscores.'),
+        : 'Name must start with a letter or underscore and contain only letters, numbers, and underscores.'),
     (value) => {
         const name = String(value ?? '').trim();
         // DuckDB folds identifiers even when quoted, so names that differ only in case collide.

@@ -7,7 +7,7 @@
  * @typedef VolumeTrendEvent
  * @type {object}
  * @property {number} time
- * @property {number} record_count
+ * @property {number?} record_count
  * @property {boolean} is_anomaly
  * @property {boolean} is_pending
  * @property {boolean} is_training
@@ -55,6 +55,7 @@
  * @property {VolumeTrendEvent[]} volume_events
  * @property {SchemaEvent[]} schema_events
  * @property {MetricEventGroup[]} metric_events
+ * @property {string[]?} monitor_types
  * @property {(DataStructureLog[])?} data_structure_logs
  * @property {Predictions?} predictions
  * @property {TrendRange?} trend_range
@@ -510,6 +511,13 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
   const origin = { x: chartsYAxisWidth + paddingLeft, y: chartHeight + spacing };
   const end = { x: chartsWidth + chartsYAxisWidth - paddingRight, y: chartHeight - spacing };
 
+  const monitorTypes = getValue(props.monitor_types);
+  const lacksMonitor = (testType) => monitorTypes != null && !monitorTypes.includes(testType);
+  const NoMonitorText = (position, height, message) => text(
+    { x: origin.x, y: position + height / 2, class: 'text-small', fill: 'var(--caption-text-color)', 'dominant-baseline': 'middle' },
+    message,
+  );
+
   let verticalPosition = 0;
   const positionTracking = {};
   const nextPosition = (options) => {
@@ -769,6 +777,13 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
         },
         ...parsedFreshnessEvents,
       ),
+      lacksMonitor('Freshness_Trend')
+        ? NoMonitorText(
+          positionTracking.freshnessChart,
+          fresshnessChartHeight,
+          'This table has no freshness monitor. Freshness monitors are generated from profiling results.',
+        )
+        : '',
       DividerLine({ x: origin.x - paddingLeft, y: nextPosition({ offset: fresshnessChartHeight }) }, end),
 
       text({ x: origin.x, y: nextPosition({ spaces: 2 }), class: 'text-small', fill: 'var(--primary-text-color)' }, 'Volume'),
@@ -793,6 +808,9 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
         },
         parsedVolumeTrendEvents,
       ),
+      lacksMonitor('Volume_Trend')
+        ? NoMonitorText(positionTracking.volumeTrendChart, volumeTrendChartHeight, 'This table has no volume monitor.')
+        : '',
       DividerLine({ x: origin.x - paddingLeft, y: nextPosition({ offset: volumeTrendChartHeight }) }, end),
 
       // Schema Chart Selection Highlight
