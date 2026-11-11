@@ -72,7 +72,7 @@ def get_connection(connection: Connection = resolve_connection("view")):  # noqa
         authentication=(
             AUTHENTICATION_FROM_MODE[mode] if (mode := authentication_method(connection)) is not None else None
         ),
-        max_threads=connection.max_threads,
+        max_threads=connection.effective_max_threads,
         max_expression_length=connection.max_query_chars,
         settings={
             settings_key(field.label): str(value)

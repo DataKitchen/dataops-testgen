@@ -37,6 +37,7 @@ from testgen.common.database.flavor.flavor_service import (
     SQLFlavor,
     resolve_connection_params,
 )
+from testgen.common.flavors import clamp_max_threads
 from testgen.common.read_file import get_template_files
 from testgen.common.standalone_postgres import get_connection_string as get_standalone_connection_string
 from testgen.common.standalone_postgres import is_standalone_mode
@@ -243,7 +244,7 @@ def fetch_from_db_threaded(
     query_count = len(queries)
     processed_count = 0
     processed_indexes: list[int] = []
-    max_threads = max(1, min(10, max_threads))
+    max_threads = clamp_max_threads(max_threads)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
         futures = [
@@ -318,7 +319,7 @@ def run_keyed_worker_pool(
     A caller that stops consuming -- by raising, or by closing the iterator -- also stops the
     pool, so abandoning the results does not first pay for producing them.
     """
-    max_threads = max(1, min(10, max_threads))
+    max_threads = clamp_max_threads(max_threads)
     work = iter(items)
     pull_lock = threading.Lock()
     # A worker enqueues the sentinel as it leaves, so the consumer knows the pool is drained

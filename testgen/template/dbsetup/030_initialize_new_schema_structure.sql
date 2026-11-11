@@ -75,7 +75,7 @@ CREATE TABLE connections (
    project_db             VARCHAR(100),
    connection_name        VARCHAR(40),
    project_pw_encrypted   BYTEA,
-   max_threads            INTEGER DEFAULT 4,
+   max_threads            INTEGER NOT NULL,
    max_query_chars        INTEGER,
    url VARCHAR(200) default '',
    connect_by_url BOOLEAN default FALSE,

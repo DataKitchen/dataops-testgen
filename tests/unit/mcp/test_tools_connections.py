@@ -14,6 +14,7 @@ from testgen.common.database.connection_service import ConnectionStatus
 from testgen.common.models.connection import Connection
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
+from testgen.mcp.tools.common import format_max_threads
 
 pytestmark = pytest.mark.unit
 
@@ -471,6 +472,7 @@ def test_get_connection_never_returns_secrets(mock_resolve, db_session_mock):
         connection_name="warehouse_prod",
         sql_flavor="postgresql",
         sql_flavor_code="postgresql",
+        max_threads=4,
         project_host="localhost",
         project_port="5432",
         project_db="testgen",
@@ -526,3 +528,22 @@ def test_get_connection_raises_not_found_for_inaccessible(mock_conn_cls, db_sess
 
     with pytest.raises(MCPResourceNotAccessible, match="Connection .* not found or not accessible"):
         get_connection(999)
+
+
+@pytest.mark.parametrize(
+    ("code", "stored", "expected"),
+    [
+        ("mssql", 2, "2 (recommended)"),
+        ("mssql", 4, "4 (2 recommended)"),
+        ("bigquery", 4, "4 (8 recommended)"),
+        ("postgresql", 4, "4 (default)"),
+        ("postgresql", 6, "6 (4 default)"),
+        ("snowflake", 4, "4 (recommended)"),
+        ("snowflake", 6, "6 (4 recommended)"),
+        ("s3", 4, "1 (fixed)"),
+    ],
+)
+def test_max_threads_shows_the_recommended_or_default_value(code, stored, expected):
+    family = "duckdb" if code == "s3" else code
+    connection = _stored_connection(sql_flavor=family, sql_flavor_code=code, max_threads=stored)
+    assert format_max_threads(connection) == expected
