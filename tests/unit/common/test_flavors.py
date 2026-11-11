@@ -2,6 +2,7 @@
 
 import pathlib
 import re
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,6 +18,9 @@ from testgen.common.flavors import (
     IN_PROCESS_FLAVOR_CODES,
     SqlFlavorCode,
     SqlFlavorLabel,
+    clamp_max_threads,
+    default_max_threads,
+    recommended_max_threads,
     reports_table_group_schema,
     runs_in_process,
     table_group_schema_label,
@@ -245,7 +249,9 @@ def test_value_list_params_renders_an_empty_list_as_matching_nothing():
         ("duckdb", "files", 4, 1),
         ("duckdb", "duckdb", 8, 1),
         ("postgresql", "postgresql", 6, 6),
-        ("postgresql", "postgresql", None, 4),
+        # A stored value outside the range a user can choose is cut to it.
+        ("snowflake", "snowflake", 40, 16),
+        ("snowflake", "snowflake", 0, 1),
     ],
 )
 def test_effective_max_threads_applies_the_flavor_pin(flavor, code, stored, expected):
@@ -253,6 +259,53 @@ def test_effective_max_threads_applies_the_flavor_pin(flavor, code, stored, expe
 
     connection = Connection(sql_flavor=flavor, sql_flavor_code=code, max_threads=stored)
     assert connection.effective_max_threads == expected
+
+
+@pytest.mark.parametrize(
+    ("code", "recommended", "default"),
+    [
+        ("mssql", 2, 2),
+        ("azure_mssql", 2, 2),
+        ("redshift", 2, 2),
+        ("oracle", 2, 2),
+        ("bigquery", 8, 8),
+        ("synapse_mssql", 4, 4),
+        ("onelake_mssql", None, 4),
+        ("postgresql", None, 4),
+        ("redshift_spectrum", 4, 4),
+        ("snowflake", 4, 4),
+        ("databricks", 4, 4),
+        ("sap_hana", 4, 4),
+        ("duckdb", None, 1),
+        ("files", None, 1),
+        (None, None, 4),
+    ],
+)
+def test_default_max_threads_per_flavor(code, recommended, default):
+    assert recommended_max_threads(code) == recommended
+    assert default_max_threads(code) == default
+
+
+@pytest.mark.parametrize(("value", "expected"), [(-3, 1), (0, 1), (1, 1), (16, 16), (17, 16)])
+def test_clamp_max_threads_cuts_to_the_choosable_range(value, expected):
+    assert clamp_max_threads(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("params", "expected"),
+    [
+        ({"sql_flavor": "mssql", "sql_flavor_code": "mssql"}, 2),
+        ({"sql_flavor": "bigquery", "sql_flavor_code": "bigquery"}, 8),
+        ({"sql_flavor": "redshift", "sql_flavor_code": None}, 2),
+        ({"sql_flavor": "postgresql", "sql_flavor_code": "postgresql"}, 4),
+        ({"sql_flavor": "duckdb", "sql_flavor_code": "s3"}, 1),
+    ],
+)
+def test_a_new_connection_without_a_thread_count_stores_its_flavor_default(params, expected):
+    from testgen.common.models.connection import Connection
+
+    context = SimpleNamespace(get_current_parameters=lambda: params)
+    assert Connection.__table__.c.max_threads.default.arg(context) == expected
 
 
 def test_every_target_fan_out_reads_the_pinned_thread_count():

@@ -31,7 +31,10 @@ from testgen.common.enums import JobSource
 from testgen.common.flavors import (
     FLAVOR_CODE_TO_FAMILY,
     FLAVOR_CODE_TO_LABEL,
+    MAX_THREADS_MAX,
+    default_max_threads,
     fixed_max_threads,
+    recommended_max_threads,
     table_group_schema_label,
 )
 from testgen.common.models import get_current_session, with_database_session
@@ -565,6 +568,9 @@ class ConnectionFlavor:
     flavor: str
     field_help: dict[str, str]
     fixed_max_threads: int | None
+    default_max_threads: int
+    recommends_max_threads: bool
+    max_threads_limit: int
     schema_label: str | None
     supports_value_hash: bool
 
@@ -614,6 +620,9 @@ FLAVOR_OPTIONS = [
         icon=get_asset_data_url(icon),
         field_help=_FLAVOR_FIELD_HELP.get(code, {}),
         fixed_max_threads=fixed_max_threads(code),
+        default_max_threads=default_max_threads(code),
+        recommends_max_threads=recommended_max_threads(code) is not None,
+        max_threads_limit=MAX_THREADS_MAX,
         schema_label=table_group_schema_label(code),
         supports_value_hash=get_flavor_service(FLAVOR_CODE_TO_FAMILY[code]).supports_value_hash,
     )

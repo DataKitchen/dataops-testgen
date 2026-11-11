@@ -64,6 +64,13 @@ def test_a_server_flavor_leaves_the_thread_count_to_the_form(monkeypatch):
     assert snowflake.fixed_max_threads is None
 
 
+@pytest.mark.parametrize(("code", "default", "recommends"), [("mssql", 2, True), ("snowflake", 4, True), ("postgresql", 4, False)])
+def test_a_flavor_option_carries_its_default_thread_count(monkeypatch, code, default, recommends):
+    connections = load_connections(monkeypatch, "pypi")
+    option = next(o for o in connections.FLAVOR_OPTIONS if o.value == code)
+    assert (option.default_max_threads, option.recommends_max_threads) == (default, recommends)
+
+
 def test_every_flavor_code_is_offered(monkeypatch):
     connections = load_connections(monkeypatch, "pypi")
     assert {option.value for option in connections.FLAVOR_OPTIONS} == set(FLAVOR_CODE_TO_LABEL)
