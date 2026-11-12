@@ -348,7 +348,7 @@ const DetailEntries = (entries) => entries.map(([key, value]) => div(
 ));
 
 /**
- * The contract version a run measured, and whether it counts as the contract's status.
+ * The contract version a run measured, and whether the run is a verification, a preview, or out of force.
  * @param {{value: string, tooltip: string}?} contractVersion
  */
 const ContractVersion = (contractVersion) => {

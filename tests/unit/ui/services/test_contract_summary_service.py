@@ -90,7 +90,7 @@ def test_a_read_only_user_is_not_told_about_editing():
 
 def test_viewing_the_active_version_beside_a_draft_links_back_to_the_draft():
     summary = contract_summary(WITH_DRAFT, 3, can_edit=True, verification=None)
-    assert summary["caption"] == "Viewing v3, the agreement in force. Edits go to the draft."
+    assert summary["caption"] == "Viewing v3, the active version. Edits go to the draft."
     assert summary["caption_link"] == {"label": "Go to v4 draft", "version": 4}
 
 
@@ -102,13 +102,13 @@ def test_viewing_a_superseded_version_beside_a_draft_links_back_to_the_draft():
 
 def test_viewing_a_superseded_version_without_a_draft_links_to_the_active_version():
     summary = contract_summary(FROZEN_ONLY, 2, can_edit=True, verification=None)
-    assert summary["caption"] == "Viewing v2, a superseded version. v3 is the agreement in force."
+    assert summary["caption"] == "Viewing v2, a superseded version. v3 is the active version."
     assert summary["caption_link"] == {"label": "Go to v3 active", "version": 3}
 
 
 def test_a_read_only_user_viewing_an_older_version_still_gets_the_link():
     summary = contract_summary(WITH_DRAFT, 3, can_edit=False, verification=None)
-    assert summary["caption"] == "Viewing v3, the agreement in force."
+    assert summary["caption"] == "Viewing v3, the active version."
     assert summary["caption_link"] == {"label": "Go to v4 draft", "version": 4}
 
 

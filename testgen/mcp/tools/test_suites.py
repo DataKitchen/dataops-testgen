@@ -1,4 +1,4 @@
-"""MCP write tools for test suites — create, update, and delete regular and contract (non-monitor) suites.
+"""MCP write tools for test suites — create, update, and delete standard and contract (non-monitor) suites.
 
 Monitor suites (``suite_type`` of ``monitor``) are managed exclusively through the dedicated
 monitors surface. ``resolve_test_suite`` already filters them out, so an
@@ -83,9 +83,9 @@ def create_test_suite(
     suite_type: Annotated[
         str,
         Field(
-            description="Kind of suite to create. Accepts `Regular` or `Contract`. Defaults to `Regular`.",
+            description="Type of test suite to create. Accepts `Standard` or `Contract`. Defaults to `Standard`.",
         ),
-    ] = "Regular",
+    ] = "Standard",
     table_names: Annotated[
         list[str] | None,
         Field(
@@ -532,7 +532,7 @@ def _delete_planned_suite(plan: _SuiteDeletePlan, test_suite_id: str) -> str:
 async def delete_test_suite(
     ctx: Context,
     test_suite_id: Annotated[
-        str, Field(description="UUID of the test suite or contract to delete, e.g. from `list_test_suites`.")
+        str, Field(description="UUID of the test suite to delete, e.g. from `list_test_suites`.")
     ],
     confirmation_token: Annotated[
         str | None,
@@ -543,7 +543,7 @@ async def delete_test_suite(
         ),
     ] = None,
 ) -> str:
-    """Delete a test suite or contract with everything in it, once the user confirms.
+    """Delete a test suite with everything in it, once the user confirms.
 
     The user is shown what goes and must confirm before anything is removed: the suite's test
     definitions in every version and their notes, its test runs and results, its schedules,

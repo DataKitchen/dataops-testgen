@@ -68,7 +68,7 @@ def list_test_suites(
     test_suite_name: str | None = Query(default=None, description="Only test suites with exactly this name."),
     suite_type: TestSuiteType | None = Query(  # noqa: B008
         default=None,
-        description="Only test suites of this type: `regular` or `contract`. Omit to list both.",
+        description="Only test suites of this type: `standard` or `contract`. Omit to list both.",
     ),
     page: int = PageQuery,
     limit: int = LimitQuery,
@@ -116,17 +116,17 @@ def get_test_suite(test_suite: TestSuite = resolve_test_suite("view", TEST_SUITE
     summary="Create a test suite",
     responses={
         400: {"model": ErrorResponse, "description": "One entry per field that failed validation"},
-        409: {"model": ErrorResponse, "description": "A test suite or contract with this name already exists in the project"},
+        409: {"model": ErrorResponse, "description": "A test suite with this name already exists in the project"},
     },
 )
 def create_test_suite(
     table_group: TableGroup = resolve_table_group("edit"),  # noqa: B008
     body: TestSuiteCreate = Body(...),  # noqa: B008
 ) -> TestSuiteCreatedResponse:
-    """Create a test suite, regular or contract, in a table group. It belongs to the table group's
+    """Create a test suite of any type in a table group. It belongs to the table group's
     project and connection.
 
-    A name another test suite or contract in the project holds is rejected. `set_as_default`
+    A name another test suite in the project holds is rejected. `set_as_default`
     makes the table group's first profiling run generate tests into the new suite.
 
     A contract is created with its first draft. Given `table_names`, it declares those tables
@@ -165,7 +165,7 @@ def create_test_suite(
             raise api_error(
                 409,
                 "duplicate_test_suite_name",
-                "A test suite or contract with this name already exists in the project.",
+                "A test suite with this name already exists in the project.",
             ) from err
         raise
     record(AuditAction.TEST_SUITE_CREATED, test_suite)
@@ -184,7 +184,7 @@ def _check_contract_fields(body: TestSuiteCreate, table_group: TableGroup, is_co
             raise api_error(400, "table_names_not_allowed", "table_names applies to contracts only.")
         return
     if body.set_as_default:
-        raise api_error(400, "set_as_default_not_allowed", "set_as_default applies to regular test suites only.")
+        raise api_error(400, "set_as_default_not_allowed", "set_as_default applies to standard test suites only.")
     if body.table_names:
         catalog_tables = set(contract_document.catalog_table_names(table_group.id))
         if unknown := [name for name in body.table_names if name not in catalog_tables]:

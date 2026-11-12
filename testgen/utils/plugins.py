@@ -98,6 +98,13 @@ class PluginSpec:
         """
         return []
 
+    @classmethod
+    def get_generation_set_descriptions(cls) -> dict[str, str]:
+        """Return a description for each generation set this plugin's test types belong to, keyed by set name.
+        Default: none.
+        """
+        return {}
+
 
 class PluginHook:
     """Singleton holding resolved plugin values, pre-loaded with defaults."""

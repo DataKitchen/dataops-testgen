@@ -95,7 +95,7 @@ def test_the_run_tests_dialog_names_the_selected_version_and_runs_it():
         "value": str(SUITE_ID),
         "label": "orders_contract",
         "suite_type": "contract",
-        "version_line": "Version: v2 superseded. v3 is the agreement in force.",
+        "version_line": "Version: v2 superseded. v3 is the active version.",
         "version_id": str(superseded.id),
     }
 
@@ -104,7 +104,7 @@ def test_a_draft_run_says_it_is_a_preview():
     page, _ = _page([_item(1, False)], None)
 
     assert page.run_option["version_line"] == (
-        "Version: v1 draft. This run is a preview and does not count as the contract's status."
+        "Version: v1 draft. This run is a preview. Only a verification updates the contract's results."
     )
 
 

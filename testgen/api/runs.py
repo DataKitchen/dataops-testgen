@@ -124,7 +124,7 @@ def _profiling_run_schema_is_reported(job_id: UUID) -> bool:
 def get_test_run(job: JobExecution = resolve_job("view", JobExecution.job_key == JobKey.run_tests)):  # noqa: B008
     """A test run, addressed by the ID of the job that started it, with its result counts once it completes.
 
-    A contract's run names the version it checked, and whether it counts as the contract's status.
+    A contract's run names the version it checked, and whether it is a verification, a preview, or out of force.
     """
     test_run = TestRun.get(job.id)
 

@@ -173,7 +173,7 @@ CREATE TABLE test_suites (
    last_complete_test_run_id UUID,
    dq_score_exclude        BOOLEAN DEFAULT FALSE,
    deactivate_invalid_tests BOOLEAN NOT NULL DEFAULT FALSE,
-   suite_type              VARCHAR(20) NOT NULL DEFAULT 'regular',
+   suite_type              VARCHAR(20) NOT NULL DEFAULT 'standard',
    monitor_lookback        INTEGER DEFAULT NULL,
    monitor_regenerate_freshness BOOLEAN DEFAULT TRUE,
    predict_sensitivity     VARCHAR(6),
@@ -934,7 +934,7 @@ CREATE INDEX ix_ts_con
 
 CREATE UNIQUE INDEX test_suites_name_unique
    ON test_suites (project_code, test_suite)
-   WHERE suite_type IN ('regular', 'contract');
+   WHERE suite_type IN ('standard', 'contract');
 
 CREATE UNIQUE INDEX idx_ts_last_run
   ON test_suites (last_complete_test_run_id)

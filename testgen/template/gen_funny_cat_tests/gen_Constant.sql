@@ -116,10 +116,7 @@ SELECT
   0   AS skip_errors
 FROM latest_results r
 -- Only insert tests for selected columns
-INNER JOIN selected_columns c ON (
-  r.table_name = c.table_name
-  AND r.column_name = c.column_name
-)
+INNER JOIN selected_columns c USING (table_name, column_name)
   -- Only insert if test type is active
 WHERE EXISTS (SELECT 1 FROM test_types WHERE test_type = 'Constant' AND active = 'Y')
   {TABLE_FILTER}

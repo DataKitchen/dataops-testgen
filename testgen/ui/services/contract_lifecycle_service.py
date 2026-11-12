@@ -20,7 +20,7 @@ def freeze_dialog(suite: TestSuite) -> dict[str, str] | None:
     return {
         "title": f"Freeze Version {draft.version}",
         "question": f"Freeze version {draft.version} of the contract {suite.test_suite}?",
-        "consequence": f"Version {draft.version} becomes the agreement in force{replacing}. {FREEZE_CONSEQUENCE}",
+        "consequence": f"Version {draft.version} becomes the active version{replacing}. {FREEZE_CONSEQUENCE}",
     }
 
 
@@ -61,7 +61,7 @@ def discard_dialog(suite: TestSuite) -> dict[str, Any] | None:
     return {
         "question": f"Are you sure you want to discard the draft v{draft.version} of the contract {suite.test_suite}?",
         "warning": f"{deleted} will be permanently deleted. "
-        f"The contract returns to version {active.version}, the agreement in force.",
+        f"The contract returns to version {active.version}, the active version.",
         "confirmation": f"Yes, discard the draft v{draft.version}" + (f" and its {term_text}." if terms else "."),
         "compare": {
             "label": f"Compare v{draft.version} with v{active.version}",

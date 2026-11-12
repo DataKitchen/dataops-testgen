@@ -149,7 +149,7 @@ def test_deleting_a_notification_records_it(notification_dialog, audit_session, 
 def _suite(**values) -> TestSuite:
     columns = {column.key: None for column in TestSuite.__table__.columns}
     return _stored(TestSuite(**{
-        **columns, "id": uuid4(), "project_code": "demo", "test_suite": "Orders", "suite_type": SuiteType.REGULAR,
+        **columns, "id": uuid4(), "project_code": "demo", "test_suite": "Orders", "suite_type": SuiteType.STANDARD,
         "test_suite_description": "Old", "export_to_observability": False, "dq_score_exclude": False,
         "deactivate_invalid_tests": False, "component_type": "dataset", **values,
     }))
@@ -208,7 +208,7 @@ def test_a_test_suite_already_gone_records_nothing(audit_session, audit_log):
 
 
 def test_adding_a_test_suite_records_it(audit_session, audit_log):
-    suite = TestSuite(project_code="demo", test_suite="Orders", suite_type=SuiteType.REGULAR)
+    suite = TestSuite(project_code="demo", test_suite="Orders", suite_type=SuiteType.STANDARD)
     with (
         patch.object(TestSuite, "save", autospec=True, side_effect=lambda obj: setattr(obj, "id", uuid4())),
         patch.object(audit_session, "commit"),

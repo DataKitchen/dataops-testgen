@@ -523,7 +523,7 @@ class ContractVersion(BaseModel):
     """A contract version, by its number and its state."""
 
     number: int = Field(description="The version's number, counting from 1.")
-    state: VersionState = Field(description="`draft`, `active` (the agreement in force), or `superseded`.")
+    state: VersionState = Field(description="`draft`, `active`, or `superseded`.")
 
 
 class ImportResponse(BaseModel):

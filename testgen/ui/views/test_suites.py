@@ -29,8 +29,8 @@ from testgen.common.flavors import FLAVOR_CODE_TO_LABEL
 from testgen.common.generation_set_service import (
     CONTRACT_GENERATION_SET,
     DEFAULT_GENERATION_SET,
+    available_generation_sets,
     get_generation_set_members,
-    get_generation_set_test_types,
     get_overriding_test_types,
     list_generation_sets,
     resolve_generation_sets,
@@ -68,6 +68,7 @@ from testgen.ui.services.query_cache import (
 )
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.generate_tests_dialog import (
+    generation_set_options,
     get_sampled_unavailable_test_types,
     get_test_suite_refresh_warning,
     get_value_hash_warning,
@@ -99,12 +100,12 @@ WIZARD_KEYS = (WIZARD_TABLE_GROUP_KEY, WIZARD_FILE_KEY, WIZARD_PREVIEW_KEY, WIZA
 
 
 class SuiteTypeFilter(StrEnum):
-    REGULAR = "regular"
+    STANDARD = "standard"
     CONTRACT = "contract"
 
 
 _SUITE_TYPES_BY_FILTER = {
-    SuiteTypeFilter.REGULAR: (SuiteType.REGULAR,),
+    SuiteTypeFilter.STANDARD: (SuiteType.STANDARD,),
     SuiteTypeFilter.CONTRACT: (SuiteType.CONTRACT,),
 }
 
@@ -308,14 +309,18 @@ class TestSuitesPage(Page):
                         **test_suite.to_dict(json_safe=True),
                         "version_caption": version_caption(states.get(test_suite.id))
                         if test_suite.suite_type == SuiteType.CONTRACT else None,
+                        "generation_sets": test_suite.generation_sets or [
+                            CONTRACT_GENERATION_SET if test_suite.suite_type == SuiteType.CONTRACT
+                            else DEFAULT_GENERATION_SET
+                        ],
                     }
                     for test_suite in test_suites
                 ],
                 "suite_type_filter_options": [
                     {
-                        "value": SuiteTypeFilter.REGULAR.value,
-                        "label": "Test suite",
-                        "selected": suite_type == SuiteTypeFilter.REGULAR,
+                        "value": SuiteTypeFilter.STANDARD.value,
+                        "label": "Standard",
+                        "selected": suite_type == SuiteTypeFilter.STANDARD,
                     },
                     {
                         "value": SuiteTypeFilter.CONTRACT.value,
@@ -475,24 +480,20 @@ def build_generate_tests_data(test_suite_id: str) -> dict:
             ],
             "tests_disabled_reason": None if profiled else TESTS_NEED_PROFILING,
         }
-    sampled_unavailable = get_sampled_unavailable_test_types(str(generate_suite.table_groups_id))
-    if is_contract:
-        contract_test_types = set(get_generation_set_test_types(CONTRACT_GENERATION_SET))
-        sampled_unavailable = {code: name for code, name in sampled_unavailable.items() if code in contract_test_types}
     return {
         "title": "Regenerate Contract" if is_contract else "Generate Tests",
         "test_suite_id": str(generate_suite.id),
         "test_suite_name": generate_suite.test_suite,
         "is_contract": is_contract,
         **contract_data,
-        "generation_sets": [] if is_contract else list_generation_sets(),
-        "selected_generation_sets": [] if is_contract else resolve_generation_sets(generate_suite, None),
-        "generation_set_test_types": {} if is_contract else get_generation_set_members(),
-        "overriding_test_types": {} if is_contract else get_overriding_test_types(),
-        "sampled_unavailable_test_types": sampled_unavailable,
+        "generation_sets": generation_set_options(available_generation_sets(generate_suite)),
+        "selected_generation_sets": resolve_generation_sets(generate_suite, None),
+        "generation_set_test_types": get_generation_set_members(include_contract=is_contract),
+        "overriding_test_types": get_overriding_test_types(),
+        "sampled_unavailable_test_types": get_sampled_unavailable_test_types(str(generate_suite.table_groups_id)),
         "refresh_warning": get_test_suite_refresh_warning(str(generate_suite.id)),
         "value_hash_test_types": sorted(VALUE_HASH_TEST_TYPES),
-        "value_hash_warning": None if is_contract else get_value_hash_warning(str(generate_suite.table_groups_id)),
+        "value_hash_warning": get_value_hash_warning(str(generate_suite.table_groups_id)),
         "lock_result": st.session_state.get(GENERATE_TESTS_LOCK_RESULT_KEY),
         "result": st.session_state.get(GENERATE_TESTS_RESULT_KEY),
     }
@@ -502,7 +503,7 @@ def build_generate_tests_data(test_suite_id: str) -> dict:
 def generate_tests_confirmed(data: dict) -> None:
     selected_id = data.get("test_suite_id")
     is_contract = TestSuite.get(selected_id).suite_type == SuiteType.CONTRACT
-    selected_sets = None if is_contract else data.get("generation_sets")
+    selected_sets = data.get("generation_sets")
     ts_name = data.get("test_suite_name", "")
     try:
         regenerate = data.get("regenerate") if is_contract else None
@@ -617,8 +618,10 @@ def build_wizard_data(table_group_options: list[dict]) -> dict:
     return {
         "open": True,
         "table_groups": table_group_options,
-        "generation_sets": list_generation_sets(),
+        "generation_sets": generation_set_options(list_generation_sets()),
+        "contract_generation_sets": generation_set_options(list_generation_sets(include_contract=True)),
         "default_generation_sets": [DEFAULT_GENERATION_SET],
+        "default_contract_generation_sets": [CONTRACT_GENERATION_SET],
         "max_file_bytes": contract_file_max_bytes(),
         "table_group": st.session_state.get(WIZARD_TABLE_GROUP_KEY),
         "file_preview": st.session_state.get(WIZARD_PREVIEW_KEY),
@@ -697,9 +700,9 @@ def wizard_closed(*_) -> None:
 def add_test_suite_confirmed(payload: dict) -> None:
     if (st.session_state.get(WIZARD_RESULT_KEY) or {}).get("success"):
         return
-    suite_type = SuiteType.CONTRACT if payload.get("suite_type") == SuiteType.CONTRACT.value else SuiteType.REGULAR
+    suite_type = SuiteType.CONTRACT if payload.get("suite_type") == SuiteType.CONTRACT.value else SuiteType.STANDARD
     values = {key: payload.get(key, default) for key, default in _FORM_DEFAULTS.items()}
-    if suite_type is SuiteType.REGULAR:
+    if suite_type is SuiteType.STANDARD:
         values["deactivate_invalid_tests"] = payload.get("deactivate_invalid_tests", False)
     candidate = TestSuite(test_suite=payload.get("test_suite"), **values)
     if errors := validate_test_suite_fields(candidate, field_names=_form_field_labels(suite_type), quote_fields=False):
@@ -728,11 +731,12 @@ def add_test_suite_confirmed(payload: dict) -> None:
                 suite_type=suite_type.value,
                 **values,
             )
-            if suite_type is SuiteType.REGULAR:
+            if suite_type is SuiteType.STANDARD:
                 rows = _add_test_suite(suite, tests)
             elif tests.get("start_from") == ContractSource.FILE:
                 rows = _add_contract_from_file(suite, table_group, file["content"])
             else:
+                suite.generation_sets = resolve_generation_sets(suite, tests.get("generation_sets") or None)
                 rows = _add_contract_from_tables(suite, table_group, tests.get("table_names") or [])
     except Exception as err:
         if isinstance(err, IntegrityError) and is_duplicate_name_error(err):

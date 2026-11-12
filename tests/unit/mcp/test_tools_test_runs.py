@@ -323,7 +323,7 @@ def test_get_test_run_without_run_record_names_suite_from_job(
     )
     mock_run.select_summary.return_value = ([summary], 1)
     mock_je.get.return_value = MagicMock(kwargs={"test_suite_id": suite_id})
-    mock_suite.get.return_value = MagicMock(test_suite="Orders Suite", suite_type=SuiteType.REGULAR)
+    mock_suite.get.return_value = MagicMock(test_suite="Orders Suite", suite_type=SuiteType.STANDARD)
     mock_tg.get.return_value = MagicMock(table_groups_name="orders_tg")
 
     with patch("testgen.mcp.permissions._compute_project_permissions") as mock_compute:
@@ -457,7 +457,7 @@ def test_list_test_runs_resolves_a_contract_by_name(mock_suite, mock_run, mock_n
         " ".join(str(c.compile(compile_kwargs={"literal_binds": True})).split())
         for c in mock_suite.select_minimal_where.call_args.args
     ]
-    assert "test_suites.suite_type IN ('regular', 'contract')" in clauses
+    assert "test_suites.suite_type IN ('standard', 'contract')" in clauses
     assert mock_run.select_summary.call_args.kwargs["suite_types"] == MCP_SUITE_TYPES
 
 
@@ -540,7 +540,7 @@ def test_list_test_runs_with_a_version_of_a_regular_suite_is_refused(
     mock_suite, mock_run, mock_next, db_session_mock,
 ):
     mock_suite.select_minimal_where.return_value = [MagicMock(id=uuid4())]
-    mock_suite.get.return_value = MagicMock(id=uuid4(), suite_type=SuiteType.REGULAR)
+    mock_suite.get.return_value = MagicMock(id=uuid4(), suite_type=SuiteType.STANDARD)
 
     from testgen.mcp.tools.test_runs import list_test_runs
 

@@ -191,7 +191,7 @@ class TestDefinitionsPage(Page):
         tab: str | None = None,
         **_kwargs,
     ) -> None:
-        test_suite = get_test_suite(test_suite_id, TestSuite.suite_type.in_((SuiteType.REGULAR, SuiteType.CONTRACT)))
+        test_suite = get_test_suite(test_suite_id, TestSuite.suite_type.in_((SuiteType.STANDARD, SuiteType.CONTRACT)))
         if not test_suite:
             self.router.navigate_with_warning(
                 f"Test suite with ID '{test_suite_id}' does not exist. Redirecting to list of Test Suites ...",

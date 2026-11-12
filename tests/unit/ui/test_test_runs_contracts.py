@@ -1,4 +1,4 @@
-"""The Test Runs list and the results page show regular suites and contracts, never monitor suites."""
+"""The Test Runs list and the results page show standard suites and contracts, never monitor suites."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -37,14 +37,14 @@ def _suite_filter(call) -> str:
 
 
 def test_the_shared_tuple_holds_regular_and_contract_only():
-    assert set(TEST_SUITE_TYPES) == {SuiteType.REGULAR, SuiteType.CONTRACT}
+    assert set(TEST_SUITE_TYPES) == {SuiteType.STANDARD, SuiteType.CONTRACT}
 
 
 def test_the_runs_list_reads_regular_and_contract_runs():
     with patch.object(query_cache.TestRun, "select_summary", return_value=([], 0)) as select_summary:
         query_cache.get_test_run_summaries("DEFAULT")
 
-    assert set(select_summary.call_args.kwargs["suite_types"]) == {SuiteType.REGULAR, SuiteType.CONTRACT}
+    assert set(select_summary.call_args.kwargs["suite_types"]) == {SuiteType.STANDARD, SuiteType.CONTRACT}
     assert SuiteType.MONITOR not in select_summary.call_args.kwargs["suite_types"]
 
 
@@ -52,7 +52,7 @@ def test_the_version_scope_reads_regular_and_contract_runs():
     with patch.object(query_cache.TestRun, "select_version_scope", return_value=RunVersionScope(False, 0)) as scope:
         query_cache.get_test_run_version_scope("DEFAULT", None, None)
 
-    assert set(scope.call_args.kwargs["suite_types"]) == {SuiteType.REGULAR, SuiteType.CONTRACT}
+    assert set(scope.call_args.kwargs["suite_types"]) == {SuiteType.STANDARD, SuiteType.CONTRACT}
 
 
 def test_the_runs_page_suite_filter_lists_contracts_and_excludes_monitors():
@@ -70,7 +70,7 @@ def test_the_runs_page_suite_filter_lists_contracts_and_excludes_monitors():
             page.render(project_code="DEFAULT")
 
     text = _suite_filter(select_suites.call_args)
-    assert "'regular'" in text
+    assert "'standard'" in text
     assert "'contract'" in text
     assert "'monitor'" not in text
 
@@ -108,7 +108,7 @@ def test_the_results_page_resolves_a_contract_run_and_not_a_monitor_run():
         page.render(run_id="a-run-id")
 
     text = _text(get_suite.call_args.args[1])
-    assert text == "test_suites.suite_type IN ('regular', 'contract')"
+    assert text == "test_suites.suite_type IN ('standard', 'contract')"
     assert "'monitor'" not in text
 
 
@@ -116,7 +116,7 @@ def test_the_results_page_resolves_a_contract_run_and_not_a_monitor_run():
     ("suite_type", "message"),
     [
         (SuiteType.CONTRACT, "Test run started for contract 'orders'."),
-        (SuiteType.REGULAR, "Test run started for test suite 'orders'."),
+        (SuiteType.STANDARD, "Test run started for test suite 'orders'."),
         (None, "Test run started for test suite 'orders'."),
     ],
 )
@@ -197,8 +197,8 @@ TABLE_GROUP_ID = uuid4()
 CONTRACT = SimpleNamespace(
     id=uuid4(), test_suite="orders_contract", suite_type=SuiteType.CONTRACT, table_groups_id=TABLE_GROUP_ID
 )
-REGULAR = SimpleNamespace(
-    id=uuid4(), test_suite="nightly_checks", suite_type=SuiteType.REGULAR, table_groups_id=TABLE_GROUP_ID
+STANDARD = SimpleNamespace(
+    id=uuid4(), test_suite="nightly_checks", suite_type=SuiteType.STANDARD, table_groups_id=TABLE_GROUP_ID
 )
 
 
@@ -212,7 +212,7 @@ def test_the_list_reads_runs_of_every_version_only_when_the_url_asks(all_version
 
 def test_the_scope_is_read_for_the_selected_filters_when_they_hold_a_contract():
     with _rendered(
-        test_suites=[CONTRACT, REGULAR], table_group_id=str(TABLE_GROUP_ID), test_suite_id=str(CONTRACT.id)
+        test_suites=[CONTRACT, STANDARD], table_group_id=str(TABLE_GROUP_ID), test_suite_id=str(CONTRACT.id)
     ) as rendered:
         pass
 
@@ -221,11 +221,11 @@ def test_the_scope_is_read_for_the_selected_filters_when_they_hold_a_contract():
 
 @pytest.mark.parametrize(
     "filters",
-    [{}, {"test_suite_id": str(REGULAR.id)}, {"table_group_id": str(uuid4())}],
-    ids=["no-contract-in-the-project", "a-regular-suite-selected", "another-table-group-selected"],
+    [{}, {"test_suite_id": str(STANDARD.id)}, {"table_group_id": str(uuid4())}],
+    ids=["no-contract-in-the-project", "a-standard-suite-selected", "another-table-group-selected"],
 )
 def test_the_scope_is_not_read_when_the_filters_hold_no_contract(filters):
-    suites = [REGULAR] if not filters else [CONTRACT, REGULAR]
+    suites = [STANDARD] if not filters else [CONTRACT, STANDARD]
     with _rendered(test_suites=suites, scope=RunVersionScope(True, 5), **filters) as rendered:
         pass
 
@@ -254,7 +254,7 @@ def test_the_widget_gets_the_version_toggle(scope, all_versions, toggle):
     ids=["listed-by-default", "hidden-by-default"],
 )
 def test_starting_a_run_lists_it_where_it_shows(version_id, list_args):
-    with _rendered(test_suites=[CONTRACT, REGULAR]) as rendered:
+    with _rendered(test_suites=[CONTRACT, STANDARD]) as rendered:
         rendered.run_list_args.return_value = list_args
         rendered.widget["on_RunTestsConfirmed_change"]({
             "test_suite_id": str(CONTRACT.id),

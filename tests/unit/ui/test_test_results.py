@@ -46,7 +46,7 @@ def test_build_edit_test_dialog_data_lists_the_catalog_tables():
     columns = [{"table_name": "orders", "column_name": "id"}, {"table_name": "customers", "column_name": "id"}]
     with (
         patch(f"{MODULE}.select_test_definitions_where", return_value=[row]),
-        patch(f"{MODULE}.get_test_suite", return_value=MagicMock(suite_type=SuiteType.REGULAR)),
+        patch(f"{MODULE}.get_test_suite", return_value=MagicMock(suite_type=SuiteType.STANDARD)),
         patch(f"{MODULE}.get_table_group_minimal"),
         patch(f"{MODULE}.get_connection", return_value=None),
         patch("testgen.ui.views.test_definitions.get_columns", return_value=columns),
@@ -139,5 +139,5 @@ def test_results_count_narrows_to_managed_test_types_on_request(managed_only):
 
 
 def test_the_results_page_sends_the_managed_count_for_the_filter():
-    data = _render(SuiteType.REGULAR)["data"]
+    data = _render(SuiteType.STANDARD)["data"]
     assert data["managed_count"] == 0

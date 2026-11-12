@@ -7,7 +7,9 @@ own user-facing errors.
 
 Set names are read from the ``generation_sets`` table at runtime and never enumerated
 here: plugins contribute their own sets, and their names must not appear in this
-package. ``Standard``, ``Monitor``, and ``Contract`` are the three names this package owns.
+package. ``Standard``, ``Table Comparison``, ``Monitor``, and ``Contract`` are the names this
+package owns, and ``GENERATION_SET_DESCRIPTIONS`` describes the ones a user picks; a plugin
+describes its own sets through ``PluginSpec.get_generation_set_descriptions``.
 """
 
 from sqlalchemy import text
@@ -19,33 +21,67 @@ from testgen.common.models.test_suite import TestSuite
 MONITOR_GENERATION_SET = "Monitor"
 CONTRACT_GENERATION_SET = "Contract"
 DEFAULT_GENERATION_SET = "Standard"
+TABLE_COMPARISON_GENERATION_SET = "Table Comparison"
+
+GENERATION_SET_DESCRIPTIONS: dict[str, str] = {
+    DEFAULT_GENERATION_SET: (
+        "General-purpose tests for every table: completeness, uniqueness, formats, value ranges, and recency."
+    ),
+    TABLE_COMPARISON_GENERATION_SET: (
+        "Tests that each column's counts, sums, extremes, hashes, and frequent values equal their baseline, "
+        "to confirm a table still matches its source after a copy or a migration."
+    ),
+    CONTRACT_GENERATION_SET: (
+        "The tests a data contract states: required columns, uniqueness, allowed values and patterns, "
+        "minimums, recency, and row counts."
+    ),
+}
 
 
-def list_generation_sets(*, include_monitor: bool = False) -> list[str]:
+_CORE_SET_ORDER = (CONTRACT_GENERATION_SET, DEFAULT_GENERATION_SET, TABLE_COMPARISON_GENERATION_SET)
+
+
+def order_generation_sets(names: list[str]) -> list[str]:
+    """``names`` in the order a user picks from: ``Contract``, ``Standard``, and ``Table Comparison``
+    first, then every other set alphabetically."""
+    return sorted(
+        names,
+        key=lambda name: (_CORE_SET_ORDER.index(name), "") if name in _CORE_SET_ORDER else (len(_CORE_SET_ORDER), name),
+    )
+
+
+def list_generation_sets(*, include_monitor: bool = False, include_contract: bool = False) -> list[str]:
     """Every generation set defined in the database, alphabetically.
 
-    ``Contract`` is always excluded: a contract suite resolves to it without being asked, and
-    no other suite may use it.
+    ``Contract`` is excluded unless ``include_contract``: only a contract suite may use it.
     """
     rows = get_current_session().execute(
         text("SELECT DISTINCT generation_set FROM generation_sets ORDER BY generation_set")
     ).all()
     names = [row[0] for row in rows]
-    excluded = {CONTRACT_GENERATION_SET}
+    excluded = set()
+    if not include_contract:
+        excluded.add(CONTRACT_GENERATION_SET)
     if not include_monitor:
         excluded.add(MONITOR_GENERATION_SET)
     return [name for name in names if name not in excluded]
 
 
-def get_generation_set_members() -> dict[str, list[str]]:
-    """Map each selectable generation set to the test types it generates."""
+def available_generation_sets(test_suite: TestSuite) -> list[str]:
+    """The generation sets ``test_suite`` may use: ``Contract`` too for a contract suite."""
+    return list_generation_sets(include_contract=test_suite.suite_type == SuiteType.CONTRACT)
+
+
+def get_generation_set_members(*, include_contract: bool = False) -> dict[str, list[str]]:
+    """Map each selectable generation set to the test types it generates, ``Contract`` only when asked."""
+    excluded = [MONITOR_GENERATION_SET] if include_contract else [MONITOR_GENERATION_SET, CONTRACT_GENERATION_SET]
     rows = get_current_session().execute(
         text(
             "SELECT generation_set, test_type FROM generation_sets "
-            "WHERE generation_set NOT IN (:monitor, :contract) "
+            "WHERE NOT (generation_set = ANY(:excluded)) "
             "ORDER BY generation_set, test_type"
         ),
-        {"monitor": MONITOR_GENERATION_SET, "contract": CONTRACT_GENERATION_SET},
+        {"excluded": excluded},
     ).all()
 
     members: dict[str, list[str]] = {}
@@ -89,15 +125,16 @@ def resolve_generation_sets(test_suite: TestSuite, requested: list[str] | None) 
     """Resolve the generation sets a run should use.
 
     ``None`` means the caller did not ask, and falls back to the suite's stored sets
-    and then to ``Standard``. An empty list means the caller asked for nothing, which
-    is an error: an unmatched set generates no test types, and the stale-delete would
-    then remove every unlocked auto-generated test in the suite.
+    and then to the default: ``Contract`` for a contract suite, ``Standard`` for any other.
+    An empty list means the caller asked for nothing, which is an error: an unmatched set
+    generates no test types, and the stale-delete would then remove every unlocked
+    auto-generated test in the suite.
 
-    A contract suite always resolves to ``Contract`` alone and refuses any other request. A non-contract suite
-    refuses to be given the ``Contract`` set.
+    Only a contract suite may use ``Contract``, and no suite may use ``Monitor``.
     """
     is_contract = test_suite.suite_type == SuiteType.CONTRACT
-    available = list_generation_sets()
+    available = available_generation_sets(test_suite)
+    default = CONTRACT_GENERATION_SET if is_contract else DEFAULT_GENERATION_SET
 
     if requested is not None:
         if isinstance(requested, str):
@@ -106,22 +143,15 @@ def resolve_generation_sets(test_suite: TestSuite, requested: list[str] | None) 
         if not requested:
             raise ValueError("At least one generation set is required.")
 
-        if is_contract:
-            if requested != [CONTRACT_GENERATION_SET]:
-                raise ValueError(
-                    f"Contract test suites can only use the '{CONTRACT_GENERATION_SET}' generation set."
-                )
-            return [CONTRACT_GENERATION_SET]
-
-        if CONTRACT_GENERATION_SET in requested:
+        if CONTRACT_GENERATION_SET in requested and not is_contract:
             raise ValueError(
-                f"'{CONTRACT_GENERATION_SET}' cannot be used for a non-contract test suite. "
+                f"'{CONTRACT_GENERATION_SET}' can only be used for a contract. "
                 f"Available generation sets: {', '.join(available)}."
             )
 
         if MONITOR_GENERATION_SET in requested:
             raise ValueError(
-                f"'{MONITOR_GENERATION_SET}' cannot be used for a regular test suite. "
+                f"'{MONITOR_GENERATION_SET}' is reserved for monitor suites. "
                 f"Available generation sets: {', '.join(available)}."
             )
 
@@ -133,8 +163,5 @@ def resolve_generation_sets(test_suite: TestSuite, requested: list[str] | None) 
 
         return list(dict.fromkeys(requested))
 
-    if is_contract:
-        return [CONTRACT_GENERATION_SET]
-
     stored = [name for name in (test_suite.generation_sets or []) if name in available]
-    return stored or [DEFAULT_GENERATION_SET]
+    return stored or [default]

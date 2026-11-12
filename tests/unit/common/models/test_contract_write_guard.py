@@ -68,7 +68,7 @@ def test_writing_a_suite_owned_frozen_version_is_refused():
 
 def test_writing_the_placeholder_is_allowed():
     # The placeholder is seeded frozen so it sits outside the one-draft index. A guard that
-    # looked only at the freeze time would block every regular suite's writes.
+    # looked only at the freeze time would block every standard suite's writes.
     with patch(
         "testgen.common.models.test_definition.get_current_session",
         return_value=_session_returning(None),

@@ -196,7 +196,7 @@ def generation_mocks():
         patch(f"{MODULE}.MixpanelService") as mixpanel_cls,
         patch(f"{MODULE}.resolve_generation_sets") as resolve,
     ):
-        suite = MagicMock(suite_type=SuiteType.REGULAR, generation_sets=None)
+        suite = MagicMock(suite_type=SuiteType.STANDARD, generation_sets=None)
         suite_cls.get.return_value = suite
         tg_cls.get.return_value = MagicMock()
         conn_cls.get.return_value = MagicMock(sql_flavor="postgresql")
@@ -264,17 +264,22 @@ def test_run_test_generation_defaults_to_none_requested(generation_mocks):
 def test_run_test_generation_rejects_monitor_suite(generation_mocks):
     generation_mocks["suite"].suite_type = SuiteType.MONITOR
 
-    with pytest.raises(ValueError, match="Cannot run regular test generation for monitor suite"):
+    with pytest.raises(ValueError, match="Cannot run test generation for a monitor suite"):
         run_test_generation("suite-1", ["Standard"])
 
 
 def test_a_contracts_generation_runs_the_contract_generation(generation_mocks):
     generation_mocks["suite"].suite_type = SuiteType.CONTRACT
+    generation_mocks["resolve"].return_value = ["Contract", "Standard"]
     with patch(f"{MODULE}.run_contract_generation") as generate_contract:
         result = run_test_generation("suite-1", table_names=["orders"], regenerate=["tests"])
 
     generate_contract.assert_called_once_with(
-        generation_mocks["suite"].id, table_names=["orders"], profile_run_id=None, groups=["tests"]
+        generation_mocks["suite"].id,
+        table_names=["orders"],
+        profile_run_id=None,
+        groups=["tests"],
+        generation_sets=["Contract", "Standard"],
     )
     assert result is generate_contract.return_value
     generation_mocks["generation"].assert_not_called()
@@ -499,7 +504,7 @@ def test_conformance_run_refuses_to_write_a_frozen_contract_version(mock_exec):
     mock_exec.assert_not_called()
 
 
-@pytest.mark.parametrize("suite_type", [SuiteType.REGULAR, SuiteType.MONITOR])
+@pytest.mark.parametrize("suite_type", [SuiteType.STANDARD, SuiteType.MONITOR])
 @pytest.mark.parametrize("generate", [run_contract_generation, reconcile_contract_conformance])
 def test_contract_generation_refuses_a_suite_that_is_not_a_contract(generation_mocks, suite_type, generate):
     generation_mocks["suite"].suite_type = suite_type
@@ -625,12 +630,17 @@ def test_a_generation_reports_what_it_did(contract_mocks):
     )
 
 
-def test_generating_a_contract_generates_the_contract_set_for_its_declared_tables(contract_mocks):
-    run_contract_generation("suite-1")
+def test_generating_a_contract_generates_its_resolved_sets_for_its_declared_tables(contract_mocks):
+    contract_mocks["resolve"].return_value = ["Contract", "Table Comparison"]
 
+    run_contract_generation("suite-1", generation_sets=["Contract", "Table Comparison"])
+
+    contract_mocks["resolve"].assert_called_once_with(
+        contract_mocks["suite"], ["Contract", "Table Comparison"]
+    )
     generation = contract_mocks["generation"]
     set_generation = generation.call_args_list[0]
-    assert set_generation.args[3] == ["Contract"]
+    assert set_generation.args[3] == ["Contract", "Table Comparison"]
     assert set_generation.kwargs["table_names"] == ["orders", "customers"]
     assert set_generation.kwargs["profile_run_id"] == contract_mocks["run_id"]
     generation.return_value.run.assert_called_once_with()
@@ -783,10 +793,32 @@ def test_run_test_generation_generates_a_contract(generation_mocks):
         run_test_generation("suite-1")
 
     generate.assert_called_once_with(
-        generation_mocks["suite"].id, table_names=None, profile_run_id=None, groups=list(RegenerationGroup)
+        generation_mocks["suite"].id,
+        table_names=None,
+        profile_run_id=None,
+        groups=list(RegenerationGroup),
+        generation_sets=["Contract"],
     )
     generation_mocks["generation"].assert_not_called()
 
+
+
+@pytest.mark.parametrize(
+    ("regenerated", "stored"),
+    [([RegenerationGroup.TESTS], ["Standard"]), ([RegenerationGroup.CATALOG], ["Contract"])],
+    ids=["tests-regenerated", "tests-left-alone"],
+)
+def test_a_contract_stores_the_requested_sets_only_when_its_tests_are_regenerated(
+    generation_mocks, regenerated, stored
+):
+    generation_mocks["suite"].suite_type = SuiteType.CONTRACT
+    generation_mocks["suite"].generation_sets = ["Contract"]
+    generation_mocks["resolve"].return_value = ["Standard"]
+
+    with patch(f"{MODULE}.run_contract_generation", return_value=MagicMock(groups=regenerated)):
+        run_test_generation("suite-1", ["Standard"], regenerate=[str(group) for group in regenerated])
+
+    assert generation_mocks["suite"].generation_sets == stored
 
 # --- Exact-measure requirements ---
 

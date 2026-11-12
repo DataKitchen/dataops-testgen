@@ -59,7 +59,7 @@ def test_the_results_page_tells_the_widget_a_contract_run_is_a_contract():
 
 
 def test_the_results_page_tells_the_widget_a_regular_run_is_not_a_contract():
-    assert _render(SuiteType.REGULAR)["data"]["run_info"]["is_contract"] is False
+    assert _render(SuiteType.STANDARD)["data"]["run_info"]["is_contract"] is False
 
 
 @pytest.mark.parametrize("error", [FrozenVersionError("v"), RemovedInDraftError("v", []), UnmatchedInDraftError("v", "d", [])])
@@ -90,7 +90,7 @@ def test_saving_an_edit_turns_a_refused_version_write_into_a_toast():
 
 
 def test_flagging_a_regular_run_still_writes():
-    handlers = _render(SuiteType.REGULAR)
+    handlers = _render(SuiteType.STANDARD)
     with (
         patch.object(view, "st") as st_mock,
         patch.object(view.TestDefinition, "set_status_attribute") as set_status,
@@ -127,12 +127,12 @@ def test_the_results_page_sends_a_contract_runs_version_block():
     )
     assert _render(SuiteType.CONTRACT, summary)["data"]["contract_version"] == {
         "value": "v3 active · Verification",
-        "tooltip": "v3 is the agreement in force.",
+        "tooltip": "v3 is the active version.",
     }
 
 
 def test_the_results_page_sends_no_version_block_for_a_regular_run():
-    assert _render(SuiteType.REGULAR, _summary(test_suite="nightly_checks"))["data"]["contract_version"] is None
+    assert _render(SuiteType.STANDARD, _summary(test_suite="nightly_checks"))["data"]["contract_version"] is None
 
 
 def test_the_results_page_reads_the_runs_summary_by_its_id():
@@ -196,7 +196,7 @@ def test_muting_all_filtered_results_tells_the_contract_draft_in_a_toast():
 
 
 def test_a_disposition_that_lands_on_no_contract_draft_shows_no_toast():
-    handlers = _render(SuiteType.REGULAR)
+    handlers = _render(SuiteType.STANDARD)
     with (
         patch.object(view, "st") as st_mock,
         patch.object(view, "set_test_results_disposition", return_value=DispositionUpdate(matched=1, passed_skipped=0)),
@@ -208,7 +208,7 @@ def test_a_disposition_that_lands_on_no_contract_draft_shows_no_toast():
 
 
 def test_adding_a_note_to_selected_results_adds_it_to_their_tests():
-    handlers = _render(SuiteType.REGULAR)
+    handlers = _render(SuiteType.STANDARD)
     with (
         patch.object(view, "session"),
         patch.object(view.test_result_queries, "get_test_definition_ids_for_results", return_value=["td"]) as lookup,
@@ -221,7 +221,7 @@ def test_adding_a_note_to_selected_results_adds_it_to_their_tests():
 
 
 def test_adding_a_note_to_every_matching_result_adds_it_to_the_tests_the_filters_match():
-    handlers = _render(SuiteType.REGULAR)
+    handlers = _render(SuiteType.STANDARD)
     with (
         patch.object(view, "session"),
         patch.object(view.test_result_queries, "get_test_definition_ids_for_run", return_value=["td"]) as lookup,
@@ -244,7 +244,7 @@ def test_adding_a_note_to_every_matching_result_adds_it_to_the_tests_the_filters
     ],
 )
 def test_a_user_who_cannot_disposition_writes_no_notes(handler, payload):
-    handlers = _render(SuiteType.REGULAR, can_note=False)
+    handlers = _render(SuiteType.STANDARD, can_note=False)
     with (
         patch.object(view.TestDefinitionNote, "add_note") as add_note,
         patch.object(view.TestDefinitionNote, "update_note") as update_note,
@@ -258,4 +258,4 @@ def test_a_user_who_cannot_disposition_writes_no_notes(handler, payload):
 
 
 def test_a_user_who_cannot_disposition_is_told_the_page_cannot_write_notes():
-    assert _render(SuiteType.REGULAR, can_note=False)["data"]["permissions"]["can_note"] is False
+    assert _render(SuiteType.STANDARD, can_note=False)["data"]["permissions"]["can_note"] is False

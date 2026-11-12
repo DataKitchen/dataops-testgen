@@ -192,18 +192,18 @@ def parse_severity(value: str) -> Severity:
 class SuiteTypeLabel(StrEnum):
     """User-facing values accepted for the ``suite_type`` argument on test-suite creation."""
 
-    REGULAR = "Regular"
+    STANDARD = "Standard"
     CONTRACT = "Contract"
 
 
 SUITE_TYPE_LABEL_TO_INTERNAL: dict[SuiteTypeLabel, SuiteType] = {
-    SuiteTypeLabel.REGULAR: SuiteType.REGULAR,
+    SuiteTypeLabel.STANDARD: SuiteType.STANDARD,
     SuiteTypeLabel.CONTRACT: SuiteType.CONTRACT,
 }
 
 
 def parse_suite_type(value: str) -> SuiteType:
-    """Validate a ``suite_type`` value. Accepts ``Regular`` or ``Contract``.
+    """Validate a ``suite_type`` value. Accepts ``Standard`` or ``Contract``.
 
     Monitor suites are created through monitoring setup, not through this argument, so
     ``Monitor`` is not a valid value here.
@@ -220,7 +220,7 @@ _SUITE_TYPE_INTERNAL_TO_LABEL: dict[SuiteType, SuiteTypeLabel] = {
 def format_suite_type_label(suite_type: SuiteType | str) -> str:
     """Map a stored ``suite_type`` to its user-facing display label.
 
-    Only ``regular`` and ``contract`` are mapped — monitor suites are created and managed
+    Only ``standard`` and ``contract`` are mapped — monitor suites are created and managed
     through a separate surface and never reach this function.
     """
     return _SUITE_TYPE_INTERNAL_TO_LABEL[SuiteType(suite_type)].value
@@ -888,9 +888,9 @@ def resolve_hygiene_issue(issue_id: str) -> HygieneIssue:
 def resolve_contract(test_suite_id: str) -> TestSuite:
     """Resolve a contract's test suite ID, collapsing missing-or-inaccessible into one error path.
 
-    A regular suite the caller can reach is reported as not a contract rather than as missing:
+    A standard suite the caller can reach is reported as not a contract rather than as missing:
     the caller can see it in the suite listings, and a unified error would send them hunting a
-    typo. A monitor suite is reported as missing, as it is everywhere else regular suites are served.
+    typo. A monitor suite is reported as missing, as it is everywhere else standard suites are served.
     """
     suite_uuid = parse_uuid(test_suite_id, "test_suite_id")
     perms = get_project_permissions()
@@ -931,7 +931,7 @@ def unknown_version_error(error: contract_service.UnknownVersionError) -> MCPUse
 
 
 def resolve_test_suite(test_suite_id: str) -> TestSuite:
-    """Resolve a regular or contract test suite ID, collapsing missing-or-inaccessible into one error path."""
+    """Resolve a standard or contract test suite ID, collapsing missing-or-inaccessible into one error path."""
     suite_uuid = parse_uuid(test_suite_id, "test_suite_id")
     perms = get_project_permissions()
     suite = TestSuite.get(

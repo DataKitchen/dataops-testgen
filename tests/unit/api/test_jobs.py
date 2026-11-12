@@ -65,7 +65,7 @@ def _mock_table_group(**overrides):
 
 
 def _mock_test_suite(**overrides):
-    defaults = {"id": uuid4(), "project_code": "test_project", "suite_type": SuiteType.REGULAR}
+    defaults = {"id": uuid4(), "project_code": "test_project", "suite_type": SuiteType.STANDARD}
     defaults.update(overrides)
     ts = MagicMock()
     for key, value in defaults.items():
@@ -401,7 +401,7 @@ def test_submit_test_generation_resolves_regular_suites_and_contracts():
         resp = TestClient(_client_with_overrides()).post(f"/api/v1/test-suites/{uuid4()}/test-generation")
 
     assert resp.status_code == 404
-    mock_ts_cls.suite_type.in_.assert_called_once_with((SuiteType.REGULAR, SuiteType.CONTRACT))
+    mock_ts_cls.suite_type.in_.assert_called_once_with((SuiteType.STANDARD, SuiteType.CONTRACT))
 
 
 # --- get_job_status ---
@@ -680,8 +680,8 @@ def test_test_run_request_rejects_a_version_that_is_not_a_positive_number(versio
 @pytest.mark.parametrize(
     ("path", "suite_types"),
     [
-        ("test-runs", (SuiteType.REGULAR, SuiteType.CONTRACT)),
-        ("test-generation", (SuiteType.REGULAR, SuiteType.CONTRACT)),
+        ("test-runs", (SuiteType.STANDARD, SuiteType.CONTRACT)),
+        ("test-generation", (SuiteType.STANDARD, SuiteType.CONTRACT)),
     ],
 )
 def test_suite_submissions_resolve_regular_suites_and_contracts(path, suite_types):

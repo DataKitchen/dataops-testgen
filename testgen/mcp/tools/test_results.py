@@ -755,7 +755,7 @@ def update_test_result(
         Field(
             description="New disposition. One of 'Confirmed', 'Dismissed', 'Muted', 'No Decision' (clears it). 'Muted' "
             "deactivates the parent test and locks it against auto-regeneration; any other value reactivates and "
-            "unlocks it. On a contract, the change lands on its draft, opening one when there is none, and the "
+            "unlocks it. On a contract, the change is saved to its draft, opening one when there is none, and the "
             "active version keeps running the test until the draft is frozen. A test TestGen manages, such as "
             "Schema Conformance, cannot be muted, and a disposition leaves its state unchanged.",
         ),
@@ -796,7 +796,7 @@ def bulk_update_test_results(
         Field(
             description="New disposition. One of 'Confirmed', 'Dismissed', 'Muted', 'No Decision' (clears it). 'Muted' "
             "deactivates the parent tests and locks them against auto-regeneration; any other value reactivates and "
-            "unlocks. On a contract, the change lands on its draft, opening one when there is none, and the active "
+            "unlocks. On a contract, the change is saved to its draft, opening one when there is none, and the active "
             "version keeps running the tests until the draft is frozen. 'Muted' leaves out the results of tests "
             "TestGen manages, such as Schema Conformance, and a disposition leaves the state of those tests "
             "unchanged.",

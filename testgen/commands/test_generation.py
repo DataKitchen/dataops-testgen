@@ -18,7 +18,6 @@ from testgen.common.database.database_service import (
 )
 from testgen.common.enums import MANAGED_TEST_TYPES, JobSource, JobStatus, RegenerationGroup, SuiteType
 from testgen.common.generation_set_service import (
-    CONTRACT_GENERATION_SET,
     MONITOR_GENERATION_SET,
     resolve_generation_sets,
 )
@@ -116,7 +115,7 @@ class TestTypeParams:
     exact_measures: list[str] | None
 
 
-# Generate tests for a regular non-monitor test suite - don't use for monitors
+# Generate tests for a standard or contract test suite - don't use for monitors
 def run_test_generation(
     test_suite_id: str | UUID,
     generation_sets: list[str] | None = None,
@@ -127,7 +126,7 @@ def run_test_generation(
 ) -> ContractGenerationResult | None:
     """Generate tests for a test suite or a contract. ``regenerate`` names the regeneration groups
     of a contract, all of them when omitted, and is refused for any other suite. Returns a
-    contract's ``ContractGenerationResult``, and None for a regular suite."""
+    contract's ``ContractGenerationResult``, and None for a standard suite."""
     if test_suite_id is None:
         raise ValueError("Test Suite ID was not specified")
 
@@ -136,7 +135,7 @@ def run_test_generation(
     LOG.info("Retrieving connection, table group, and test suite parameters")
     test_suite = TestSuite.get(test_suite_id)
     if test_suite.suite_type == SuiteType.MONITOR:
-        raise ValueError("Cannot run regular test generation for monitor suite")
+        raise ValueError("Cannot run test generation for a monitor suite")
     if regenerate is not None and test_suite.suite_type != SuiteType.CONTRACT:
         raise ValueError("Regeneration groups apply to contracts only.")
 
@@ -155,6 +154,7 @@ def run_test_generation(
                 table_names=table_names,
                 profile_run_id=profile_run_id,
                 groups=list(RegenerationGroup) if regenerate is None else regenerate,
+                generation_sets=resolved_sets,
             )
         else:
             TestGeneration(
@@ -166,7 +166,8 @@ def run_test_generation(
         LOG.exception("Test generation encountered an error.")
         raise
     finally:
-        if success:
+        # A contract regeneration that left its tests alone keeps the sets they were generated from.
+        if success and (result is None or RegenerationGroup.TESTS in result.groups):
             test_suite.generation_sets = resolved_sets
     return result
 
@@ -262,7 +263,7 @@ def run_monitor_generation(
 
     monitor_suite = TestSuite.get(monitor_suite_id)
     if monitor_suite.suite_type != SuiteType.MONITOR:
-        raise ValueError("Cannot run monitor generation for regular test suite")
+        raise ValueError("Cannot run monitor generation for a non-monitor test suite")
     table_group = TableGroup.get(monitor_suite.table_groups_id)
     connection = Connection.get(table_group.connection_id)
 
@@ -333,11 +334,13 @@ def run_contract_generation(
     *,
     refresh_identity: bool = True,
     groups: Iterable[str] = tuple(RegenerationGroup),
+    generation_sets: list[str] | None = None,
 ) -> ContractGenerationResult:
     """Generate a contract's draft: its metadata document from the data catalog and, when the
     table group has been profiled, its terms.
 
-    ``groups`` names what to regenerate. Raises ``ValueError`` for an empty or unknown choice, and
+    ``generation_sets`` names the sets its terms are generated from, the contract's stored sets when
+    omitted. ``groups`` names what to regenerate. Raises ``ValueError`` for an empty or unknown choice, and
     ``TestsNeedProfilingError`` for tests alone with no profiling run. The fields of a group left
     out are not refreshed. Creates the draft when there is none, then:
 
@@ -347,8 +350,8 @@ def run_contract_generation(
        description and tags from the table group; then declares the catalog columns of
        ``table_names`` -- or of every declared table -- refreshes their types, and refreshes the
        fields of profiling and catalog metadata when they are selected;
-    3. with tests and a completed profiling run, generates the Contract set's terms for those of the
-       tables the run profiled;
+    3. with tests and a completed profiling run, generates the terms of its generation sets for those
+       of the tables the run profiled;
     4. gives each table the draft declares its Schema Conformance test, whatever ``table_names``
        or ``groups`` holds, and removes the test of a table it no longer declares;
     5. with profiling and a completed profiling run, refreshes the values profiling observed on
@@ -369,6 +372,7 @@ def run_contract_generation(
     generating again resolves both, and freezing mints the missing identities.
     """
     test_suite, table_group, connection = _contract_context(test_suite_id)
+    resolved_sets = resolve_generation_sets(test_suite, generation_sets)
     session = get_current_session()
     run_id = resolve_generation_profile_run(table_group, finishing_run_id=profile_run_id)
     selected = parse_regeneration_groups(groups, has_profiling_run=run_id is not None)
@@ -396,7 +400,7 @@ def run_contract_generation(
     elif profiled:
         LOG.info(f"Generating contract terms for {len(profiled)} declared tables")
         TestGeneration(
-            connection, table_group, test_suite, [CONTRACT_GENERATION_SET], profile_run_id=run_id,
+            connection, table_group, test_suite, resolved_sets, profile_run_id=run_id,
             table_names=profiled,
         ).run()
     else:

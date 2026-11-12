@@ -82,7 +82,7 @@ class Project(Entity):
             (
                 SELECT COUNT(*) FROM test_suites
                 WHERE test_suites.project_code = :project_code
-                  AND test_suites.suite_type = 'regular'
+                  AND test_suites.suite_type = 'standard'
             ) AS test_suite_count,
             (
                 SELECT COUNT(*) FROM test_suites
@@ -94,7 +94,7 @@ class Project(Entity):
                 FROM test_definitions
                     LEFT JOIN test_suites ON test_definitions.test_suite_id = test_suites.id
                 WHERE test_suites.project_code = :project_code
-                  AND test_suites.suite_type IN ('regular', 'contract')
+                  AND test_suites.suite_type IN ('standard', 'contract')
                   AND test_definitions.version_id = {SuiteVersion.resolved_for_sql("test_definitions.test_suite_id")}
             ) AS test_definition_count,
             (
@@ -102,7 +102,7 @@ class Project(Entity):
                 FROM test_runs
                     LEFT JOIN test_suites ON test_runs.test_suite_id = test_suites.id
                 WHERE test_suites.project_code = :project_code
-                  AND test_suites.suite_type IN ('regular', 'contract')
+                  AND test_suites.suite_type IN ('standard', 'contract')
             ) AS test_run_count,
             (
                 SELECT COALESCE(observability_api_key, '') <> ''

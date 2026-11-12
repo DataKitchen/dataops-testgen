@@ -332,7 +332,7 @@ def on_delete_runs(job_execution_ids: list[str]) -> None:
             job for je_id in job_execution_ids if (job := JobExecution.get(je_id)) and job.job_key == RUN_PROFILE_JOB_KEY
         ]
         if not all(session.auth.user_has_permission("edit", job.project_code) for job in jobs):
-            st.toast("You don't have permission to delete these profiling runs.", icon=":material/error:")
+            st.toast("You do not have permission to delete these profiling runs.", icon=":material/error:")
             return
         deleted_ids: dict[str, list[str]] = defaultdict(list)
         for job_exec in jobs:

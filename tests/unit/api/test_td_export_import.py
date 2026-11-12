@@ -146,7 +146,7 @@ def _make_test_suite(**overrides):
         "table_groups_id": uuid4(),
         "project_code": "proj",
         "test_suite": "suite_1",
-        "suite_type": SuiteType.REGULAR,
+        "suite_type": SuiteType.STANDARD,
     }
     defaults.update(overrides)
     ts = MagicMock()

@@ -1921,4 +1921,4 @@ def test_the_disposition_description_says_a_contract_change_lands_on_its_draft(t
 
     disposition = inspect.signature(getattr(test_results, tool_name)).parameters["disposition"]
     description = disposition.annotation.__metadata__[0].description
-    assert "On a contract, the change lands on its draft" in description
+    assert "On a contract, the change is saved to its draft" in description

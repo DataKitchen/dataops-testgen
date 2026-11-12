@@ -28,14 +28,14 @@ DIVERGENCE = TestType(
     default_parm_required="Y",
 )
 ROW_COUNT = TestType(test_type="Row_Count", test_name_short="Row Count", test_scope="table")
-REGULAR_SUITE = MagicMock(suite_type=SuiteType.REGULAR)
+STANDARD_SUITE = MagicMock(suite_type=SuiteType.STANDARD)
 CONTRACT = MagicMock(suite_type=SuiteType.CONTRACT)
 
 
 def _save(
     definition: TestDefinition,
     test_type: TestType,
-    suite: MagicMock = REGULAR_SUITE,
+    suite: MagicMock = STANDARD_SUITE,
     declared: list[str] | None = None,
     stored_table: str | None = None,
     stored_type: str | None = None,
@@ -82,7 +82,7 @@ def test_non_public_type_is_saved_without_validation():
     definition = TestDefinition(test_type="Volume_Trend", custom_query="SELECT COUNT(*)")
 
     with patch(f"{SERVICE_MODULE}.TestType.get") as get_test_type, patch.object(TestDefinition, "save") as save:
-        assert save_from_dialog(definition, REGULAR_SUITE) is None
+        assert save_from_dialog(definition, STANDARD_SUITE) is None
 
     get_test_type.assert_not_called()
     save.assert_called_once()
@@ -156,7 +156,7 @@ def test_edit_keeping_an_undeclared_table_is_saved():
 def test_regular_suite_saves_a_test_on_any_table():
     definition = TestDefinition(test_type="Row_Count", table_name="customers")
 
-    assert _save(definition, ROW_COUNT, REGULAR_SUITE, declared=None) == (None, True)
+    assert _save(definition, ROW_COUNT, STANDARD_SUITE, declared=None) == (None, True)
 
 
 TABLE_COLUMNS = [
@@ -168,7 +168,7 @@ TABLE_COLUMNS = [
 
 def test_dialog_offers_every_table_on_a_regular_suite():
     with patch(f"{SERVICE_MODULE}.writable_tables", return_value=None):
-        assert dialog_table_columns(REGULAR_SUITE, TABLE_COLUMNS) == TABLE_COLUMNS
+        assert dialog_table_columns(STANDARD_SUITE, TABLE_COLUMNS) == TABLE_COLUMNS
 
 
 def test_dialog_offers_the_declared_tables_and_the_edited_tests_table_on_a_contract():

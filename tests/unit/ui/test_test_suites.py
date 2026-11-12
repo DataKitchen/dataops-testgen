@@ -16,6 +16,7 @@ from testgen.commands.test_generation import ContractGenerationResult
 from testgen.common.contract_creation import ContractCreation, ContractImportCreation
 from testgen.common.contract_import import ContractTermReason, TermChange
 from testgen.common.enums import JobSource, RegenerationGroup, SuiteType
+from testgen.common.generation_set_service import GENERATION_SET_DESCRIPTIONS
 from testgen.common.models.project import Project
 from testgen.common.models.suite_version import ContractState
 from testgen.common.models.test_suite import TestSuite
@@ -23,6 +24,7 @@ from testgen.common.odcs.servers import CustomServerReason, ServerType
 from testgen.common.test_definition_export_import_service import ImportAction
 from testgen.ui.views import test_suites as view
 from testgen.ui.views.dialogs import generate_tests_dialog as dialog
+from testgen.ui.views.dialogs.generate_tests_dialog import generation_set_options
 
 pytestmark = pytest.mark.unit
 
@@ -139,7 +141,7 @@ def test_edit_reports_a_name_another_suite_in_the_project_holds(session_state, d
 
     assert session_state[RESULT_KEY] == {
         "success": False,
-        "message": "A test suite or contract named Sales Orders already exists in this project.",
+        "message": "A test suite named Sales Orders already exists in this project.",
     }
     db_session_mock.rollback.assert_called_once()
     record.assert_not_called()
@@ -200,11 +202,11 @@ def test_dialog_offers_only_severities_execution_recognizes():
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        (None, (SuiteType.REGULAR, SuiteType.CONTRACT)),
-        ("regular", (SuiteType.REGULAR,)),
+        (None, (SuiteType.STANDARD, SuiteType.CONTRACT)),
+        ("standard", (SuiteType.STANDARD,)),
         ("contract", (SuiteType.CONTRACT,)),
-        ("monitor", (SuiteType.REGULAR, SuiteType.CONTRACT)),
-        ("nonsense", (SuiteType.REGULAR, SuiteType.CONTRACT)),
+        ("monitor", (SuiteType.STANDARD, SuiteType.CONTRACT)),
+        ("nonsense", (SuiteType.STANDARD, SuiteType.CONTRACT)),
     ],
 )
 def test_the_type_filter_never_reaches_monitor_suites(value, expected):
@@ -239,7 +241,7 @@ def test_project_summary_counts_contracts():
 
 
 @pytest.mark.usefixtures("db_session_mock")
-def test_generating_a_contract_sends_its_groups_and_no_generation_sets(session_state):
+def test_generating_a_contract_sends_its_groups_and_generation_sets(session_state):
     result = ContractGenerationResult(3, ["orders"], [], [], [RegenerationGroup.TESTS])
     with (
         patch.object(view.TestSuite, "get", return_value=SimpleNamespace(suite_type=SuiteType.CONTRACT)),
@@ -250,7 +252,7 @@ def test_generating_a_contract_sends_its_groups_and_no_generation_sets(session_s
             "regenerate": ["tests"],
         })
 
-    generate.assert_called_once_with(JobSource.ui, "abc", None, regenerate=["tests"])
+    generate.assert_called_once_with(JobSource.ui, "abc", ["Standard"], regenerate=["tests"])
 
 
 @pytest.mark.usefixtures("db_session_mock")
@@ -312,19 +314,19 @@ def _generate_tests_data(suite_type: SuiteType, *, profiled: bool = True) -> dic
         ),
         patch.object(view.TableGroup, "get"),
         patch.object(view, "resolve_generation_profile_run", return_value="run" if profiled else None),
-        patch.object(view, "list_generation_sets", return_value=["Standard"]),
+        patch.object(view, "available_generation_sets", return_value=["Standard"]),
+        patch.object(view, "generation_set_options", side_effect=lambda names: [{"value": n} for n in names]),
         patch.object(view, "resolve_generation_sets", return_value=["Standard"]),
         patch.object(view, "get_generation_set_members", return_value={}),
         patch.object(view, "get_overriding_test_types", return_value={}),
         patch.object(view, "get_test_suite_refresh_warning", return_value={"test_ct": 64}),
         patch.object(view, "get_value_hash_warning", return_value=None),
         patch.object(view, "get_sampled_unavailable_test_types", return_value={}),
-        patch.object(view, "get_generation_set_test_types", return_value=[]),
     ):
         return view.build_generate_tests_data("abc")
 
 
-@pytest.mark.parametrize("suite_type", [SuiteType.CONTRACT, SuiteType.REGULAR])
+@pytest.mark.parametrize("suite_type", [SuiteType.CONTRACT, SuiteType.STANDARD])
 def test_both_suite_kinds_carry_the_warning_about_the_tests_generation_replaces(session_state, suite_type):
     assert _generate_tests_data(suite_type)["refresh_warning"] == {"test_ct": 64}
 
@@ -339,7 +341,8 @@ def test_a_contracts_dialog_offers_the_three_regeneration_groups(session_state):
         "Regenerates the contract's tests from the latest profiling. Locked tests are kept."
     )
     assert data["tests_disabled_reason"] is None
-    assert data["generation_sets"] == []
+    assert data["generation_sets"] == [{"value": "Standard"}]
+    assert data["selected_generation_sets"] == ["Standard"]
 
 
 def test_an_unprofiled_contracts_dialog_disables_tests_with_its_reason(session_state):
@@ -349,21 +352,15 @@ def test_an_unprofiled_contracts_dialog_disables_tests_with_its_reason(session_s
 
 
 def test_a_test_suites_dialog_offers_no_regeneration_groups(session_state):
-    data = _generate_tests_data(SuiteType.REGULAR)
+    data = _generate_tests_data(SuiteType.STANDARD)
 
     assert "regeneration_groups" not in data
-    assert data["generation_sets"] == ["Standard"]
+    assert data["generation_sets"] == [{"value": "Standard"}]
 
 
-@pytest.mark.parametrize(
-    ("suite_type", "expected"),
-    [
-        (SuiteType.REGULAR, {"LOV_Match": "Value Match", "Match_Lead_Space_Ct": "Match Leading Spaces"}),
-        (SuiteType.CONTRACT, {"LOV_Match": "Value Match"}),
-    ],
-)
-def test_notes_the_test_types_a_sampled_profile_cannot_support_for_what_the_suite_generates(
-    session_state, suite_type, expected
+@pytest.mark.parametrize("suite_type", [SuiteType.STANDARD, SuiteType.CONTRACT])
+def test_sends_every_test_type_a_sampled_profile_cannot_support_for_the_dialog_to_match_to_its_sets(
+    session_state, suite_type
 ):
     unavailable = {"LOV_Match": "Value Match", "Match_Lead_Space_Ct": "Match Leading Spaces"}
     with (
@@ -373,27 +370,25 @@ def test_notes_the_test_types_a_sampled_profile_cannot_support_for_what_the_suit
         ),
         patch.object(view.TableGroup, "get"),
         patch.object(view, "resolve_generation_profile_run", return_value="run"),
-        patch.object(view, "list_generation_sets", return_value=["Standard"]),
+        patch.object(view, "available_generation_sets", return_value=["Standard"]),
+        patch.object(view, "generation_set_options", side_effect=lambda names: [{"value": n} for n in names]),
         patch.object(view, "resolve_generation_sets", return_value=["Standard"]),
         patch.object(view, "get_generation_set_members", return_value={}),
         patch.object(view, "get_overriding_test_types", return_value={}),
         patch.object(view, "get_test_suite_refresh_warning", return_value=None),
         patch.object(view, "get_value_hash_warning", return_value=None),
         patch.object(view, "get_sampled_unavailable_test_types", return_value=unavailable) as sampled_unavailable,
-        patch.object(view, "get_generation_set_test_types", return_value=["LOV_Match", "Required"]) as contract_set,
     ):
         data = view.build_generate_tests_data("abc")
 
-    assert data["sampled_unavailable_test_types"] == expected
+    assert data["sampled_unavailable_test_types"] == unavailable
     sampled_unavailable.assert_called_once_with("tg")
-    if suite_type == SuiteType.CONTRACT:
-        contract_set.assert_called_once_with(view.CONTRACT_GENERATION_SET)
 
 
 @pytest.mark.usefixtures("db_session_mock")
 def test_generating_a_test_suite_sends_its_sets_whatever_the_payload_claims(session_state):
     with (
-        patch.object(view.TestSuite, "get", return_value=SimpleNamespace(suite_type=SuiteType.REGULAR)),
+        patch.object(view.TestSuite, "get", return_value=SimpleNamespace(suite_type=SuiteType.STANDARD)),
         patch.object(view, "run_test_generation_and_report") as generate,
     ):
         view.generate_tests_confirmed({
@@ -405,7 +400,7 @@ def test_generating_a_test_suite_sends_its_sets_whatever_the_payload_claims(sess
 
 
 @pytest.mark.usefixtures("db_session_mock")
-@pytest.mark.parametrize(("suite_type", "opens_draft"), [(SuiteType.CONTRACT, True), (SuiteType.REGULAR, False)])
+@pytest.mark.parametrize(("suite_type", "opens_draft"), [(SuiteType.CONTRACT, True), (SuiteType.STANDARD, False)])
 def test_locking_edited_tests_of_a_contract_lands_on_its_draft(suite_type, opens_draft):
     events = []
     with (
@@ -429,7 +424,7 @@ MIB = 1024 * 1024
 
 def _wizard(**overrides) -> dict:
     payload = {
-        "suite_type": "regular",
+        "suite_type": "standard",
         "test_suite": "Orders",
         "table_groups_id": str(uuid4()),
         "test_suite_description": "",
@@ -512,7 +507,7 @@ def test_a_test_suite_without_generation_is_saved_and_reports_skipped(session_st
         view.add_test_suite_confirmed(_wizard())
 
     save.assert_called_once()
-    assert save.call_args.args[0].suite_type == "regular"
+    assert save.call_args.args[0].suite_type == "standard"
     generate.assert_not_called()
     assert session_state[view.WIZARD_RESULT_KEY]["rows"] == [
         {"icon": "success", "text": "Test suite Orders created.", "link": None},
@@ -530,7 +525,7 @@ def test_the_wizard_reports_a_name_another_suite_in_the_project_holds(session_st
 
     assert session_state[view.WIZARD_RESULT_KEY] == {
         "success": False,
-        "message": "A test suite or contract named Orders already exists in this project.",
+        "message": "A test suite named Orders already exists in this project.",
     }
 
 
@@ -544,7 +539,7 @@ def test_the_wizard_reports_a_contract_name_another_suite_in_the_project_holds(s
         view.add_test_suite_confirmed(_contract())
 
     assert session_state[view.WIZARD_RESULT_KEY]["message"] == (
-        "A test suite or contract named Orders already exists in this project."
+        "A test suite named Orders already exists in this project."
     )
 
 
@@ -595,6 +590,24 @@ def test_a_test_suite_generation_failure_rolls_back_to_the_suite_and_reports_it(
     assert [name for name, _, _ in calls.mock_calls][:3] == ["commit", "generate", "rollback"]
     assert session_state[view.WIZARD_RESULT_KEY]["success"] is True
     assert _rows(session_state)[1] == ("warning", "Tests: generation failed. Generate them on the Test Suites page.")
+
+
+@pytest.mark.usefixtures("db_session_mock")
+def test_a_contract_from_tables_is_created_with_the_chosen_generation_sets(session_state, test_count):
+    test_count.return_value = SimpleNamespace(total=144)
+    with (
+        patch.object(view.TableGroup, "get", return_value=_table_group()),
+        patch.object(view.Connection, "get"),
+        patch.object(view, "resolve_generation_sets", side_effect=lambda _suite, requested: requested) as resolve,
+        patch.object(view, "create_contract", side_effect=_creation(_generated())) as create,
+    ):
+        view.add_test_suite_confirmed(_contract(tests={
+            "start_from": "tables", "table_names": ["orders"], "generation_sets": ["Contract", "Standard"],
+        }))
+
+    suite = create.call_args.args[0]
+    resolve.assert_called_once_with(suite, ["Contract", "Standard"])
+    assert suite.generation_sets == ["Contract", "Standard"]
 
 
 @pytest.mark.usefixtures("db_session_mock")
@@ -1146,7 +1159,7 @@ def test_a_malformed_data_url_is_not_reported_as_empty(session_state):
 @pytest.mark.usefixtures("db_session_mock")
 @pytest.mark.parametrize(
     ("suite_type", "message"),
-    [(SuiteType.CONTRACT, "Contract Orders has been deleted."), (SuiteType.REGULAR, "Test Suite Orders has been deleted.")],
+    [(SuiteType.CONTRACT, "Contract Orders has been deleted."), (SuiteType.STANDARD, "Test Suite Orders has been deleted.")],
 )
 def test_the_delete_message_names_the_suite_by_its_type(session_state, suite_type, message):
     session_state["ts_delete_dialog"] = {"test_suite_name": "Orders", "suite_type": suite_type}
@@ -1159,3 +1172,21 @@ def test_the_delete_message_names_the_suite_by_its_type(session_state, suite_typ
         view.execute_ts_delete(str(uuid4()))
 
     assert toast.call_args.args[0] == message
+
+
+def test_generation_set_options_describe_core_and_plugin_sets():
+    plugin = MagicMock()
+    plugin.load.return_value.get_generation_set_descriptions.return_value = {"Pharma": "Pharma codes."}
+    dialog._generation_set_descriptions.cache_clear()
+    try:
+        with patch("testgen.ui.views.dialogs.generate_tests_dialog.discover", return_value=[plugin]):
+            options = generation_set_options(["Standard", "Pharma", "Undescribed"])
+    finally:
+        dialog._generation_set_descriptions.cache_clear()
+
+    assert [(option["value"], option["label"]) for option in options] == [
+        ("Standard", "Standard"), ("Pharma", "Pharma"), ("Undescribed", "Undescribed"),
+    ]
+    assert options[0]["help"] == GENERATION_SET_DESCRIPTIONS["Standard"]
+    assert options[1]["help"] == "Pharma codes."
+    assert options[2]["help"] is None

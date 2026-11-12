@@ -24,7 +24,7 @@
  * @property {boolean?} is_contract
  * @property {RegenerationGroup[]?} regeneration_groups
  * @property {string?} tests_disabled_reason
- * @property {string[]} generation_sets
+ * @property {import('./generation_set_picker.js').GenerationSetOption[]} generation_sets
  * @property {string[]} selected_generation_sets
  * @property {Object.<string, string[]>} generation_set_test_types
  * @property {Object.<string, string[]>} overriding_test_types
@@ -41,7 +41,8 @@ import { Button } from '/app/static/js/components/button.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { Alert } from '/app/static/js/components/alert.js';
 import { Checkbox } from '/app/static/js/components/checkbox.js';
-import { Select } from '/app/static/js/components/select.js';
+import { GenerationSetPicker } from '/app/static/js/components/generation_set_picker.js';
+import { ExpanderToggle } from '/app/static/js/components/expander_toggle.js';
 import { SampledProfileGapsHelp } from '/app/static/js/components/sampled_profile_gaps.js';
 import { getValue, loadStylesheet } from '/app/static/js/utils.js';
 
@@ -75,7 +76,9 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
     const valueHashTypes = new Set(getValue(props.value_hash_test_types) ?? []);
     const valueHashWarning = getValue(props.value_hash_warning);
     const sampledUnavailable = getValue(props.sampled_unavailable_test_types) ?? {};
-    const selectedSets = van.state(storedSets.filter((s) => generationSets.includes(s)));
+    const setNames = generationSets.map((option) => option.value);
+    const selectedSets = van.state(storedSets.filter((s) => setNames.includes(s)));
+    const contractSetsExpanded = van.state(false);
     const regenerationGroups = getValue(props.regeneration_groups) ?? [];
     const testsDisabledReason = getValue(props.tests_disabled_reason);
     const hasResult = () => !!getValue(props.result);
@@ -84,7 +87,9 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
     );
     const selectedGroups = van.derive(() => regenerationGroups.map(({ value }) => value).filter(value => groupChecked[value].val));
     const testsSelected = van.derive(() => !isContract || selectedGroups.val.includes('tests'));
-    const submitDisabled = van.derive(() => isContract ? selectedGroups.val.length === 0 : selectedSets.val.length === 0);
+    const submitDisabled = van.derive(
+        () => (isContract && selectedGroups.val.length === 0) || (testsSelected.val && selectedSets.val.length === 0),
+    );
 
     const question = isContract
         ? div(
@@ -102,15 +107,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
         { class: 'flex-column fx-gap-3 generate-tests--wrapper' },
         isContract ? question : '',
         !isContract && generationSets.length > 0
-            ? Select({
-                label: 'Generation Sets',
-                value: selectedSets,
-                multiSelect: true,
-                required: true,
-                options: generationSets.map(s => ({ value: s, label: s })),
-                portalClass: 'generate-tests--select',
-                disabled: hasResult,
-            })
+            ? GenerationSetPicker({ options: generationSets, selected: selectedSets, disabled: hasResult })
             : '',
         isContract
             ? div(
@@ -129,18 +126,44 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                             onChange: (checked) => groupChecked[value].val = checked,
                         }),
                         div({ class: 'text-secondary text-small pl-5' }, disabled ? testsDisabledReason : help),
+                        value === 'tests' && !disabled && generationSets.length > 0
+                            ? () => groupChecked.tests.val
+                                ? div(
+                                    { class: 'flex-column fx-gap-2 pl-5 pt-2' },
+                                    ExpanderToggle({
+                                        expandLabel: 'Generation Sets',
+                                        collapseLabel: 'Generation Sets',
+                                        labelPosition: 'left',
+                                        default: contractSetsExpanded.rawVal,
+                                        onExpand: () => contractSetsExpanded.val = true,
+                                        onCollapse: () => contractSetsExpanded.val = false,
+                                    }),
+                                    () => contractSetsExpanded.val
+                                        ? GenerationSetPicker({
+                                            options: generationSets,
+                                            selected: selectedSets,
+                                            disabled: hasResult,
+                                            label: null,
+                                        })
+                                        : div(
+                                            { class: 'text-secondary text-small' },
+                                            selectedSets.val.join(', ') || 'Select at least one generation set.',
+                                        ),
+                                )
+                                : ''
+                            : '',
                     );
                 }),
             )
             : '',
-        () => valueHashWarning && selectedSets.val.some(s => (setMembers[s] ?? []).some(t => valueHashTypes.has(t)))
+        () => testsSelected.val && valueHashWarning && selectedSets.val.some(s => (setMembers[s] ?? []).some(t => valueHashTypes.has(t)))
             ? Alert({ type: 'warn' }, span(valueHashWarning))
             : '',
         () => {
             if (!testsSelected.val) return '';
             const selectedTypes = new Set(selectedSets.val.flatMap(s => setMembers[s] ?? []));
             const names = Object.entries(sampledUnavailable)
-                .filter(([testType]) => isContract || selectedTypes.has(testType))
+                .filter(([testType]) => selectedTypes.has(testType))
                 .map(([, name]) => name)
                 .sort();
             if (!names.length) return '';
@@ -149,7 +172,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                 { type: 'warn' },
                 div(
                     { class: 'flex-row fx-align-center fx-gap-1' },
-                    span(`On tables profiled from a sample, ${names.length} of the ${isContract ? 'contract\'s' : 'selected'} test types ${verb} not generated.`),
+                    span(`On tables profiled from a sample, ${names.length} of the selected test types ${verb} not generated.`),
                     SampledProfileGapsHelp({ testTypes: names }),
                 ),
             );
@@ -186,7 +209,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                     overriddenCount += count;
                 }
             }
-            const doomedCount = isContract ? 0 : uncoveredCount + overriddenCount;
+            const doomedCount = uncoveredCount + overriddenCount;
             const removedSets = storedSets.filter(s => !selected.includes(s));
 
             let deselectionMessage = '';
@@ -246,7 +269,13 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                     disabled: submitDisabled,
                     onclick: () => emit('GenerateTestsConfirmed', {
                         payload: isContract
-                            ? { test_suite_id: testSuiteId, test_suite_name: testSuiteName, is_contract: true, regenerate: selectedGroups.val }
+                            ? {
+                                test_suite_id: testSuiteId,
+                                test_suite_name: testSuiteName,
+                                is_contract: true,
+                                regenerate: selectedGroups.val,
+                                ...(testsSelected.val ? { generation_sets: selectedSets.val } : {}),
+                            }
                             : { test_suite_id: testSuiteId, test_suite_name: testSuiteName, generation_sets: selectedSets.val },
                     }),
                 }),
@@ -273,10 +302,6 @@ const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .generate-tests--wrapper {
     min-height: 120px;
-}
-
-.generate-tests--select {
-    max-height: 200px !important;
 }
 `);
 

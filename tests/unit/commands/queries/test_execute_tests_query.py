@@ -961,7 +961,7 @@ def test_freshness_exclusions_skip_other_test_types():
 def _make_schema_execution_sql() -> TestExecutionSQL:
     """Build a TestExecutionSQL through __init__ so schema resolution is exercised."""
     table_group = MagicMock(id=uuid4(), table_group_schema="test_schema")
-    test_suite = MagicMock(suite_type=SuiteType.REGULAR, predict_exclude_weekends=False, id=uuid4())
+    test_suite = MagicMock(suite_type=SuiteType.STANDARD, predict_exclude_weekends=False, id=uuid4())
     test_run = MagicMock(id=uuid4(), test_suite_id=uuid4(), test_starttime=datetime(2026, 1, 1, tzinfo=UTC))
     return TestExecutionSQL(Connection(sql_flavor="postgresql"), table_group, test_suite, test_run)
 

@@ -150,10 +150,10 @@ const OverviewContent = (/** @type Overview */ overview) => div(
         Attribute({ label: 'Domain', value: overview.domain, width: 200 }),
         Attribute({ label: 'Tenant', value: overview.tenant, width: 200 }),
     ),
-    Attribute({ label: 'Tags', value: (overview.tags ?? []).join(' · ') }),
-    Attribute({ label: 'Purpose', value: overview.purpose }),
-    Attribute({ label: 'Usage', value: overview.usage }),
-    Attribute({ label: 'Limitations', value: overview.limitations }),
+    overview.tags?.length ? Attribute({ label: 'Tags', value: overview.tags.join(' · ') }) : '',
+    overview.purpose ? Attribute({ label: 'Purpose', value: overview.purpose }) : '',
+    overview.usage ? Attribute({ label: 'Usage', value: overview.usage }) : '',
+    overview.limitations ? Attribute({ label: 'Limitations', value: overview.limitations }) : '',
 );
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -223,7 +223,7 @@ const TeamCard = (/** @type SectionCardProperties */ props) => {
                     rows: form.rawVal.members,
                     onChange: (members) => update({ members }),
                     addLabel: 'Add Member',
-                    emptyText: 'No members.',
+                    emptyText: 'The contract lists no team members.',
                     testId: 'contract-team-members',
                 }),
             ),

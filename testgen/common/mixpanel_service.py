@@ -221,7 +221,7 @@ class MixpanelService(Singleton):
             (SELECT COUNT(*) FROM projects) AS project_count,
             (SELECT COUNT(*) FROM connections) AS connection_count,
             (SELECT COUNT(*) FROM table_groups) AS table_group_count,
-            (SELECT COUNT(*) FROM test_suites WHERE suite_type = 'regular') AS test_suite_count,
+            (SELECT COUNT(*) FROM test_suites WHERE suite_type = 'standard') AS test_suite_count,
             (SELECT COUNT(*) FROM test_suites WHERE suite_type = 'contract') AS contract_suite_count,
             (SELECT COUNT(*) FROM test_suites WHERE suite_type = 'monitor') AS monitor_suite_count;
         """

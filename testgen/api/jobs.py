@@ -103,8 +103,8 @@ def submit_test_run(
     reads, and its results report the test's own schema and table names.
 
     A contract runs its active version, or its draft when no version has been frozen, unless
-    `version` names another. Only a run of the active version counts as the contract's
-    status; a run of the draft or of a superseded version does not.
+    `version` names another. Only a verification, a run of the active version, updates the contract's
+    results; a preview, a run of the draft, and a run of a superseded version do not.
     """
     if body and (refusal := unsupported_schema_override(
         test_suite.table_groups_id,
