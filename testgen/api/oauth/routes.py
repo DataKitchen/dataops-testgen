@@ -7,6 +7,7 @@ is called in the threadpool.
 """
 
 import logging
+import re
 import secrets
 import time
 from urllib.parse import urlparse
@@ -15,7 +16,7 @@ from uuid import uuid4
 from authlib.oauth2.rfc6749 import OAuth2Request
 from authlib.oauth2.rfc6749.requests import BasicOAuth2Payload
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from sqlalchemy import select
 
 from testgen import settings
@@ -38,6 +39,29 @@ OAUTH_SESSION_COOKIE = "dk_oauth_session"
 
 def _session_cookie_path() -> str:
     return f"/{settings.API_BASE_PATH}/oauth" if settings.API_BASE_PATH else "/oauth"
+
+
+def _is_same_origin(redirect_uri: str, request: Request) -> bool:
+    """Whether a browser following ``redirect_uri`` stays on the host that received ``request``.
+
+    Accepts a path starting with a single slash, or an http or https URL on that host.
+    """
+    # The response percent-encodes these, so the browser would read a different URL than the one checked here:
+    # "https://host\@evil.com" is sent as "https://host%5C@evil.com", whose host is evil.com
+    if re.search(r"[\\\x00-\x20\x7f]", redirect_uri):
+        return False
+    parsed = urlparse(redirect_uri)
+    if parsed.scheme or parsed.netloc:
+        return parsed.scheme in ("http", "https") and parsed.netloc == request.url.netloc
+    return redirect_uri.startswith("/") and not redirect_uri.startswith("//")
+
+
+def _clear_root_session_cookie(response: Response) -> None:
+    """Delete a session cookie held at the root path, which a browser sends after the one at the session path.
+
+    The last value read wins, so a root-path cookie would stand in for the session cookie.
+    """
+    response.delete_cookie(key=OAUTH_SESSION_COOKIE, path="/")
 
 router = APIRouter(prefix="/oauth", tags=["OAuth"], dependencies=[Depends(db_session, scope="function")])
 
@@ -124,6 +148,7 @@ def _issue_auth_code(request: Request, user: User, body: dict) -> RedirectRespon
         secure=settings.BASE_URL.startswith("https"),
         path=_session_cookie_path(),
     )
+    _clear_root_session_cookie(response)
     return response
 
 
@@ -246,7 +271,7 @@ def logout(
     ),
 ):
     """Signs the browser out of TestGen and redirects to `redirect_uri`."""
-    if not redirect_uri or urlparse(redirect_uri).netloc not in ("", request.url.netloc):
+    if not redirect_uri or not _is_same_origin(redirect_uri, request):
         # Under a path, Streamlit answers the path without its slash with an absolute redirect built from the scheme it
         # sees, which is http behind a proxy that terminates TLS
         redirect_uri = f"{settings.UI_BASE_URL}/"
@@ -255,6 +280,7 @@ def logout(
         record(AuditAction.USER_SIGNED_OUT)
     response = RedirectResponse(url=redirect_uri, status_code=302)
     response.delete_cookie(key=OAUTH_SESSION_COOKIE, path=_session_cookie_path())
+    _clear_root_session_cookie(response)
     return response
 
 

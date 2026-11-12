@@ -16,6 +16,7 @@ from testgen.api.oauth.routes import (
     OAUTH_SESSION_COOKIE,
     _build_oauth2_request,
     _get_existing_user,
+    _issue_auth_code,
     _security_headers,
     router,
 )
@@ -269,6 +270,44 @@ def test_logout_clears_oauth_session_cookie_under_the_base_url_path():
     assert "Path=/tg-api/oauth" in resp.headers["set-cookie"]
 
 
+def test_logout_clears_a_session_cookie_at_the_root_path():
+    """A root-path cookie left in the browser would otherwise keep it signed in, and shadow a newer sign-in."""
+    resp = _make_client().get("/oauth/logout", follow_redirects=False)
+
+    cleared = [cookie for cookie in resp.headers.get_list("set-cookie") if cookie.startswith(f"{OAUTH_SESSION_COOKIE}=")]
+    assert any("Path=/;" in cookie and "Max-Age=0" in cookie for cookie in cleared), cleared
+
+
+@pytest.mark.parametrize(
+    "redirect_uri",
+    [
+        "https://testserver\\@evil.com",
+        "http:evil.com",
+        "https:/evil.com",
+        "//evil.com",
+        "/\\evil.com",
+        "/\t/evil.com",
+        " //evil.com",
+        "https://testserver@evil.com/",
+        "javascript:alert(1)",
+        "dashboard",
+    ],
+)
+def test_logout_rejects_a_redirect_a_browser_reads_as_another_origin(redirect_uri):
+    with patch("testgen.api.oauth.routes.settings.UI_BASE_URL", "https://host/testgen"):
+        resp = _make_client().get("/oauth/logout", params={"redirect_uri": redirect_uri}, follow_redirects=False)
+
+    assert resp.headers["location"] == "https://host/testgen/"
+
+
+def test_logout_allows_an_absolute_url_on_its_own_host():
+    resp = _make_client().get(
+        "/oauth/logout", params={"redirect_uri": "http://testserver/dashboard"}, follow_redirects=False
+    )
+
+    assert resp.headers["location"] == "http://testserver/dashboard"
+
+
 def test_logout_redirects_to_custom_uri():
     client = _make_client()
     resp = client.get("/oauth/logout?redirect_uri=/custom", follow_redirects=False)
@@ -294,6 +333,27 @@ def test_logout_allows_relative_path():
 
 
 # --- cookie secure flag ---
+
+
+@patch("testgen.api.oauth.routes._server")
+@patch("testgen.api.oauth.routes.create_jwt_token", return_value="session_jwt")
+def test_issue_auth_code_clears_a_session_cookie_at_the_root_path(_mock_jwt, mock_server):
+    """A root-path cookie is read after the one just set, so it would sign the browser in as its own user."""
+    mock_server.create_authorization_response.return_value = (
+        302, "", [("Location", "http://localhost/callback?code=ABC")]
+    )
+    request = MagicMock()
+    request.method = "GET"
+    request.url = "http://localhost/oauth/authorize"
+    request.headers = {}
+    user = MagicMock()
+    user.username = "alice"
+
+    response = _issue_auth_code(request, user, {"client_id": "c1", "response_type": "code"})
+
+    cookies = [cookie for cookie in response.headers.getlist("set-cookie") if cookie.startswith(f"{OAUTH_SESSION_COOKIE}=")]
+    assert any("session_jwt" in cookie and "Path=/oauth" in cookie for cookie in cookies), cookies
+    assert any("Path=/;" in cookie and "Max-Age=0" in cookie for cookie in cookies), cookies
 
 
 @patch("testgen.api.oauth.routes._server")

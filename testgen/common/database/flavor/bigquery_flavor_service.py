@@ -1,5 +1,8 @@
 from typing import Any
 
+from google.api_core.exceptions import NotFound
+from sqlalchemy.exc import DBAPIError
+
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.flavor.flavor_service import FlavorService, ResolvedConnectionParams, base_type_name
 from testgen.common.value_hash import DECIMAL_BOUND
@@ -22,6 +25,13 @@ class BigqueryFlavorService(FlavorService):
 
     def exact_text(self, text_expr: str) -> str:
         return f"CAST({text_expr} AS BYTES)"
+
+    def is_missing_schema_error(self, error: DBAPIError) -> bool:
+        # The DB-API driver wraps the API's NotFound as its DatabaseError's only argument. A
+        # missing project or table is also a NotFound, so the message has to name a dataset. The
+        # message of a failed REST call starts with the request line, so the match is not anchored.
+        cause = error.orig.args[0] if error.orig is not None and error.orig.args else None
+        return isinstance(cause, NotFound) and "Not found: Dataset" in cause.message
 
     def number_literal(self, number: str) -> str:
         # A plain literal with a decimal point is FLOAT64; NUMERIC would refuse more than 9 decimal places
