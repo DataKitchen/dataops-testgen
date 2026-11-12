@@ -407,10 +407,9 @@ def test_copying_terms_mints_identities_on_the_target_version():
     into a contract left terms that render ``id: null``."""
     session = MagicMock()
     target_version = uuid4()
-    session.scalar.return_value = target_version
     with (
         patch("testgen.common.models.test_definition.get_current_session", return_value=session),
-        patch.object(TestDefinition, "assert_version_writable"),
+        patch.object(TestDefinition, "resolve_writable", return_value=(target_version, {})),
         patch.object(TestDefinition, "_assert_no_managed_definitions"),
         patch.object(TestDefinition, "assign_missing_term_ids") as sweep,
     ):

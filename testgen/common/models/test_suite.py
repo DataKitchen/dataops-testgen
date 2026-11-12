@@ -444,9 +444,10 @@ class TestSuite(Entity):
             WHERE test_suite_id IN :test_suite_ids
         );
 
+        -- A table group's setup job names its monitor suite but also refreshes the catalog and starts profiling
         DELETE FROM job_executions
         WHERE kwargs->>'test_suite_id' IN :test_suite_id_texts
-            OR kwargs->>'monitor_suite_id' IN :test_suite_id_texts;
+            OR (kwargs->>'monitor_suite_id' IN :test_suite_id_texts AND job_key <> 'refresh-data-catalog');
 
         DELETE FROM test_runs
         WHERE test_suite_id IN :test_suite_ids;

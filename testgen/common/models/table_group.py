@@ -991,7 +991,7 @@ class TableGroup(Entity):
             "freshness_events": freshness_events,
             "volume_events": [
                 {
-                    "record_count": int(event["result_signal"] or 0),
+                    "record_count": int(event["result_signal"]) if event["result_signal"] is not None else None,
                     "time": event["test_time"],
                     "is_anomaly": int(event["result_code"]) == 0 if event["result_code"] is not None else None,
                     "is_training": int(event["result_code"]) == -1 if event["result_code"] is not None else None,

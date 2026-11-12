@@ -20,7 +20,8 @@ TOKEN_TTL_SECONDS = 300
 
 
 class _Confirmation(BaseModel):
-    confirm: bool = Field(default=False, description="Go ahead with the deletion.")
+    # Checked by default: clients show the field as a checkbox, and Accept alone has to confirm
+    confirm: bool = Field(default=True, description="Go ahead with the deletion.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,9 +142,11 @@ async def confirm_destructive_action(
             # The SDK raises these for an accept whose content is missing or does not fit the form.
             raise MCPUserError("The user did not confirm. Nothing was deleted.") from error
         else:
-            if result.action == "accept" and result.data.confirm:
-                return
-            raise MCPUserError("The user did not confirm. Nothing was deleted.")
+            if result.action != "accept":
+                raise MCPUserError("The user did not confirm. Nothing was deleted.")
+            if not result.data.confirm:
+                raise MCPUserError("The user accepted with the confirmation box cleared. Nothing was deleted.")
+            return
 
     token = _issue_token(operation_id, scope)
     raise MCPUserError(

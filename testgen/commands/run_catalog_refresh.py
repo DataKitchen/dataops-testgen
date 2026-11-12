@@ -13,6 +13,7 @@ from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.table_group import TableGroup
+from testgen.common.models.test_suite import TestSuite
 from testgen.common.models.user import User
 from testgen.common.monitor_service import INITIAL_MONITOR_TYPES
 from testgen.common.run_service import launch_run
@@ -90,7 +91,9 @@ def run_catalog_refresh(
         LOG.exception("Data catalog refresh encountered errors")
         first_error = error
 
-    if monitor_suite_id:
+    if monitor_suite_id and TestSuite.get(monitor_suite_id) is None:
+        LOG.info(f"Skipping initial monitor generation: monitor suite {monitor_suite_id} no longer exists")
+    elif monitor_suite_id:
         try:
             run_monitor_generation(monitor_suite_id, INITIAL_MONITOR_TYPES)
         except Exception as error:

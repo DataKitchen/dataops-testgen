@@ -423,6 +423,7 @@ class ConnectionsPage(Page):
                             key=RUN_TESTS_JOB_KEY,
                             cron_expr=standard_test_suite_data["schedule"],
                             cron_tz=standard_test_suite_data["timezone"],
+                            active=True,
                             kwargs={"test_suite_id": str(standard_test_suite.id)},
                         )
                         test_run_schedule.save()

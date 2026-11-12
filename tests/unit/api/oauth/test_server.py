@@ -7,6 +7,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
 import pytest
@@ -654,7 +655,11 @@ class _Store:
         )
         return code
 
-    def save(self, item: OAuth2Token) -> None:
+    def save(self, item: OAuth2Token | OAuth2AuthorizationCode) -> None:
+        if isinstance(item, OAuth2AuthorizationCode):
+            item.auth_time = item.auth_time or int(time.time())
+            self.codes[item.code] = item
+            return
         item.issued_at = item.issued_at or int(time.time())
         self.tokens.append(item)
 
@@ -797,6 +802,33 @@ def test_public_client_refresh_chain_expires_with_its_first_token(store, http):
 
     assert resp.status_code == 400
     assert resp.json()["error"] == "invalid_grant"
+
+
+def test_a_scope_the_client_did_not_register_is_granted_and_refreshes(store, http):
+    store.add_client("pub", "none")
+    user = MagicMock(id=uuid4(), username="alice")
+    with (
+        patch.object(routes, "_get_existing_user", return_value=user),
+        patch.object(routes, "create_jwt_token", return_value="session"),
+    ):
+        authorized = http.get(
+            "/oauth/authorize",
+            params={
+                "response_type": "code", "client_id": "pub", "redirect_uri": REDIRECT_URI, "scope": "read",
+                "state": "s", "code_challenge": _s256(CODE_VERIFIER),
+            },
+            follow_redirects=False,
+        )
+    [code] = parse_qs(urlparse(authorized.headers["location"]).query)["code"]
+
+    first = http.post("/oauth/token", data=_code_form("pub", code)).json()
+    refreshed = http.post(
+        "/oauth/token",
+        data={"grant_type": "refresh_token", "refresh_token": first["refresh_token"], "client_id": "pub", "scope": "read"},
+    )
+
+    assert first["scope"] == "read"
+    assert refreshed.status_code == 200
 
 
 def test_confidential_client_refresh_keeps_refresh_token(store, http):

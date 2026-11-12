@@ -1,5 +1,5 @@
 from collections import namedtuple
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 from uuid import uuid4
 
 import pytest
@@ -213,20 +213,26 @@ def test_delete_where_on_a_regular_suite_deletes_the_selected_rows():
 
 
 def _move(session, frozen_row, draft_row):
+    target_suite_id = uuid4()
+
+    def resolve(suite_id, row_ids=(), **_kwargs):
+        return (NIL_UUID, {}) if suite_id == target_suite_id else (uuid4(), {frozen_row: draft_row})
+
     with (
         patch("testgen.common.models.test_definition.get_current_session", return_value=session),
         patch.object(TestDefinition, "_assert_no_managed_definitions"),
-        patch.object(TestDefinition, "resolve_writable", return_value=(uuid4(), {frozen_row: draft_row})) as resolve,
+        patch.object(TestDefinition, "resolve_writable", side_effect=resolve) as resolve_writable,
         patch.object(TestDefinition, "assign_missing_term_ids") as assign,
     ):
-        TestDefinition.move([str(frozen_row)], uuid4(), uuid4(), target_schema="public", qualifies_table_refs=True)
-    return resolve, assign
+        TestDefinition.move(
+            [str(frozen_row)], uuid4(), target_suite_id, target_schema="public", qualifies_table_refs=True,
+        )
+    return resolve_writable, assign
 
 
 def test_move_out_of_a_frozen_only_contract_moves_the_drafts_copy_and_clears_its_term_identity():
     frozen_row, draft_row, suite_id = uuid4(), uuid4(), uuid4()
     session = _routed_session((frozen_row, suite_id))
-    session.scalar.side_effect = [NIL_UUID, None]
     session.scalars.return_value.all.return_value = [draft_row]
     _, assign = _move(session, frozen_row, draft_row)
 
@@ -241,11 +247,10 @@ def test_move_out_of_a_frozen_only_contract_moves_the_drafts_copy_and_clears_its
 def test_move_routes_the_named_rows_through_their_suites():
     frozen_row, draft_row, suite_id = uuid4(), uuid4(), uuid4()
     session = _routed_session((frozen_row, suite_id))
-    session.scalar.side_effect = [NIL_UUID, None]
     session.scalars.return_value.all.return_value = [draft_row]
     resolve, _ = _move(session, frozen_row, draft_row)
 
-    resolve.assert_called_once_with(suite_id, [frozen_row])
+    assert call(suite_id, [frozen_row]) in resolve.call_args_list
 
 
 def test_save_of_an_active_row_with_a_draft_open_lands_on_the_drafts_copy():
@@ -347,28 +352,22 @@ def test_a_new_term_on_a_frozen_only_contract_is_inserted_into_the_draft():
     assert term.version_id == draft_version_id
 
 
-def test_move_refuses_a_frozen_suite_owned_target_version():
-    frozen_version_id = uuid4()
-    # First scalar call resolves the target version; the second is the guard's own
-    # frozen-and-suite-owned check, which finds the same row and must raise.
-    session = MagicMock()
-    session.scalar.side_effect = [frozen_version_id, frozen_version_id]
-    with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
-        with pytest.raises(FrozenVersionError):
-            TestDefinition.move([str(uuid4())], uuid4(), uuid4(), target_schema="public", qualifies_table_refs=True)
+@pytest.mark.parametrize("method", ["copy", "move"])
+def test_a_copy_or_move_lands_on_the_version_a_write_to_the_target_opens(method):
+    target_suite_id, draft_id = uuid4(), uuid4()
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=MagicMock()),
+        patch.object(TestDefinition, "_assert_no_managed_definitions"),
+        patch.object(TestDefinition, "resolve_writable", return_value=(draft_id, {})) as resolve,
+        patch.object(TestDefinition, "writable_ids", return_value=[]),
+        patch.object(TestDefinition, "assign_missing_term_ids") as assign,
+    ):
+        getattr(TestDefinition, method)(
+            [str(uuid4())], uuid4(), target_suite_id, target_schema="public", qualifies_table_refs=True,
+        )
 
-    session.execute.assert_not_called()
-
-
-def test_copy_refuses_a_frozen_suite_owned_target_version():
-    frozen_version_id = uuid4()
-    session = MagicMock()
-    session.scalar.side_effect = [frozen_version_id, frozen_version_id]
-    with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
-        with pytest.raises(FrozenVersionError):
-            TestDefinition.copy([str(uuid4())], uuid4(), uuid4(), target_schema="public", qualifies_table_refs=True)
-
-    session.execute.assert_not_called()
+    resolve.assert_called_once_with(target_suite_id)
+    assign.assert_called_once_with(draft_id)
 
 
 Row = namedtuple("Row", "id version_id contract_term_id")

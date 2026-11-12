@@ -203,6 +203,8 @@ class FlavorService:
     escaped_left_bracket = "["
     escape_clause = ""
     varchar_type = "VARCHAR(1000)"
+    # The aggregate that counts rows in a type that holds a count above 2^31
+    count_function = "COUNT"
     # Whether the engine keeps the empty string as a value distinct from NULL
     stores_empty_string = True
     # Appended to a SELECT that reads no table, on an engine that requires a FROM clause

@@ -80,13 +80,15 @@ def test_the_elicitation_names_the_operation_and_its_nonzero_counts():
     assert "Notes" not in message
 
 
-@pytest.mark.parametrize(
-    ("action", "confirm"),
-    [("accept", False), ("decline", True), ("cancel", True)],
-)
-def test_anything_but_an_accepted_confirmation_refuses(action, confirm):
+@pytest.mark.parametrize("action", ["decline", "cancel"])
+def test_a_declined_or_canceled_confirmation_refuses(action):
     with pytest.raises(MCPUserError, match="did not confirm. Nothing was deleted"):
-        _confirm(_ctx(ElicitationCapability(), action=action, confirm=confirm))
+        _confirm(_ctx(ElicitationCapability(), action=action, confirm=True))
+
+
+def test_an_accept_with_the_box_cleared_refuses_and_says_so():
+    with pytest.raises(MCPUserError, match="accepted with the confirmation box cleared. Nothing was deleted"):
+        _confirm(_ctx(ElicitationCapability(), action="accept", confirm=False))
 
 
 def test_a_capability_naming_form_mode_is_asked():
@@ -208,8 +210,8 @@ def test_an_accept_the_sdk_cannot_read_counts_as_not_confirmed(error):
         _confirm(ctx)
 
 
-def test_an_unticked_box_the_client_leaves_out_reads_as_not_confirmed():
-    assert confirmation._Confirmation.model_validate({}).confirm is False
+def test_an_accept_that_leaves_the_box_out_confirms():
+    assert confirmation._Confirmation.model_validate({}).confirm is True
 
 
 def test_a_client_that_answers_the_elicitation_with_an_error_gets_a_token():

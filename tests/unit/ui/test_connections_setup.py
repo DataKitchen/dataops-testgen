@@ -167,6 +167,8 @@ def test_wizard_records_each_object_it_creates():
         ((AuditAction.TEST_SUITE_CREATED, test_suite_cls.return_value),),
         ((AuditAction.SCHEDULE_CREATED, schedule_cls.return_value),),
     ]
+    # The record snapshots the schedule's values, so a column default would leave active out
+    assert schedule_cls.call_args.kwargs["active"] is True
     record_monitoring.assert_called_once_with(monitor_suite)
 
 

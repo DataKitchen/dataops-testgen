@@ -29,7 +29,7 @@ from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
     table_group_qualifies_table_refs,
 )
-from testgen.common.enums import MANAGED_TEST_TYPES, JobSource, SuiteType
+from testgen.common.enums import MANAGED_TEST_TYPES, TEST_SUITE_TYPES, JobSource, SuiteType
 from testgen.common.flavors import TableGroupSchemaLabel, table_group_schema_label
 from testgen.common.generation_set_service import CONTRACT_GENERATION_SET, MONITOR_GENERATION_SET
 from testgen.common.models import database_session, get_current_session, with_database_session
@@ -93,7 +93,7 @@ from testgen.ui.services.query_cache import (
     select_test_definitions_where,
     select_test_suites_minimal_where,
 )
-from testgen.ui.services.test_definition_service import dialog_catalog, save_from_dialog
+from testgen.ui.services.test_definition_service import copy_move_refusal, dialog_catalog, save_from_dialog
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.contract_dialogs import contract_props, follow_editable_version
 from testgen.ui.views.test_runs import run_started_message
@@ -348,7 +348,7 @@ class TestDefinitionsPage(Page):
             )
             editable_test_suites = select_test_suites_minimal_where(
                 TestSuite.table_groups_id.in_([str(tg.id) for tg in editable_table_groups]),
-                TestSuite.suite_type == SuiteType.REGULAR,
+                TestSuite.suite_type.in_(TEST_SUITE_TYPES),
             )
             tgs_by_project: dict[str, list] = {}
             for tg in editable_table_groups:
@@ -614,6 +614,9 @@ class TestDefinitionsPage(Page):
                 LOG.warning("Refusing copy to table group %s — user lacks edit permission", target_tg_id)
                 st.toast("You do not have edit permission for the target project.", icon=":material/error:")
                 return
+            if refusal := copy_move_refusal(TestSuite.get_minimal(target_ts_id), ids, target_table):
+                st.toast(refusal, icon=":material/error:")
+                return
             overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
             try:
                 overwritten = describe_tests(TestDefinition.writable_ids(overwrite_ids))
@@ -634,6 +637,7 @@ class TestDefinitionsPage(Page):
             record_tests_deleted(overwritten)
             record_tests(AuditAction.TEST_DEFINITION_CREATED, describe_tests(copied))
             st.cache_data.clear()
+            follow_contract_draft()
             get_test_suite_columns.clear()
             st.session_state.pop(TD_COPY_MOVE_DIALOG_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
@@ -651,6 +655,9 @@ class TestDefinitionsPage(Page):
             if not target_tg or not session.auth.user_has_permission("edit", target_tg.project_code):
                 LOG.warning("Refusing move to table group %s — user lacks edit permission", target_tg_id)
                 st.toast("You do not have edit permission for the target project.", icon=":material/error:")
+                return
+            if refusal := copy_move_refusal(TestSuite.get_minimal(target_ts_id), ids, target_table):
+                st.toast(refusal, icon=":material/error:")
                 return
             overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
             try:

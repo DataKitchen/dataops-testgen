@@ -2,7 +2,7 @@
 
 import copy
 import secrets
-from collections.abc import Callable, Collection
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -12,14 +12,12 @@ from sqlalchemy import select
 from sqlalchemy.types import TypeDecorator
 
 from testgen.common import contract_service
-from testgen.common.contract_document import is_pii, physical_name
 from testgen.common.enums import MANAGED_TEST_TYPES
 from testgen.common.models import get_current_session
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
-from testgen.common.pii_masking import get_pii_columns
-from testgen.common.source_value_fields import CALIBRATION_SHAPED_PARAM_COLUMNS, hidden_slots, value_digest
+from testgen.common.source_value_fields import hidden_slots, value_digest
 
 # Columns a term's diff compares: what the term checks and how, never bookkeeping.
 TERM_DIFF_FIELDS = (
@@ -84,29 +82,6 @@ def term_changes(source_id: UUID, target_id: UUID) -> list[TermChange]:
     )
 
 
-def pii_columns(suite: TestSuite, *versions: SuiteVersion) -> set[tuple[str, str]]:
-    """The ``(table, column)`` pairs of the contract that hold PII, by physical name: in each table a version
-    declares, the columns the data catalog flags PII, and the columns a version's document marks PII."""
-    tables: set[str] = set()
-    marked: set[tuple[str, str]] = set()
-    for version in versions:
-        for table in (version.metadata_document or {}).get("schema") or []:
-            table_name = physical_name(table)
-            tables.add(table_name)
-            marked |= {
-                (table_name, physical_name(prop)) for prop in table.get("properties") or [] if is_pii(prop)
-            }
-    flagged = {(table, column) for table in tables for column in get_pii_columns(str(suite.table_groups_id), table)}
-    return flagged | marked
-
-
-def pii_redacted_fields(change: TermChange, pii_columns: Collection[tuple[str, str]]) -> list[str]:
-    """The fields of ``change`` that can carry source data, when the term checks a PII column on either side."""
-    if not any((term.table_name, term.column_name) in pii_columns for term in (change.before, change.after) if term):
-        return []
-    return [field for field in change.fields if field in CALIBRATION_SHAPED_PARAM_COLUMNS]
-
-
 def _stored_value(term: TestDefinition, field: str) -> Any:
     """``term``'s ``field`` as its column stores it, so values the column stores alike compare equal.
 
@@ -149,13 +124,6 @@ class HiddenValue:
     digest: str
 
 
-@dataclass(frozen=True)
-class PiiRedactedValue:
-    """A value of a PII column that can carry source data, in place of the value. Equal values have equal digests."""
-
-    digest: str
-
-
 _UNCOMPARED_FIELDS = frozenset({*contract_service.OWNED_FIELDS, "status"})
 
 # Fields that name an item of a list in a metadata document, in the order they are tried.
@@ -178,20 +146,15 @@ def document_changes(
     before: dict[str, Any] | None,
     after: dict[str, Any] | None,
     hide_source_data: bool,
-    pii_columns: Collection[tuple[str, str]] = frozenset(),
 ) -> list[DocumentChange]:
     """Each place at which ``after`` differs from ``before``: added, removed or changed, with the value on each side.
 
     Objects are compared key by key, and lists of objects item by item on the first of ``_ITEM_KEYS`` that
     identifies every item on both sides (tables and columns by name, team members by username, service levels
-    by property); any other list that differs is reported changed as a whole. Each value that can carry
-    source data, in a column whose physical name is in ``pii_columns``, is compared, and reported, as a
-    ``PiiRedactedValue``. With ``hide_source_data``, each value that can carry source data is compared, and reported, as a ``HiddenValue``.
+    by property); any other list that differs is reported changed as a whole. With ``hide_source_data``, each
+    value that can carry source data is compared, and reported, as a ``HiddenValue``.
     """
     before, after = before or {}, after or {}
-    if pii_columns:
-        key = secrets.token_bytes(32)
-        before, after = _with_pii_redacted(before, pii_columns, key), _with_pii_redacted(after, pii_columns, key)
     if hide_source_data:
         key = secrets.token_bytes(32)
         before, after = _with_hidden_values(before, key), _with_hidden_values(after, key)
@@ -203,7 +166,6 @@ def version_document_changes(
     target: SuiteVersion,
     suite: TestSuite,
     hide_source_data: bool,
-    pii_columns: Collection[tuple[str, str]] = frozenset(),
 ) -> list[DocumentChange]:
     """What differs between two versions' metadata documents, as ``document_changes`` reports it. The fields
     TestGen owns, and the contract's ``status``, which follows each version's state, are not compared."""
@@ -215,17 +177,7 @@ def version_document_changes(
         }
         for version in (source, target)
     )
-    return document_changes(before, after, hide_source_data, pii_columns)
-
-
-def _with_pii_redacted(document: dict, pii_columns: Collection[tuple[str, str]], key: bytes) -> dict:
-    masked = copy.deepcopy(document)
-    for table in masked.get("schema") or []:
-        for prop in table.get("properties") or []:
-            if (physical_name(table), physical_name(prop)) in pii_columns:
-                for slot in list(hidden_slots(prop)):
-                    slot.container[slot.key] = PiiRedactedValue(value_digest(key, "", slot.container[slot.key]))
-    return masked
+    return document_changes(before, after, hide_source_data)
 
 
 def _with_hidden_values(node: Any, key: bytes) -> Any:

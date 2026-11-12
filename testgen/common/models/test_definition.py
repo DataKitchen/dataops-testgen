@@ -1722,12 +1722,12 @@ class TestDefinition(Entity):
         """Relocate test definitions into a test suite, taking the target table group's schema.
 
         ``target_schema`` is the target table group's schema, and ``qualifies_table_refs`` whether its
-        connection's flavor names a table as ``schema.table``. Returns the ids of the rows moved.
+        connection's flavor names a table as ``schema.table``. Returns the ids of the rows moved. A contract
+        target with no draft gets one, and the moved rows land on it.
         """
         db_session = get_current_session()
-        target_version = db_session.scalar(select(SuiteVersion.resolved_for(target_test_suite_id)))
-        cls.assert_version_writable(target_version)
         cls._assert_no_managed_definitions(cls.id.in_([UUID(str(identifier)) for identifier in test_definition_ids]))
+        target_version, _ = cls.resolve_writable(target_test_suite_id)
         writable_ids = cls.writable_ids(test_definition_ids)
         scoped_ids = db_session.scalars(
             select(cls.id).where(cls.id.in_(writable_ids), cls.version_clause())
@@ -1769,12 +1769,16 @@ class TestDefinition(Entity):
         """Copy test definitions into a test suite, taking the target table group's schema.
 
         ``target_schema`` is the target table group's schema, and ``qualifies_table_refs`` whether its
-        connection's flavor names a table as ``schema.table``. Returns the ids of the copies.
+        connection's flavor names a table as ``schema.table``. Returns the ids of the copies. A contract
+        target with no draft gets one, and the copies land on it.
         """
         db_session = get_current_session()
-        target_version = db_session.scalar(select(SuiteVersion.resolved_for(target_test_suite_id)))
-        cls.assert_version_writable(target_version)
         cls._assert_no_managed_definitions(cls.id.in_([UUID(str(identifier)) for identifier in test_definition_ids]))
+        # Read before the target's draft opens: a copy within a contract would otherwise resolve to the draft
+        source_ids = db_session.scalars(
+            select(cls.id).where(cls.id.in_(test_definition_ids), cls.version_clause())
+        ).all()
+        target_version, _ = cls.resolve_writable(target_test_suite_id)
 
         retargeted = cls._retargeted_schemas(target_table_group_id, target_schema, qualifies_table_refs)
 
@@ -1822,7 +1826,7 @@ class TestDefinition(Entity):
 
         query = insert(cls).from_select(
             [*modified_columns, *other_columns],
-            select(*select_columns).where(cls.id.in_(test_definition_ids), cls.version_clause()),
+            select(*select_columns).where(cls.id.in_(source_ids)),
         ).returning(cls.id)
         copied_ids = list(db_session.execute(query).scalars())
         # A copy is a new term, so it takes none of the source's contract identity; it still

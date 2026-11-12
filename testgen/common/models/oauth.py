@@ -71,6 +71,10 @@ class OAuth2Client(Base, OAuth2ClientMixin):
         """
         return self.token_endpoint_auth_method == method
 
+    def get_allowed_scope(self, scope: str) -> str:
+        """The scope ``scope`` requests, as given: no endpoint grants or limits access by scope."""
+        return scope or ""
+
 
 class OAuth2AuthorizationCode(Base, OAuth2AuthorizationCodeMixin):
     __tablename__ = "oauth2_authorization_codes"

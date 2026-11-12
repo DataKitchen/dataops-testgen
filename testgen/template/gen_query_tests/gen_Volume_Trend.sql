@@ -17,7 +17,7 @@ SELECT
   'PREDICT'               AS history_calculation,
   NULL                    AS history_lookback,
   NULL                    AS subset_condition,
-  'COUNT(CASE WHEN {SUBSET_CONDITION} THEN 1 END)' AS custom_query
+  '{COUNT_FUNCTION}(CASE WHEN {SUBSET_CONDITION} THEN 1 END)' AS custom_query
 FROM data_table_chars c
 WHERE c.table_groups_id = :TABLE_GROUPS_ID ::UUID
   -- Ignore dropped tables

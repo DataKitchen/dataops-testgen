@@ -7,5 +7,5 @@ WHERE dtc.table_groups_id = :TABLE_GROUPS_ID ::UUID
         FROM test_definitions
         WHERE test_suite_id = :TEST_SUITE_ID ::UUID
             AND version_id = :VERSION_ID ::UUID
-            AND test_type = 'Freshness_Trend'
+            AND test_type = :MONITOR_TYPE
     );

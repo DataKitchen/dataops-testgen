@@ -1610,7 +1610,7 @@ const AddDialogComponent = ({ open, info, validateResult, currentValues, onClose
         qualifiesTableRefsWithSchema: qualifiesTableRefsWithSchema.rawVal,
         schemaLabel: schemaLabel.rawVal,
         validateResult: getValue(validateResult),
-        currentValues: getValue(currentValues),
+        currentValues,
         mode: 'add',
         activeTab: formActiveTab,
         onFormChange: (changes) => { formValues.val = { ...formValues.rawVal, ...changes }; },
@@ -1691,7 +1691,7 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, c
                     qualifiesTableRefsWithSchema: qualifiesTableRefsWithSchema.rawVal,
                     schemaLabel: schemaLabel.rawVal,
                     validateResult: vr,
-                    currentValues: getValue(currentValues),
+                    currentValues,
                     mode: 'edit',
                     activeTab: formActiveTab,
                     onFormChange: (changes) => {
@@ -1734,6 +1734,20 @@ const TestDefFormContent = ({ formValues, tableColumns, catalogTables, testSuite
     );
     const metadataValid = van.state(true);
     const paramsValid = van.state(true);
+    // The form is not rebuilt when the dialog applies a Use Current Values result, so the parameter
+    // fields are redrawn with the applied list. A result applied before this form was built is
+    // already in formValues.
+    const paramsRevision = van.state(0);
+    let seenValuesTimestamp = getValue(currentValues)?.timestamp;
+    van.derive(() => {
+        const result = getValue(currentValues);
+        if (!result || result.timestamp === seenValuesTimestamp) return;
+        seenValuesTimestamp = result.timestamp;
+        if (result.value_list != null) {
+            fv.val = { ...fv.rawVal, baseline_value: result.value_list };
+            paramsRevision.val = paramsRevision.rawVal + 1;
+        }
+    });
     // column_name is implicitly required for column, custom and referential tests (mirrors the server
     // validator); it lives outside TestDefinitionForm's own field set, so it's tracked separately here.
     const isColumnRequired = ['column', 'custom', 'referential'].includes(testScope);
@@ -1982,33 +1996,39 @@ const TestDefFormContent = ({ formValues, tableColumns, catalogTables, testSuite
                 // Dynamic parameter fields
                 div(
                     { class: 'td-form-params-section' },
-                    TestDefinitionForm({
-                        definition: formValues,
-                        qualifiesTableRefsWithSchema,
-                        hideHeader: true,
-                        excludeColumns: excludeParamColumns,
-                        fieldFooters: testType === 'LOV_All' ? {
-                            baseline_value: div(
-                                { class: 'flex-column fx-align-flex-start fx-gap-2' },
-                                Button({
-                                    type: 'stroked',
-                                    color: 'basic',
-                                    label: 'Use Current Values',
-                                    width: 'auto',
-                                    disabled: !formValues.column_name,
-                                    onclick: onUseCurrentValues,
-                                }),
-                                currentValues?.message ? Alert({ type: 'warn' }, currentValues.message) : null,
-                            ),
-                        } : undefined,
-                        onChange: (changes, { valid }) => {
-                            paramsValid.val = valid;
-                            if (Object.keys(changes).length === 0) return;
-                            const updated = { ...fv.rawVal, ...changes };
-                            fv.val = updated;
-                            onFormChange(changes);
-                        },
-                    }),
+                    () => {
+                        paramsRevision.val;
+                        return TestDefinitionForm({
+                            definition: { ...fv.rawVal },
+                            qualifiesTableRefsWithSchema,
+                            hideHeader: true,
+                            excludeColumns: excludeParamColumns,
+                            fieldFooters: testType === 'LOV_All' ? {
+                                baseline_value: div(
+                                    { class: 'flex-column fx-align-flex-start fx-gap-2' },
+                                    Button({
+                                        type: 'stroked',
+                                        color: 'basic',
+                                        label: 'Use Current Values',
+                                        width: 'auto',
+                                        disabled: () => !fv.val.column_name,
+                                        onclick: onUseCurrentValues,
+                                    }),
+                                    () => {
+                                        const message = getValue(currentValues)?.message;
+                                        return message ? Alert({ type: 'warn' }, message) : '';
+                                    },
+                                ),
+                            } : undefined,
+                            onChange: (changes, { valid }) => {
+                                paramsValid.val = valid;
+                                if (Object.keys(changes).length === 0) return;
+                                const updated = { ...fv.rawVal, ...changes };
+                                fv.val = updated;
+                                onFormChange(changes);
+                            },
+                        });
+                    },
                 ),
                 ),
             ),

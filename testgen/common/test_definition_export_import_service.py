@@ -157,7 +157,7 @@ class TestDefinitionExport(BaseModel):
     # Matching / identity
     test_type: str = Field(
         description="The test type, given as its code, e.g. `Alpha_Trunc`. An auto-generated test is matched on "
-        "import by its `test_type`, `table_name` and `column_name`. A matched test keeps its stored test type. A new "
+        "import by its `test_type`, `table_name`, and `column_name`. A matched test keeps its stored test type. A new "
         "test cannot use a test type TestGen creates and removes itself, such as schema conformance; the import skips "
         "it with `managed_test_type`. A matched test of such a type is not updated either; the import skips it with "
         "`managed_test`."

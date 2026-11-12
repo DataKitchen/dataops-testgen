@@ -208,13 +208,13 @@ _TEST_TYPES = {
 }
 
 
-def _rules(changes, pii=frozenset(), limit=None):
+def _rules(changes, limit=None):
     with (
         patch.object(service.contract_comparison, "term_changes", return_value=changes),
         patch.object(service, "_test_types", side_effect=lambda codes: {c: _TEST_TYPES[c] for c in codes}),
         patch.object(service, "IMPORT_PREVIEW_ROW_LIMIT", limit or 500),
     ):
-        return service.rule_changes(uuid4(), uuid4(), pii_columns=pii)
+        return service.rule_changes(uuid4(), uuid4())
 
 
 def _change(kind, before=None, after=None, fields=()):
@@ -280,32 +280,6 @@ def test_a_field_the_test_type_does_not_prompt_for_still_gets_a_label():
     ]
 
 
-def test_a_rule_on_a_pii_column_shows_its_calibration_fields_redacted():
-    [row] = _rules(
-        [_change(
-            TermChangeKind.REGENERATED,
-            _term("m", baseline_value="1", severity="Fail"),
-            _term("m", baseline_value="2", severity="Warning"),
-            ["severity", "baseline_value"],
-        )],
-        pii={("orders", "amount")},
-    )["rows"]
-
-    assert row["fields"] == [
-        {"label": "Severity", "before": "Fail", "after": "Warning"},
-        {"label": "Baseline Value", "before": "[PII Redacted]", "after": "[PII Redacted]"},
-    ]
-
-
-def test_a_rule_on_another_column_shows_its_calibration_values():
-    [row] = _rules(
-        [_change(TermChangeKind.EDITED, _term("m", baseline_value="1"), _term("m", baseline_value="2"), ["baseline_value"])],
-        pii={("orders", "email")},
-    )["rows"]
-
-    assert row["fields"] == [{"label": "Baseline Value", "before": "1", "after": "2"}]
-
-
 def test_rule_rows_are_capped_at_the_preview_limit():
     rules = _rules([_change(TermChangeKind.ADDED, after=_term(f"a{i}")) for i in range(3)], limit=2)
 
@@ -317,10 +291,10 @@ def test_rule_rows_are_capped_at_the_preview_limit():
 # --- Changes: metadata ---
 
 
-def _metadata(before, after, pii=frozenset()):
+def _metadata(before, after):
     source = SuiteVersion(id=uuid4(), version=3, frozen_at=FROZEN, metadata_document=before)
     target = SuiteVersion(id=uuid4(), version=4, frozen_at=None, metadata_document=after)
-    return service.metadata_changes(source, target, _suite(), pii_columns=pii)
+    return service.metadata_changes(source, target, _suite())
 
 
 def _rows(metadata):
@@ -385,22 +359,16 @@ def _column(examples=None):
     return {"schema": [{"name": "orders", "properties": [column]}]}
 
 
-def test_an_added_pii_column_with_examples_reads_added_only():
+def test_an_added_column_with_examples_reads_added_only():
     before = {"schema": [{"name": "orders", "properties": []}]}
 
-    rows = _rows(_metadata(before, _column(["Jane Doe"]), pii={("orders", "amount")}))
+    rows = _rows(_metadata(before, _column(["Jane Doe"])))
 
     assert rows == [("Schema", "orders.amount", "—", "Added")]
 
 
-def test_a_changed_example_of_a_pii_column_reads_redacted():
-    rows = _rows(_metadata(_column(["Jane Doe"]), _column(["John Roe"]), pii={("orders", "amount")}))
-
-    assert rows == [("Schema", "orders.amount · Examples", "[PII Redacted]", "[PII Redacted]")]
-
-
-def test_a_changed_example_of_another_column_shows_both_values():
-    rows = _rows(_metadata(_column(["Jane Doe"]), _column(["John Roe"]), pii={("orders", "email")}))
+def test_a_changed_example_shows_both_values():
+    rows = _rows(_metadata(_column(["Jane Doe"]), _column(["John Roe"])))
 
     assert rows == [("Schema", "orders.amount · Examples", '["Jane Doe"]', '["John Roe"]')]
 
@@ -414,7 +382,7 @@ def test_with_no_metadata_changes_the_empty_state_shows():
 # --- Changes: the pair ---
 
 
-def _version_changes(source, target, mask_pii=False, missing=()):
+def _version_changes(source, target, missing=()):
     versions = {
         4: SuiteVersion(id=uuid4(), version=4, frozen_at=None, metadata_document={"domain": "sales"}),
         3: SuiteVersion(id=uuid4(), version=3, frozen_at=FROZEN, metadata_document={"domain": "retail"}),
@@ -429,36 +397,24 @@ def _version_changes(source, target, mask_pii=False, missing=()):
         patch.object(service.contract_service, "version_for_export", side_effect=resolve),
         patch.object(service, "rule_changes", return_value={"rows": []}) as rules,
         patch.object(service, "metadata_changes", return_value={"rows": []}) as metadata,
-        patch.object(service.contract_comparison, "pii_columns", return_value={("orders", "email")}) as pii,
     ):
-        result = service.version_changes(_suite(), source, target, mask_pii=mask_pii)
-    return result, rules, metadata, versions, pii
+        result = service.version_changes(_suite(), source, target)
+    return result, rules, metadata, versions
 
 
 def test_version_changes_compares_the_two_versions_it_names():
-    result, rules, metadata, versions, pii = _version_changes(3, 4, mask_pii=True)
+    result, rules, metadata, versions = _version_changes(3, 4)
 
     assert (result["source"], result["target"], result["error"]) == (3, 4, None)
-    pii.assert_called_once()
-    assert pii.call_args.args[1:] == (versions[3], versions[4])
-    rules.assert_called_once_with(versions[3].id, versions[4].id, pii_columns={("orders", "email")})
+    rules.assert_called_once_with(versions[3].id, versions[4].id)
     assert metadata.call_args.args[:2] == (versions[3], versions[4])
-    assert metadata.call_args.kwargs == {"pii_columns": {("orders", "email")}}
-
-
-def test_version_changes_without_masking_redacts_nothing():
-    _, rules, metadata, _, pii = _version_changes(3, 4, mask_pii=False)
-
-    pii.assert_not_called()
-    assert rules.call_args.kwargs == {"pii_columns": frozenset()}
-    assert metadata.call_args.kwargs == {"pii_columns": frozenset()}
 
 
 def test_version_changes_of_a_version_with_itself_shows_both_empty_states():
     with patch.object(service.contract_service, "version_for_export", return_value=SuiteVersion(
         id=uuid4(), version=3, frozen_at=FROZEN, metadata_document={"domain": "sales"},
     )), patch.object(service.contract_comparison, "term_changes", return_value=[]):
-        result = service.version_changes(_suite(), 3, 3, mask_pii=False)
+        result = service.version_changes(_suite(), 3, 3)
 
     assert result["error"] is None
     assert result["rules"]["empty_state"] == "No quality rules changed."
@@ -466,7 +422,7 @@ def test_version_changes_of_a_version_with_itself_shows_both_empty_states():
 
 
 def test_version_changes_reports_an_unknown_version_as_an_error():
-    result, rules, _, _, _ = _version_changes(3, 9, missing=(9,))
+    result, rules, _, _ = _version_changes(3, 9, missing=(9,))
 
     assert result["error"] == "This contract has no version 9."
     assert (result["rules"], result["metadata"]) == (None, None)

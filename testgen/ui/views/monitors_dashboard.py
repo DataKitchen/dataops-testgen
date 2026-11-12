@@ -768,6 +768,7 @@ def build_table_trends_data(
 
     data = {
         **make_json_safe(events),
+        "monitor_types": sorted({definition.test_type for definition in definitions}),
         "data_structure_logs": make_json_safe(data_structure_logs),
         "predictions": predictions,
         "trend_range": trend_range,
@@ -897,6 +898,7 @@ def build_edit_table_monitors_data(
                 monitor.save()
                 record_test_saved(monitor, created=False, stored=stored)
 
+        created_ids: dict[str, str] = {}
         for new_metric in get_new_metrics():
             new_def = TestDefinition(
                 table_groups_id=table_group.id,
@@ -913,6 +915,8 @@ def build_edit_table_monitors_data(
             new_def.last_manual_update = datetime.now(UTC)
             new_def.save()
             record_test_saved(new_def, created=True)
+            if temp_id := new_metric.get("_tempId"):
+                created_ids[temp_id] = str(new_def.id)
 
         deleted_ids = get_deleted_metric_ids()
         if deleted_ids:
@@ -927,7 +931,7 @@ def build_edit_table_monitors_data(
             st.session_state.pop(EDIT_TABLE_MONITORS_DIALOG_KEY, None)
             safe_rerun()
 
-        set_result({"success": True, "timestamp": datetime.now(UTC).isoformat()})
+        set_result({"success": True, "timestamp": datetime.now(UTC).isoformat(), "created_ids": created_ids})
         safe_rerun()
 
     metric_test_types = get_test_type_summaries(test_type="Metric_Trend")

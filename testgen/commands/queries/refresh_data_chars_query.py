@@ -178,7 +178,7 @@ class RefreshDataCharsSQL:
         schema = self.schema_name
         flavor_code = self.connection.sql_flavor_code
         count_queries = [
-            f"SELECT '{table}' AS table_name, COUNT(*) AS row_count "
+            f"SELECT '{table}' AS table_name, {self.flavor_service.count_function}(*) AS row_count "
             f"FROM {self.flavor_service.get_table_ref(schema, table, flavor_code)}"
             for table in table_names
         ]
