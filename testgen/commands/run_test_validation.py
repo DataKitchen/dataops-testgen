@@ -3,6 +3,8 @@ import re
 from collections import defaultdict
 from uuid import UUID
 
+from sqlalchemy.exc import DBAPIError
+
 from testgen.commands.queries.execute_tests_query import TestExecutionDef, TestExecutionSQL
 from testgen.common import execute_db_queries, fetch_dict_from_db
 from testgen.common.clean_sql import NonNumericValueError, parse_numeric_values, parse_value_list
@@ -119,9 +121,14 @@ def get_target_identifiers(
     LOG.info("Getting tables and columns in target schemas for validation")
     target_identifiers: list[dict] = []
     for schema in target_schemas:
-        target_identifiers.extend(
-            fetch_dict_from_db(*sql_generator.get_target_identifiers(schema), use_target_db=True)
-        )
+        try:
+            target_identifiers.extend(
+                fetch_dict_from_db(*sql_generator.get_target_identifiers(schema), use_target_db=True)
+            )
+        except DBAPIError as error:
+            if not flavor_service.is_missing_schema_error(error):
+                raise
+            LOG.warning(f"Schema {schema} not found in target")
     if not target_identifiers:
         LOG.info("No tables or columns present in target schemas")
 

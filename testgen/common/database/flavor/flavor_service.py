@@ -7,6 +7,7 @@ from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine as sqlalchemy_create_engine
 from sqlalchemy.engine.base import Connection, Engine
+from sqlalchemy.exc import DBAPIError
 
 from testgen.common.clean_sql import parse_numeric_values
 from testgen.common.database.column_chars import ColumnChars, ObjectType
@@ -446,6 +447,13 @@ class FlavorService:
         Return None to use the standard SQL template path.
         """
         return None
+
+    def is_missing_schema_error(self, error: DBAPIError) -> bool:  # noqa: ARG002
+        """Whether ``error`` reports that a schema a query read does not exist.
+
+        Flavors whose information schema returns no rows for a missing schema never raise one.
+        """
+        return False
 
     def string_literal(self, value: str) -> str:
         """Return ``value`` as a single-quoted SQL string literal."""

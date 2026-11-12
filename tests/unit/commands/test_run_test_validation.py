@@ -2,6 +2,9 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
+from google.api_core.exceptions import NotFound
+from google.cloud.bigquery.dbapi import exceptions as bigquery_dbapi
+from sqlalchemy.exc import DatabaseError
 
 from testgen.commands import run_test_validation as run_test_validation_module
 from testgen.commands.queries.execute_tests_query import TestExecutionDef
@@ -10,9 +13,12 @@ from testgen.commands.run_test_validation import (
     check_identifiers,
     check_value_lists,
     collect_test_identifiers,
+    get_target_identifiers,
     run_test_validation,
 )
 from testgen.common.database.column_chars import ColumnChars
+from testgen.common.database.flavor.bigquery_flavor_service import BigqueryFlavorService
+from testgen.common.database.flavor.postgresql_flavor_service import PostgresqlFlavorService
 
 pytestmark = pytest.mark.unit
 
@@ -500,3 +506,71 @@ def test_validation_reports_a_non_number_in_a_numeric_value_list(monkeypatch):
 
     assert valid == []
     assert td.errors == ["Deactivated", "List of Expected Values contains a value that is not a number: x."]
+
+
+# --- get_target_identifiers ---
+
+
+def _bigquery_error(message: str) -> DatabaseError:
+    """A query error shaped the way the BigQuery driver reports an API error through SQLAlchemy."""
+    return DatabaseError("SELECT 1", {}, bigquery_dbapi.DatabaseError(NotFound(message)))
+
+
+QUERY_REQUEST = "POST https://bigquery.googleapis.com/bigquery/v2/projects/proj/queries?prettyPrint=false"
+MISSING_DATASET = _bigquery_error(f"{QUERY_REQUEST}: Not found: Dataset proj:absent was not found in location US")
+
+
+def _target_identifiers(monkeypatch, flavor_service, results: dict):
+    """Read target identifiers for every schema in ``results``, each returning its rows or raising its error."""
+    sql_generator = MagicMock()
+    sql_generator.flavor_service = flavor_service
+    sql_generator.get_target_identifiers.side_effect = lambda schema: (schema, None)
+
+    def fetch(schema, _params, use_target_db):
+        assert use_target_db
+        if isinstance(results[schema], Exception):
+            raise results[schema]
+        return results[schema]
+
+    monkeypatch.setattr(run_test_validation_module, "fetch_dict_from_db", fetch)
+    return get_target_identifiers(sql_generator, set(results))
+
+
+def test_target_identifiers_skip_a_schema_the_target_reports_missing(monkeypatch):
+    tables, columns = _target_identifiers(
+        monkeypatch,
+        BigqueryFlavorService(),
+        {
+            "present": [{"schema_name": "present", "table_name": "orders", "column_name": "amount"}],
+            "absent": MISSING_DATASET,
+        },
+    )
+
+    assert tables == {("present", "orders")}
+    assert columns == {("present", "orders", "amount")}
+
+
+def test_target_identifiers_raise_any_other_query_error(monkeypatch):
+    denied = DatabaseError("SELECT 1", {}, bigquery_dbapi.DatabaseError(Exception("Access Denied")))
+
+    with pytest.raises(DatabaseError):
+        _target_identifiers(monkeypatch, BigqueryFlavorService(), {"present": [], "denied": denied})
+
+
+def test_target_identifiers_raise_a_missing_schema_error_on_a_flavor_that_reports_none(monkeypatch):
+    with pytest.raises(DatabaseError):
+        _target_identifiers(monkeypatch, PostgresqlFlavorService(), {"absent": MISSING_DATASET})
+
+
+@pytest.mark.parametrize(
+    "error, expected",
+    [
+        (MISSING_DATASET, True),
+        (_bigquery_error("Not found: Dataset proj:absent was not found in location US\n\nLocation: US\nJob ID: x\n"), True),
+        (_bigquery_error(f"{QUERY_REQUEST}: Not found: Project proj"), False),
+        (_bigquery_error(f"{QUERY_REQUEST}: Not found: Table proj:ds.orders was not found in location US"), False),
+        (DatabaseError("SELECT 1", {}, bigquery_dbapi.DatabaseError("Not found: Dataset proj:absent")), False),
+    ],
+)
+def test_bigquery_recognizes_only_a_missing_dataset(error, expected):
+    assert BigqueryFlavorService().is_missing_schema_error(error) is expected
