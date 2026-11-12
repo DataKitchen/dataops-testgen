@@ -21,11 +21,14 @@ from testgen.common.models.suite_version import (
 )
 from testgen.common.models.test_definition import ManagedTestDefinitionError, TestDefinition, TestDefinitionNote
 from testgen.mcp import confirmation
-from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
+from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
+from testgen.mcp.permissions import ProjectPermissions
 from testgen.mcp.tools.test_definitions import (
     _DELETED_LISTING_LIMIT,
     bulk_update_tests,
     create_test,
+    create_test_note,
+    delete_test_note,
     delete_tests,
     export_tests,
     get_test,
@@ -33,6 +36,7 @@ from testgen.mcp.tools.test_definitions import (
     list_tests,
     resolved_version,
     update_test,
+    update_test_note,
 )
 from tests.unit.sql_assertions import conjuncts, emitted_statements, equality_conjunct, scopes_to_a_version
 
@@ -922,6 +926,28 @@ def test_delete_test_note_invalid_uuid(db_session_mock):
 
     with pytest.raises(MCPUserError, match="not a valid UUID"):
         delete_test_note("garbage")
+
+
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        (create_test_note, (str(uuid4()), "checked")),
+        (update_test_note, (str(uuid4()), "checked")),
+        (delete_test_note, (str(uuid4()),)),
+    ],
+)
+def test_writing_a_note_takes_the_disposition_permission(tool, args, db_session_mock):
+    """role_d holds edit but not disposition."""
+    with (
+        patch(
+            "testgen.mcp.permissions._compute_project_permissions",
+            return_value=ProjectPermissions(memberships={"demo": "role_d"}, permission="disposition", username="u"),
+        ) as compute_permissions,
+        pytest.raises(MCPPermissionDenied),
+    ):
+        tool(*args)
+
+    assert compute_permissions.call_args.args[1] == "disposition"
 
 
 # -- list_test_types ----------------------------------------------------------

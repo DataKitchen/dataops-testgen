@@ -15,6 +15,7 @@
  * @property {string} test_definition_id
  * @property {string?} error
  * @property {string?} draft
+ * @property {boolean?} can_edit - false shows the notes without the add form or the edit and delete actions
  */
 import van from '/app/static/js/van.min.js';
 import { Button } from '/app/static/js/components/button.js';
@@ -32,6 +33,7 @@ const { div, span, textarea, p } = van.tags;
  */
 const TestDefinitionNotes = (props) => {
     const emit = props.emit;
+    const canEdit = getValue(props.can_edit) ?? true;
     loadStylesheet('test-definition-notes', stylesheet);
 
     // Form state: shared between add and edit modes
@@ -52,7 +54,7 @@ const TestDefinitionNotes = (props) => {
      */
     const NoteItem = (note, currentUser) => {
         const confirmingDelete = van.state(false);
-        const isOwner = note.created_by === currentUser;
+        const isOwner = canEdit && note.created_by === currentUser;
 
         return div(
             { class: () => `tdn-note ${isEdit.val && editNoteId.val === note.id ? 'tdn-editing' : ''}` },
@@ -141,7 +143,7 @@ const TestDefinitionNotes = (props) => {
             const error = getValue(props.error);
             return error ? Alert({ type: 'info', class: 'tdn-error' }, error) : '';
         },
-        ExpansionPanel(
+        !canEdit ? '' : ExpansionPanel(
             {
                 title: () => isEdit.val
                     ? span({ class: 'tdn-editing-indicator' }, 'Edit Note')
@@ -201,7 +203,7 @@ const TestDefinitionNotes = (props) => {
                 : div(
                     { class: 'flex-column fx-gap-2 fx-align-flex-center mt-7 text-secondary' },
                     span({ class: 'text-large' }, 'No notes yet'),
-                    span('Document context, decisions, or issues related to this test definition.'),
+                    canEdit ? span('Document context, decisions, or issues related to this test definition.') : '',
                 );
         },
     );

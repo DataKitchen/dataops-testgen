@@ -22,6 +22,7 @@ import { Textarea } from '/app/static/js/components/textarea.js';
 import { Tabs, Tab } from '/app/static/js/components/tabs.js';
 import { Checkbox } from '/app/static/js/components/checkbox.js';
 import { DropdownButton } from '/app/static/js/components/dropdown_button.js';
+import { AddNoteDialog } from '/app/static/js/components/add_note_dialog.js';
 import { TestDefinitionNotes } from './test_definition_notes.js';
 import { ImportTestDefinitionsDialog } from './import_test_definitions_dialog.js';
 import { withTooltip } from '/app/static/js/components/tooltip.js';
@@ -125,6 +126,8 @@ const TestDefinitions = (/** @type object */ props) => {
     // Notes dialog: persistent local state + one-time sync from Python prop
     const notesDialogOpen = van.state(false);
     van.derive(() => { if (getValue(props.notes_dialog)) notesDialogOpen.val = true; });
+
+    const bulkNoteTarget = van.state(null);
 
     const importDialogOpen = van.state(false);
     van.derive(() => { if (getValue(props.import_dialog)) importDialogOpen.val = true; });
@@ -586,6 +589,19 @@ const TestDefinitions = (/** @type object */ props) => {
                 }),
             );
         },
+        () => {
+            if (!canNote.val) return '';
+            const isAll = selectAll.val;
+            const count = isAll ? totalCount.val : (multiSelectMode.val ? selectedIdsCount.val : selectedRows.val.length);
+            return div(
+                { 'data-testid': 'note-actions', class: 'flex-row fx-gap-1 fx-align-flex-center' },
+                (canEdit.val || canDisposition.val) ? div({ class: 'td-header-separator' }) : '',
+                Button({
+                    type: 'icon', icon: 'note_add', tooltip: 'Add note to selected', disabled: count === 0,
+                    onclick: () => { bulkNoteTarget.val = { count, ids: isAll ? 'all' : getSelectedDefinitionIds() }; },
+                }),
+            );
+        },
         ExportMenu(
             props,
             testDefinitions,
@@ -792,9 +808,18 @@ const TestDefinitions = (/** @type object */ props) => {
                     notes: data.notes,
                     current_user: data.current_user,
                     test_definition_id: data.id,
+                    can_edit: canNote.val,
                 });
             },
         ),
+
+        AddNoteDialog({
+            target: bulkNoteTarget,
+            summary: ({ count }) => span(
+                'This note will be added to ', strong({}, `${count}`), count === 1 ? ' test.' : ' tests.',
+            ),
+            onAdd: (text, { ids }) => emit('NoteAddedToSelected', { payload: { ids, text } }),
+        }),
 
         // Import test definitions dialog
         Dialog(
@@ -938,11 +963,11 @@ const TestDefinitions = (/** @type object */ props) => {
                             style: 'background: var(--button-generic-background-color);',
                             onclick: () => emit('EditDialogOpened', { payload: { id: row.id } }),
                         }) : '',
-                        canNote.val ? Button({
+                        Button({
                             type: 'stroked', icon: 'sticky_note_2', label: 'Notes', width: 'auto',
                             style: 'background: var(--button-generic-background-color);',
                             onclick: () => emit('NotesClicked', { payload: { id: row.id, table_name: row.table_name, column_name: row.column_name, test_name_short: row.test_name_short } }),
-                        }) : '',
+                        }),
                         row.column_name ? Button({
                             type: 'stroked', icon: 'query_stats', label: 'Profiling', width: 'auto',
                             style: 'background: var(--button-generic-background-color);',
