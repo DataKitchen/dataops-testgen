@@ -61,9 +61,10 @@ import { TestResultsChart } from './test_results_chart.js';
 import { TestDefinitionSummary } from './test_definition_summary.js';
 import { EditDialogComponent } from './test_definitions.js';
 import { TestDefinitionNotes } from './test_definition_notes.js';
+import { AddNoteDialog } from '/app/static/js/components/add_note_dialog.js';
 import { withTooltip } from '/app/static/js/components/tooltip.js';
 
-const { button: btn, div, i: icon, span, h3, h4, p, small } = van.tags;
+const { button: btn, div, i: icon, span, strong, h3, h4, p, small } = van.tags;
 
 const STATUS_COLORS = {
     Passed: 'var(--green)',
@@ -433,6 +434,8 @@ const TestResults = (/** @type Properties */ props) => {
     const metadataDialogOpen = van.state(false);
     van.derive(() => { if (getValue(props.notes_dialog)) notesDialogOpen.val = true; });
 
+    const bulkNoteTarget = van.state(null);
+
     // Sort state initialized from Python
     const initialSortState = getValue(props.sort_state) ?? [];
     const sortColumns = van.state(
@@ -799,6 +802,28 @@ const TestResults = (/** @type Properties */ props) => {
                 }),
             );
         },
+        () => {
+            if (!permissions.val.can_note) return '';
+            const isAll = selectAll.val;
+            const singleRow = multiSelect.val && selectedIdsCount.val > 0 ? null : selectedRow.val;
+            const count = isAll
+                ? totalCount.val
+                : multiSelect.val && selectedIdsCount.val > 0
+                    ? selectedIdsCount.val
+                    : (singleRow?.test_definition_exists ? 1 : 0);
+            return div(
+                { 'data-testid': 'note-actions', class: 'flex-row fx-gap-1 fx-align-flex-center' },
+                span({ style: 'width: 0px; height: 24px; border-right: 1px dashed var(--border-color);'}, ''),
+                Button({
+                    type: 'icon', icon: 'note_add', tooltip: 'Add note to selected', disabled: count === 0,
+                    onclick: () => {
+                        bulkNoteTarget.val = isAll
+                            ? { count, filters: getCurrentFilters() }
+                            : { count, test_result_ids: getSelectedResultIds() };
+                    },
+                }),
+            );
+        },
         span({ style: 'width: 0px; height: 24px; border-right: 1px dashed var(--border-color);'}, ''),
         () => {
             const hasAnySelection = selectedIdsCount.val > 0 || !!selectedRow.val;
@@ -931,6 +956,7 @@ const TestResults = (/** @type Properties */ props) => {
                     test_definition_id: data.id,
                     error: data.error,
                     draft: data.draft,
+                    can_edit: !!permissions.val.can_note,
                 });
             },
         ),
@@ -945,6 +971,18 @@ const TestResults = (/** @type Properties */ props) => {
             },
             () => RunMetadataList(getValue(props.run_info)?.overrides, getValue(props.run_info)?.metadata),
         ),
+
+        AddNoteDialog({
+            target: bulkNoteTarget,
+            summary: ({ count }) => span(
+                count === 1 ? 'This note will be added to the test of ' : 'This note will be added to the tests of ',
+                strong({}, `${count}`), count === 1 ? ' result.' : ' results.',
+            ),
+            onAdd: (text, { filters, test_result_ids }) => emit(
+                'NoteAddedToSelected',
+                { payload: filters ? { filters, text } : { test_result_ids, text } },
+            ),
+        }),
 
         // Header row: summary bar + score
         div(

@@ -17,7 +17,9 @@ from testgen.ui.views.test_results import CONTRACT_VERSION_MESSAGE, TestResultsP
 pytestmark = pytest.mark.unit
 
 
-def _render(suite_type: SuiteType, summary: TestRunSummary | None = None, calls: dict | None = None) -> dict:
+def _render(
+    suite_type: SuiteType, summary: TestRunSummary | None = None, calls: dict | None = None, *, can_note: bool = True
+) -> dict:
     """Render the page with its collaborators stubbed and return the widget's keyword arguments."""
     page = TestResultsPage.__new__(TestResultsPage)
     page.router = MagicMock()
@@ -25,7 +27,7 @@ def _render(suite_type: SuiteType, summary: TestRunSummary | None = None, calls:
     suite = MagicMock(suite_type=suite_type)
     with (
         patch.object(view, "st") as st_mock,
-        patch.object(view, "session"),
+        patch.object(view, "session") as session_mock,
         patch.object(view, "testgen") as testgen_mock,
         patch.object(view, "with_database_session", lambda func: func),
         patch.object(view, "date_service"),
@@ -45,6 +47,7 @@ def _render(suite_type: SuiteType, summary: TestRunSummary | None = None, calls:
     ):
         st_mock.session_state = {}
         st_mock.query_params = {}
+        session_mock.auth.user_has_permission.side_effect = lambda permission, *_: permission != "disposition" or can_note
         page.render(run_id="r1")
     if calls is not None:
         calls["get_test_run_summaries"] = get_summaries.call_args
@@ -202,3 +205,57 @@ def test_a_disposition_that_lands_on_no_contract_draft_shows_no_toast():
 
     st_mock.toast.assert_not_called()
     st_mock.cache_data.clear.assert_called_once()
+
+
+def test_adding_a_note_to_selected_results_adds_it_to_their_tests():
+    handlers = _render(SuiteType.REGULAR)
+    with (
+        patch.object(view, "session"),
+        patch.object(view.test_result_queries, "get_test_definition_ids_for_results", return_value=["td"]) as lookup,
+        patch.object(view, "toast_note_added_to_tests") as add,
+    ):
+        handlers["on_NoteAddedToSelected_change"]({"test_result_ids": ["r1", "r2"], "text": "checked"})
+
+    lookup.assert_called_once_with(["r1", "r2"])
+    assert add.call_args.args[:2] == (["td"], "checked")
+
+
+def test_adding_a_note_to_every_matching_result_adds_it_to_the_tests_the_filters_match():
+    handlers = _render(SuiteType.REGULAR)
+    with (
+        patch.object(view, "session"),
+        patch.object(view.test_result_queries, "get_test_definition_ids_for_run", return_value=["td"]) as lookup,
+        patch.object(view, "toast_note_added_to_tests") as add,
+    ):
+        handlers["on_NoteAddedToSelected_change"]({"filters": {"table_name": "orders"}, "text": "checked"})
+
+    assert lookup.call_args.args == ("r1",)
+    assert lookup.call_args.kwargs["table_name"] == "orders"
+    assert add.call_args.args[:2] == (["td"], "checked")
+
+
+@pytest.mark.parametrize(
+    ("handler", "payload"),
+    [
+        ("on_NoteAdded_change", {"test_definition_id": "td", "text": "checked"}),
+        ("on_NoteAddedToSelected_change", {"test_result_ids": ["r1"], "text": "checked"}),
+        ("on_NoteUpdated_change", {"id": "n1", "test_definition_id": "td", "text": "checked"}),
+        ("on_NoteDeleted_change", {"id": "n1", "test_definition_id": "td"}),
+    ],
+)
+def test_a_user_who_cannot_disposition_writes_no_notes(handler, payload):
+    handlers = _render(SuiteType.REGULAR, can_note=False)
+    with (
+        patch.object(view.TestDefinitionNote, "add_note") as add_note,
+        patch.object(view.TestDefinitionNote, "update_note") as update_note,
+        patch.object(view.TestDefinitionNote, "delete_note") as delete_note,
+        patch.object(view, "toast_note_added_to_tests") as add_to_selected,
+    ):
+        handlers[handler](payload)
+
+    for write in (add_note, update_note, delete_note, add_to_selected):
+        write.assert_not_called()
+
+
+def test_a_user_who_cannot_disposition_is_told_the_page_cannot_write_notes():
+    assert _render(SuiteType.REGULAR, can_note=False)["data"]["permissions"]["can_note"] is False
