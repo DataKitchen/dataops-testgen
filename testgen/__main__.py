@@ -1035,6 +1035,7 @@ def run_ui():
             # Also withholds Streamlit's in-app "install agent skills" prompt from TestGen users
             "--logger.hideWelcomeMessage=true",
             f"--server.port={settings.UI_PORT}",
+            f"--server.baseUrlPath={settings.UI_BASE_PATH}" if settings.UI_BASE_PATH else "",
             f"--server.sslCertFile={settings.SSL_CERT_FILE}" if use_ssl else "",
             f"--server.sslKeyFile={settings.SSL_KEY_FILE}" if use_ssl else "",
             "--",

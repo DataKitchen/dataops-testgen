@@ -2,6 +2,7 @@ import os
 import typing
 from enum import StrEnum
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 def _load_config() -> dict[str, str]:
@@ -763,17 +764,33 @@ from env variable: `TG_API_HOST`
 defaults to: `0.0.0.0`
 """
 
+def _url_path(url: str) -> str:
+    """Returns the path of an absolute URL without its leading and trailing slashes.
+
+    Empty when the URL has no path, or lacks a scheme or host, since a bare `host` or `host:port` would
+    otherwise parse as a path.
+    """
+    parsed = urlparse(url)
+    return parsed.path.strip("/") if parsed.scheme and parsed.netloc else ""
+
+
 def _default_base_url() -> str:
     scheme = "https" if API_TLS_ENABLED else "http"
     return f"{scheme}://localhost:{API_PORT}"
 
 
-BASE_URL: str = getenv("TG_BASE_URL", "") or _default_base_url()
+BASE_URL: str = (getenv("TG_BASE_URL", "") or _default_base_url()).rstrip("/")
 """
 Externally-reachable base URL for the API/MCP/OAuth server.
 
 from env variable: `TG_BASE_URL`
 defaults to: computed from API_TLS_ENABLED and API_PORT
+"""
+
+API_BASE_PATH: str = _url_path(BASE_URL)
+"""
+Path the API/MCP/OAuth server is served under, taken from `BASE_URL` (`testgen-api` for `https://host/testgen-api/`).
+Empty when the server is served at the root of the host.
 """
 
 
@@ -782,12 +799,18 @@ def _default_ui_base_url() -> str:
     return f"{scheme}://localhost:{UI_PORT}"
 
 
-UI_BASE_URL: str = getenv("TG_UI_BASE_URL", "") or _default_ui_base_url()
+UI_BASE_URL: str = (getenv("TG_UI_BASE_URL", "") or _default_ui_base_url()).rstrip("/")
 """
 Externally-reachable base URL for the Streamlit UI (used in email links, PDFs).
 
 from env variable: `TG_UI_BASE_URL`
 defaults to: computed from UI_TLS_ENABLED and UI_PORT
+"""
+
+UI_BASE_PATH: str = _url_path(UI_BASE_URL)
+"""
+Path the UI is served under, taken from `UI_BASE_URL` (`testgen` for `https://host/testgen/`).
+Empty when the UI is served at the root of the host.
 """
 
 MCP_CONTRACT_EXPORT_CHUNK_BYTES: int = int(getenv("TG_MCP_CONTRACT_EXPORT_CHUNK_BYTES", str(100 * 1024)))

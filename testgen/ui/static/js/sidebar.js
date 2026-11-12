@@ -152,7 +152,7 @@ const ProjectSelect = (/** @type Project[] */ projects, /** @type string */ curr
                 projects.val.map(({ name, code }) => a(
                     {
                         class: `project-select--option ${code === currentProject.val?.code ? 'selected' : ''}`,
-                        href: `/?${PROJECT_CODE_QUERY_PARAM}=${code}`,
+                        href: `./?${PROJECT_CODE_QUERY_PARAM}=${code}`,
                         onclick: (event) => {
                             opened.val = false;
                             navigate(event, '', { [PROJECT_CODE_QUERY_PARAM]: code });
@@ -186,7 +186,7 @@ const UserBlock = (/** @type Properties */ props, currentProject) => {
     return a(
         {
             class: () => isCurrentPage(accountPath, props.current_page?.val) ? 'menu--user--link active' : 'menu--user--link',
-            href: `/${accountPath}?${PROJECT_CODE_QUERY_PARAM}=${currentProject.val?.code ?? ''}`,
+            href: `./${accountPath}?${PROJECT_CODE_QUERY_PARAM}=${currentProject.val?.code ?? ''}`,
             onclick: (event) => navigate(event, accountPath, { [PROJECT_CODE_QUERY_PARAM]: currentProject.val?.code }),
         },
         i({ class: 'menu--user--icon material-symbols-rounded' }, 'manage_accounts'),
@@ -225,7 +225,7 @@ const MenuItem = (
     return a(
         {
             class: classes,
-            href: `/${item.page}?${PROJECT_CODE_QUERY_PARAM}=${projectCode}`,
+            href: `./${item.page}?${PROJECT_CODE_QUERY_PARAM}=${projectCode}`,
             onclick: (event) => navigate(event, item.page, { [PROJECT_CODE_QUERY_PARAM]: projectCode }),
         },
         i({class: 'menu--item--icon material-symbols-rounded'}, item.icon),
@@ -248,7 +248,7 @@ const AdminMenuItem = (
     return a(
         {
             class: classes,
-            href: `/${item.page}`,
+            href: `./${item.page}`,
             onclick: (event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -264,7 +264,7 @@ const AdminMenuItem = (
 const AdminCTA = ({ style } = {}) => a(
     {
         class: 'menu--item menu--admin-cta',
-        href: '/admin-projects',
+        href: './admin-projects',
         target: '_blank',
         rel: 'noopener noreferrer',
         style,

@@ -28,15 +28,15 @@ def static(tmp_path) -> pathlib.Path:
 
 
 def _serve(request: Request) -> PlainTextResponse:
-    if request.path_params["path"] == "missing.js":
+    if request.path_params["path"].endswith("missing.js"):
         return PlainTextResponse("not found", status_code=404)
     return PlainTextResponse("content")
 
 
-def _client(static: pathlib.Path, dev: bool) -> TestClient:
+def _client(static: pathlib.Path, dev: bool, base_path: str = "") -> TestClient:
     app = Starlette(
-        routes=[Route("/app/static/{path:path}", _serve), Route("/{path:path}", _serve)],
-        middleware=[Middleware(StaticCacheMiddleware, static_folder=static, dev=dev)],
+        routes=[Route("/{path:path}", _serve)],
+        middleware=[Middleware(StaticCacheMiddleware, static_folder=static, dev=dev, base_path=base_path)],
     )
     return TestClient(app)
 
@@ -84,3 +84,9 @@ def test_dev_mode_revalidates_static_files(static, query):
     response = _client(static, dev=True).get(f"/app/static/js/van.min.js{query}")
 
     assert response.headers["cache-control"] == REVALIDATE
+
+
+def test_static_file_under_the_base_path_with_its_own_hash_is_immutable(static):
+    response = _client(static, dev=False, base_path="testgen").get(f"/testgen/app/static/js/van.min.js?h={VAN_HASH}")
+
+    assert response.headers["cache-control"] == IMMUTABLE
