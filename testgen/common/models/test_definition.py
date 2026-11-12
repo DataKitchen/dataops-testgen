@@ -2095,45 +2095,64 @@ class TestDefinitionNote(Base):
         )
 
     @classmethod
-    def _storage_row(cls, test_definition_id: str | UUID) -> UUID:
-        """The row a note added to the given test definition is stored on.
+    def _storage_rows(cls, test_definition_ids: Iterable[str | UUID]) -> dict[UUID, UUID]:
+        """Maps each given test definition to the row a note added to it is stored on, leaving out
+        test definitions that do not exist.
 
         The earliest frozen row of its term, so that deleting a draft row never takes a note on a
         test that outlives the draft. The row itself when the term has no frozen row.
         """
+        ids = [UUID(str(td_id)) for td_id in test_definition_ids]
+        db_session = get_current_session()
+        existing = set(db_session.scalars(select(TestDefinition.id).where(TestDefinition.id.in_(ids))))
         definition = aliased(TestDefinition)
         peer = aliased(TestDefinition)
-        stored_on = get_current_session().scalar(
-            select(peer.id)
-            .join(definition, cls._same_term(peer, definition))
+        rows = db_session.execute(
+            select(definition.id, peer.id)
+            .distinct(definition.id)
+            .join(peer, cls._same_term(peer, definition))
             .join(SuiteVersion, SuiteVersion.id == peer.version_id)
             .where(
-                definition.id == test_definition_id,
+                definition.id.in_(ids),
                 SuiteVersion.test_suite_id.is_not(None),
                 SuiteVersion.frozen_at.is_not(None),
             )
-            .order_by(SuiteVersion.frozen_at, SuiteVersion.version)
-            .limit(1)
-        )
-        return stored_on or UUID(str(test_definition_id))
+            .order_by(definition.id, SuiteVersion.frozen_at, SuiteVersion.version)
+        ).all()
+        stored_on = dict(rows)
+        return {td_id: stored_on.get(td_id, td_id) for td_id in ids if td_id in existing}
 
     @classmethod
     def add_note(cls, test_definition_id: str | UUID, detail: str, username: str) -> "TestDefinitionNote":
         """Insert a note on the given test definition and return the persisted instance.
 
         A note on a contract's test is stored on the earliest frozen version of that test, whichever
+        version it is added from. Raises ``MissingTestDefinitionError`` when the test definition does
+        not exist.
+        """
+        if not (notes := cls.add_notes([test_definition_id], detail, username)):
+            raise MissingTestDefinitionError(f"Test definition {test_definition_id} no longer exists.")
+        return notes[0]
+
+    @classmethod
+    def add_notes(
+        cls, test_definition_ids: Iterable[str | UUID], detail: str, username: str
+    ) -> list["TestDefinitionNote"]:
+        """Insert one copy of a note on each given test definition and return the persisted instances,
+        in the order given. Test definitions that do not exist get no note.
+
+        A note on a contract's test is stored on the earliest frozen version of that test, whichever
         version it is added from.
         """
         db_session = get_current_session()
-        note = cls(
-            test_definition_id=cls._storage_row(test_definition_id),
-            detail=detail,
-            created_by=username,
-            created_at=datetime.now(UTC).replace(tzinfo=None),
-        )
-        db_session.add(note)
+        created_at = datetime.now(UTC).replace(tzinfo=None)
+        notes = [
+            cls(test_definition_id=stored_on, detail=detail, created_by=username, created_at=created_at)
+            for stored_on in cls._storage_rows(test_definition_ids).values()
+        ]
+        db_session.add_all(notes)
         db_session.flush()
-        return note
+        return notes
 
     @classmethod
     def update_note(cls, note_id: str | UUID, detail: str) -> None:

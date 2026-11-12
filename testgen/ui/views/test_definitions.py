@@ -94,6 +94,7 @@ from testgen.ui.services.query_cache import (
     select_test_suites_minimal_where,
 )
 from testgen.ui.services.test_definition_service import copy_move_refusal, dialog_catalog, save_from_dialog
+from testgen.ui.services.test_note_service import toast_note_added_to_tests
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.contract_dialogs import contract_props, follow_editable_version
 from testgen.ui.views.test_runs import run_started_message
@@ -771,6 +772,8 @@ class TestDefinitionsPage(Page):
 
         @with_database_session
         def on_note_added(payload: dict) -> None:
+            if not user_can_disposition:
+                return
             td_id = payload["test_definition_id"]
             current_user = session.auth.user.username if session.auth.user else "unknown"
             TestDefinitionNote.add_note(td_id, payload["text"], current_user)
@@ -778,13 +781,29 @@ class TestDefinitionsPage(Page):
             st.cache_data.clear()
 
         @with_database_session
+        def on_note_added_to_selected(payload: dict) -> None:
+            if not user_can_disposition:
+                return
+            ids = payload.get("ids") or []
+            if ids == "all":
+                ids = get_test_definition_ids(
+                    test_suite, table_name, column_name, test_type, flagged_filter=flagged, version_id=read_version_id
+                )
+            current_user = session.auth.user.username if session.auth.user else "unknown"
+            toast_note_added_to_tests(ids, payload.get("text") or "", current_user)
+
+        @with_database_session
         def on_note_updated(payload: dict) -> None:
+            if not user_can_disposition:
+                return
             TestDefinitionNote.update_note(payload["id"], payload["text"])
             td_id = payload["test_definition_id"]
             st.session_state[TD_NOTES_DIALOG_KEY] = _load_notes_dialog_data(td_id, df)
 
         @with_database_session
         def on_note_deleted(payload: dict) -> None:
+            if not user_can_disposition:
+                return
             TestDefinitionNote.delete_note(payload["id"])
             td_id = payload["test_definition_id"]
             st.session_state[TD_NOTES_DIALOG_KEY] = _load_notes_dialog_data(td_id, df)
@@ -995,7 +1014,7 @@ class TestDefinitionsPage(Page):
                     "can_edit": grid_can_edit,
                     "can_disposition": grid_can_disposition,
                     "can_run": user_can_edit,
-                    "can_note": user_can_edit,
+                    "can_note": user_can_disposition,
                 },
                 "run_tests_disabled_reason": contract.run_disabled_reason if contract else None,
                 "validate_result": validate_result,
@@ -1049,6 +1068,7 @@ class TestDefinitionsPage(Page):
             on_ImportDialogClosed_change=on_import_dialog_closed,
             on_NotesClicked_change=on_notes_clicked,
             on_NoteAdded_change=on_note_added,
+            on_NoteAddedToSelected_change=on_note_added_to_selected,
             on_NoteUpdated_change=on_note_updated,
             on_NoteDeleted_change=on_note_deleted,
             on_NotesDialogClosed_change=on_notes_dialog_closed,

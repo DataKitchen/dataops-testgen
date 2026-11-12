@@ -472,7 +472,7 @@ def _note_parent_label(summary: TestDefinitionSummary) -> str:
 
 
 @with_database_session
-@mcp_permission("edit")
+@mcp_permission("disposition")
 def create_test_note(
     test_definition_id: Annotated[str, Field(description="UUID of the test definition, e.g. from ``list_tests``.")],
     body: Annotated[str, Field(description="Note body (free-text). Empty or whitespace-only is rejected.")],
@@ -497,7 +497,7 @@ def create_test_note(
 
 
 @with_database_session
-@mcp_permission("edit")
+@mcp_permission("disposition")
 def update_test_note(
     test_note_id: Annotated[
         str,
@@ -528,7 +528,7 @@ def update_test_note(
 
 
 @with_database_session
-@mcp_permission("edit")
+@mcp_permission("disposition")
 def delete_test_note(
     test_note_id: Annotated[str, Field(description="UUID of the test note, e.g. from ``list_test_notes``.")],
 ) -> str:
