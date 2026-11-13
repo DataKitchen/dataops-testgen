@@ -138,3 +138,6 @@ testgen/ui/static/js/holiday_calendars.js
 *.swp
 *.swo
 *~
+
+# JS unit tests: Vite writes its cache here even without an install
+node_modules/
