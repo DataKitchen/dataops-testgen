@@ -29,7 +29,7 @@ const releaseNotesTopic = 'release-notes/';
 const upgradeTopic = 'administer/upgrade-testgen/';
 
 const slackUrl = 'https://data-observability-slack.datakitchen.io/join';
-const trainingUrl = 'https://info.datakitchen.io/data-quality-training-and-certifications';
+const trainingUrl = 'https://datakitchen.io/certifications/';
 
 const HelpMenu = (/** @type Properties */ props) => {
     loadStylesheet('help-menu', stylesheet);
