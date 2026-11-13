@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dataops-testgen"
-version = "5.134.0"
+version = "5.185.1"
 description = "Open-source data quality tool that profiles tables, generates tests from the profiling results, and monitors freshness, volume, and schema."
 authors = [
     { "name" = "DataKitchen, Inc.", "email" = "info@datakitchen.io" },
