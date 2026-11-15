@@ -33,6 +33,7 @@ class MssqlFlavorService(FlavorService):
     text_hash_probe = "SELECT HASHBYTES('MD5', CAST(N'x' COLLATE Latin1_General_100_BIN2_UTF8 AS VARCHAR(10)))"
     float_types = frozenset({"float", "real"})
     double_type = "FLOAT"
+    count_function = "COUNT_BIG"
 
     def cancel_statement(self, statement: RunningStatement) -> bool:
         statement.cursor.cancel()

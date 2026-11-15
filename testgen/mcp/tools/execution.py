@@ -1,6 +1,6 @@
 """MCP tools for triggering and canceling TestGen jobs."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import Field
 from sqlalchemy import select
@@ -10,8 +10,9 @@ from testgen.commands.test_generation import (
     resolve_generation_profile_run,
     unprofiled_regeneration_note,
 )
-from testgen.common import contract_service
+from testgen.common import contract_service, query_variables, run_overrides
 from testgen.common.audit.runs import RunOperation
+from testgen.common.database.table_group_service import unsupported_schema_override
 from testgen.common.enums import JOB_STATUS_LABEL, JobKey, JobSource, RegenerationGroup, SuiteType
 from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models import get_current_session, with_database_session
@@ -39,15 +40,13 @@ from testgen.mcp.tools.markdown import MdDoc
 @mcp_permission("edit")
 def run_tests(
     test_suite_id: Annotated[str, Field(description="UUID of the test suite to run, e.g. from ``list_test_suites``.")],
-    match_schema_name: Annotated[
-        str | None,
-        Field(
-            description="Schema to read the second table of each referential test from, for this run only. "
-            "Tests without a second table are unaffected, the stored test definitions are not changed, and the run "
-            "deactivates no tests. To read the table group's own tables from another schema, change the table "
-            "group's schema instead.",
-        ),
+    schema_name: Annotated[str | None, Field(description=run_overrides.SCHEMA_NAME)] = None,
+    table_names: Annotated[dict[str, str] | None, Field(description=run_overrides.TABLE_NAMES)] = None,
+    match_schema_name: Annotated[str | None, Field(description=run_overrides.MATCH_SCHEMA_NAME)] = None,
+    match_table_names: Annotated[
+        dict[str, str] | None, Field(description=run_overrides.MATCH_TABLE_NAMES)
     ] = None,
+    variables: Annotated[dict[str, str] | None, Field(description=query_variables.VARIABLES)] = None,
     external_url: Annotated[
         str | None,
         Field(
@@ -74,11 +73,25 @@ def run_tests(
     use ``list_test_runs`` to track status.
     """
     suite = resolve_test_suite(test_suite_id)
-    kwargs: dict[str, str] = {"test_suite_id": str(suite.id)}
-    if match_schema_name:
-        if error := validate_schema_name(match_schema_name):
-            raise MCPUserError(f"match_schema_name {error}.")
-        kwargs["match_schema_name"] = match_schema_name
+    kwargs: dict[str, Any] = {"test_suite_id": str(suite.id)}
+    for field, value in (("schema_name", schema_name), ("match_schema_name", match_schema_name)):
+        if value:
+            if error := validate_schema_name(value):
+                raise MCPUserError(f"{field} {error}.")
+            kwargs[field] = value
+    for field, value in (("table_names", table_names), ("match_table_names", match_table_names)):
+        if value:
+            if error := run_overrides.validate_table_name_map(value):
+                raise MCPUserError(f"{field}: {error}")
+            kwargs[field] = value
+    if variables:
+        if error := query_variables.validate_values(variables):
+            raise MCPUserError(error)
+        kwargs["variables"] = variables
+    if refusal := unsupported_schema_override(
+        suite.table_groups_id, schema_name=schema_name, match_schema_name=match_schema_name
+    ):
+        raise MCPUserError(refusal)
     if error := validate_caller_metadata(metadata):
         raise MCPUserError(f"metadata {error}.")
 
@@ -167,9 +180,9 @@ def generate_tests(
     generation sets. Read ``testgen://generation-sets`` for the available sets and the test types
     each one covers. Test types outside the selected sets are deleted unless they are locked.
 
-    A contract generates its own fixed set of test types and its metadata (read with
-    ``get_contract_metadata``) into its draft, so omit ``generation_sets`` for one. It covers the
-    declared tables, or every table when none are declared. Before its table group is profiled,
+    A contract generates its tests and metadata (``get_contract_metadata``) into its draft. Its sets
+    default to ``Contract``, which only a contract can use. It covers the declared tables, or every
+    table when none are declared. Before its table group is profiled,
     only the catalog metadata and schema conformance tests are written.
 
     Value hash test types (Table Comparison set) need a profiling run with

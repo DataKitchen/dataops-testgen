@@ -176,6 +176,6 @@ def test_test_suite_query_admits_regular_and_contract_suite_types():
     terms = conjuncts(statement.whereclause)
 
     assert any(
-        _admits_exactly(term, "suite_type", "test_suites", {SuiteType.REGULAR.value, SuiteType.CONTRACT.value})
+        _admits_exactly(term, "suite_type", "test_suites", {SuiteType.STANDARD.value, SuiteType.CONTRACT.value})
         for term in terms
     )

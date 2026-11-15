@@ -218,7 +218,7 @@ class NotificationSettingsDialogBase:
             "items": ns_json_list,
             "destinations": destination_options,
             "can_manage_destinations": user_can_administer,
-            "project_settings_url": f"/settings?project_code={project_code}" if project_code else None,
+            "project_settings_url": f"settings?project_code={project_code}" if project_code else None,
             "event": self.ns_class.__mapper_args__["polymorphic_identity"].value,
             "permissions": {"can_edit": user_can_edit},
             "result": result,

@@ -22,6 +22,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
+from testgen.common import query_variables
 from testgen.common.clean_sql import format_value_list, parse_value_list, strip_trailing_semicolons
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.enums import VALUE_LIST_TEST_TYPES, OdcsDimension, QualityDimension, TestScope
@@ -1059,8 +1060,8 @@ def _build_sql_query(
 
 def _sql_metric_query(term: "TestDefinition", flavor: SqlFlavorCode) -> str:
     """A ``SQL_Metric`` term's ``sql`` rule query: the term's own query, which already returns
-    the one value its bounds compare against, with the table group's schema substituted for
-    ``{DATA_SCHEMA}``.
+    the one value its bounds compare against, with each declared variable given its default and
+    the table group's schema substituted for ``{DATA_SCHEMA}``.
 
     Raises ``_InexactTerm`` when the term has no query, or when a TestGen placeholder survives
     substitution.
@@ -1068,6 +1069,10 @@ def _sql_metric_query(term: "TestDefinition", flavor: SqlFlavorCode) -> str:
     query = strip_trailing_semicolons(term.custom_query)
     if not query:
         raise _InexactTerm(f"{term.test_type!r} term {term.contract_term_id!r} has no query.")
+    # Before the leftover check, which looks for `{NAME}` and so would pass over a `{NAME:default}`
+    # declaration and export it for an engine that cannot resolve it. The declared query survives
+    # in queryTemplate, which the caller attaches whenever rendering changed the query.
+    query = query_variables.render(query)
     query = query.replace("{DATA_SCHEMA}", term.schema_name)
     _check_no_leftover_placeholder(query, term, flavor)
     return query

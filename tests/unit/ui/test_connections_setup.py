@@ -167,6 +167,8 @@ def test_wizard_records_each_object_it_creates():
         ((AuditAction.TEST_SUITE_CREATED, test_suite_cls.return_value),),
         ((AuditAction.SCHEDULE_CREATED, schedule_cls.return_value),),
     ]
+    # The record snapshots the schedule's values, so a column default would leave active out
+    assert schedule_cls.call_args.kwargs["active"] is True
     record_monitoring.assert_called_once_with(monitor_suite)
 
 
@@ -206,6 +208,6 @@ def test_wizard_reports_a_test_suite_name_another_suite_in_the_project_holds():
         _current_session_wrapper.value = None
 
     assert data["results"]["success"] is False
-    assert data["results"]["message"] == "A test suite or contract named Sales Tests already exists in this project."
+    assert data["results"]["message"] == "A test suite named Sales Tests already exists in this project."
     session.rollback.assert_called_once()
     submit.assert_not_called()

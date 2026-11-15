@@ -1,12 +1,18 @@
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pandas as pd
 import pytest
 
+from testgen.common.models.test_definition import TestDefinition
 from testgen.common.monitor_forecast import gated_forecast_prediction, next_update_window, resolve_suite_holiday_dates
-from testgen.ui.views.monitors_dashboard import _freshness_next_update_window, build_table_trends_data
+from testgen.ui.views.monitors_dashboard import (
+    _freshness_next_update_window,
+    build_edit_table_monitors_data,
+    build_table_trends_data,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -341,6 +347,17 @@ def test_forecast_anchors_reuse_the_display_events_when_unbounded():
     assert mock_window.call_args.args[1] is unwindowed
 
 
+def test_the_trends_name_the_monitor_types_the_table_has():
+    unwindowed = _series(volume_times=(LATEST_RUN,))
+    trend_range = {"preset": "default", "start": None, "end": None}
+    definitions = [_monitor_def("Volume_Trend"), _monitor_def("Metric_Trend"), _monitor_def("Metric_Trend")]
+
+    with _trends_harness(trend_range, definitions, None, unwindowed) as (table_group, _events):
+        data, _handlers = build_table_trends_data(table_group, {"table_name": "orders"})
+
+    assert data["monitor_types"] == ["Metric_Trend", "Volume_Trend"]
+
+
 def test_cron_reference_time_anchors_on_the_full_lookback():
     # The static fallback samples upcoming runs from the last actual run, which must not move
     # when the user narrows the view to a slice that excludes it.
@@ -451,3 +468,31 @@ def test_past_window_does_not_fetch_the_forecast_anchors():
             build_table_trends_data(tg, {"table_name": "orders"})
 
     assert mock_events.call_count == 1
+
+
+def test_saving_a_new_metric_reports_its_saved_id_under_its_temporary_one():
+    key = "tg-session:tmp-value:edit_table_monitors"
+    session_state = {
+        f"{key}:save:orders": True,
+        f"{key}:new_metrics:orders": [{"_tempId": "temp_1", "test_description": "X", "custom_query": "COUNT(*)"}],
+    }
+    saved_ids = []
+
+    def save(self):
+        self.id = uuid4()
+        saved_ids.append(self.id)
+
+    with (
+        patch("testgen.common.models.database_session"),
+        patch("testgen.ui.session.st") as session_st,
+        patch("testgen.ui.views.monitors_dashboard.select_test_definitions_where", return_value=[]),
+        patch("testgen.ui.views.monitors_dashboard.get_test_type_summaries", return_value=[]),
+        patch("testgen.ui.views.monitors_dashboard.record_test_saved"),
+        patch("testgen.ui.views.monitors_dashboard.safe_rerun"),
+        patch.object(TestDefinition, "save", save),
+    ):
+        session_st.session_state = session_state
+        data, _handlers = build_edit_table_monitors_data(_table_group(), {"table_name": "orders"})
+
+    [saved_id] = saved_ids
+    assert data["result"]["created_ids"] == {"temp_1": str(saved_id)}

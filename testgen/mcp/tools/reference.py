@@ -151,7 +151,7 @@ def test_types_resource() -> str:
 @with_database_session
 def generation_sets_resource() -> str:
     """Reference of generation sets and the test types each one generates."""
-    members = get_generation_set_members()
+    members = get_generation_set_members(include_contract=True)
 
     if not members:
         return "No generation sets found."
@@ -165,7 +165,8 @@ def generation_sets_resource() -> str:
     doc.heading(1, "TestGen Generation Sets Reference")
     doc.text(
         "Generation sets scope which test types `generate_tests` creates for a test suite. "
-        "A test suite can use more than one set, and test types can belong to more than one set."
+        "A test suite can use more than one set, and test types can belong to more than one set. "
+        "Only a contract can use `Contract`, which a new contract uses by default."
     )
     for generation_set, test_types in members.items():
         names = sorted(short_names[test_type] for test_type in test_types if test_type in short_names)
@@ -509,7 +510,9 @@ def glossary_resource() -> str:
 - **Active version** — The latest frozen version. Contract runs use it unless a different version is specified.
 - **Superseded version** — A frozen version that a later frozen version has replaced. It is kept with its test runs, and cannot be changed.
 - **Freeze** — Making the draft the active version. A frozen version and its terms cannot be changed.
-- **Preview** — A test run of a contract's draft. Its results do not count toward the contract's status.
+- **Verification** — A test run of a contract's active version. Only a verification updates the contract's results.
+- **Preview** — A test run of a contract's draft.
+- **Out of force** — A test run of a version that was already superseded when the run started.
 - **Unverifiable term** — A quality rule in the metadata document that no test type checks. It is exported with the contract, but not run.
 
 ## Test Result Statuses

@@ -282,7 +282,7 @@ class TestResult(Entity):
         limit: int = 50,
         offset: int = 0,
         *,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
     ) -> list[Self]:
         """Paginated results for a single run, with optional status/table/type filters.
 
@@ -316,7 +316,7 @@ class TestResult(Entity):
         *clauses,
         page: int = 1,
         limit: int = 20,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
     ) -> tuple[list[TestRunResultRow], int]:
         """Paginated individual results for a single run, scoped by caller-supplied WHERE clauses.
 
@@ -346,7 +346,7 @@ class TestResult(Entity):
 
     @classmethod
     def from_counted_run(cls) -> ColumnElement[bool]:
-        """Whether a result's run is not a preview: a regular suite's run, or a contract's run of a
+        """Whether a result's run is not a preview: a standard suite's run, or a contract's run of a
         version frozen before the run started."""
         runs = table("test_runs", column("id"), column("version_id"), column("test_starttime"))
         return exists().where(
@@ -372,7 +372,7 @@ class TestResult(Entity):
         test_run_id: UUID | None = None,
         since: date | None = None,
         group_by: str = "test_type",
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
     ) -> list[tuple]:
         """Failed/Warning counts scoped by run, suite, or date, grouped by test_type, table, or column.
 
@@ -444,7 +444,7 @@ class TestResult(Entity):
         limit: int = 20,
         offset: int = 0,
         *,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
         across_versions: bool = False,
     ) -> list[Self]:
         """Historical results for a test definition, newest first.
@@ -505,7 +505,7 @@ class TestResult(Entity):
         *clauses,
         page: int = 1,
         limit: int = 50,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
     ) -> tuple[list[TestResultSearchRow], int]:
         """Paginated cross-run search over test results, scoped by caller-supplied WHERE clauses.
 
@@ -551,7 +551,7 @@ class TestResult(Entity):
         start_date: date,
         end_date: date,
         bucket: BucketInterval = BucketInterval.DAY,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
     ) -> list[TrendBucket]:
         """Time-series of test result counts per bucket, scoped by caller-supplied WHERE clauses.
 

@@ -83,7 +83,7 @@ def test_wizard_reports_a_test_suite_name_another_suite_in_the_project_holds():
     )
 
     assert data["results"]["success"] is False
-    assert data["results"]["message"] == "A test suite or contract named Sales Tests already exists in this project."
+    assert data["results"]["message"] == "A test suite named Sales Tests already exists in this project."
     mocks["session"].rollback.assert_called_once()
     mocks["submit"].assert_not_called()
 

@@ -34,7 +34,7 @@ def test_test_definitions_narrows_the_suite_lookup_to_regular_suites_and_contrac
     with patch("testgen.ui.views.test_definitions.get_test_suite", return_value=None) as get_suite:
         page.render(test_suite_id="a-suite-id")
 
-    assert _clause_text(get_suite.call_args) == "test_suites.suite_type IN ('regular', 'contract')"
+    assert _clause_text(get_suite.call_args) == "test_suites.suite_type IN ('standard', 'contract')"
 
 
 def test_test_definitions_redirects_when_the_suite_does_not_resolve():
@@ -58,7 +58,7 @@ def test_test_results_narrows_the_suite_lookup_to_regular_suites_and_contracts()
     ):
         page.render(run_id="a-run-id")
 
-    assert _clause_text(get_suite.call_args) == "test_suites.suite_type IN ('regular', 'contract')"
+    assert _clause_text(get_suite.call_args) == "test_suites.suite_type IN ('standard', 'contract')"
 
 
 def test_test_results_redirects_when_the_run_belongs_to_a_monitor_suite():

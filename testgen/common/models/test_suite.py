@@ -187,7 +187,7 @@ class TestSuite(Entity):
     dq_score_exclude: bool = Column(Boolean, default=False)
     deactivate_invalid_tests: bool = Column(Boolean, default=False, nullable=False)
     suite_type: SuiteType = Column(
-        String(20), nullable=False, default=SuiteType.REGULAR, server_default=text("'regular'")
+        String(20), nullable=False, default=SuiteType.STANDARD, server_default=text("'standard'")
     )
     monitor_lookback: int | None = Column(Integer)
     monitor_regenerate_freshness: bool = Column(Boolean, default=True)
@@ -248,7 +248,7 @@ class TestSuite(Entity):
         table_group_id: str | UUID | None = None,
         test_suite_name: str | None = None,
         *,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
     ) -> Iterable[TestSuiteSummary]:
         if table_group_id and not is_uuid4(table_group_id):
             return []
@@ -312,7 +312,7 @@ class TestSuite(Entity):
         *clauses,
         page: int = 1,
         limit: int = 20,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
     ) -> tuple[list[TestSuiteListItem], int]:
         """Paginated test suites of a project, each with its test count and last completed run.
 
@@ -444,9 +444,10 @@ class TestSuite(Entity):
             WHERE test_suite_id IN :test_suite_ids
         );
 
+        -- A table group's setup job names its monitor suite but also refreshes the catalog and starts profiling
         DELETE FROM job_executions
         WHERE kwargs->>'test_suite_id' IN :test_suite_id_texts
-            OR kwargs->>'monitor_suite_id' IN :test_suite_id_texts;
+            OR (kwargs->>'monitor_suite_id' IN :test_suite_id_texts AND job_key <> 'refresh-data-catalog');
 
         DELETE FROM test_runs
         WHERE test_suite_id IN :test_suite_ids;

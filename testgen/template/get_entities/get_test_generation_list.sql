@@ -14,7 +14,7 @@ FROM test_definitions td
 JOIN test_suites ts ON td.test_suite_id = ts.id
 WHERE ts.project_code = :PROJECT_CODE
   AND ts.test_suite = :TEST_SUITE
-  AND ts.suite_type IN ('regular', 'contract')
+  AND ts.suite_type IN ('standard', 'contract')
   AND td.version_id = {VERSION_RESOLUTION}
   AND td.last_auto_gen_date IS NOT NULL
 GROUP BY ts.id, td.last_auto_gen_date, td.profiling_as_of_date, td.lock_refresh

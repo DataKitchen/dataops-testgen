@@ -14,6 +14,7 @@
  * @property {string?} label
  * @property {string?} help
  * @property {TooltipProperties['position']} helpPlacement
+ * @property {string?} helpClasses - the tooltip class the help text is sized by
  * @property {(string | number)?} value
  * @property {string?} placeholder
  * @property {string[]?} autocompleteOptions
@@ -113,7 +114,11 @@ const Input = (/** @type Properties */ props) => {
             () => getValue(props.help)
                 ? withTooltip(
                     Icon({ size: 16, classes: 'text-disabled' }, 'help'),
-                    { text: props.help, position: getValue(props.helpPlacement) ?? 'top', width: 200 }
+                    {
+                        text: props.help,
+                        position: getValue(props.helpPlacement) ?? 'top',
+                        classes: getValue(props.helpClasses) ?? 'tg-tooltip--help',
+                    }
                 )
                 : null,
         ),

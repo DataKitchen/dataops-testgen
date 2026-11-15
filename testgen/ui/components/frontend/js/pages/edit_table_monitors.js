@@ -38,6 +38,7 @@ const EditTableMonitors = (/** @type Properties */ props) => {
     const newMetrics = van.state({}); // { [tempId]: metric }
     const deletedMetricIds = van.state([]);
 
+    const selectedItem = van.state({ type: 'Freshness_Trend', id: null });
     const showSaveSuccess = van.state(false);
     let lastSaveTimestamp = null;
 
@@ -50,6 +51,12 @@ const EditTableMonitors = (/** @type Properties */ props) => {
             newMetrics.val = {};
             deletedMetricIds.val = [];
             formStates.val = {};
+            // A metric added in this dialog has been saved: keep it selected under its saved id
+            const { type, id } = selectedItem.rawVal;
+            const savedId = result.created_ids?.[id];
+            if (savedId) {
+                selectedItem.val = { type, id: savedId };
+            }
             setTimeout(() => { showSaveSuccess.val = false; }, 2000);
         }
     });
@@ -84,7 +91,6 @@ const EditTableMonitors = (/** @type Properties */ props) => {
         const existing = Object.values(existingMetrics.val).filter(metric => !deletedMetricIds.val.includes(metric.id));
         return [...existing, ...Object.values(newMetrics.val)];
     });
-    const selectedItem = van.state({ type: 'Freshness_Trend', id: null });
 
     // Result of the last Validate click, hidden once that metric's expression changes
     const validation = van.state(null);

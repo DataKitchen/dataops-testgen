@@ -400,4 +400,4 @@ MonitorSensitivity.__doc__ = (
 
 
 TestSuiteType = StrEnum("TestSuiteType", {m.value: m.value for m in TEST_SUITE_TYPES})  # type: ignore[misc]
-TestSuiteType.__doc__ = "The type of a test suite: ``regular`` or ``contract``."
+TestSuiteType.__doc__ = "The type of a test suite: ``standard`` or ``contract``."

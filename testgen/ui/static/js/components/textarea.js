@@ -13,6 +13,7 @@
  * @property {string?} label
  * @property {string?} help
  * @property {TooltipProperties['position']} helpPlacement
+ * @property {string?} helpClasses - the tooltip class the help text is sized by
  * @property {(string | number)?} value
  * @property {string?} placeholder
  * @property {string?} icon
@@ -78,7 +79,11 @@ const Textarea = (/** @type Properties */ props) => {
             () => getValue(props.help)
                 ? withTooltip(
                     Icon({ size: 16, classes: 'text-disabled' }, 'help'),
-                    { text: props.help, position: getValue(props.helpPlacement) ?? 'top', width: 200 }
+                    {
+                        text: props.help,
+                        position: getValue(props.helpPlacement) ?? 'top',
+                        classes: getValue(props.helpClasses) ?? 'tg-tooltip--help',
+                    }
                 )
                 : null,
         ),
@@ -94,6 +99,12 @@ const Textarea = (/** @type Properties */ props) => {
                 isDirty.val = true;
                 value.val = event.target.value;
             }, 300),
+            // Blur fires change before a click on another control lands, so a button pressed
+            // inside the debounce window still sees the last keystrokes.
+            onchange: (/** @type Event */ event) => {
+                isDirty.val = true;
+                value.val = event.target.value;
+            },
         }),
         () =>
             isDirty.val && firstError.val

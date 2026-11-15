@@ -46,13 +46,13 @@ def contract_summary(
     caption_link = None
     if selected is not editable:
         if selected is active:
-            caption = f"Viewing v{selected.version}, the agreement in force."
+            caption = f"Viewing v{selected.version}, the active version."
         else:
             caption = f"Viewing v{selected.version}, a superseded version."
         if draft:
             caption = f"{caption} Edits go to the draft." if can_edit else caption
         else:
-            caption = f"{caption} v{editable.version} is the agreement in force."
+            caption = f"{caption} v{editable.version} is the active version."
         caption_link = {"label": f"Go to {label(editable)}", "version": editable.version}
     elif selected is active and can_edit:
         caption = f"Editing creates draft v{selected.version + 1}."

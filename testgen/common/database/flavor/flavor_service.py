@@ -7,12 +7,14 @@ from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine as sqlalchemy_create_engine
 from sqlalchemy.engine.base import Connection, Engine
+from sqlalchemy.exc import DBAPIError
 
 from testgen.common.clean_sql import parse_numeric_values
 from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.database.file_declarations import FileDeclaration
 from testgen.common.database.statement_cancel import RunningStatement, cancel_each
 from testgen.common.encrypt import DecryptText
+from testgen.common.flavors import MAX_THREADS_MAX
 
 SQLFlavor = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "postgresql", "databricks", "duckdb", "bigquery", "oracle", "sap_hana", "salesforce_data360"]
 RowLimitingClause = Literal["limit", "top", "fetch"]
@@ -194,6 +196,8 @@ class FlavorService:
     quote_character = '"'
     escaped_single_quote = "''"
     literal_escapes_backslash = False
+    # Longest string literal the flavor accepts in query text, where it caps one.
+    max_string_literal_bytes: int | None = None
     string_literal_prefix = ""
     # LIKE patterns for a literal underscore, backslash, and left bracket, before string_literal escapes them
     escaped_underscore = "\\_"
@@ -201,6 +205,8 @@ class FlavorService:
     escaped_left_bracket = "["
     escape_clause = ""
     varchar_type = "VARCHAR(1000)"
+    # The aggregate that counts rows in a type that holds a count above 2^31
+    count_function = "COUNT"
     # Whether the engine keeps the empty string as a value distinct from NULL
     stores_empty_string = True
     # Appended to a SELECT that reads no table, on an engine that requires a FROM clause
@@ -443,12 +449,41 @@ class FlavorService:
         """
         return None
 
+    def is_missing_schema_error(self, error: DBAPIError) -> bool:  # noqa: ARG002
+        """Whether ``error`` reports that a schema a query read does not exist.
+
+        Flavors whose information schema returns no rows for a missing schema never raise one.
+        """
+        return False
+
     def string_literal(self, value: str) -> str:
         """Return ``value`` as a single-quoted SQL string literal."""
         if self.literal_escapes_backslash:
             value = value.replace("\\", "\\\\")
         escaped = value.replace("'", self.escaped_single_quote)
         return f"{self.string_literal_prefix}'{escaped}'"
+
+    def fit_string_literal(self, value: str) -> str:
+        """Return ``value`` cut to a length the flavor accepts in a string literal.
+
+        Args:
+            value: The text that goes between the quotes.
+
+        Returns:
+            ``value`` unchanged where the flavor sets no cap or the text is under it, otherwise
+            the text cut to the cap and marked as cut.
+        """
+        if self.max_string_literal_bytes is None:
+            return value
+        encoded = value.encode()
+        if len(encoded) <= self.max_string_literal_bytes:
+            return value
+        marker = "..."
+        kept = encoded[: self.max_string_literal_bytes - len(marker)].decode(errors="ignore")
+        # A cut landing inside a doubled backslash would leave one escaping the marker.
+        if (len(kept) - len(kept.rstrip("\\"))) % 2:
+            kept = kept[:-1]
+        return kept + marker
 
     def string_literal_or_null(self, value: str | None) -> str:
         """Return ``value`` as a SQL string literal, or ``NULL`` when it is empty."""
@@ -657,10 +692,15 @@ class FlavorService:
         :param table_group_schema: Schema of the table group the engine reads for, or None when it reads for none.
         """
         params = resolve_connection_params(connection_params, table_group_schema)
+        engine_args = self.get_engine_args(params)
+        if "poolclass" not in engine_args:
+            # Every worker of a run checks out its own connection, so the pool has to hold the
+            # largest thread count a connection can be given: SQLAlchemy's default holds 15.
+            engine_args = {"max_overflow": MAX_THREADS_MAX, **engine_args}
         return sqlalchemy_create_engine(
             self.get_connection_string(params),
             connect_args=self.get_connect_args(params),
-            **self.get_engine_args(params),
+            **engine_args,
         )
 
     def get_connection_string(self, params: ResolvedConnectionParams) -> str:

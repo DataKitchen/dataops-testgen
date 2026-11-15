@@ -17,12 +17,13 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.engine.default import DefaultExecutionContext
 from sqlalchemy.orm import InstrumentedAttribute
 
 from testgen.common.audit.actions import AuditTargetType
 from testgen.common.audit.fields import AuditFields
 from testgen.common.database.flavor.flavor_service import SQLFlavor
-from testgen.common.flavors import SqlFlavorCode, fixed_max_threads
+from testgen.common.flavors import SqlFlavorCode, clamp_max_threads, default_max_threads, fixed_max_threads
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import JSON_TYPE, EncryptedBytea, EncryptedJson, SafeEncryptedJson
 from testgen.common.models.entity import Entity, EntityMinimal
@@ -33,9 +34,6 @@ from testgen.utils import is_uuid4
 # rows / non-UI insert paths may not seed it). Matches the UI's non-Salesforce
 # default and the 0160 migration.
 DEFAULT_MAX_QUERY_CHARS = 20000
-
-# Concurrent query threads a connection uses when the caller names no value.
-DEFAULT_MAX_THREADS = 4
 
 
 @dataclass
@@ -61,6 +59,11 @@ class ConnectionListItem(EntityMinimal):
     table_group_count: int
 
 
+def _flavor_default_max_threads(context: DefaultExecutionContext) -> int:
+    params = context.get_current_parameters()
+    return default_max_threads(params.get("sql_flavor_code") or params.get("sql_flavor"))
+
+
 class Connection(Entity):
     __tablename__ = "connections"
 
@@ -75,7 +78,7 @@ class Connection(Entity):
     project_db: str = Column(String)
     connection_name: str = Column(String)
     project_pw_encrypted: str = Column(EncryptedBytea)
-    max_threads: int = Column(Integer, default=DEFAULT_MAX_THREADS)
+    max_threads: int = Column(Integer, nullable=False, default=_flavor_default_max_threads)
     max_query_chars: int = Column(Integer)
     url: str = Column(String, default="")
     connect_by_url: bool = Column(Boolean, default=False)
@@ -112,14 +115,16 @@ class Connection(Entity):
 
         A flavor that runs inside the TestGen process fixes its own count, and that wins over the
         stored column: the column is pinned when a connection is saved, but a row written any
-        other way keeps whatever it was given.
+        other way keeps whatever it was given. A stored value outside the range a user can choose
+        is cut to it.
         """
         # The code falls back to the family the way connection resolution does, so a row with no
         # code stored still gets the pin its engine needs.
-        pinned = fixed_max_threads(self.sql_flavor_code or self.sql_flavor)
+        code = self.sql_flavor_code or self.sql_flavor
+        pinned = fixed_max_threads(code)
         if pinned is not None:
             return pinned
-        return DEFAULT_MAX_THREADS if self.max_threads is None else self.max_threads
+        return clamp_max_threads(self.max_threads)
 
     @classmethod
     def encrypted_columns(cls) -> tuple[str, ...]:

@@ -483,3 +483,47 @@ def test_a_physically_named_export_imported_into_its_own_draft_plans_no_changes(
     assert table["quality"][-1]["arguments"] == {"properties": ["email", "placed"]}
     assert sorted(change.contract_term_id for change in changes) == ["term-dupes", "term-required", "term-rows"]
     assert [change.contract_term_id for change in changes if change.action is not ImportAction.skip] == []
+
+
+# --- custom query variables in a SQL_Metric rule ---------------------------
+
+
+def _system_property(rule: dict, name: str):
+    return next(
+        (prop["value"] for prop in rule.get("customProperties", []) if prop.get("property") == name),
+        None,
+    )
+
+
+def test_a_metric_query_exports_with_its_variables_filled_in():
+    """The rule's query has to run on an engine that knows nothing of TestGen's syntax."""
+    rule = _rendered_rule(
+        "SQL_Metric", column=None, upper_tolerance="5",
+        custom_query="SELECT COUNT(*) FROM {DATA_SCHEMA}.orders WHERE d > '{END_DATE:2026-10-10}'",
+    )
+
+    assert rule["query"] == "SELECT COUNT(*) FROM sales.orders WHERE d > '2026-10-10'"
+    assert "{END_DATE" not in rule["query"]
+
+
+def test_the_declared_query_survives_in_the_query_template():
+    """Re-importing has to restore the variables, not the values one export happened to render.
+
+    The query names its schema outright and ends without a semicolon, so filling the variable in
+    is the only thing that can make the rendered query differ from the declared one — which is
+    what puts the declared one in queryTemplate.
+    """
+    declared = "SELECT COUNT(*) FROM sales.orders WHERE d > '{END_DATE:2026-10-10}'"
+    rule = _rendered_rule("SQL_Metric", column=None, upper_tolerance="5", custom_query=declared)
+
+    assert rule["query"] == "SELECT COUNT(*) FROM sales.orders WHERE d > '2026-10-10'"
+    assert _system_property(rule, "queryTemplate") == declared
+
+
+def test_a_metric_query_declaring_nothing_is_unchanged():
+    rule = _rendered_rule(
+        "SQL_Metric", column=None, upper_tolerance="5",
+        custom_query="SELECT COUNT(*) FROM {DATA_SCHEMA}.orders",
+    )
+
+    assert rule["query"] == "SELECT COUNT(*) FROM sales.orders"

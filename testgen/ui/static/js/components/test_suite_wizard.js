@@ -31,8 +31,10 @@
  * @type {object}
  * @property {boolean} open
  * @property {Array<{value: string, label: string}>} table_groups
- * @property {string[]} generation_sets
+ * @property {import('./generation_set_picker.js').GenerationSetOption[]} generation_sets
+ * @property {import('./generation_set_picker.js').GenerationSetOption[]} contract_generation_sets
  * @property {string[]} default_generation_sets
+ * @property {string[]} default_contract_generation_sets
  * @property {number} max_file_bytes
  * @property {WizardTableGroup?} table_group
  * @property {(ImportPreview | {error: string, problems: string[]})?} file_preview
@@ -53,7 +55,7 @@ import { Alert } from './alert.js';
 import { Checkbox } from './checkbox.js';
 import { Icon } from './icon.js';
 import { Link } from './link.js';
-import { Select } from './select.js';
+import { GenerationSetPicker } from './generation_set_picker.js';
 import { RadioGroup } from './radio_group.js';
 import { FileInput } from './file_input.js';
 import { WizardProgressIndicator } from './wizard_progress_indicator.js';
@@ -96,7 +98,10 @@ const TestSuiteWizard = (/** @type Properties */ props) => {
     };
     const step = van.state(0);
     const generate = van.state(false);
-    const generationSets = van.state([...initial.default_generation_sets]);
+    const defaultSets = () => form.suiteType.rawVal === 'standard'
+        ? initial.default_generation_sets
+        : initial.default_contract_generation_sets;
+    const generationSets = van.state([...defaultSets()]);
     const startFrom = van.state('tables');
     const tableNames = van.state([]);
     const deleteConfirmed = van.state(false);
@@ -107,7 +112,7 @@ const TestSuiteWizard = (/** @type Properties */ props) => {
 
     const resetTestsStep = (isProfiled) => {
         generate.val = isProfiled;
-        generationSets.val = [...initial.default_generation_sets];
+        generationSets.val = [...defaultSets()];
         startFrom.val = 'tables';
         tableNames.val = [];
         fileValue.val = null;
@@ -118,11 +123,11 @@ const TestSuiteWizard = (/** @type Properties */ props) => {
     const stepValid = [
         van.derive(() => validity.testSuiteName.val && validity.tableGroupId.val),
         van.derive(() => {
-            if (form.suiteType.val === 'regular') {
+            if (form.suiteType.val === 'standard') {
                 return !generate.val || generationSets.val.length > 0;
             }
             if (startFrom.val === 'tables') {
-                return tableNames.val.length > 0;
+                return tableNames.val.length > 0 && (!profiled.val || generationSets.val.length > 0);
             }
             const preview = filePreview.val;
             return !!preview && !preview.error && (!preview.summary?.delete || deleteConfirmed.val);
@@ -142,10 +147,10 @@ const TestSuiteWizard = (/** @type Properties */ props) => {
 
     const addTestSuite = () => emit('AddTestSuiteConfirmed', { payload: {
         ...testSuiteFormPayload(form),
-        tests: form.suiteType.val === 'regular'
+        tests: form.suiteType.val === 'standard'
             ? { generate: generate.val, generation_sets: generate.val ? generationSets.val : [] }
             : startFrom.val === 'tables'
-                ? { start_from: 'tables', table_names: tableNames.val }
+                ? { start_from: 'tables', table_names: tableNames.val, generation_sets: generationSets.val }
                 : { start_from: 'file' },
     } });
 
@@ -169,7 +174,7 @@ const TestSuiteWizard = (/** @type Properties */ props) => {
         },
     });
 
-    const regularTestsStep = () => div(
+    const standardTestsStep = () => div(
         { class: 'flex-column fx-gap-3' },
         Checkbox({
             name: 'generate-tests',
@@ -179,14 +184,7 @@ const TestSuiteWizard = (/** @type Properties */ props) => {
             onChange: (value) => generate.val = value,
         }),
         () => generate.val
-            ? Select({
-                label: 'Generation Sets',
-                value: generationSets,
-                multiSelect: true,
-                required: true,
-                options: initial.generation_sets.map((name) => ({ label: name, value: name })),
-                onChange: (value) => generationSets.val = value,
-            })
+            ? div({ class: 'pl-5' }, GenerationSetPicker({ options: initial.generation_sets, selected: generationSets }))
             : '',
         InfoCaption(() => {
             const group = tableGroup.val;
@@ -221,6 +219,9 @@ const TestSuiteWizard = (/** @type Properties */ props) => {
                 }
                 return picker;
             },
+            () => profiled.val
+                ? GenerationSetPicker({ options: initial.contract_generation_sets, selected: generationSets })
+                : '',
             InfoCaption(() => {
                 const group = tableGroup.val;
                 if (!group) {
@@ -366,7 +367,7 @@ const TestSuiteWizard = (/** @type Properties */ props) => {
                         {
                             index: 1,
                             title: 'Tests',
-                            skipped: form.suiteType.val === 'regular' && !generate.val,
+                            skipped: form.suiteType.val === 'standard' && !generate.val,
                             includedSteps: [STEP_NAMES[1]],
                         },
                     ],
@@ -379,7 +380,7 @@ const TestSuiteWizard = (/** @type Properties */ props) => {
                     },
                 ),
             WizardStep(0, testSuiteStep),
-            WizardStep(1, () => form.suiteType.val === 'regular' ? regularTestsStep() : contractTestsStep()),
+            WizardStep(1, () => form.suiteType.val === 'standard' ? standardTestsStep() : contractTestsStep()),
             () => isComplete.val ? successPanel() : '',
             footer,
         ),

@@ -157,19 +157,6 @@ def list_test_runs(
         version_id=str(target.id) if target else None,
     )
 
-    # Queued/claimed JEs that don't yet have a test_runs row are invisible to suite/TG-scoped
-    # joined-run queries. Surface them as a separate "Pending" section on page 1.
-    pending_jes: list[JobExecution] = []
-    if page == 1 and (test_suite_id or table_group):
-        pending_jes = _select_pending_test_jes(
-            project_code=project_code,
-            test_suite_id=test_suite_id,
-            table_group_id=str(table_group.id) if table_group else None,
-            schedule_id=schedule_id,
-            statuses=statuses,
-            version_id=str(target.id) if target else None,
-        )
-
     scope_descriptor = _scope_descriptor(project_code, test_suite, table_group_id, schedule_id, status)
     doc = MdDoc()
     doc.heading(1, f"Test runs{scope_descriptor}")
@@ -182,11 +169,6 @@ def list_test_runs(
     if next_run:
         doc.field("Next scheduled run", next_run)
 
-    if pending_jes:
-        doc.heading(2, f"Pending ({len(pending_jes)})")
-        for je in pending_jes:
-            _render_pending_je(doc, je, label=test_suite or "Test run")
-
     page_info = format_page_info(total, page, limit)
     if page_info:
         doc.text(page_info)
@@ -194,7 +176,7 @@ def list_test_runs(
     if not summaries:
         if page > 1:
             doc.text(f"_No test runs on page {page} (total: {total})._")
-        elif not pending_jes:
+        else:
             doc.text("_No test runs found._")
         return doc.render()
 
@@ -336,63 +318,11 @@ def _next_test_run(
     return None
 
 
-def _select_pending_test_jes(
-    *,
-    project_code: str,
-    test_suite_id: str | None,
-    table_group_id: str | None,
-    schedule_id: str | None,
-    statuses,
-    version_id: str | None = None,
-) -> list[JobExecution]:
-    """Find queued/in-flight test-run JEs for a given suite or table group scope. For a
-    table-group scope, expands to the non-monitor suites in the group so monitor runs stay
-    excluded.
-    """
-    if test_suite_id:
-        suite_ids: str | list[str] = test_suite_id
-    elif table_group_id:
-        suite_ids = [
-            str(s.id)
-            for s in TestSuite.select_minimal_where(
-                TestSuite.project_code == project_code,
-                TestSuite.table_groups_id == table_group_id,
-                TestSuite.suite_type.in_(MCP_SUITE_TYPES),
-            )
-        ]
-        if not suite_ids:
-            return []
-    else:
-        return []
-    clauses = [JobExecution.job_schedule_id == schedule_id] if schedule_id else []
-    kwargs_match: dict[str, str | list[str]] = {"test_suite_id": suite_ids}
-    if version_id:
-        kwargs_match["version_id"] = version_id
-    return JobExecution.select_active_by_kwargs(
-        *clauses,
-        project_code=project_code,
-        job_key=RUN_TESTS_JOB_KEY,
-        kwargs_match=kwargs_match,
-        statuses=statuses,
-    )
-
-
-def _render_pending_je(doc: MdDoc, je: JobExecution, label: str) -> None:
-    status_label = TestRunSummary.STATUS_LABEL.get(je.status, je.status)
-    doc.heading(3, f"{label} — {status_label}")
-    if je.status == JobStatus.QUEUED:
-        doc.text(QUEUED_MESSAGE)
-    doc.field("Test Run", je.id, code=True)
-    if je.job_schedule_id is not None:
-        doc.field("Schedule", je.job_schedule_id, code=True)
-    doc.field("Submitted", je.created_at)
-    doc.field("Started", je.started_at or "—")
-    doc.field("Ended", je.completed_at or "In progress")
-
-
 def _render_test_run_section(doc: MdDoc, run: TestRunSummary) -> None:
     title = run.test_suite or run.project_code
     doc.heading(2, f"{title} — {run.status_label}")
+    if run.status == JobStatus.QUEUED:
+        doc.text(QUEUED_MESSAGE)
     doc.field("Test Run", run.job_execution_id, code=True)
     if run.job_schedule_id is not None:
         doc.field("Schedule", run.job_schedule_id, code=True)

@@ -407,7 +407,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
             ? span(
                 'Destinations can be reused across notification rules and are configured in ',
                 a(
-                  { href: projectSettingsUrl.val, target: '_blank', rel: 'noreferrer' },
+                  { href: `./${projectSettingsUrl.val}`, target: '_blank', rel: 'noreferrer' },
                   'Project Settings',
                   Icon({ size: 12, classes: 'ml-1 notifications--link-icon' }, 'open_in_new'),
                 ),
@@ -536,10 +536,8 @@ const NotificationSettings = (/** @type Properties */ props) => {
         // gets the documentation covering both delivery methods.
         link: canManageDestinations.val && projectSettingsUrl.val
           ? {
-            // Link prefixes internal routes with "/", so a leading slash here would
-            // produce a protocol-relative "//settings" and send the browser to a host.
             label: 'Go to Project Settings',
-            href: projectSettingsUrl.val.replace(/^\//, ''),
+            href: projectSettingsUrl.val,
             open_new: true,
           }
           : {

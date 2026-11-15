@@ -37,6 +37,7 @@ from sqlalchemy.sql import visitors
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.expression import case, literal
 
+from testgen.common import query_variables
 from testgen.common.audit.actions import AuditTargetType
 from testgen.common.audit.fields import AuditFields
 from testgen.common.audit.names import object_name
@@ -873,6 +874,8 @@ def test_definition_errors(test_type: TestType, value_of: Callable[[str], object
         errors["custom_query"] = (
             f"test type `{test_type.test_name_short}` does not accept a custom query"
         )
+    elif variable_error := query_variables.validate_declarations(value_of("custom_query")):
+        errors["custom_query"] = variable_error
 
     if not _is_blank(value_of("subset_condition")) and "subset_condition" not in test_type.param_columns:
         errors["subset_condition"] = (
@@ -1263,7 +1266,7 @@ class TestDefinition(Entity):
     def writable_ids(cls, row_ids: Iterable[UUID | str]) -> list[UUID]:
         """The rows a write to the named rows lands on, resolving each row's suite through ``resolve_writable``.
 
-        A row of a regular or monitor suite maps to itself. A row of a contract's frozen version maps to
+        A row of a standard or monitor suite maps to itself. A row of a contract's frozen version maps to
         its counterpart in the draft, which is opened when there is none.
         """
         return list(dict.fromkeys(cls._writable_id_map(row_ids).values()))
@@ -1364,7 +1367,7 @@ class TestDefinition(Entity):
         identifier: UUID,
         project_codes: list[str] | None = None,
         *,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
     ) -> TestDefinitionSummary | None:
         """Fetch a test definition with project-level access check.
 
@@ -1437,7 +1440,7 @@ class TestDefinition(Entity):
         page: int = 1,
         limit: int = 50,
         *,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
         version_id: UUID | None = None,
     ) -> tuple[list[TestDefinitionSummary], int]:
         """Paginated test definitions for a suite, with optional filters.
@@ -1474,7 +1477,7 @@ class TestDefinition(Entity):
         test_definition_ids: Iterable[UUID],
         project_codes: list[str] | None = None,
         *,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
     ) -> list[TestDefinitionMinimal]:
         """Test definitions for the given ids, in one statement.
 
@@ -1719,12 +1722,12 @@ class TestDefinition(Entity):
         """Relocate test definitions into a test suite, taking the target table group's schema.
 
         ``target_schema`` is the target table group's schema, and ``qualifies_table_refs`` whether its
-        connection's flavor names a table as ``schema.table``. Returns the ids of the rows moved.
+        connection's flavor names a table as ``schema.table``. Returns the ids of the rows moved. A contract
+        target with no draft gets one, and the moved rows land on it.
         """
         db_session = get_current_session()
-        target_version = db_session.scalar(select(SuiteVersion.resolved_for(target_test_suite_id)))
-        cls.assert_version_writable(target_version)
         cls._assert_no_managed_definitions(cls.id.in_([UUID(str(identifier)) for identifier in test_definition_ids]))
+        target_version, _ = cls.resolve_writable(target_test_suite_id)
         writable_ids = cls.writable_ids(test_definition_ids)
         scoped_ids = db_session.scalars(
             select(cls.id).where(cls.id.in_(writable_ids), cls.version_clause())
@@ -1766,12 +1769,16 @@ class TestDefinition(Entity):
         """Copy test definitions into a test suite, taking the target table group's schema.
 
         ``target_schema`` is the target table group's schema, and ``qualifies_table_refs`` whether its
-        connection's flavor names a table as ``schema.table``. Returns the ids of the copies.
+        connection's flavor names a table as ``schema.table``. Returns the ids of the copies. A contract
+        target with no draft gets one, and the copies land on it.
         """
         db_session = get_current_session()
-        target_version = db_session.scalar(select(SuiteVersion.resolved_for(target_test_suite_id)))
-        cls.assert_version_writable(target_version)
         cls._assert_no_managed_definitions(cls.id.in_([UUID(str(identifier)) for identifier in test_definition_ids]))
+        # Read before the target's draft opens: a copy within a contract would otherwise resolve to the draft
+        source_ids = db_session.scalars(
+            select(cls.id).where(cls.id.in_(test_definition_ids), cls.version_clause())
+        ).all()
+        target_version, _ = cls.resolve_writable(target_test_suite_id)
 
         retargeted = cls._retargeted_schemas(target_table_group_id, target_schema, qualifies_table_refs)
 
@@ -1819,7 +1826,7 @@ class TestDefinition(Entity):
 
         query = insert(cls).from_select(
             [*modified_columns, *other_columns],
-            select(*select_columns).where(cls.id.in_(test_definition_ids), cls.version_clause()),
+            select(*select_columns).where(cls.id.in_(source_ids)),
         ).returning(cls.id)
         copied_ids = list(db_session.execute(query).scalars())
         # A copy is a new term, so it takes none of the source's contract identity; it still
@@ -1833,7 +1840,7 @@ class TestDefinition(Entity):
         test_definition_id: UUID,
         project_codes: list[str] | None = None,
         *,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
     ) -> dict | None:
         """Get the fields needed by the source data service for a given test definition.
 
@@ -1983,7 +1990,7 @@ class TestDefinition(Entity):
         so the sweep costs two queries whatever the number of terms and tells apart two terms
         sharing a natural key within the sweep.
 
-        A version no suite owns -- the placeholder that regular and monitor suites share --
+        A version no suite owns -- the placeholder that standard and monitor suites share --
         holds no contract terms, so nothing is minted on it.
         """
         if not SuiteVersion.is_suite_owned(version_id):
@@ -2088,45 +2095,64 @@ class TestDefinitionNote(Base):
         )
 
     @classmethod
-    def _storage_row(cls, test_definition_id: str | UUID) -> UUID:
-        """The row a note added to the given test definition is stored on.
+    def _storage_rows(cls, test_definition_ids: Iterable[str | UUID]) -> dict[UUID, UUID]:
+        """Maps each given test definition to the row a note added to it is stored on, leaving out
+        test definitions that do not exist.
 
         The earliest frozen row of its term, so that deleting a draft row never takes a note on a
         test that outlives the draft. The row itself when the term has no frozen row.
         """
+        ids = [UUID(str(td_id)) for td_id in test_definition_ids]
+        db_session = get_current_session()
+        existing = set(db_session.scalars(select(TestDefinition.id).where(TestDefinition.id.in_(ids))))
         definition = aliased(TestDefinition)
         peer = aliased(TestDefinition)
-        stored_on = get_current_session().scalar(
-            select(peer.id)
-            .join(definition, cls._same_term(peer, definition))
+        rows = db_session.execute(
+            select(definition.id, peer.id)
+            .distinct(definition.id)
+            .join(peer, cls._same_term(peer, definition))
             .join(SuiteVersion, SuiteVersion.id == peer.version_id)
             .where(
-                definition.id == test_definition_id,
+                definition.id.in_(ids),
                 SuiteVersion.test_suite_id.is_not(None),
                 SuiteVersion.frozen_at.is_not(None),
             )
-            .order_by(SuiteVersion.frozen_at, SuiteVersion.version)
-            .limit(1)
-        )
-        return stored_on or UUID(str(test_definition_id))
+            .order_by(definition.id, SuiteVersion.frozen_at, SuiteVersion.version)
+        ).all()
+        stored_on = dict(rows)
+        return {td_id: stored_on.get(td_id, td_id) for td_id in ids if td_id in existing}
 
     @classmethod
     def add_note(cls, test_definition_id: str | UUID, detail: str, username: str) -> "TestDefinitionNote":
         """Insert a note on the given test definition and return the persisted instance.
 
         A note on a contract's test is stored on the earliest frozen version of that test, whichever
+        version it is added from. Raises ``MissingTestDefinitionError`` when the test definition does
+        not exist.
+        """
+        if not (notes := cls.add_notes([test_definition_id], detail, username)):
+            raise MissingTestDefinitionError(f"Test definition {test_definition_id} no longer exists.")
+        return notes[0]
+
+    @classmethod
+    def add_notes(
+        cls, test_definition_ids: Iterable[str | UUID], detail: str, username: str
+    ) -> list["TestDefinitionNote"]:
+        """Insert one copy of a note on each given test definition and return the persisted instances,
+        in the order given. Test definitions that do not exist get no note.
+
+        A note on a contract's test is stored on the earliest frozen version of that test, whichever
         version it is added from.
         """
         db_session = get_current_session()
-        note = cls(
-            test_definition_id=cls._storage_row(test_definition_id),
-            detail=detail,
-            created_by=username,
-            created_at=datetime.now(UTC).replace(tzinfo=None),
-        )
-        db_session.add(note)
+        created_at = datetime.now(UTC).replace(tzinfo=None)
+        notes = [
+            cls(test_definition_id=stored_on, detail=detail, created_by=username, created_at=created_at)
+            for stored_on in cls._storage_rows(test_definition_ids).values()
+        ]
+        db_session.add_all(notes)
         db_session.flush()
-        return note
+        return notes
 
     @classmethod
     def update_note(cls, note_id: str | UUID, detail: str) -> None:

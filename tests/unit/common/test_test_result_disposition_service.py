@@ -24,7 +24,7 @@ MODULE = "testgen.common.test_result_disposition_service"
 AffectedRow = namedtuple(
     "AffectedRow",
     "test_suite_id test_definition_id test_active lock_refresh suite_type",
-    defaults=(True, False, SuiteType.REGULAR),
+    defaults=(True, False, SuiteType.STANDARD),
 )
 CopyRow = namedtuple("CopyRow", "id test_active lock_refresh", defaults=(True, False))
 

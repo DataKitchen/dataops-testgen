@@ -22,7 +22,7 @@ test_types:
   default_parm_prompts: |-
     Metric Query,Minimum Value,Maximum Value
   default_parm_help: |-
-    Query should return a single numeric value: one row with one named column, for example SELECT COUNT(*) AS late_orders FROM {DATA_SCHEMA}.orders WHERE shipped_date IS NULL. A query can refer to any tables in the data source. You must hard-code the schema or use {DATA_SCHEMA} to represent the schema defined for the Table Group.|The minimum acceptable query result. Leave blank for no minimum.|The maximum acceptable query result. Leave blank for no maximum.
+    Query should return a single numeric value: one row with one named column, for example SELECT COUNT(*) AS late_orders FROM {DATA_SCHEMA}.orders WHERE shipped_date IS NULL. A query can refer to any tables in the data source. You must hard-code the schema or use {DATA_SCHEMA} to represent the schema defined for the Table Group. Use {NAME:default} for a value a test run can override, such as {END_DATE:2026-10-10}.|The minimum acceptable query result. Leave blank for no minimum.|The maximum acceptable query result. Leave blank for no maximum.
   default_parm_required: Y,A,A
   default_severity: Fail
   run_type: QUERY

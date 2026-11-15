@@ -37,7 +37,7 @@ def test_freezing_a_draft_beside_the_active_version_says_what_it_replaces():
         assert service.freeze_dialog(_suite()) == {
             "title": "Freeze Version 4",
             "question": "Freeze version 4 of the contract orders_contract?",
-            "consequence": "Version 4 becomes the agreement in force, replacing version 3. "
+            "consequence": "Version 4 becomes the active version, replacing version 3. "
             "Its terms and its document cannot change after freezing.",
         }
 
@@ -46,7 +46,7 @@ def test_freezing_the_first_draft_replaces_nothing():
     draft, active = _versions(1, None)
     with draft, active:
         assert service.freeze_dialog(_suite())["consequence"] == (
-            "Version 1 becomes the agreement in force. Its terms and its document cannot change after freezing."
+            "Version 1 becomes the active version. Its terms and its document cannot change after freezing."
         )
 
 
@@ -110,7 +110,7 @@ def test_discarding_a_draft_names_its_terms_and_the_version_it_returns_to():
         assert service.discard_dialog(_suite()) == {
             "question": "Are you sure you want to discard the draft v4 of the contract orders_contract?",
             "warning": "The draft's 147 terms and its document will be permanently deleted. "
-            "The contract returns to version 3, the agreement in force.",
+            "The contract returns to version 3, the active version.",
             "confirmation": "Yes, discard the draft v4 and its 147 terms.",
             "compare": {"label": "Compare v4 with v3", "source": 3, "target": 4},
         }

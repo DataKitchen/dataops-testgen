@@ -31,6 +31,7 @@ from testgen.common.models.test_definition import (
 )
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.common.pii_masking import get_pii_columns, mask_profiling_pii
+from testgen.common.run_overrides import labelled_overrides
 from testgen.common.test_result_disposition_service import (
     DispositionUpdate,
     coerce_ui_disposition,
@@ -66,7 +67,8 @@ from testgen.ui.services.query_cache import (
     select_test_definitions_where,
 )
 from testgen.ui.services.string_service import snake_case_to_title_case
-from testgen.ui.services.test_definition_service import MANAGED_EDIT_MESSAGE, dialog_table_columns, save_from_dialog
+from testgen.ui.services.test_definition_service import MANAGED_EDIT_MESSAGE, dialog_catalog, save_from_dialog
+from testgen.ui.services.test_note_service import toast_note_added_to_tests
 from testgen.ui.session import session
 from testgen.utils import dataframe_to_json_records, friendly_score, make_json_safe
 
@@ -366,25 +368,23 @@ class TestResultsPage(Page):
                 record_status_changed("flagged", value, flagged)
                 st.cache_data.clear()
 
-        @with_database_session
-        def on_flag_all(payload: dict) -> None:
-            value = payload.get("value", False)
-            filters = payload.get("filters", {})
-            filter_status = filters.get("status")
-            filter_test_statuses = _parse_status_filter(filter_status)
-            filter_action = _map_action_filter(filters.get("action"))
+        def definition_ids_matching(filters: dict) -> list[str]:
             filter_flagged_str = filters.get("flagged")
             filter_flagged = True if filter_flagged_str == "Flagged" else False if filter_flagged_str == "Not Flagged" else None
-
-            all_def_ids = test_result_queries.get_test_definition_ids_for_run(
+            return test_result_queries.get_test_definition_ids_for_run(
                 run_id,
-                test_statuses=filter_test_statuses,
+                test_statuses=_parse_status_filter(filters.get("status")),
                 test_type_id=filters.get("test_type"),
                 table_name=filters.get("table_name"),
                 column_name=filters.get("column_name"),
-                action=filter_action,
+                action=_map_action_filter(filters.get("action")),
                 flagged=filter_flagged,
             )
+
+        @with_database_session
+        def on_flag_all(payload: dict) -> None:
+            value = payload.get("value", False)
+            all_def_ids = definition_ids_matching(payload.get("filters", {}))
             if all_def_ids:
                 try:
                     flagged = TestDefinition.set_status_attribute("flagged", all_def_ids, value)
@@ -394,11 +394,15 @@ class TestResultsPage(Page):
                 record_status_changed("flagged", value, flagged)
                 st.cache_data.clear()
 
+        user_can_note = session.auth.user_has_permission("disposition")
+
         def on_notes_clicked(payload: dict) -> None:
             st.session_state[NOTES_DIALOG_KEY] = payload
 
         @with_database_session
         def on_note_added(payload: dict) -> None:
+            if not user_can_note:
+                return
             td_id = payload["test_definition_id"]
             if not TestDefinition.get_for_project(td_id, suite_types=TEST_SUITE_TYPES):
                 st.session_state[NOTES_DIALOG_KEY] = _load_notes_dialog_data(
@@ -411,13 +415,28 @@ class TestResultsPage(Page):
             st.cache_data.clear()
 
         @with_database_session
+        def on_note_added_to_selected(payload: dict) -> None:
+            if not user_can_note:
+                return
+            if payload.get("filters") is not None:
+                td_ids = definition_ids_matching(payload["filters"])
+            else:
+                td_ids = test_result_queries.get_test_definition_ids_for_results(payload.get("test_result_ids") or [])
+            current_user = session.auth.user.username if session.auth.user else "unknown"
+            toast_note_added_to_tests(td_ids, payload.get("text") or "", current_user)
+
+        @with_database_session
         def on_note_updated(payload: dict) -> None:
+            if not user_can_note:
+                return
             TestDefinitionNote.update_note(payload["id"], payload["text"])
             td_id = payload["test_definition_id"]
             st.session_state[NOTES_DIALOG_KEY] = _load_notes_dialog_data(td_id, df)
 
         @with_database_session
         def on_note_deleted(payload: dict) -> None:
+            if not user_can_note:
+                return
             TestDefinitionNote.delete_note(payload["id"])
             td_id = payload["test_definition_id"]
             st.session_state[NOTES_DIALOG_KEY] = _load_notes_dialog_data(td_id, df)
@@ -431,7 +450,9 @@ class TestResultsPage(Page):
             result_df = test_result_queries.get_test_results_by_ids([item_id])
             if not result_df.empty:
                 row = result_df.where(result_df.notna(), None).to_dict(orient="records")[0]
-                MixpanelService().send_event("view-source-data", page=PAGE_PATH, test_type=row.get("test_name_short"))
+                MixpanelService().send_event(
+                    "view-source-data", page=PAGE_PATH, test_type=row.get("test_name_short"), suite_type=suite.suite_type,
+                )
                 mask_pii = not session.auth.user_has_permission("view_pii")
                 st.session_state[SOURCE_DATA_KEY] = _build_source_data(row, mask_pii=mask_pii)
 
@@ -489,6 +510,8 @@ class TestResultsPage(Page):
             record_test_saved(definition, created=False, stored=stored)
             st.session_state.pop(EDIT_TEST_KEY, None)
             st.session_state.pop(VALIDATE_RESULT_KEY, None)
+            # Dropped so the rerun rebuilds the selection from the saved test
+            st.session_state.pop(SELECTED_ITEM_KEY, None)
             st.cache_data.clear()
 
         @with_database_session
@@ -526,7 +549,9 @@ class TestResultsPage(Page):
             if result_df.empty:
                 return
             rows = result_df.where(result_df.notna(), None).to_dict(orient="records")
-            MixpanelService().send_event("download-issue-report", page=PAGE_PATH, issue_count=len(rows))
+            MixpanelService().send_event(
+                "download-issue-report", page=PAGE_PATH, issue_count=len(rows), suite_type=suite.suite_type,
+            )
             st.session_state[ISSUE_REPORT_KEY] = rows
 
         @with_database_session
@@ -594,6 +619,7 @@ class TestResultsPage(Page):
                 "permissions": {
                     "can_disposition": session.auth.user_has_permission("disposition"),
                     "can_edit": session.auth.user_has_permission("edit"),
+                    "can_note": user_can_note,
                 },
                 "run_info": {
                     "test_suite": run.test_suite,
@@ -602,7 +628,14 @@ class TestResultsPage(Page):
                     "run_date": run_date,
                     "project_code": run.project_code,
                     "is_latest_run": run.is_latest_run,
-                    "overrides": {"Match schema": run.match_schema_override} if run.match_schema_override else None,
+                    "overrides": labelled_overrides(
+                        schema_name=run.schema_override,
+                        table_names=run.table_names_override,
+                        match_schema_name=run.match_schema_override,
+                        match_table_names=run.match_table_names_override,
+                        variables=run.variables_override,
+                    )
+                    or None,
                     "external_url": run.external_url,
                     "metadata": make_json_safe(run.caller_metadata) if run.caller_metadata else None,
                 },
@@ -627,6 +660,7 @@ class TestResultsPage(Page):
             on_FlagAll_change=on_flag_all,
             on_NotesClicked_change=on_notes_clicked,
             on_NoteAdded_change=on_note_added,
+            on_NoteAddedToSelected_change=on_note_added_to_selected,
             on_NoteUpdated_change=on_note_updated,
             on_NoteDeleted_change=on_note_deleted,
             on_NotesDialogClosed_change=on_notes_dialog_closed,
@@ -688,7 +722,7 @@ def _build_edit_test_dialog_data(test_definition_id: str | None, test_suite_mini
         "open": True,
         "test_definition": make_json_safe(test_def_dict),
         "test_types": make_json_safe(test_types),
-        "table_columns": dialog_table_columns(full_test_suite, table_columns, test_def_row.table_name),
+        **dialog_catalog(full_test_suite, table_columns, test_def_row.table_name),
         "table_group_schema": table_group.table_group_schema,
         "test_suite": test_suite_info,
         "qualifies_table_refs_with_schema": (

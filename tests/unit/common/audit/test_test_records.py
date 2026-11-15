@@ -278,7 +278,7 @@ def _import_response(**ids) -> ImportResponse:
 
 def test_an_import_writes_one_record_per_effect(audit_session, audit_log):
     created, updated, deleted = [uuid4(), uuid4()], [uuid4()], [uuid4(), uuid4(), uuid4()]
-    suite = type("Suite", (), {"id": uuid4(), "project_code": "demo", "suite_type": "regular"})()
+    suite = type("Suite", (), {"id": uuid4(), "project_code": "demo", "suite_type": "standard"})()
     described = {tuple(created): [_test(), _test()], tuple(updated): [_test()]}
     with patch(f"{MODULE}.describe_tests", side_effect=lambda ids: described.get(tuple(ids), [])):
         record_import(suite, _import_config(ImportMode.apply), _import_response(
@@ -294,7 +294,7 @@ def test_an_import_writes_one_record_per_effect(audit_session, audit_log):
 
 
 def test_an_import_preview_records_nothing(audit_session, audit_log):
-    suite = type("Suite", (), {"id": uuid4(), "project_code": "demo", "suite_type": "regular"})()
+    suite = type("Suite", (), {"id": uuid4(), "project_code": "demo", "suite_type": "standard"})()
     with patch(f"{MODULE}.describe_tests", return_value=[_test()]):
         record_import(suite, _import_config(ImportMode.preview), _import_response(update=[uuid4()]))
     audit_session.commit()

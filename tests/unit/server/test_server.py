@@ -89,3 +89,51 @@ def test_no_mcp_mount_when_disabled(_server_deps):
 
     mount_found = any(hasattr(r, "app") and r.path == "" for r in app.routes)
     assert not mount_found
+
+
+@pytest.fixture()
+def client_under_path(_server_deps):
+    with (
+        patch("testgen.settings.MCP_ENABLED", False),
+        patch("testgen.settings.IS_DEBUG", False),
+        patch("testgen.settings.BASE_URL", "https://host/tg-api"),
+        patch("testgen.settings.API_BASE_PATH", "tg-api"),
+    ):
+        from testgen.server import create_app
+
+        yield TestClient(create_app())
+
+
+def test_routes_served_under_the_base_url_path(client_under_path):
+    assert client_under_path.get("/tg-api/api/v1/health").status_code == 200
+    assert client_under_path.get("/api/v1/health").status_code == 200
+    assert client_under_path.get("/tg-api/api/openapi.json").json()["servers"] == [{"url": "/tg-api"}]
+
+
+def test_metadata_published_at_the_path_inserted_well_known_uri(client_under_path):
+    resp = client_under_path.get("/.well-known/oauth-authorization-server/tg-api")
+
+    assert resp.status_code == 200
+    assert resp.json()["issuer"] == "https://host/tg-api"
+    assert resp.json()["authorization_endpoint"] == "https://host/tg-api/oauth/authorize"
+
+
+def test_mcp_under_the_base_url_path_points_clients_at_its_resource_metadata(_server_deps):
+    with (
+        patch("testgen.settings.MCP_ENABLED", True),
+        patch("testgen.settings.IS_DEBUG", False),
+        patch("testgen.settings.BASE_URL", "https://host/tg-api"),
+        patch("testgen.settings.API_BASE_PATH", "tg-api"),
+    ):
+        from testgen.server import create_app
+
+        with TestClient(create_app(), base_url="https://host") as client:
+            unauthorized = client.post("/tg-api/mcp", json={})
+            metadata = client.get("/.well-known/oauth-protected-resource/tg-api/mcp")
+
+    assert unauthorized.status_code == 401
+    assert (
+        'resource_metadata="https://host/.well-known/oauth-protected-resource/tg-api/mcp"'
+        in unauthorized.headers["www-authenticate"]
+    )
+    assert metadata.json()["resource"] == "https://host/tg-api/mcp"

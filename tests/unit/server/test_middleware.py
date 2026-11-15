@@ -7,7 +7,9 @@
 import asyncio
 import json
 
-from testgen.server.middleware import BodySizeLimitMiddleware, SecurityHeadersMiddleware
+import pytest
+
+from testgen.server.middleware import BasePathMiddleware, BodySizeLimitMiddleware, SecurityHeadersMiddleware
 
 
 def _http_scope(method: str = "POST", headers: list[tuple[bytes, bytes]] | None = None) -> dict:
@@ -318,3 +320,26 @@ def test_security_headers_non_http_scope_passes_through():
     asyncio.run(mw({"type": "lifespan"}, receive, send))
 
     assert inner_called
+
+
+# -------------------------- BasePathMiddleware --------------------------
+
+
+def _root_path_seen(path: str) -> str:
+    seen = {}
+
+    async def inner(scope, receive, send):
+        seen["root_path"] = scope.get("root_path", "")
+
+    asyncio.run(BasePathMiddleware(inner, base_path="/tg-api/")({"type": "http", "path": path}, None, None))
+    return seen["root_path"]
+
+
+@pytest.mark.parametrize("path", ["/tg-api", "/tg-api/", "/tg-api/mcp", "/tg-api/api/v1/health"])
+def test_base_path_sets_root_path_under_the_path(path):
+    assert _root_path_seen(path) == "/tg-api"
+
+
+@pytest.mark.parametrize("path", ["/", "/mcp", "/tg-apix/mcp", "/.well-known/oauth-protected-resource/tg-api/mcp"])
+def test_base_path_passes_other_paths_through(path):
+    assert _root_path_seen(path) == ""

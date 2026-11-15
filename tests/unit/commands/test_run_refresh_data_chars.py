@@ -10,7 +10,12 @@ from uuid import UUID
 
 import pytest
 
-from testgen.commands.run_refresh_data_chars import run_data_chars_refresh, write_data_chars
+from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
+from testgen.commands.run_refresh_data_chars import (
+    read_target_columns,
+    run_data_chars_refresh,
+    write_data_chars,
+)
 from testgen.common.database.column_chars import ObjectType
 from testgen.common.flavors import SqlFlavorCode
 from testgen.common.read_file import read_template_sql_file
@@ -218,8 +223,9 @@ def test_a_catalog_refresh_records_no_file_counts(mock_sql, mock_threaded, mock_
 @patch(f"{MODULE}.RefreshDataCharsSQL")
 def test_metadata_via_api_flavors_scan_the_table_group_s_schema(mock_sql_cls, _mock_params):
     """Flavors with no information_schema take the schema as an argument rather than through a
-    template, so they read it off the table group."""
+    template, so they read the one the generator resolved."""
     sql_generator = mock_sql_cls.return_value
+    sql_generator.schema_name = "onboard_2026_09_10"
     sql_generator.flavor_service.metadata_via_api = True
     sql_generator.flavor_service.get_schema_columns.return_value = []
     sql_generator.filter_schema_columns.return_value = []
@@ -285,7 +291,7 @@ def test_a_failed_schema_read_fails_the_refresh(mock_sql):
     job = MagicMock()
     job.fetch_threaded.return_value = ([], {0: "permission denied for schema demo"})
 
-    with pytest.raises(RuntimeError, match="Error refreshing columns for data catalog. permission denied"):
+    with pytest.raises(RuntimeError, match="Error refreshing columns for data catalog. Error reading columns from .* permission denied"):
         run_data_chars_refresh(job, _connection(), MagicMock(), datetime.now(UTC))
 
 
@@ -297,3 +303,74 @@ def test_a_stop_during_the_schema_read_is_not_a_refresh_error(mock_sql):
 
     with pytest.raises(JobStopped):
         run_data_chars_refresh(job, _connection(), MagicMock(), datetime.now(UTC))
+
+
+def _pg_connection() -> MagicMock:
+    """A connection the query builder can resolve a flavor service from."""
+    return MagicMock(
+        sql_flavor="postgresql", sql_flavor_code=SqlFlavorCode.POSTGRESQL, effective_max_threads=1
+    )
+
+
+def _table_group(**overrides) -> MagicMock:
+    defaults = {
+        "id": UUID("11111111-1111-1111-1111-111111111111"),
+        "table_group_schema": "staging_a",
+        "profiling_table_set": None,
+        "profiling_include_mask": None,
+        "profiling_exclude_mask": None,
+    }
+    defaults.update(overrides)
+    return MagicMock(**defaults)
+
+
+def test_the_refresh_sql_reads_the_table_group_s_schema_by_default():
+    generator = RefreshDataCharsSQL(_pg_connection(), _table_group())
+
+    assert generator.schema_name == "staging_a"
+
+
+def test_the_refresh_sql_reads_an_overridden_schema():
+    generator = RefreshDataCharsSQL(
+        _pg_connection(), _table_group(), schema_name="build123"
+    )
+
+    query, _ = generator.get_schema_ddf()
+
+    assert generator.schema_name == "build123"
+    assert "build123" in query
+    assert "staging_a" not in query
+
+
+def test_an_explicit_table_set_replaces_the_table_group_s_filters():
+    """A run reading renamed tables cannot be filtered by masks written against the originals."""
+    table_group = _table_group(profiling_include_mask="orders%", profiling_exclude_mask="tmp%")
+    generator = RefreshDataCharsSQL(
+        _pg_connection(), table_group, table_names=["build_orders"]
+    )
+
+    query, _ = generator.get_schema_ddf()
+
+    assert "build_orders" in query
+    assert "orders%" not in query
+    assert "tmp%" not in query
+
+
+def test_an_empty_table_set_matches_nothing_rather_than_everything():
+    generator = RefreshDataCharsSQL(_pg_connection(), _table_group(), table_names=[])
+
+    query, _ = generator.get_schema_ddf()
+
+    assert "1=0" in query
+
+
+def test_a_column_the_reader_cannot_take_is_reported_as_a_read_failure():
+    """The caller catches only RuntimeError, so a row the flavor describes with a field
+    ``ColumnChars`` has no place for has to be wrapped here or it escapes the job bare."""
+    job = MagicMock()
+    job.fetch_threaded.return_value = ([{"column_name": "amount", "a_field_from_the_future": 1}], {})
+    sql_generator = MagicMock(schema_name="staging")
+    sql_generator.flavor_service.metadata_via_api = False
+
+    with pytest.raises(RuntimeError, match="Error reading columns from staging"):
+        read_target_columns(job, MagicMock(), sql_generator)

@@ -208,7 +208,6 @@ const ContractMetadata = (/** @type Properties */ props) => {
 
     const cardList = () => div(
         { class: 'flex-column fx-gap-4' },
-        sectionCard('overview', OverviewCard),
         EditableCard({
             title: 'Schema',
             testId: 'contract-schema',
@@ -226,6 +225,7 @@ const ContractMetadata = (/** @type Properties */ props) => {
             onCancel: () => dismiss('tables_result'),
             onSave: () => props.onSaveTables(selected.rawVal),
         }),
+        sectionCard('overview', OverviewCard),
         sectionCard('team', TeamCard),
         sectionCard('roles', RolesCard),
         sectionCard('support', SupportCard),

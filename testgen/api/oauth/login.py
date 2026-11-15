@@ -155,7 +155,7 @@ def render_login_page(
         <div class="card-title">DataKitchen DataOps TestGen</div>
         <p class="subtitle">{authorize_label}</p>
         {error_html}
-        <form method="POST" action="/oauth/authorize">
+        <form method="POST" action="authorize">
             <input type="hidden" name="client_id" value="{escape(client_id)}">
             <input type="hidden" name="redirect_uri" value="{escape(redirect_uri)}">
             <input type="hidden" name="response_type" value="{escape(response_type)}">

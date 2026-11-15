@@ -60,6 +60,41 @@ def save_from_dialog(definition: TestDefinition, suite: TestSuite | TestSuiteMin
     return None
 
 
+def copy_move_refusal(
+    suite: TestSuite | TestSuiteMinimal, test_definition_ids: list[str], target_table_name: str | None
+) -> str | None:
+    """The message refusing a copy or move of the named tests into ``suite``, or None when it may proceed.
+
+    On a contract, every copied or moved test must land on a table the contract declares: ``target_table_name``
+    when given, else the test's own table.
+    """
+    tables = writable_tables(suite)
+    if tables is None:
+        return None
+    if target_table_name:
+        landing = [target_table_name]
+    else:
+        landing = get_current_session().scalars(
+            select(TestDefinition.table_name).where(TestDefinition.id.in_(test_definition_ids)).distinct()
+        ).all()
+    undeclared = sorted({name or "" for name in landing if name not in tables})
+    if not undeclared:
+        return None
+    if "" in undeclared:
+        return "A test on a contract must name one of the tables the contract declares."
+    if len(undeclared) == 1:
+        named = f"the table {undeclared[0]}"
+    elif len(undeclared) == 2:
+        named = f"the tables {undeclared[0]} and {undeclared[1]}"
+    else:
+        named = f"the tables {', '.join(undeclared[:-1])}, and {undeclared[-1]}"
+    pronoun = "them" if len(undeclared) > 1 else "it"
+    return (
+        f"The contract does not declare {named}. Add {pronoun} under Schema on the Contract Metadata tab, "
+        "or choose a declared table."
+    )
+
+
 def _describe_errors(errors: dict[str, str], test_type: TestType) -> str:
     labels = {column: prompt for column, prompt, _ in test_type.param_fields}
     labels["column_name"] = test_type.column_name_prompt or "Column"
@@ -79,6 +114,17 @@ def dialog_table_columns(
         return table_columns
     offered = {*tables, current_table}
     return [column for column in table_columns if column["table_name"] in offered]
+
+
+def dialog_catalog(
+    suite: TestSuite | TestSuiteMinimal, table_columns: list[dict], current_table: str | None = None
+) -> dict:
+    """The catalog fields of the Add Test and Edit Test dialog payloads: ``table_columns``, the columns the
+    dialogs offer (see ``dialog_table_columns``), and ``catalog_tables``, every table in the data catalog."""
+    return {
+        "table_columns": dialog_table_columns(suite, table_columns, current_table),
+        "catalog_tables": sorted({column["table_name"] for column in table_columns}),
+    }
 
 
 def _stored_test_type(test_definition_id: object) -> str | None:

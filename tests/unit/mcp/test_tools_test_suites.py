@@ -1,4 +1,4 @@
-"""Tests for the MCP test-suite write tools — create / update / delete for regular (non-monitor) suites."""
+"""Tests for the MCP test-suite write tools — create / update / delete for standard (non-monitor) suites."""
 
 import asyncio
 import re
@@ -58,7 +58,7 @@ def _mock_test_suite(**overrides) -> MagicMock:
     suite.component_key = overrides.get("component_key", None)
     suite.component_type = overrides.get("component_type", None)
     suite.component_name = overrides.get("component_name", None)
-    suite.suite_type = overrides.get("suite_type", SuiteType.REGULAR)
+    suite.suite_type = overrides.get("suite_type", SuiteType.STANDARD)
     suite.generation_sets = overrides.get("generation_sets", None)
     return suite
 
@@ -201,7 +201,7 @@ def test_create_test_suite_with_severity(mock_resolve, mock_suite_cls, db_sessio
 
     _, kwargs = mock_suite_cls.call_args
     assert kwargs["severity"] == "Fail"
-    assert kwargs["suite_type"] == SuiteType.REGULAR
+    assert kwargs["suite_type"] == SuiteType.STANDARD
     assert "Fail" in out
 
 
@@ -238,7 +238,7 @@ def test_create_test_suite_defaults_to_regular(mock_resolve, mock_suite_cls, db_
         create_test_suite(table_group_id=str(tg.id), test_suite_name="Anything")
 
     _, kwargs = mock_suite_cls.call_args
-    assert kwargs["suite_type"] == SuiteType.REGULAR
+    assert kwargs["suite_type"] == SuiteType.STANDARD
 
 
 @patch(f"{CREATION}.initialize_contract")
@@ -502,7 +502,7 @@ def test_create_test_suite_invalid_suite_type(mock_resolve, db_session_mock):
         )
     msg = str(exc.value)
     assert "suite_type" in msg
-    assert "Regular" in msg and "Contract" in msg
+    assert "Standard" in msg and "Contract" in msg
     assert "Bogus" in msg
 
 
@@ -520,7 +520,7 @@ def test_create_test_suite_rejects_monitor_suite_type(mock_resolve, db_session_m
             suite_type="Monitor",
         )
     msg = str(exc.value)
-    assert "must be one of Regular, Contract" in msg
+    assert "must be one of Standard, Contract" in msg
 
 
 @patch(f"{MODULE}.resolve_table_group")
@@ -1107,7 +1107,7 @@ def test_create_test_suite_refuses_a_name_another_suite_in_the_project_holds(
         create_test_suite(table_group_id=str(uuid4()), test_suite_name="Sales Tests")
 
     assert str(exc.value) == (
-        "A test suite or contract named Sales Tests already exists in this project. No changes saved."
+        "A test suite named Sales Tests already exists in this project. No changes saved."
     )
     mock_record.assert_not_called()
 
@@ -1139,7 +1139,7 @@ def test_update_test_suite_refuses_a_name_another_suite_in_the_project_holds(moc
     with _patch_perms(), pytest.raises(MCPUserError) as exc:
         update_test_suite(test_suite_id=str(suite.id), test_suite_name="Taken")
 
-    assert str(exc.value) == "A test suite or contract named Taken already exists in this project. No changes saved."
+    assert str(exc.value) == "A test suite named Taken already exists in this project. No changes saved."
 
 
 @patch(f"{MODULE}.resolve_test_suite")

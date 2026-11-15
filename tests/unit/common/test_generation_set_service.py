@@ -11,6 +11,7 @@ from testgen.common.generation_set_service import (
     get_generation_set_test_types,
     get_overriding_test_types,
     list_generation_sets,
+    order_generation_sets,
     resolve_generation_sets,
 )
 
@@ -178,13 +179,13 @@ def test_resolve_rejects_explicitly_empty_request(_sets):
 
 @patch(f"{MODULE}.list_generation_sets", return_value=["Plugin_Set", "Standard"])
 def test_resolve_rejects_monitor_with_its_own_message(_sets):
-    with pytest.raises(ValueError, match="'Monitor' cannot be used for a regular test suite"):
+    with pytest.raises(ValueError, match="'Monitor' is reserved for monitor suites"):
         resolve_generation_sets(_suite(), [MONITOR_GENERATION_SET])
 
 
 @patch(f"{MODULE}.list_generation_sets", return_value=["Plugin_Set", "Standard"])
 def test_resolve_rejects_monitor_even_alongside_valid_sets(_sets):
-    with pytest.raises(ValueError, match="'Monitor' cannot be used for a regular test suite"):
+    with pytest.raises(ValueError, match="'Monitor' is reserved for monitor suites"):
         resolve_generation_sets(_suite(), ["Standard", MONITOR_GENERATION_SET])
 
 
@@ -213,22 +214,41 @@ def test_a_contract_suite_resolves_to_the_contract_set_before_the_set_exists():
         assert resolve_generation_sets(suite, None) == [CONTRACT_GENERATION_SET]
 
 
-def test_a_contract_suite_refuses_another_set():
+def test_a_contract_suite_accepts_any_set_and_offers_contract():
     suite = MagicMock(suite_type=SuiteType.CONTRACT, generation_sets=["Contract"])
-    with patch("testgen.common.generation_set_service.list_generation_sets", return_value=["Standard"]):
-        with pytest.raises(ValueError, match="Contract"):
-            resolve_generation_sets(suite, ["Standard"])
+    with patch(
+        "testgen.common.generation_set_service.list_generation_sets", return_value=["Contract", "Standard"]
+    ) as sets:
+        assert resolve_generation_sets(suite, ["Standard", "Contract"]) == ["Standard", "Contract"]
+
+    sets.assert_called_once_with(include_contract=True)
 
 
-def test_a_regular_suite_refuses_the_contract_set():
-    suite = MagicMock(suite_type=SuiteType.REGULAR, generation_sets=["Standard"])
+@pytest.mark.parametrize(
+    ("stored", "expected"), [(None, ["Contract"]), (["Standard"], ["Standard"])], ids=["default", "stored"]
+)
+def test_a_contract_suite_falls_back_to_its_stored_sets_then_contract(stored, expected):
+    suite = MagicMock(suite_type=SuiteType.CONTRACT, generation_sets=stored)
+    with patch("testgen.common.generation_set_service.list_generation_sets", return_value=["Contract", "Standard"]):
+        assert resolve_generation_sets(suite, None) == expected
+
+
+def test_a_contract_suite_refuses_monitor():
+    suite = MagicMock(suite_type=SuiteType.CONTRACT, generation_sets=["Contract"])
+    with patch("testgen.common.generation_set_service.list_generation_sets", return_value=["Contract", "Standard"]):
+        with pytest.raises(ValueError, match="reserved for monitor suites"):
+            resolve_generation_sets(suite, ["Contract", MONITOR_GENERATION_SET])
+
+
+def test_a_standard_suite_refuses_the_contract_set():
+    suite = MagicMock(suite_type=SuiteType.STANDARD, generation_sets=["Standard"])
     with patch("testgen.common.generation_set_service.list_generation_sets", return_value=["Standard"]):
         with pytest.raises(ValueError, match="Contract"):
             resolve_generation_sets(suite, ["Contract"])
 
 
-def test_a_regular_suite_refusing_the_contract_set_lists_the_available_sets():
-    suite = MagicMock(suite_type=SuiteType.REGULAR, generation_sets=["Standard"])
+def test_a_standard_suite_refusing_the_contract_set_lists_the_available_sets():
+    suite = MagicMock(suite_type=SuiteType.STANDARD, generation_sets=["Standard"])
     with patch(
         "testgen.common.generation_set_service.list_generation_sets", return_value=["Standard", "Table Comparison"]
     ):
@@ -242,11 +262,34 @@ def test_the_contract_set_is_not_listed():
         assert list_generation_sets() == ["Standard"]
 
 
-def test_get_generation_set_members_excludes_contract_and_monitor_in_the_query():
+@pytest.mark.parametrize(
+    ("include_contract", "excluded"),
+    [(False, [MONITOR_GENERATION_SET, CONTRACT_GENERATION_SET]), (True, [MONITOR_GENERATION_SET])],
+    ids=["selectable", "with-contract"],
+)
+def test_get_generation_set_members_excludes_reserved_sets_in_the_query(include_contract, excluded):
     with patch("testgen.common.generation_set_service.get_current_session") as session:
         session.return_value.execute.return_value.all.return_value = []
-        get_generation_set_members()
+        get_generation_set_members(include_contract=include_contract)
 
     query, params = session.return_value.execute.call_args[0]
-    assert "generation_set NOT IN" in str(query)
-    assert params == {"monitor": MONITOR_GENERATION_SET, "contract": CONTRACT_GENERATION_SET}
+    assert "NOT (generation_set = ANY(:excluded))" in str(query)
+    assert params == {"excluded": excluded}
+
+
+@pytest.mark.parametrize(
+    ("names", "expected"),
+    [
+        (
+            ["Commercial Pharma", "Standard", "Table Comparison"],
+            ["Standard", "Table Comparison", "Commercial Pharma"],
+        ),
+        (
+            ["Zeta", "Commercial Pharma", "Contract", "Standard", "Table Comparison"],
+            ["Contract", "Standard", "Table Comparison", "Commercial Pharma", "Zeta"],
+        ),
+    ],
+    ids=["standard-suite", "contract"],
+)
+def test_order_generation_sets_puts_core_sets_first_then_the_rest_alphabetically(names, expected):
+    assert order_generation_sets(names) == expected

@@ -778,7 +778,7 @@ def _make_create_suite(name="orders_v1", project_code="demo"):
     suite.id = uuid4()
     suite.test_suite = name
     suite.project_code = project_code
-    suite.suite_type = SuiteType.REGULAR
+    suite.suite_type = SuiteType.STANDARD
     return suite
 
 

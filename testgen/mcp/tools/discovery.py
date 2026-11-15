@@ -6,7 +6,11 @@ from sqlalchemy import func
 from testgen.common import contract_service
 from testgen.common.contract_service import VerificationUnavailable
 from testgen.common.enums import SuiteType
-from testgen.common.generation_set_service import list_generation_sets
+from testgen.common.generation_set_service import (
+    CONTRACT_GENERATION_SET,
+    DEFAULT_GENERATION_SET,
+    available_generation_sets,
+)
 from testgen.common.models import with_database_session
 from testgen.common.models.data_table import CatalogLevel, DataTable, parse_catalog_tags, table_cde
 from testgen.common.models.project import Project
@@ -135,7 +139,7 @@ def list_test_suites(
     project_code: Annotated[str, Field(description="The project code to list test suites for.")],
     suite_type: Annotated[
         str | None,
-        Field(description="Optional suite type to narrow to: `Regular` or `Contract`. Omit to list both."),
+        Field(description="Optional suite type to narrow to: `Standard` or `Contract`. Omit to list both."),
     ] = None,
 ) -> str:
     """List a project's test suites, contracts included, with latest run statistics."""
@@ -237,9 +241,9 @@ def get_test_suite(
     doc.field("Default severity", suite.severity or "Inherit from test type")
     doc.field("Export to observability", suite.export_to_observability)
     doc.field("Automatically deactivate tests that fail validation", suite.deactivate_invalid_tests)
-    doc.field("Generation sets", ", ".join(suite.generation_sets or []) or "Not set, defaults to Standard")
-    if suite.suite_type != SuiteType.CONTRACT:
-        doc.field("Available generation sets", ", ".join(list_generation_sets()))
+    default_set = CONTRACT_GENERATION_SET if suite.suite_type == SuiteType.CONTRACT else DEFAULT_GENERATION_SET
+    doc.field("Generation sets", ", ".join(suite.generation_sets or []) or f"Not set, defaults to {default_set}")
+    doc.field("Available generation sets", ", ".join(available_generation_sets(suite)))
 
     doc.field("Total tests", stats.total)
     doc.field("Locked tests", stats.locked)

@@ -98,7 +98,7 @@ def get_test_suite_summaries(
     project_code: str,
     table_group_id: str | UUID | None = None,
     test_suite_name: str | None = None,
-    suite_types: tuple[SuiteType, ...] = (SuiteType.REGULAR,),
+    suite_types: tuple[SuiteType, ...] = (SuiteType.STANDARD,),
 ) -> Iterable[TestSuiteSummary]:
     return _detached(TestSuite.select_summary(project_code, table_group_id, test_suite_name, suite_types=suite_types))
 

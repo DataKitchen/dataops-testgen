@@ -6,6 +6,7 @@ from testgen.common import create_database, execute_db_queries
 from testgen.common.credentials import get_tg_db, get_tg_schema
 from testgen.common.database.database_service import get_queries_for_command
 from testgen.common.encrypt import EncryptText, encrypt_ui_password
+from testgen.common.flavors import clamp_max_threads, default_max_threads
 from testgen.common.models import with_database_session
 from testgen.common.models.user import initial_feedback_popup_seed
 from testgen.common.read_file import get_template_files
@@ -67,7 +68,11 @@ def _get_params_mapping() -> dict:
         "TABLE_GROUPS_NAME": settings.DEFAULT_TABLE_GROUPS_NAME,
         "TEST_SUITE": settings.DEFAULT_TEST_SUITE_KEY,
         "TEST_SUITE_DESCRIPTION": settings.DEFAULT_TEST_SUITE_DESCRIPTION,
-        "MAX_THREADS": settings.PROJECT_CONNECTION_MAX_THREADS,
+        "MAX_THREADS": (
+            clamp_max_threads(settings.PROJECT_CONNECTION_MAX_THREADS)
+            if settings.PROJECT_CONNECTION_MAX_THREADS is not None
+            else default_max_threads(settings.PROJECT_SQL_FLAVOR)
+        ),
         "MAX_QUERY_CHARS": settings.PROJECT_CONNECTION_MAX_QUERY_CHAR,
         "OBSERVABILITY_API_URL": settings.OBSERVABILITY_API_URL,
         "OBSERVABILITY_API_KEY": settings.OBSERVABILITY_API_KEY,

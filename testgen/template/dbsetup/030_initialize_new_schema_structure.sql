@@ -75,7 +75,7 @@ CREATE TABLE connections (
    project_db             VARCHAR(100),
    connection_name        VARCHAR(40),
    project_pw_encrypted   BYTEA,
-   max_threads            INTEGER DEFAULT 4,
+   max_threads            INTEGER NOT NULL,
    max_query_chars        INTEGER,
    url VARCHAR(200) default '',
    connect_by_url BOOLEAN default FALSE,
@@ -173,7 +173,7 @@ CREATE TABLE test_suites (
    last_complete_test_run_id UUID,
    dq_score_exclude        BOOLEAN DEFAULT FALSE,
    deactivate_invalid_tests BOOLEAN NOT NULL DEFAULT FALSE,
-   suite_type              VARCHAR(20) NOT NULL DEFAULT 'regular',
+   suite_type              VARCHAR(20) NOT NULL DEFAULT 'standard',
    monitor_lookback        INTEGER DEFAULT NULL,
    monitor_regenerate_freshness BOOLEAN DEFAULT TRUE,
    predict_sensitivity     VARCHAR(6),
@@ -934,7 +934,7 @@ CREATE INDEX ix_ts_con
 
 CREATE UNIQUE INDEX test_suites_name_unique
    ON test_suites (project_code, test_suite)
-   WHERE suite_type IN ('regular', 'contract');
+   WHERE suite_type IN ('standard', 'contract');
 
 CREATE UNIQUE INDEX idx_ts_last_run
   ON test_suites (last_complete_test_run_id)

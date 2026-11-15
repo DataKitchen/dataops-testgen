@@ -21,11 +21,14 @@ from testgen.common.models.suite_version import (
 )
 from testgen.common.models.test_definition import ManagedTestDefinitionError, TestDefinition, TestDefinitionNote
 from testgen.mcp import confirmation
-from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
+from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
+from testgen.mcp.permissions import ProjectPermissions
 from testgen.mcp.tools.test_definitions import (
     _DELETED_LISTING_LIMIT,
     bulk_update_tests,
     create_test,
+    create_test_note,
+    delete_test_note,
     delete_tests,
     export_tests,
     get_test,
@@ -33,6 +36,7 @@ from testgen.mcp.tools.test_definitions import (
     list_tests,
     resolved_version,
     update_test,
+    update_test_note,
 )
 from tests.unit.sql_assertions import conjuncts, emitted_statements, equality_conjunct, scopes_to_a_version
 
@@ -328,7 +332,7 @@ def test_get_test_shows_the_severity_execution_applies(
     mock_td.get_for_project.return_value = td
     mock_notes.get_notes.return_value = []
     mock_tr.select_history.return_value = []
-    mock_suite.get.return_value = MagicMock(suite_type=SuiteType.REGULAR, severity=suite_severity)
+    mock_suite.get.return_value = MagicMock(suite_type=SuiteType.STANDARD, severity=suite_severity)
 
     from testgen.mcp.tools.test_definitions import get_test
 
@@ -341,7 +345,7 @@ def test_get_test_shows_the_severity_execution_applies(
 def test_list_tests_shows_the_suite_default_severity_for_a_test_without_one(
     mock_td, mock_notes, mock_resolve, db_session_mock,
 ):
-    mock_resolve.return_value = MagicMock(id=uuid4(), suite_type=SuiteType.REGULAR, severity="Log")
+    mock_resolve.return_value = MagicMock(id=uuid4(), suite_type=SuiteType.STANDARD, severity="Log")
     item = MagicMock(
         display_name="Row Count", table_name="orders", column_name=None, test_active=True, severity=None,
         default_severity="Fail", lock_refresh=False, flagged=False, last_auto_gen_date=None, last_manual_update=None,
@@ -922,6 +926,28 @@ def test_delete_test_note_invalid_uuid(db_session_mock):
 
     with pytest.raises(MCPUserError, match="not a valid UUID"):
         delete_test_note("garbage")
+
+
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        (create_test_note, (str(uuid4()), "checked")),
+        (update_test_note, (str(uuid4()), "checked")),
+        (delete_test_note, (str(uuid4()),)),
+    ],
+)
+def test_writing_a_note_takes_the_disposition_permission(tool, args, db_session_mock):
+    """role_d holds edit but not disposition."""
+    with (
+        patch(
+            "testgen.mcp.permissions._compute_project_permissions",
+            return_value=ProjectPermissions(memberships={"demo": "role_d"}, permission="disposition", username="u"),
+        ) as compute_permissions,
+        pytest.raises(MCPPermissionDenied),
+    ):
+        tool(*args)
+
+    assert compute_permissions.call_args.args[1] == "disposition"
 
 
 # -- list_test_types ----------------------------------------------------------
@@ -1698,7 +1724,7 @@ def test_validate_custom_test_missing_connection(mock_resolve_suite, mock_conn, 
 
 @pytest.fixture
 def routes_in_place():
-    """Route every named row to itself, as for a regular suite, and read its suite as one."""
+    """Route every named row to itself, as for a standard suite, and read its suite as one."""
     with (
         patch.object(
             TestDefinition,
@@ -1897,7 +1923,8 @@ def test_import_tests_preview(mock_resolve_suite, mock_import, db_session_mock):
 
 _NOT_IN_CATALOG_HINT = (
     "The data catalog lists the tables and columns TestGen found in the table group's schema. Check the table "
-    "and column names in the import file, or profile the table group to refresh the catalog."
+    "and column names in the import file, or profile the table group to refresh the catalog. To import tests for "
+    "tables or columns that do not exist yet, retry with `on_not_in_catalog='import'`."
 )
 
 
@@ -1985,6 +2012,45 @@ def test_import_tests_without_missing_tables_has_no_catalog_hint(mock_resolve_su
 
     assert "Existing test is locked" in result
     assert "data catalog" not in result
+
+
+@pytest.mark.parametrize(
+    ("argument", "policy"),
+    [({}, "skip"), ({"on_not_in_catalog": "import"}, "import")],
+)
+@patch("testgen.mcp.tools.test_definitions.import_definitions")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_import_tests_passes_the_not_in_catalog_policy(
+    mock_resolve_suite, mock_import, db_session_mock, argument, policy,
+):
+    from testgen.common.test_definition_export_import_service import (
+        ImportAction,
+        ImportItem,
+        ImportItemTD,
+        ImportReason,
+    )
+
+    mock_resolve_suite.return_value = _make_suite()
+    mock_import.return_value = _make_import_response(
+        created=1,
+        items=[ImportItem(action=ImportAction.create, reason=ImportReason.invalid_table, tds=[ImportItemTD(idx=0)])],
+    )
+
+    from testgen.mcp.tools.test_definitions import import_tests
+
+    result = import_tests(test_suite_id=str(uuid4()), payload='{"definitions": []}', **argument)
+
+    assert mock_import.call_args.args[1].on_not_in_catalog == policy
+    assert "| Table not in the data catalog | 0 |" in result
+    assert "on_not_in_catalog" not in result
+
+
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_import_tests_invalid_not_in_catalog_policy(mock_resolve_suite, db_session_mock):
+    from testgen.mcp.tools.test_definitions import import_tests
+
+    with pytest.raises(MCPUserError, match="on_not_in_catalog"):
+        import_tests(test_suite_id=str(uuid4()), payload='{"definitions": []}', on_not_in_catalog="maybe")
 
 
 @patch("testgen.mcp.tools.test_definitions.import_definitions")
@@ -2203,7 +2269,7 @@ def test_create_test_on_a_contract_that_declares_no_tables_says_so(
 @patch("testgen.mcp.tools.test_definitions.TestType")
 @patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
 def test_update_test_allows_existing_non_public_test_type(mock_resolve_td, mock_tt_model, db_session_mock):
-    """A Volume Trend test already in a regular suite stays editable, though new ones cannot be created."""
+    """A Volume Trend test already in a standard suite stays editable, though new ones cannot be created."""
     from testgen.common.enums import MonitorType
     from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES
 
@@ -3052,7 +3118,7 @@ def test_list_tests_with_a_version_reads_that_version(mock_resolve, mock_list, m
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
 def test_list_tests_on_a_regular_suite_names_no_version(mock_resolve, mock_list, mock_notes, db_session_mock):
     suite = _contract_suite()
-    suite.suite_type = SuiteType.REGULAR
+    suite.suite_type = SuiteType.STANDARD
     mock_resolve.return_value = suite
     mock_list.return_value = ([_summary_row()], 1)
     mock_notes.get_notes_count_by_ids.return_value = {}
@@ -3064,7 +3130,7 @@ def test_list_tests_on_a_regular_suite_names_no_version(mock_resolve, mock_list,
 @patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
 def test_list_tests_with_a_version_on_a_regular_suite_is_refused(mock_resolve, db_session_mock):
     suite = _contract_suite()
-    suite.suite_type = SuiteType.REGULAR
+    suite.suite_type = SuiteType.STANDARD
     mock_resolve.return_value = suite
     with pytest.raises(MCPUserError, match="is not a contract"):
         list_tests(str(suite.id), version=1)
@@ -3253,7 +3319,7 @@ def test_delete_of_active_tests_the_draft_cannot_match_names_only_those(db_sessi
 def test_update_on_a_regular_suite_names_no_version(db_session_mock):
     td = _orm_td(id=uuid4(), version_id=uuid4())
     suite = _contract_suite()
-    suite.suite_type = SuiteType.REGULAR
+    suite.suite_type = SuiteType.STANDARD
     with _update_context(td, suite=suite):
         out = update_test(str(td.id), fields={"severity": "Warning"})
     assert "Version" not in out
@@ -3601,7 +3667,7 @@ def test_import_whose_target_vanished_is_a_user_error(db_session_mock):
 
 def test_import_on_a_regular_suite_names_no_version(db_session_mock):
     suite = _contract_suite()
-    suite.suite_type = SuiteType.REGULAR
+    suite.suite_type = SuiteType.STANDARD
     with (
         patch("testgen.mcp.tools.test_definitions.resolve_test_suite", return_value=suite),
         patch("testgen.mcp.tools.test_definitions.import_definitions", return_value=_make_import_response(created=2)),
@@ -3642,7 +3708,7 @@ def test_resolved_version_is_the_contract_services_default_version():
 
 
 def test_resolved_version_is_none_for_a_regular_suite():
-    assert resolved_version(MagicMock(suite_type=SuiteType.REGULAR)) is None
+    assert resolved_version(MagicMock(suite_type=SuiteType.STANDARD)) is None
 
 
 def test_resolved_version_reports_a_contract_with_no_version_to_read():

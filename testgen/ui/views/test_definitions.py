@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 from sqlalchemy import and_, asc, case, desc, func, or_, tuple_
 
-from testgen.common import date_service
+from testgen.common import date_service, query_variables
 from testgen.common.audit.actions import AuditAction
 from testgen.common.audit.recorder import stored_values
 from testgen.common.audit.test_definitions import (
@@ -29,7 +29,7 @@ from testgen.common.database.table_group_service import (
     apply_test_definition_flavor_rules,
     table_group_qualifies_table_refs,
 )
-from testgen.common.enums import MANAGED_TEST_TYPES, JobSource, SuiteType
+from testgen.common.enums import MANAGED_TEST_TYPES, TEST_SUITE_TYPES, JobSource, SuiteType
 from testgen.common.flavors import TableGroupSchemaLabel, table_group_schema_label
 from testgen.common.generation_set_service import CONTRACT_GENERATION_SET, MONITOR_GENERATION_SET
 from testgen.common.models import database_session, get_current_session, with_database_session
@@ -63,6 +63,7 @@ from testgen.common.test_definition_export_import_service import (
     OnAbsence,
     OnMatch,
     OnNew,
+    OnNotInCatalog,
     Origin,
     export_definitions,
     import_definitions,
@@ -92,7 +93,8 @@ from testgen.ui.services.query_cache import (
     select_test_definitions_where,
     select_test_suites_minimal_where,
 )
-from testgen.ui.services.test_definition_service import dialog_table_columns, save_from_dialog
+from testgen.ui.services.test_definition_service import copy_move_refusal, dialog_catalog, save_from_dialog
+from testgen.ui.services.test_note_service import toast_note_added_to_tests
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.contract_dialogs import contract_props, follow_editable_version
 from testgen.ui.views.test_runs import run_started_message
@@ -189,7 +191,7 @@ class TestDefinitionsPage(Page):
         tab: str | None = None,
         **_kwargs,
     ) -> None:
-        test_suite = get_test_suite(test_suite_id, TestSuite.suite_type.in_((SuiteType.REGULAR, SuiteType.CONTRACT)))
+        test_suite = get_test_suite(test_suite_id, TestSuite.suite_type.in_((SuiteType.STANDARD, SuiteType.CONTRACT)))
         if not test_suite:
             self.router.navigate_with_warning(
                 f"Test suite with ID '{test_suite_id}' does not exist. Redirecting to list of Test Suites ...",
@@ -294,7 +296,7 @@ class TestDefinitionsPage(Page):
             add_dialog = {
                 "open": True,
                 "test_types": test_types,
-                "table_columns": dialog_table_columns(test_suite, table_columns),
+                **dialog_catalog(test_suite, table_columns),
                 "table_groups_id": str(table_group.id),
                 "table_group_schema": table_group.table_group_schema,
                 "test_suite": test_suite_info,
@@ -309,7 +311,7 @@ class TestDefinitionsPage(Page):
                 "open": True,
                 "test_definition": selected_def,
                 "test_types": test_types,
-                "table_columns": dialog_table_columns(test_suite, table_columns, selected_def.get("table_name")),
+                **dialog_catalog(test_suite, table_columns, selected_def.get("table_name")),
                 "table_group_schema": table_group.table_group_schema,
                 "test_suite": test_suite_info,
                 "qualifies_table_refs_with_schema": qualifies_table_refs_with_schema,
@@ -347,7 +349,7 @@ class TestDefinitionsPage(Page):
             )
             editable_test_suites = select_test_suites_minimal_where(
                 TestSuite.table_groups_id.in_([str(tg.id) for tg in editable_table_groups]),
-                TestSuite.suite_type == SuiteType.REGULAR,
+                TestSuite.suite_type.in_(TEST_SUITE_TYPES),
             )
             tgs_by_project: dict[str, list] = {}
             for tg in editable_table_groups:
@@ -613,6 +615,9 @@ class TestDefinitionsPage(Page):
                 LOG.warning("Refusing copy to table group %s — user lacks edit permission", target_tg_id)
                 st.toast("You do not have edit permission for the target project.", icon=":material/error:")
                 return
+            if refusal := copy_move_refusal(TestSuite.get_minimal(target_ts_id), ids, target_table):
+                st.toast(refusal, icon=":material/error:")
+                return
             overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
             try:
                 overwritten = describe_tests(TestDefinition.writable_ids(overwrite_ids))
@@ -633,6 +638,7 @@ class TestDefinitionsPage(Page):
             record_tests_deleted(overwritten)
             record_tests(AuditAction.TEST_DEFINITION_CREATED, describe_tests(copied))
             st.cache_data.clear()
+            follow_contract_draft()
             get_test_suite_columns.clear()
             st.session_state.pop(TD_COPY_MOVE_DIALOG_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
@@ -650,6 +656,9 @@ class TestDefinitionsPage(Page):
             if not target_tg or not session.auth.user_has_permission("edit", target_tg.project_code):
                 LOG.warning("Refusing move to table group %s — user lacks edit permission", target_tg_id)
                 st.toast("You do not have edit permission for the target project.", icon=":material/error:")
+                return
+            if refusal := copy_move_refusal(TestSuite.get_minimal(target_ts_id), ids, target_table):
+                st.toast(refusal, icon=":material/error:")
                 return
             overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
             try:
@@ -763,6 +772,8 @@ class TestDefinitionsPage(Page):
 
         @with_database_session
         def on_note_added(payload: dict) -> None:
+            if not user_can_disposition:
+                return
             td_id = payload["test_definition_id"]
             current_user = session.auth.user.username if session.auth.user else "unknown"
             TestDefinitionNote.add_note(td_id, payload["text"], current_user)
@@ -770,13 +781,29 @@ class TestDefinitionsPage(Page):
             st.cache_data.clear()
 
         @with_database_session
+        def on_note_added_to_selected(payload: dict) -> None:
+            if not user_can_disposition:
+                return
+            ids = payload.get("ids") or []
+            if ids == "all":
+                ids = get_test_definition_ids(
+                    test_suite, table_name, column_name, test_type, flagged_filter=flagged, version_id=read_version_id
+                )
+            current_user = session.auth.user.username if session.auth.user else "unknown"
+            toast_note_added_to_tests(ids, payload.get("text") or "", current_user)
+
+        @with_database_session
         def on_note_updated(payload: dict) -> None:
+            if not user_can_disposition:
+                return
             TestDefinitionNote.update_note(payload["id"], payload["text"])
             td_id = payload["test_definition_id"]
             st.session_state[TD_NOTES_DIALOG_KEY] = _load_notes_dialog_data(td_id, df)
 
         @with_database_session
         def on_note_deleted(payload: dict) -> None:
+            if not user_can_disposition:
+                return
             TestDefinitionNote.delete_note(payload["id"])
             td_id = payload["test_definition_id"]
             st.session_state[TD_NOTES_DIALOG_KEY] = _load_notes_dialog_data(td_id, df)
@@ -987,7 +1014,7 @@ class TestDefinitionsPage(Page):
                     "can_edit": grid_can_edit,
                     "can_disposition": grid_can_disposition,
                     "can_run": user_can_edit,
-                    "can_note": user_can_edit,
+                    "can_note": user_can_disposition,
                 },
                 "run_tests_disabled_reason": contract.run_disabled_reason if contract else None,
                 "validate_result": validate_result,
@@ -1041,6 +1068,7 @@ class TestDefinitionsPage(Page):
             on_ImportDialogClosed_change=on_import_dialog_closed,
             on_NotesClicked_change=on_notes_clicked,
             on_NoteAdded_change=on_note_added,
+            on_NoteAddedToSelected_change=on_note_added_to_selected,
             on_NoteUpdated_change=on_note_updated,
             on_NoteDeleted_change=on_note_deleted,
             on_NotesDialogClosed_change=on_notes_dialog_closed,
@@ -1137,12 +1165,14 @@ IMPORT_POLICY_AXES: dict[str, type[StrEnum]] = {
     "on_new": OnNew,
     "on_match": OnMatch,
     "on_absence": OnAbsence,
+    "on_not_in_catalog": OnNotInCatalog,
 }
 
 IMPORT_POLICY_DEFAULTS: dict[str, StrEnum] = {
     "on_new": OnNew.create,
     "on_match": OnMatch.overwrite_unlocked,
     "on_absence": OnAbsence.do_nothing,
+    "on_not_in_catalog": OnNotInCatalog.skip,
 }
 
 IMPORT_PREVIEW_ROW_LIMIT = 500
@@ -1160,7 +1190,7 @@ IMPORT_ACTION_ORDER = {
 
 
 def _import_policy(payload: dict) -> dict[str, StrEnum]:
-    """Read the three import policy axes out of an event payload, defaulting each independently."""
+    """Read the import policy axes out of an event payload, defaulting each independently."""
     policy = {}
     for axis, enum_class in IMPORT_POLICY_AXES.items():
         try:
@@ -1659,7 +1689,10 @@ def validate_test(test_definition: dict, table_group: TableGroupMinimal) -> None
     connection = get_connection(table_group.connection_id)
 
     if test_definition["test_type"] == "Condition_Flag":
-        condition = replace_params(test_definition["custom_query"], {"DATA_SCHEMA": schema})
+        # Defaults stand in for the values a test run would give, as the other two branches do.
+        condition = replace_params(
+            query_variables.render(test_definition["custom_query"]), {"DATA_SCHEMA": schema}
+        )
         flavor_service = get_flavor_service(connection.sql_flavor)
         concat_operator = flavor_service.concat_operator
         table_ref = flavor_service.get_table_ref(schema, table_name, connection.sql_flavor_code)

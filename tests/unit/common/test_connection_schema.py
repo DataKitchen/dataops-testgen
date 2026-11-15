@@ -753,9 +753,14 @@ def test_validate_checks_other_fields_when_name_not_required():
     assert errors == ["`Host` is required for PostgreSQL."]
 
 
-@pytest.mark.parametrize("bad", [0, -1, 9, 100])
+@pytest.mark.parametrize("bad", [0, -1, 17, 100])
 def test_validate_max_threads_out_of_range(bad):
-    assert "`max_threads` must be between 1 and 8." in validate_connection_fields(_conn(max_threads=bad))
+    assert "`max_threads` must be between 1 and 16." in validate_connection_fields(_conn(max_threads=bad))
+
+
+@pytest.mark.parametrize("good", [1, 9, 16])
+def test_validate_max_threads_in_range(good):
+    assert validate_connection_fields(_conn(max_threads=good)) == []
 
 
 @pytest.mark.parametrize("bad", [499, 0, 50001, 100000])
@@ -769,7 +774,7 @@ def test_validate_aggregates_all_errors():
     assert "`connection_name` is required." in joined
     assert "`Host` is required for PostgreSQL." in joined
     assert "`Port` is required for PostgreSQL." in joined
-    assert "`max_threads` must be between 1 and 8." in joined
+    assert "`max_threads` must be between 1 and 16." in joined
 
 
 # ---------------------------------------------------------------------------

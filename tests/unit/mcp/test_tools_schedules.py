@@ -16,7 +16,7 @@ def _make_table_group(project_code="demo", name="orders_tg"):
     return tg
 
 
-def _make_suite(project_code="demo", name="suite_a", suite_type=SuiteType.REGULAR):
+def _make_suite(project_code="demo", name="suite_a", suite_type=SuiteType.STANDARD):
     suite = MagicMock()
     suite.id = uuid4()
     suite.project_code = project_code

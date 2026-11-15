@@ -67,7 +67,7 @@ def test_table_group_cascade_deletes_its_test_suites_first():
     suite_cascade.assert_called_once_with([suite_id])
 
 
-def test_test_suite_cascade_deletes_every_job_that_names_the_suite():
+def test_test_suite_cascade_deletes_every_job_that_names_the_suite_but_a_table_group_setup():
     suite_id = uuid4()
     session = MagicMock()
     with (
@@ -77,8 +77,11 @@ def test_test_suite_cascade_deletes_every_job_that_names_the_suite():
         TestSuite.cascade_delete([suite_id])
 
     statements, params = _statements(session)
-    assert (
-        "DELETE FROM job_executions WHERE kwargs->>'test_suite_id' IN :test_suite_id_texts"
-        " OR kwargs->>'monitor_suite_id' IN :test_suite_id_texts"
-    ) in statements
+    assert any(
+        statement.endswith(
+            "DELETE FROM job_executions WHERE kwargs->>'test_suite_id' IN :test_suite_id_texts"
+            " OR (kwargs->>'monitor_suite_id' IN :test_suite_id_texts AND job_key <> 'refresh-data-catalog')"
+        )
+        for statement in statements
+    )
     assert params["test_suite_id_texts"] == (str(suite_id),)

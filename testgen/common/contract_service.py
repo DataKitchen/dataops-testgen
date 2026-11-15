@@ -206,10 +206,10 @@ class RunTarget:
         if self.state == VersionState.DRAFT:
             return (
                 "This run checks a version that is not frozen. Unless the version is frozen before the run starts, "
-                "the run is a preview and will not count as the contract's status."
+                "the run is a preview and will not update the contract's results."
             )
         if self.state == VersionState.SUPERSEDED:
-            return "This run checks a superseded version, so it will not count as the contract's status."
+            return "This run checks a superseded version, so it is out of force and will not update the contract's results."
         return None
 
 
@@ -772,8 +772,8 @@ class InitializedContract:
 
 
 def initialize_contract(suite: TestSuite, table_group: TableGroup, connection: Connection) -> InitializedContract:
-    """Give a newly created contract its first draft, authored by the acting user, its generation set and
-    prefilled document."""
+    """Give a newly created contract its first draft, authored by the acting user, its prefilled document,
+    and its generation sets: the ones it was created with, else ``Contract``."""
     _assert_contract(suite)
     session = get_current_session()
     server = build_server_block(connection, table_group)
@@ -795,7 +795,7 @@ def initialize_contract(suite: TestSuite, table_group: TableGroup, connection: C
         created_by=acting_username(),
     )
     session.add(draft)
-    suite.generation_sets = [CONTRACT_GENERATION_SET]
+    suite.generation_sets = suite.generation_sets or [CONTRACT_GENERATION_SET]
     session.flush()
     return InitializedContract(draft=draft, custom_server_reason=server.custom_reason)
 

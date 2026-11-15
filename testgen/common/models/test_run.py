@@ -59,7 +59,11 @@ class TestRunMinimal(EntityMinimal):
     test_starttime: datetime
     dq_score_test_run: float
     is_latest_run: bool
+    schema_override: str | None
+    table_names_override: dict | None
     match_schema_override: str | None
+    match_table_names_override: dict | None
+    variables_override: dict | None
     external_url: str | None
     caller_metadata: dict | None
 
@@ -252,8 +256,13 @@ class TestRun(Entity):
             (id == TestSuite.last_complete_test_run_id, True),
             else_=False,
         ).label("is_latest_run"),
-        # Only set when the run pointed its referential tests at another schema.
+        # Each is set only when the run was submitted with that override. The three maps are
+        # JSONB objects, so they are read as JSON rather than through astext.
+        JobExecution.kwargs["schema_name"].astext.label("schema_override"),
+        JobExecution.kwargs["table_names"].label("table_names_override"),
         JobExecution.kwargs["match_schema_name"].astext.label("match_schema_override"),
+        JobExecution.kwargs["match_table_names"].label("match_table_names_override"),
+        JobExecution.kwargs["variables"].label("variables_override"),
         JobExecution.external_url,
         JobExecution.caller_metadata,
     )
@@ -356,7 +365,7 @@ class TestRun(Entity):
         page: int = 1,
         page_size: int = 20,
         *,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
         version_id: UUID | str | None = None,
         all_versions: bool = True,
     ) -> tuple[list[TestRunSummary], int]:
@@ -385,7 +394,7 @@ class TestRun(Entity):
         table_group_id: str | None = None,
         test_suite_id: str | None = None,
         *,
-        suite_types: Sequence[SuiteType] = (SuiteType.REGULAR,),
+        suite_types: Sequence[SuiteType] = (SuiteType.STANDARD,),
     ) -> RunVersionScope:
         """Whether the runs the filters select include a contract's, and how many of them
         ``select_summary(all_versions=False)`` leaves out.

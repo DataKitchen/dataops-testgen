@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from testgen.common.database.flavor.duckdb_object_storage import STRATEGY_PARAMETER, AzureBlobStrategy, S3Strategy
-from testgen.common.flavors import FLAVOR_CODE_TO_LABEL, SqlFlavorCode
+from testgen.common.flavors import FLAVOR_CODE_TO_LABEL, MAX_THREADS_MAX, MAX_THREADS_MIN, SqlFlavorCode
 from testgen.common.models.connection import Connection
 
 
@@ -544,8 +544,6 @@ def connection_location(connection: Connection) -> list[tuple[str, str]]:
 
 _CONNECTION_NAME_MIN = 3
 _CONNECTION_NAME_MAX = 40
-_MAX_THREADS_MIN = 1
-_MAX_THREADS_MAX = 8
 _MAX_QUERY_CHARS_MIN = 500
 _MAX_QUERY_CHARS_MAX = 50000
 
@@ -601,8 +599,8 @@ def validate_connection_fields(connection: Connection, require_name: bool = True
             errors.append(f"`{fld.label}` is required for {flavor_label}.")
 
     threads = connection.max_threads
-    if threads is not None and not (_MAX_THREADS_MIN <= threads <= _MAX_THREADS_MAX):
-        errors.append(f"`max_threads` must be between {_MAX_THREADS_MIN} and {_MAX_THREADS_MAX}.")
+    if threads is not None and not (MAX_THREADS_MIN <= threads <= MAX_THREADS_MAX):
+        errors.append(f"`max_threads` must be between {MAX_THREADS_MIN} and {MAX_THREADS_MAX}.")
 
     query_chars = connection.max_query_chars
     if query_chars is not None and not (_MAX_QUERY_CHARS_MIN <= query_chars <= _MAX_QUERY_CHARS_MAX):

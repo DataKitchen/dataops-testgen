@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 import testgen
+from testgen.common import query_variables
 from testgen.common.custom_test_validation import (
     CustomQueryResult,
     InvalidMetricQuery,
@@ -112,6 +113,25 @@ def test_validate_custom_query_substitutes_data_schema(mock_get_flavor, mock_fet
     # {DATA_SCHEMA} was substituted with the actual schema name
     assert "production_schema.orders" in count_sql
     assert "{DATA_SCHEMA}" not in count_sql
+
+
+@patch("testgen.common.custom_test_validation.fetch_from_target_db")
+@patch("testgen.common.custom_test_validation.get_flavor_service")
+def test_validate_custom_query_gives_each_variable_its_default(mock_get_flavor, mock_fetch):
+    """Only a test run gives a variable a value, so validating one runs the query the test would
+    run with nothing overridden. Left unrendered, the declaration reaches the target as text."""
+    mock_get_flavor.return_value = _flavor_service("limit")
+    mock_fetch.return_value = [{"row_count": 0}]
+
+    validate_custom_query(
+        _connection(),
+        "production_schema",
+        "SELECT * FROM {DATA_SCHEMA}.orders WHERE d > '{END_DATE:2026-10-10}'",
+    )
+
+    count_sql = mock_fetch.call_args_list[0].args[1]
+    assert "d > '2026-10-10'" in count_sql
+    assert "END_DATE" not in count_sql
 
 
 @patch("testgen.common.custom_test_validation.fetch_from_target_db")
@@ -306,3 +326,18 @@ def test_validate_metric_query_runs_the_execution_template(mock_templates, mock_
             validate_metric_query(_connection("duckdb"), "main", metric_sql)
     else:
         assert validate_metric_query(_connection("duckdb"), "main", metric_sql) == outcome
+
+
+def test_render_metric_validation_query_gives_each_variable_its_default():
+    """The metric query is rendered into the test's own template, so a declaration left in place
+    would reach the target inside it."""
+    from testgen.common.custom_test_validation import render_metric_validation_query
+
+    query = render_metric_validation_query(
+        "SELECT {CUSTOM_QUERY} FROM {DATA_SCHEMA}.t",
+        "production_schema",
+        query_variables.render("SUM(amount) * {FACTOR:3}"),
+    )
+
+    assert "SUM(amount) * 3" in query
+    assert "FACTOR" not in query

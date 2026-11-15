@@ -278,7 +278,7 @@ def test_get_connection_url_mode_reports_the_url_and_its_parts():
 
 
 def test_get_connection_reports_thread_and_expression_limits():
-    result = get_connection(_conn(max_threads=6, max_query_chars=30000))
+    result = get_connection(_conn(max_threads=4, effective_max_threads=6, max_query_chars=30000))
 
     assert (result.max_threads, result.max_expression_length) == (6, 30000)
 

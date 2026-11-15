@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pandas as pd
 import pytest
@@ -73,7 +74,12 @@ def _run_input_parameters(**values: str) -> str:
     """Build an ``input_parameters`` blob with the writer that test execution uses."""
     fields = {field.name: "" for field in dataclasses.fields(InputParameters)}
     fields.update(values)
-    return TestExecutionSQL._get_input_parameters(MagicMock(), SimpleNamespace(**fields))
+    # A type that declares its query, on a flavor that reads a backslash literally and caps no
+    # literal: the writer holds nothing back and rewrites nothing, so the blob reads as the
+    # values given here.
+    test_def = SimpleNamespace(param_columns={"custom_query"}, **fields)
+    writer = SimpleNamespace(flavor_service=get_flavor_service("postgresql"))
+    return TestExecutionSQL._get_input_parameters(writer, test_def)
 
 
 def _custom_issue_data(**overrides):
@@ -379,10 +385,118 @@ class Test_match_schema_resolution:
 
 
 # ---------------------------------------------------------------------------
+# _build_query_standard: match table resolution
+# ---------------------------------------------------------------------------
+
+class Test_match_table_resolution:
+    """A second table is retargeted in place, so the run's value lands in the input parameters."""
+
+    def _build(self, test_definition, issue_data):
+        with (
+            patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q),
+            patch(f"{MODULE}.TestDefinition.get_for_project", return_value=test_definition),
+            patch(f"{MODULE}._get_lookup_data") as mock_lookup,
+        ):
+            mock_lookup.return_value = LookupData(
+                lookup_query="SELECT 1 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}",
+                sql_flavor="postgresql",
+            )
+            return _build_query_standard(issue_data, limit=500)
+
+    def test_run_value_wins_over_definition(self):
+        query = self._build(
+            _FakeTestDefinition(match_schema_name="ref", match_table_name="stored_table"),
+            _standard_issue_data(input_parameters=_run_input_parameters(match_table_name="prod_orders")),
+        )
+        assert "ref.prod_orders" in query
+        assert "stored_table" not in query
+
+    def test_falls_back_when_the_blob_omits_the_match_table(self):
+        query = self._build(
+            _FakeTestDefinition(match_schema_name="ref", match_table_name="stored_table"),
+            _standard_issue_data(input_parameters=_run_input_parameters(threshold_value="0")),
+        )
+        assert "ref.stored_table" in query
+
+    def test_the_test_s_own_table_stays_where_the_result_reports_it(self):
+        """A run's second table is run-scoped, the test's own table is not: it reads the table
+        group's location, so investigating a result still works once a build schema is dropped."""
+        with (
+            patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q),
+            patch(f"{MODULE}.TestDefinition.get_for_project", return_value=_FakeTestDefinition(match_table_name="ref")),
+            patch(f"{MODULE}._get_lookup_data") as mock_lookup,
+        ):
+            mock_lookup.return_value = LookupData(
+                lookup_query="SELECT 1 FROM {TARGET_SCHEMA}.{TABLE_NAME} JOIN {MATCH_TABLE_NAME}",
+                sql_flavor="postgresql",
+            )
+            query = _build_query_standard(
+                _standard_issue_data(input_parameters=_run_input_parameters(match_table_name="prod_orders")),
+                limit=500,
+            )
+
+        assert "demo.orders" in query
+        assert "JOIN prod_orders" in query
+
+
+# ---------------------------------------------------------------------------
+# _build_query_standard: the query a run resolved
+# ---------------------------------------------------------------------------
+
+class Test_custom_query_resolution:
+    """A run fills a query's declared variables in, so the result carries the query that produced
+    it and the lookup renders the same SQL rather than the declarations."""
+
+    def _build(self, test_definition, issue_data):
+        with (
+            patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q),
+            patch(f"{MODULE}.TestDefinition.get_for_project", return_value=test_definition),
+            patch(f"{MODULE}._get_lookup_data") as mock_lookup,
+        ):
+            mock_lookup.return_value = LookupData(lookup_query="{CUSTOM_QUERY}", sql_flavor="postgresql")
+            return _build_query_standard(issue_data, limit=500)
+
+    def _build_with_run(self, test_definition, issue_data, variables):
+        with patch(f"{MODULE}._run_variables", return_value=variables):
+            return self._build(test_definition, issue_data)
+
+    def test_a_variable_takes_the_value_its_run_gave_it(self):
+        query = self._build_with_run(
+            _FakeTestDefinition(custom_query="WHERE d > '{END_DATE:2026-10-10}'"),
+            _standard_issue_data(test_run_id=str(uuid4())),
+            {"END_DATE": "2026-10-17"},
+        )
+        assert query == "WHERE d > '2026-10-17'"
+
+    def test_a_caller_with_no_run_renders_the_defaults(self):
+        """The MCP lookup resolves a test definition rather than a result, so it has no run."""
+        query = self._build_with_run(
+            _FakeTestDefinition(custom_query="WHERE d > '{END_DATE:2026-10-10}'"),
+            _standard_issue_data(),
+            None,
+        )
+        assert query == "WHERE d > '2026-10-10'"
+
+    def test_a_query_declaring_nothing_is_unchanged(self):
+        query = self._build_with_run(
+            _FakeTestDefinition(custom_query="SELECT 1"), _standard_issue_data(), None
+        )
+        assert query == "SELECT 1"
+
+
+# ---------------------------------------------------------------------------
 # _build_query_custom
 # ---------------------------------------------------------------------------
 
 class Test_build_query_custom:
+    @patch(f"{MODULE}._get_lookup_data_custom")
+    def test_a_variable_takes_the_value_its_run_gave_it(self, mock_lookup):
+        """A CUSTOM test's lookup is its own query, so it renders with the run's values."""
+        mock_lookup.return_value = LookupData(lookup_query="SELECT * FROM {DATA_SCHEMA}.t WHERE d > '{D:2026-10-10}'")
+        issue_data = _custom_issue_data(schema_name="prod", test_run_id=str(uuid4()))
+        with patch(f"{MODULE}._run_variables", return_value={"D": "2026-10-17"}):
+            assert _build_query_custom(issue_data) == "SELECT * FROM prod.t WHERE d > '2026-10-17'"
+
     @patch(f"{MODULE}._get_lookup_data_custom")
     def test_returns_query_with_schema_replaced(self, mock_lookup):
         mock_lookup.return_value = LookupData(lookup_query="SELECT * FROM {DATA_SCHEMA}.my_table")

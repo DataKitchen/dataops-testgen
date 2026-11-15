@@ -18,6 +18,7 @@ from testgen.common.test_definition_export_import_service import (
     OnAbsence,
     OnMatch,
     OnNew,
+    OnNotInCatalog,
     Origin,
 )
 from testgen.ui.views.test_definitions import (
@@ -67,12 +68,13 @@ def _summary(created=0, updated=0, skipped=0, deleted=0):
 
 
 def test_policy_defaults_match_the_rest_and_mcp_surfaces():
-    """The dialog exposes the same three axes as the API, so it must not drift into
+    """The dialog exposes the same axes as the API, so it must not drift into
     friendlier or more destructive defaults than the surfaces it mirrors."""
     assert IMPORT_POLICY_DEFAULTS == {
         "on_new": OnNew.create,
         "on_match": OnMatch.overwrite_unlocked,
         "on_absence": OnAbsence.do_nothing,
+        "on_not_in_catalog": OnNotInCatalog.skip,
     }
 
 
@@ -81,11 +83,13 @@ def test_policy_reads_each_axis_from_the_payload():
         "on_new": "create_and_lock",
         "on_match": "overwrite_all",
         "on_absence": "delete_unlocked",
+        "on_not_in_catalog": "import",
     })
     assert policy == {
         "on_new": OnNew.create_and_lock,
         "on_match": OnMatch.overwrite_all,
         "on_absence": OnAbsence.delete_unlocked,
+        "on_not_in_catalog": OnNotInCatalog.import_,
     }
 
 

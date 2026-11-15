@@ -1,9 +1,12 @@
+from functools import cache
+
 from sqlalchemy import text
 
 from testgen.commands.test_generation import resolve_generation_profile_run
 from testgen.common.audit.test_definitions import record_status_changed
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.enums import MANAGED_TEST_TYPES, SuiteType
+from testgen.common.generation_set_service import GENERATION_SET_DESCRIPTIONS, order_generation_sets
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.profile_result import ProfileResult
@@ -13,6 +16,25 @@ from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.sampling_requirements import sampled_profile_gaps
 from testgen.ui.services.database_service import fetch_all_from_db, fetch_one_from_db
+from testgen.utils.plugins import discover
+
+
+@cache
+def _generation_set_descriptions() -> dict[str, str]:
+    """Each generation set's description, from core and from the installed plugins."""
+    descriptions = dict(GENERATION_SET_DESCRIPTIONS)
+    for plugin in discover():
+        descriptions.update(plugin.load().get_generation_set_descriptions())
+    return descriptions
+
+
+def generation_set_options(names: list[str]) -> list[dict[str, str | None]]:
+    """The generation set picker's options: each of ``names``, in ``order_generation_sets`` order, with its
+    description, from core or from the plugin that declares it, or None when neither does."""
+    descriptions = _generation_set_descriptions()
+    return [
+        {"value": name, "label": name, "help": descriptions.get(name)} for name in order_generation_sets(names)
+    ]
 
 
 @with_database_session

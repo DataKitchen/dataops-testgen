@@ -290,7 +290,7 @@ def test_scope_check_compares_suite_type_by_value_not_identity():
         return api._require_scope(entity_class, "s1", "P", suite_types=requested)
 
     # stored as the raw string, exactly as SQLAlchemy returns it
-    assert scope("regular", TEST_SUITE_TYPES) is not None
+    assert scope("standard", TEST_SUITE_TYPES) is not None
     assert scope("contract", TEST_SUITE_TYPES) is not None
     assert scope("monitor", (SuiteType.MONITOR,)) is not None
 
@@ -299,7 +299,7 @@ def test_scope_check_compares_suite_type_by_value_not_identity():
     assert monitor_as_test_suite.value.status_code == 400
     assert "belongs to a monitor" in monitor_as_test_suite.value.detail["errors"][0]["detail"]
 
-    for stored in ("regular", "contract"):
+    for stored in ("standard", "contract"):
         with pytest.raises(HTTPException) as test_suite_as_monitor:
             scope(stored, (SuiteType.MONITOR,))
         assert test_suite_as_monitor.value.status_code == 400

@@ -17,8 +17,8 @@ def _contract() -> MagicMock:
 
 def test_a_regular_suite_has_no_table_restriction():
     with patch(f"{MODULE}.SuiteVersion") as suite_version:
-        assert writable_tables(MagicMock(suite_type=SuiteType.REGULAR)) is None
-        check_table_declared(MagicMock(suite_type=SuiteType.REGULAR), "customers")
+        assert writable_tables(MagicMock(suite_type=SuiteType.STANDARD)) is None
+        check_table_declared(MagicMock(suite_type=SuiteType.STANDARD), "customers")
     suite_version.draft_for.assert_not_called()
 
 

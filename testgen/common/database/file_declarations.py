@@ -34,7 +34,7 @@ NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 NAME_MAX_LENGTH = 100
 
 NAME_REQUIRED = "Name is required."
-NAME_INVALID = "Name must start with a letter or underscore and contain only letters, numbers and underscores."
+NAME_INVALID = "Name must start with a letter or underscore and contain only letters, numbers, and underscores."
 NAME_TOO_LONG = f"Name must be at most {NAME_MAX_LENGTH} characters."
 NAME_DUPLICATE = "Name is already used by another table in this table group."
 URI_REQUIRED = "File or Pattern is required."

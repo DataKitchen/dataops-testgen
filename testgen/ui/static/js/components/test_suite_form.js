@@ -58,7 +58,7 @@ const TestSuiteFields = (/** @type Properties */ props) => {
         RadioGroup({
             label: 'Type',
             options: [
-                { label: 'Test suite', value: 'regular' },
+                { label: 'Standard', value: 'standard' },
                 { label: 'Contract', value: 'contract' },
             ],
             value: state.suiteType,
@@ -183,7 +183,7 @@ const TestSuiteFields = (/** @type Properties */ props) => {
 };
 
 const createTestSuiteFormState = (initial = {}) => ({
-    suiteType: van.state(initial.suite_type ?? 'regular'),
+    suiteType: van.state(initial.suite_type ?? 'standard'),
     testSuiteName: van.state(initial.test_suite ?? ''),
     tableGroupId: van.state(initial.table_groups_id ?? null),
     description: van.state(initial.test_suite_description ?? ''),

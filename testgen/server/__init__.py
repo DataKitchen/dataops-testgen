@@ -18,6 +18,7 @@ if settings.IS_DEBUG:
     os.environ.setdefault("AUTHLIB_INSECURE_TRANSPORT", "1")
 
 from testgen.api import router as api_v1_router
+from testgen.api.oauth.metadata import authorization_server_metadata
 from testgen.api.oauth.metadata import router as metadata_router
 from testgen.api.oauth.routes import init_routes
 from testgen.api.oauth.routes import router as oauth_router
@@ -25,7 +26,7 @@ from testgen.api.oauth.server import create_authorization_server
 from testgen.common import version_service
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
-from testgen.server.middleware import BodySizeLimitMiddleware, SecurityHeadersMiddleware
+from testgen.server.middleware import BasePathMiddleware, BodySizeLimitMiddleware, SecurityHeadersMiddleware
 
 LOG = logging.getLogger("testgen")
 
@@ -170,6 +171,14 @@ def create_app(version: str | None = None) -> FastAPI:
     _patch_openapi_schema(app)
 
     app.include_router(metadata_router)
+    if settings.API_BASE_PATH:
+        # RFC 8414 §3.1: an issuer with a path publishes its metadata with the path appended to the well-known URI
+        app.add_api_route(
+            f"/.well-known/oauth-authorization-server/{settings.API_BASE_PATH}",
+            authorization_server_metadata,
+            methods=["GET"],
+            include_in_schema=False,
+        )
     app.include_router(oauth_router)
     app.include_router(api_v1_router)
 
@@ -201,6 +210,9 @@ def create_app(version: str | None = None) -> FastAPI:
             allow_headers=["*"],
             expose_headers=["Mcp-Session-Id"],
         )
+
+    if settings.API_BASE_PATH:
+        app.add_middleware(BasePathMiddleware, base_path=settings.API_BASE_PATH)
 
     return app
 

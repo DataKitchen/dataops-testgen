@@ -39,7 +39,7 @@ INNER JOIN test_types tt ON td.test_type = tt.test_type
 INNER JOIN test_suites ts ON td.test_suite_id = ts.id
      WHERE ts.project_code = :PROJECT_CODE
        AND ts.test_suite = :TEST_SUITE
-       AND ts.suite_type IN ('regular', 'contract')
+       AND ts.suite_type IN ('standard', 'contract')
        AND td.version_id = {VERSION_RESOLUTION}
   ORDER BY td.schema_name,
            td.table_name,

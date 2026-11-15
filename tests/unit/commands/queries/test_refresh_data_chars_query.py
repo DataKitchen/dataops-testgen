@@ -281,6 +281,15 @@ def test_get_row_counts_handles_null_max_query_chars():
     assert all(isinstance(query, str) and query for query, _ in result)
 
 
+@pytest.mark.parametrize(("flavor", "count"), [("postgresql", "COUNT(*)"), ("mssql", "COUNT_BIG(*)")])
+def test_row_counts_use_the_flavor_count(flavor, count):
+    sql_generator = RefreshDataCharsSQL(Connection(sql_flavor=flavor), TableGroup(table_group_schema="s"))
+
+    (query, _), = sql_generator.get_row_counts(["orders"])
+
+    assert f"{count} AS row_count" in query
+
+
 @pytest.mark.parametrize("mask", (",", " , ", ",,"))
 def test_a_criterion_of_only_separators_applies_no_filter(mask):
     """A mask of only commas is a truthy string with no parts. The guards branch on the
@@ -561,3 +570,28 @@ def test_table_set_is_split_into_in_lists_of_at_most_1000():
     in_lists = criteria.split(" OR ")
     assert len(in_lists) == 3
     assert [in_list.count("'") // 2 for in_list in in_lists] == [1000, 1000, 1]
+
+
+def test_an_explicit_table_set_is_split_into_in_lists_of_at_most_1000():
+    """The tables a run reads are named outright, and there can be more of them than Oracle takes
+    in one IN list."""
+    table_group = TableGroup(table_group_schema="test_schema")
+    table_names = [f"t{i:04d}" for i in range(2001)]
+
+    criteria = RefreshDataCharsSQL(
+        Connection(sql_flavor="oracle"), table_group, table_names=table_names
+    )._get_table_criteria()
+
+    in_lists = criteria.split(" OR ")
+    assert len(in_lists) == 3
+    assert [in_list.count("'") // 2 for in_list in in_lists] == [1000, 1000, 1]
+
+
+def test_no_tables_to_read_matches_nothing():
+    table_group = TableGroup(table_group_schema="test_schema")
+
+    criteria = RefreshDataCharsSQL(
+        Connection(sql_flavor="postgresql"), table_group, table_names=[]
+    )._get_table_criteria()
+
+    assert criteria == " AND 1=0"

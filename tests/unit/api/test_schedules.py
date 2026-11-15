@@ -204,7 +204,7 @@ def test_create_schedule_404_without_edit_permission(url):
 
 
 def test_create_test_run_schedule_resolves_regular_suites_and_contracts():
-    """The suite is looked up narrowed to regular suites and contracts, so a monitor suite's id
+    """The suite is looked up narrowed to standard suites and contracts, so a monitor suite's id
     finds nothing and a monitor schedule cannot be created here."""
     resp, added, _, mock_ts_cls = _post(TEST_RUN_URL, {"cron_expression": "0 3 * * *"}, parent=False)
 

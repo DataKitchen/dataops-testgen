@@ -9,8 +9,8 @@ def test_suite_type_column_is_not_null_and_defaults_to_regular():
     column = TestSuite.__table__.c.suite_type
 
     assert column.nullable is False
-    assert column.default.arg == SuiteType.REGULAR
-    assert "regular" in str(column.server_default.arg)
+    assert column.default.arg == SuiteType.STANDARD
+    assert "standard" in str(column.server_default.arg)
 
 
 def test_suite_type_column_is_wide_enough_for_every_member():
@@ -34,8 +34,8 @@ def test_deactivate_invalid_tests_column_is_not_null_and_defaults_to_false():
 @pytest.mark.parametrize(
     ("suite_type", "setting", "expected"),
     [
-        (SuiteType.REGULAR, True, True),
-        (SuiteType.REGULAR, False, False),
+        (SuiteType.STANDARD, True, True),
+        (SuiteType.STANDARD, False, False),
         (SuiteType.MONITOR, False, True),
         (SuiteType.CONTRACT, True, False),
     ],

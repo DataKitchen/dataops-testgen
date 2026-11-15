@@ -126,4 +126,4 @@ def test_a_columns_tests_include_contracts(fetch_name):
     with patch(f"{VIEW_MODULE}.fetch_all_from_db", return_value=[]) as fetch_all:
         fetch.__wrapped__("tg-id", "orders", "amount")
 
-    assert "test_suites.suite_type IN ('regular', 'contract')" in fetch_all.call_args.args[0]
+    assert "test_suites.suite_type IN ('standard', 'contract')" in fetch_all.call_args.args[0]

@@ -61,7 +61,7 @@ def test_only_a_run_of_a_version_that_was_in_force_when_it_ran_is_scored(cte):
 @pytest.mark.parametrize("cte", [_table_group_rollup, _score_history_cte])
 def test_the_placeholder_is_exempt_from_the_freeze_time_check(cte):
     # The placeholder's freeze time is the install-or-upgrade timestamp, so a guard written
-    # without the suite-owned carve-out drops every historical regular-suite run.
+    # without the suite-owned carve-out drops every historical standard-suite run.
     assert re.search(r"sv\.test_suite_id IS NULL\s+OR", cte())
 
 

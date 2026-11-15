@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Collection
 from datetime import datetime
 from uuid import uuid4
 
@@ -19,6 +20,65 @@ from testgen.utils import get_exception_message
 LOG = logging.getLogger("testgen")
 
 
+def read_target_columns(
+    job: StoppableJob,
+    connection: Connection,
+    sql_generator: RefreshDataCharsSQL,
+) -> list[ColumnChars]:
+    """Read column metadata from the target, writing nothing.
+
+    Args:
+        job: The job reading it, which stops the read when it is asked to stop.
+        connection: The connection to read through.
+        sql_generator: Names the schema and the tables to read.
+
+    Returns:
+        A column per table column the generator selects.
+    """
+    try:
+        if sql_generator.flavor_service.metadata_via_api:
+            # Flavor returns column metadata directly (e.g., Salesforce Data 360
+            # via the connector's metadata API). These flavors have no information_schema.
+            # Apply the table filters in Python since we bypass the SQL {TABLE_CRITERIA} clause.
+            params = resolve_connection_params(connection.__dict__)
+            api_columns = sql_generator.flavor_service.get_schema_columns(params, sql_generator.schema_name) or []
+            return sql_generator.filter_schema_columns(api_columns)
+        # Through the job, so a cancel stops the read rather than waiting it out.
+        rows, errors = job.fetch_threaded([sql_generator.get_schema_ddf()], use_target_db=True, max_threads=1)
+        if not errors:
+            # Inside the try: a row the flavor describes with a column this does not take raises here,
+            # and the caller reports only what this wraps.
+            return [ColumnChars(**row) for row in rows]
+        failure = errors[0]
+    except Exception as e:
+        raise RuntimeError(f"Error reading columns from {sql_generator.schema_name}. {get_exception_message(e)}") from e
+    raise RuntimeError(f"Error reading columns from {sql_generator.schema_name}. {failure}")
+
+
+def read_run_columns(
+    job: StoppableJob,
+    connection: Connection,
+    table_group: TableGroup,
+    schema_name: str,
+    table_names: Collection[str],
+) -> list[ColumnChars]:
+    """Read the columns of the tables a run reads, for validating its tests against them.
+
+    Args:
+        job: The run's job, which stops the read when it is asked to stop.
+        connection: The connection to read through.
+        table_group: The table group the run belongs to.
+        schema_name: The schema the run reads.
+        table_names: The tables the run reads, named as they are in that schema.
+
+    Returns:
+        A column per table column found, describing the location the run reads rather than the
+        table group's catalog, which a run never rewrites from an overridden location.
+    """
+    LOG.info(f"Getting DDF for the {len(table_names)} tables this run reads from {schema_name}")
+    return read_target_columns(job, connection, RefreshDataCharsSQL(connection, table_group, schema_name, table_names))
+
+
 def run_data_chars_refresh(
     job: StoppableJob,
     connection: Connection,
@@ -35,25 +95,10 @@ def run_data_chars_refresh(
     sql_generator = RefreshDataCharsSQL(connection, table_group)
 
     LOG.info("Getting DDF for table group")
-    schema_error = None
     try:
-        if sql_generator.flavor_service.metadata_via_api:
-            # Flavor returns column metadata directly (e.g., Salesforce Data 360
-            # via the connector's metadata API). These flavors have no information_schema.
-            # Apply the table-group filters in Python
-            # since we bypass the SQL {TABLE_CRITERIA} clause.
-            params = resolve_connection_params(connection.__dict__)
-            api_columns = sql_generator.flavor_service.get_schema_columns(params, table_group.table_group_schema) or []
-            data_chars = sql_generator.filter_schema_columns(api_columns)
-        else:
-            # Through the job, so a cancel stops the read rather than waiting it out.
-            rows, errors = job.fetch_threaded([sql_generator.get_schema_ddf()], use_target_db=True, max_threads=1)
-            schema_error = errors.get(0)
-            data_chars = [ColumnChars(**row) for row in rows]
-    except Exception as e:
+        data_chars = read_target_columns(job, connection, sql_generator)
+    except RuntimeError as e:
         raise RuntimeError(f"Error refreshing columns for data catalog. {get_exception_message(e)}") from e
-    if schema_error:
-        raise RuntimeError(f"Error refreshing columns for data catalog. {schema_error}")
 
     if data_chars:
         distinct_tables = {column.table_name for column in data_chars}

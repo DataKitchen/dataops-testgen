@@ -122,25 +122,6 @@ def test_list_test_runs_malformed_schedule_raises(mock_suite, mock_run, mock_nex
 @patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
 @patch("testgen.mcp.tools.test_runs.TestRun")
 @patch("testgen.mcp.tools.test_runs.TestSuite")
-def test_list_test_runs_schedule_filters_pending(mock_suite, mock_run, mock_next, mock_je, db_session_mock):
-    mock_je.select_active_by_kwargs.return_value = []
-    suite_id = uuid4()
-    mock_suite.select_minimal_where.return_value = [MagicMock(id=suite_id)]
-    mock_run.select_summary.return_value = ([], 0)
-    schedule_id = str(uuid4())
-
-    from testgen.mcp.tools.test_runs import list_test_runs
-
-    list_test_runs(project_code="demo", test_suite="Quality", schedule_id=schedule_id)
-
-    # A schedule clause is forwarded to the pending-JE query (positional *clauses arg).
-    assert mock_je.select_active_by_kwargs.call_args.args
-
-
-@patch("testgen.mcp.tools.test_runs.JobExecution")
-@patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
-@patch("testgen.mcp.tools.test_runs.TestRun")
-@patch("testgen.mcp.tools.test_runs.TestSuite")
 def test_list_test_runs_with_suite_name(mock_suite, mock_run, mock_next, mock_je, db_session_mock):
     mock_je.select_active_by_kwargs.return_value = []
     suite_id = uuid4()
@@ -220,30 +201,25 @@ def test_list_test_runs_shows_next_scheduled(mock_suite, mock_run, mock_next, mo
     assert "Next scheduled run" in result
 
 
-@patch("testgen.mcp.tools.test_runs.JobExecution")
 @patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
 @patch("testgen.mcp.tools.test_runs.TestRun")
 @patch("testgen.mcp.tools.test_runs.TestSuite")
-def test_list_test_runs_renders_pending_section(
-    mock_suite, mock_run, mock_next, mock_je, db_session_mock,
-):
-    """When scoped by suite, pending JEs are surfaced in a separate section."""
-    suite_id = uuid4()
-    mock_suite.select_minimal_where.return_value = [MagicMock(id=suite_id)]
-    mock_run.select_summary.return_value = ([], 0)
-    pending_je = MagicMock(
-        id=uuid4(), status=JobStatus.PENDING,
-        created_at=_CREATED, started_at=None, completed_at=None,
+def test_list_test_runs_lists_a_queued_run_once(mock_suite, mock_run, mock_next, db_session_mock):
+    mock_suite.select_minimal_where.return_value = [MagicMock(id=uuid4())]
+    queued = _make_run_summary(
+        status=JobStatus.QUEUED, status_label="Queued", test_run_id=None,
+        started_at=None, completed_at=None,
+        test_ct=None, passed_ct=None, failed_ct=None, warning_ct=None, error_ct=None,
+        log_ct=None, dismissed_ct=None, dq_score_testing=None,
     )
-    mock_je.select_active_by_kwargs.return_value = [pending_je]
+    mock_run.select_summary.return_value = ([queued], 1)
 
     from testgen.mcp.tools.test_runs import list_test_runs
 
     result = list_test_runs(project_code="demo", test_suite="Quality")
 
-    assert "Pending (1)" in result
-    assert "In progress" in result
-    mock_je.select_active_by_kwargs.assert_called_once()
+    assert result.count(str(queued.job_execution_id)) == 1
+    assert QUEUED_MESSAGE in result
 
 
 def test_list_test_runs_invalid_status(db_session_mock):
@@ -347,7 +323,7 @@ def test_get_test_run_without_run_record_names_suite_from_job(
     )
     mock_run.select_summary.return_value = ([summary], 1)
     mock_je.get.return_value = MagicMock(kwargs={"test_suite_id": suite_id})
-    mock_suite.get.return_value = MagicMock(test_suite="Orders Suite", suite_type=SuiteType.REGULAR)
+    mock_suite.get.return_value = MagicMock(test_suite="Orders Suite", suite_type=SuiteType.STANDARD)
     mock_tg.get.return_value = MagicMock(table_groups_name="orders_tg")
 
     with patch("testgen.mcp.permissions._compute_project_permissions") as mock_compute:
@@ -481,7 +457,7 @@ def test_list_test_runs_resolves_a_contract_by_name(mock_suite, mock_run, mock_n
         " ".join(str(c.compile(compile_kwargs={"literal_binds": True})).split())
         for c in mock_suite.select_minimal_where.call_args.args
     ]
-    assert "test_suites.suite_type IN ('regular', 'contract')" in clauses
+    assert "test_suites.suite_type IN ('standard', 'contract')" in clauses
     assert mock_run.select_summary.call_args.kwargs["suite_types"] == MCP_SUITE_TYPES
 
 
@@ -558,39 +534,13 @@ def test_list_test_runs_with_a_version_narrows_to_that_version(
 
 
 @patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
-@patch("testgen.mcp.tools.test_runs.JobExecution")
-@patch("testgen.mcp.tools.test_runs.resolve_contract_version")
-@patch("testgen.mcp.tools.test_runs.TestRun")
-@patch("testgen.mcp.tools.test_runs.TestSuite")
-def test_pending_runs_match_the_version_only_when_one_is_given(
-    mock_suite, mock_run, mock_resolve, mock_je, mock_next, db_session_mock,
-):
-    mock_je.select_active_by_kwargs.return_value = []
-    suite_id = uuid4()
-    mock_suite.select_minimal_where.return_value = [MagicMock(id=suite_id)]
-    v3 = MagicMock(id=uuid4())
-    mock_resolve.return_value = v3
-    mock_run.select_summary.return_value = ([], 0)
-
-    from testgen.mcp.tools.test_runs import list_test_runs
-
-    list_test_runs(project_code="demo", test_suite="Orders", version=3)
-    assert mock_je.select_active_by_kwargs.call_args.kwargs["kwargs_match"] == {
-        "test_suite_id": str(suite_id), "version_id": str(v3.id),
-    }
-
-    list_test_runs(project_code="demo", test_suite="Orders")
-    assert mock_je.select_active_by_kwargs.call_args.kwargs["kwargs_match"] == {"test_suite_id": str(suite_id)}
-
-
-@patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
 @patch("testgen.mcp.tools.test_runs.TestRun")
 @patch("testgen.mcp.tools.test_runs.TestSuite")
 def test_list_test_runs_with_a_version_of_a_regular_suite_is_refused(
     mock_suite, mock_run, mock_next, db_session_mock,
 ):
     mock_suite.select_minimal_where.return_value = [MagicMock(id=uuid4())]
-    mock_suite.get.return_value = MagicMock(id=uuid4(), suite_type=SuiteType.REGULAR)
+    mock_suite.get.return_value = MagicMock(id=uuid4(), suite_type=SuiteType.STANDARD)
 
     from testgen.mcp.tools.test_runs import list_test_runs
 

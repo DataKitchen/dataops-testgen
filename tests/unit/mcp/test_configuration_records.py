@@ -87,7 +87,7 @@ def test_updating_a_test_suite_records_the_changed_fields(saves, audit_session, 
 
     values = {column.key: None for column in TestSuite.__table__.columns}
     suite = _stored(TestSuite(**{
-        **values, "id": uuid4(), "project_code": "demo", "test_suite": "Orders", "suite_type": SuiteType.REGULAR,
+        **values, "id": uuid4(), "project_code": "demo", "test_suite": "Orders", "suite_type": SuiteType.STANDARD,
         "test_suite_description": "Old", "export_to_observability": False, "dq_score_exclude": False,
         "deactivate_invalid_tests": False,
     }))

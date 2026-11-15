@@ -36,7 +36,7 @@ def session():
 
 def test_a_version_of_a_regular_suite_is_refused():
     with pytest.raises(NotAContractError):
-        contract_service.version_by_number(_suite(SuiteType.REGULAR), 1)
+        contract_service.version_by_number(_suite(SuiteType.STANDARD), 1)
 
 
 def test_an_unknown_version_names_the_highest_one(session):
@@ -64,7 +64,7 @@ def _run_target(suite, version=None, *, found=None, run_default=None, active=Tru
 
 
 def test_a_regular_suite_has_no_run_target():
-    target, listing = _run_target(_suite(SuiteType.REGULAR))
+    target, listing = _run_target(_suite(SuiteType.STANDARD))
     assert target is None
     listing.assert_not_called()
 
@@ -189,4 +189,4 @@ def test_an_incomplete_latest_run_with_no_completed_one_has_no_verification():
 
 def test_contract_status_refuses_a_regular_suite():
     with pytest.raises(ValueError, match="not a contract"):
-        contract_service.contract_status(_suite(SuiteType.REGULAR))
+        contract_service.contract_status(_suite(SuiteType.STANDARD))

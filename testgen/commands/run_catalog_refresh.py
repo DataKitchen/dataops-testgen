@@ -13,6 +13,7 @@ from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.table_group import TableGroup
+from testgen.common.models.test_suite import TestSuite
 from testgen.common.models.user import User
 from testgen.common.monitor_service import INITIAL_MONITOR_TYPES
 from testgen.common.run_service import launch_run
@@ -125,6 +126,9 @@ class CatalogRefreshJob(StoppableJob[int]):
 
     def _generate_monitors(self) -> None:
         if not self.monitor_suite_id:
+            return
+        if TestSuite.get(self.monitor_suite_id) is None:
+            LOG.info(f"Skipping initial monitor generation: monitor suite {self.monitor_suite_id} no longer exists")
             return
         try:
             run_monitor_generation(self.monitor_suite_id, INITIAL_MONITOR_TYPES)

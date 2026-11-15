@@ -91,7 +91,7 @@ const TestSuites = (/** @type Properties */ props) => {
         if (formLoadedFor === info.test_suite_id) return;
         formLoadedFor = info.test_suite_id;
         const v = info.initial_values ?? {};
-        formState.suiteType.val = v.suite_type ?? 'regular';
+        formState.suiteType.val = v.suite_type ?? 'standard';
         formState.testSuiteName.val = v.test_suite ?? '';
         formState.tableGroupId.val = v.table_groups_id ?? null;
         formState.description.val = v.test_suite_description ?? '';
@@ -245,9 +245,9 @@ const TestSuites = (/** @type Properties */ props) => {
                                 : ''
                         ),
                         content: () => div(
-                            { class: 'flex-row fx-justify-space-between fx-flex-align-content' },
+                            { class: 'flex-row fx-justify-space-between fx-flex-align-content fx-gap-6' },
                             div(
-                                { class: 'flex-column' },
+                                { class: 'flex-column tg-test-suites--card-main' },
                                 Link({ emit,
                                     href: 'test-suites:definitions',
                                     params: { test_suite_id: testSuite.id, project_code: projectSummary.project_code },
@@ -256,11 +256,22 @@ const TestSuites = (/** @type Properties */ props) => {
                                     right_icon_size: 20,
                                     class: 'mb-4',
                                 }),
-                                Caption({ content: 'Description', style: 'margin-bottom: 2px;' }),
-                                span({'data-testid': 'test-suite-description'}, testSuite.test_suite_description ?? '--'),
+                                div(
+                                    { class: 'flex-row fx-gap-6 fx-align-flex-start' },
+                                    div(
+                                        { class: 'flex-column tg-test-suites--card-main' },
+                                        Caption({ content: 'Description', style: 'margin-bottom: 2px;' }),
+                                        span({'data-testid': 'test-suite-description'}, testSuite.test_suite_description ?? '--'),
+                                    ),
+                                    div(
+                                        { class: 'flex-column', style: 'flex-shrink: 0; white-space: nowrap;' },
+                                        Caption({ content: 'Generation Sets', style: 'margin-bottom: 2px;' }),
+                                        span({'data-testid': 'test-suite-generation-sets'}, (testSuite.generation_sets ?? []).join(', ') || '--'),
+                                    ),
+                                ),
                             ),
                             div(
-                                { class: 'flex-column' },
+                                { class: 'flex-column tg-test-suites--card-run' },
                                 Caption({ content: 'Latest Run', style: 'margin-bottom: 2px;' }),
                                 testSuite.latest_run_start
                                     ? [
@@ -651,6 +662,15 @@ stylesheet.replace(`
 
 .tg-test-suites--version-row {
     margin-top: 6px;
+}
+
+.tg-test-suites--card-main {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.tg-test-suites--card-run {
+    flex: 0 0 400px;
 }
 
 .tg-test-suites--card-title .tg-test-suites--version-row small {

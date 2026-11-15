@@ -25,6 +25,8 @@
  * @property {('top' | 'bottom')?} portalPosition
  * @property {boolean?} filterable
  * @property {boolean?} acceptNewOptions
+ * @property {boolean?} typedNames With acceptNewOptions, typed text is a name rather than a search: Enter picks the
+ *   first listed match, a `Use "…"` row commits the text as typed, and leaving the field commits it.
  * @property {('normal' | 'inline')?} triggerStyle
  */
 import van from '../van.min.js';
@@ -95,6 +97,20 @@ const Select = (/** @type {Properties} */ props) => {
         optionsFilter.val = event.target.value;
     };
 
+    const optionText = (/** @type SelectOption */ option) => option.rawLabel ?? option.label;
+    const exactMatch = (/** @type string */ typed) =>
+        getValue(options).find(op => optionText(op)?.toLowerCase() === typed.toLowerCase());
+    const typedNames = () => getValue(props.acceptNewOptions) && getValue(props.typedNames);
+
+    const commitNewOption = (/** @type string */ typed) => {
+        opened.val = false;
+        valueLabel.val = typed;
+        if (inputEl) {
+            inputEl.value = typed;
+        }
+        props.onChange?.(typed, { isCustom: true, valid: true });
+    };
+
     const handleInputKeydown = (/** @type KeyboardEvent */ event) => {
         if (event.key === 'Enter') {
             event.preventDefault();
@@ -104,13 +120,14 @@ const Select = (/** @type {Properties} */ props) => {
                 changeSelection({ value: null, label: '' });
                 return;
             }
-            const match = getValue(options).find(op => (op.rawLabel ?? op.label)?.toLowerCase() === typed.toLowerCase());
+            const match = exactMatch(typed)
+                ?? (typedNames()
+                    ? getValue(options).find(op => op.value !== null && optionText(op)?.toLowerCase().includes(typed.toLowerCase()))
+                    : undefined);
             if (match) {
                 changeSelection(match);
             } else if (getValue(props.acceptNewOptions)) {
-                opened.val = false;
-                valueLabel.val = typed;
-                props.onChange?.(typed, { isCustom: true, valid: true });
+                commitNewOption(typed);
             }
         } else if (event.key === 'Escape') {
             event.preventDefault();
@@ -123,11 +140,24 @@ const Select = (/** @type {Properties} */ props) => {
     const inputEl = getValue(props.filterable) ? input({
         id: `tg-select--field--${domId.val}`,
         value: valueLabel.val,
+        disabled: () => !!getValue(props.disabled),
         onkeyup: filterOptions,
         onkeydown: handleInputKeydown,
+        onblur: (event) => {
+            const typed = event.target.value.trim();
+            if (!typedNames() || !typed || typed === valueLabel.val) {
+                return;
+            }
+            const match = exactMatch(typed);
+            if (match) {
+                changeSelection(match);
+            } else {
+                commitNewOption(typed);
+            }
+        },
         onclick: (event) => {
             event.stopPropagation();
-            if (!opened.val) {
+            if (!opened.val && !getValue(props.disabled)) {
                 opened.val = true;
             }
         },
@@ -244,6 +274,9 @@ const Select = (/** @type {Properties} */ props) => {
                 {
                     class: () => `tg-select--options-wrapper mt-1 ${getValue(props.portalClass) ?? ''}`,
                     'data-testid': 'select-options',
+                    // Keeps focus in the filter input, so its blur does not commit the typed text before a click
+                    // on an option lands.
+                    onmousedown: (/** @type Event */ event) => typedNames() && event.preventDefault(),
                 },
                 getValue(filteredOptions).map(option =>
                     div(
@@ -263,6 +296,22 @@ const Select = (/** @type {Properties} */ props) => {
                         option.caption ? span({class: 'text-small text-secondary'}, option.caption) : '',
                     )
                 ),
+                () => {
+                    const typed = optionsFilter.val.trim();
+                    return typedNames() && typed && !exactMatch(typed)
+                        ? div(
+                            {
+                                class: 'tg-select--option flex-row fx-align-flex-center',
+                                onclick: (/** @type Event */ event) => {
+                                    commitNewOption(typed);
+                                    event.stopPropagation();
+                                },
+                                'data-testid': 'select-options-new',
+                            },
+                            span(`Use "${typed}"`),
+                        )
+                        : '';
+                },
             ),
         ),
     );

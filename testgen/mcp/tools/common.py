@@ -38,10 +38,12 @@ from testgen.common.enums import (
     run_duration_seconds,
 )
 from testgen.common.flavors import (
+    DEFAULT_MAX_THREADS,
     FLAVOR_CODE_TO_FAMILY,
     FLAVOR_CODE_TO_LABEL,
     SqlFlavorLabel,
     fixed_max_threads,
+    recommended_max_threads,
 )
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
@@ -190,18 +192,18 @@ def parse_severity(value: str) -> Severity:
 class SuiteTypeLabel(StrEnum):
     """User-facing values accepted for the ``suite_type`` argument on test-suite creation."""
 
-    REGULAR = "Regular"
+    STANDARD = "Standard"
     CONTRACT = "Contract"
 
 
 SUITE_TYPE_LABEL_TO_INTERNAL: dict[SuiteTypeLabel, SuiteType] = {
-    SuiteTypeLabel.REGULAR: SuiteType.REGULAR,
+    SuiteTypeLabel.STANDARD: SuiteType.STANDARD,
     SuiteTypeLabel.CONTRACT: SuiteType.CONTRACT,
 }
 
 
 def parse_suite_type(value: str) -> SuiteType:
-    """Validate a ``suite_type`` value. Accepts ``Regular`` or ``Contract``.
+    """Validate a ``suite_type`` value. Accepts ``Standard`` or ``Contract``.
 
     Monitor suites are created through monitoring setup, not through this argument, so
     ``Monitor`` is not a valid value here.
@@ -218,7 +220,7 @@ _SUITE_TYPE_INTERNAL_TO_LABEL: dict[SuiteType, SuiteTypeLabel] = {
 def format_suite_type_label(suite_type: SuiteType | str) -> str:
     """Map a stored ``suite_type`` to its user-facing display label.
 
-    Only ``regular`` and ``contract`` are mapped — monitor suites are created and managed
+    Only ``standard`` and ``contract`` are mapped — monitor suites are created and managed
     through a separate surface and never reach this function.
     """
     return _SUITE_TYPE_INTERNAL_TO_LABEL[SuiteType(suite_type)].value
@@ -886,9 +888,9 @@ def resolve_hygiene_issue(issue_id: str) -> HygieneIssue:
 def resolve_contract(test_suite_id: str) -> TestSuite:
     """Resolve a contract's test suite ID, collapsing missing-or-inaccessible into one error path.
 
-    A regular suite the caller can reach is reported as not a contract rather than as missing:
+    A standard suite the caller can reach is reported as not a contract rather than as missing:
     the caller can see it in the suite listings, and a unified error would send them hunting a
-    typo. A monitor suite is reported as missing, as it is everywhere else regular suites are served.
+    typo. A monitor suite is reported as missing, as it is everywhere else standard suites are served.
     """
     suite_uuid = parse_uuid(test_suite_id, "test_suite_id")
     perms = get_project_permissions()
@@ -929,7 +931,7 @@ def unknown_version_error(error: contract_service.UnknownVersionError) -> MCPUse
 
 
 def resolve_test_suite(test_suite_id: str) -> TestSuite:
-    """Resolve a regular or contract test suite ID, collapsing missing-or-inaccessible into one error path."""
+    """Resolve a standard or contract test suite ID, collapsing missing-or-inaccessible into one error path."""
     suite_uuid = parse_uuid(test_suite_id, "test_suite_id")
     perms = get_project_permissions()
     suite = TestSuite.get(
@@ -1423,6 +1425,20 @@ def apply_connection_params(
         connection.connect_by_url = False
 
 
+def format_max_threads(connection: Connection) -> str:
+    """The thread count a connection runs at, with the value its type recommends or defaults to.
+
+    Reports the pinned count, not the stored column, for a type that fixes it.
+    """
+    code = connection.sql_flavor_code or connection.sql_flavor
+    threads = connection.effective_max_threads
+    if fixed_max_threads(code) is not None:
+        return f"{threads} (fixed)"
+    if (recommended := recommended_max_threads(code)) is not None:
+        return f"{threads} (recommended)" if threads == recommended else f"{threads} ({recommended} recommended)"
+    return f"{threads} (default)" if threads == DEFAULT_MAX_THREADS else f"{threads} ({DEFAULT_MAX_THREADS} default)"
+
+
 def reject_fixed_max_threads(sql_flavor_code: str, max_threads: int | None) -> None:
     """Raise when ``max_threads`` is a value other than the one its flavor fixes.
 
@@ -1466,11 +1482,7 @@ def render_connection_body(doc: MdDoc, connection: Connection) -> None:
 
     if (authentication := authentication_label(connection)) is not None:
         doc.field("Authentication", authentication)
-    if connection.max_threads is not None:
-        # The pinned value, not the stored column: a flavor that fixes its thread count runs at
-        # that count whatever the column says, and reporting the column sends an operator looking
-        # for a parallelism they never had.
-        doc.field("Max Threads", connection.effective_max_threads)
+    doc.field("Max Threads", format_max_threads(connection))
     if connection.max_query_chars is not None:
         doc.field("Max Expression Length", connection.max_query_chars)
 

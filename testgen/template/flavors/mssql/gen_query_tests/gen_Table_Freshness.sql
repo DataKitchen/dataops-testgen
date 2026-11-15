@@ -128,7 +128,7 @@ combined AS (
 ),
 selected_tables AS (
   SELECT profile_run_id, schema_name, table_name,
-    'CAST(COUNT(*) AS varchar) + ''|'' + ' ||
+    'CAST(COUNT_BIG(*) AS varchar) + ''|'' + ' ||
       STRING_AGG(
         REPLACE(
           CASE

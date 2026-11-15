@@ -1,4 +1,4 @@
-"""The suite-type filter on read methods: REGULAR by default, widened only when asked."""
+"""The suite-type filter on read methods: STANDARD by default, widened only when asked."""
 
 from collections.abc import Callable
 from datetime import date
@@ -16,7 +16,7 @@ from testgen.common.models.test_suite import TestSuite
 
 pytestmark = pytest.mark.unit
 
-BOTH = (SuiteType.REGULAR, SuiteType.CONTRACT)
+BOTH = (SuiteType.STANDARD, SuiteType.CONTRACT)
 RUN_IDS = (uuid4(), uuid4())
 
 
@@ -75,25 +75,25 @@ def _suite_type_sql(session, call, **kwargs) -> str:
 @pytest.mark.parametrize("call", ORM_READS)
 def test_orm_reads_default_to_regular(session_mock, call):
     sql = _suite_type_sql(session_mock, call)
-    assert "test_suites.suite_type IN ('regular')" in sql
+    assert "test_suites.suite_type IN ('standard')" in sql
     assert "'contract'" not in sql
 
 
 @pytest.mark.parametrize("call", ORM_READS)
 def test_orm_reads_widen_on_request(session_mock, call):
     sql = _suite_type_sql(session_mock, call, suite_types=BOTH)
-    assert "test_suites.suite_type IN ('regular', 'contract')" in sql
+    assert "test_suites.suite_type IN ('standard', 'contract')" in sql
 
 
 def test_suite_summary_defaults_to_regular(session_mock):
     TestSuite.select_summary("demo")
-    assert session_mock.execute.call_args.args[1]["suite_types"] == ("regular",)
+    assert session_mock.execute.call_args.args[1]["suite_types"] == ("standard",)
 
 
 def test_suite_summary_widens_on_request_and_selects_the_type(session_mock):
     TestSuite.select_summary("demo", suite_types=BOTH)
     sql = str(session_mock.execute.call_args.args[0])
-    assert session_mock.execute.call_args.args[1]["suite_types"] == ("regular", "contract")
+    assert session_mock.execute.call_args.args[1]["suite_types"] == ("standard", "contract")
     assert "suites.suite_type IN :suite_types" in sql
     assert "suites.suite_type," in sql
 
@@ -106,12 +106,12 @@ def _run_summary_sql(**kwargs) -> str:
 
 def test_run_summary_defaults_to_regular_and_keeps_pending_runs():
     sql = _run_summary_sql(project_code="demo")
-    assert "(test_suites.suite_type IN ('regular') OR test_suites.id IS NULL)" in sql
+    assert "(test_suites.suite_type IN ('standard') OR test_suites.id IS NULL)" in sql
 
 
 def test_run_summary_widens_on_request():
     sql = _run_summary_sql(project_code="demo", suite_types=BOTH)
-    assert "test_suites.suite_type IN ('regular', 'contract')" in sql
+    assert "test_suites.suite_type IN ('standard', 'contract')" in sql
 
 
 def test_run_summary_can_narrow_to_one_version_and_selects_version_columns():
@@ -172,7 +172,7 @@ def test_list_for_ids_reads_any_version_of_a_contract_only_when_contracts_are_re
 
 
 def test_any_contract_version_clause_is_none_when_contracts_are_not_requested():
-    assert TestDefinition.any_contract_version_clause((SuiteType.REGULAR,)) is None
+    assert TestDefinition.any_contract_version_clause((SuiteType.STANDARD,)) is None
 
 
 def test_any_contract_version_clause_reads_a_contract_in_any_version():

@@ -34,7 +34,7 @@ def test_get_for_project_excludes_monitor_suites(session_mock):
     TestDefinition.get_for_project(uuid4())
 
     sql = _compiled_sql(session_mock.execute.call_args[0][0])
-    assert "test_suites.suite_type IN ('regular')" in sql
+    assert "test_suites.suite_type IN ('standard')" in sql
     assert "JOIN test_suites" in sql
 
 
@@ -44,7 +44,7 @@ def test_get_for_project_excludes_monitor_suites_with_project_codes(session_mock
     TestDefinition.get_for_project(uuid4(), project_codes=["demo"])
 
     sql = _compiled_sql(session_mock.execute.call_args[0][0])
-    assert "test_suites.suite_type IN ('regular')" in sql
+    assert "test_suites.suite_type IN ('standard')" in sql
     assert "test_suites.project_code IN" in sql
 
 
@@ -59,7 +59,7 @@ def test_list_for_suite_excludes_monitor_suites(session_mock):
     queries = [call[0][0] for call in session_mock.scalar.call_args_list]
     queries += [call[0][0] for call in session_mock.execute.call_args_list]
     sql_joined = "\n".join(_compiled_sql(q) for q in queries)
-    assert "test_suites.suite_type IN ('regular')" in sql_joined
+    assert "test_suites.suite_type IN ('standard')" in sql_joined
     assert "JOIN test_suites" in sql_joined
 
 

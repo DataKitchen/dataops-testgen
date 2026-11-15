@@ -175,7 +175,8 @@ def _test_def(name: str, table: str, subset: str | None) -> TestExecutionDef:
     }
     test_def = TestExecutionDef(
         id=uuid4(), test_type=name, schema_name="s", table_name=table, column_name=column, lock_refresh="N",
-        skip_errors=0, history_calculation=None, custom_query=None, prediction=None, run_type="CAT",
+        skip_errors=0, history_calculation=None, custom_query=None, default_parm_columns="",
+        prediction=None, run_type="CAT",
         test_scope=CAT_TYPES[name]["test_scope"], template="", measure=condition["measure"],
         test_operator=condition["test_operator"], test_condition=condition["test_condition"],
         subset_condition=subset, groupby_names=None, having_condition=None, window_date_column=None,
@@ -354,4 +355,3 @@ def _path(node: exp.Expression, ancestor: exp.Expression) -> list[exp.Expression
 def _own_tables(select: exp.Expression) -> list[exp.Table]:
     sources = [select.args.get("from_"), *(select.args.get("joins") or [])]
     return [source.this for source in sources if source is not None and isinstance(source.this, exp.Table)]
-

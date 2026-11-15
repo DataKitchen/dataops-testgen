@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dataops-testgen"
-version = "5.134.0"
+version = "5.185.1"
 description = "Open-source data quality tool that profiles tables, generates tests from the profiling results, and monitors freshness, volume, and schema."
 authors = [
     { "name" = "DataKitchen, Inc.", "email" = "info@datakitchen.io" },
@@ -60,6 +60,9 @@ dependencies = [
     "concurrent_log_handler==0.9.25",
     "cryptography==50.0.0",
     "reportlab==4.2.2",
+    # reportlab requires chardet with no upper bound; the requests copy vendored by snowflake-connector-python
+    # logs a RequestsDependencyWarning on every connection with chardet 6 or later
+    "chardet>=5.2,<6",
     "cron-converter==1.2.1",
     "cron-descriptor==2.0.5",
     "pybars3==0.9.7",

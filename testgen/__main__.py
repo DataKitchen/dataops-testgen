@@ -995,6 +995,11 @@ def run_ui():
 
     if settings.IS_DEBUG:
         patch_streamlit.patch(dev=True)
+    else:
+        try:
+            patch_streamlit.patch_index()
+        except OSError as error:
+            LOG.warning(f"Could not update Streamlit's index.html, so browsers may run cached UI files: {error}")
 
     @with_database_session
     def init_ui():
@@ -1003,7 +1008,7 @@ def run_ui():
 
     init_ui()
 
-    app_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui/app.py")
+    app_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui/asgi.py")
 
     # In standalone mode, pass the pgserver URI to the Streamlit subprocess
     # so it can connect without acquiring the pgserver file lock. When this
@@ -1030,6 +1035,7 @@ def run_ui():
             # Also withholds Streamlit's in-app "install agent skills" prompt from TestGen users
             "--logger.hideWelcomeMessage=true",
             f"--server.port={settings.UI_PORT}",
+            f"--server.baseUrlPath={settings.UI_BASE_PATH}" if settings.UI_BASE_PATH else "",
             f"--server.sslCertFile={settings.SSL_CERT_FILE}" if use_ssl else "",
             f"--server.sslKeyFile={settings.SSL_KEY_FILE}" if use_ssl else "",
             "--",

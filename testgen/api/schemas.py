@@ -47,7 +47,16 @@ from testgen.common.models.table_group import (
     table_group_defaults,
 )
 from testgen.common.models.test_suite import MONITOR_SETTING_DEFAULTS
+from testgen.common.query_variables import VARIABLES, validate_values
+from testgen.common.run_overrides import (
+    MATCH_SCHEMA_NAME,
+    MATCH_TABLE_NAMES,
+    SCHEMA_NAME,
+    TABLE_NAMES,
+    validate_table_name_map,
+)
 from testgen.common.test_definition_export_import_service import (
+    TESTS_FAIL_VALIDATION_ON_EACH_RUN,
     ContractVersion,
     ImportConfig,
     ImportPayload,
@@ -56,7 +65,7 @@ from testgen.common.test_definition_export_import_service import (
 
 TestSuiteTypeField = Annotated[
     TestSuiteType,
-    Field(description="The kind of test suite: `regular`, or `contract` for a data contract."),
+    Field(description="The type of test suite: `standard` or `contract`."),
 ]
 
 SchemaName = Annotated[
@@ -117,8 +126,7 @@ class TableGroupSchemaChange(BaseModel):
         description=(
             "Tables in the table group's catalog that it no longer selects after the move, because the new "
             "schema does not have them or because the request's table filters exclude them. The change still "
-            "applies. Their tests report an error on each test run, or are deactivated if the test suite "
-            "deactivates tests that fail validation, and the next monitor run deletes their "
+            f"applies. Their tests {TESTS_FAIL_VALIDATION_ON_EACH_RUN}, and the next monitor run deletes their "
             "monitors along with the thresholds they learned."
         ),
     )
@@ -129,17 +137,21 @@ class TestRunRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    schema_name: str | None = Field(
+        default=None,
+        pattern=SCHEMA_NAME_PATTERN,
+        max_length=SCHEMA_NAME_MAX_LENGTH,
+        description=SCHEMA_NAME,
+    )
+    table_names: dict[str, str] | None = Field(default=None, description=TABLE_NAMES)
     match_schema_name: str | None = Field(
         default=None,
         pattern=SCHEMA_NAME_PATTERN,
         max_length=SCHEMA_NAME_MAX_LENGTH,
-        description=(
-            "Schema to read the second table of each referential test from, for this run only. "
-            "Tests without a second table are unaffected, the stored test definitions are not changed, "
-            "and the run deactivates no tests. To read the table group's own tables from another "
-            "schema, change the table group's schema instead."
-        ),
+        description=MATCH_SCHEMA_NAME,
     )
+    match_table_names: dict[str, str] | None = Field(default=None, description=MATCH_TABLE_NAMES)
+    variables: dict[str, str] | None = Field(default=None, description=VARIABLES)
     external_url: str | None = Field(
         default=None,
         max_length=EXTERNAL_URL_MAX_LENGTH,
@@ -167,6 +179,20 @@ class TestRunRequest(BaseModel):
     @classmethod
     def _check_metadata(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
         if error := validate_caller_metadata(value):
+            raise ValueError(error)
+        return value
+
+    @field_validator("table_names", "match_table_names")
+    @classmethod
+    def _check_table_names(cls, value: dict[str, str] | None) -> dict[str, str] | None:
+        if error := validate_table_name_map(value):
+            raise ValueError(error)
+        return value
+
+    @field_validator("variables")
+    @classmethod
+    def _check_variables(cls, value: dict[str, str] | None) -> dict[str, str] | None:
+        if error := validate_values(value):
             raise ValueError(error)
         return value
 
@@ -241,7 +267,7 @@ class TestRunVersion(BaseModel):
         description=f"{VERSION_NUMBER} `null` when the version is a draft that was discarded after the run."
     )
     state: VersionState = Field(
-        description="The version's state as of this request: `draft`, `active` (the agreement in force), or "
+        description="The version's state as of this request: `draft`, `active`, or "
         "`superseded`. `draft` for a discarded draft."
     )
     preview: bool = Field(
@@ -256,11 +282,21 @@ class TestRunVersion(BaseModel):
         "the run and its results remain."
     )
     counts_as_status: bool = Field(
-        description="Whether the run completed a verification of the agreement in force when it started: its version "
+        description="Whether the run completed a verification of the active version when it started: its version "
         "was frozen before the run started, no later version had been frozen, and the run completed. `false` for a run "
         "that has not completed, for a preview (a preview stays a preview after its version is frozen), and for a "
         "check of a version already superseded."
     )
+
+
+class TestRunOverrides(BaseModel):
+    """The per-run overrides a test run applied."""
+
+    schema_name: str | None = Field(default=None, description=SCHEMA_NAME)
+    table_names: dict[str, str] | None = Field(default=None, description=TABLE_NAMES)
+    match_schema_name: str | None = Field(default=None, description=MATCH_SCHEMA_NAME)
+    match_table_names: dict[str, str] | None = Field(default=None, description=MATCH_TABLE_NAMES)
+    variables: dict[str, str] | None = Field(default=None, description=VARIABLES)
 
 
 class TestRunResponse(BaseModel):
@@ -276,6 +312,9 @@ class TestRunResponse(BaseModel):
     metadata: dict[str, Any] | None = None
     result: TestRunResult | None = None
     version: TestRunVersion | None = Field(default=None, description="Contracts only. The version the run checked.")
+    overrides: TestRunOverrides | None = Field(
+        default=None, description="The overrides the run applied. `null` when it applied none."
+    )
 
 
 class TestResultItem(BaseModel):
@@ -646,8 +685,8 @@ class TestGenerationRequest(BaseModel):
     generation_sets: list[str] | None = Field(
         default=None,
         description="Generation sets to generate tests from, by name, e.g. `Standard` or `Table Comparison`. Omit to "
-        "use the test suite's stored generation sets, or `Standard` when it has none. A contract accepts only "
-        "`Contract`, and generates from it when this is omitted.",
+        "use the test suite's stored generation sets, or `Standard` when it has none (`Contract` for a contract). "
+        "Only a contract can use `Contract`.",
     )
     regenerate: list[RegenerationGroup] | None = Field(
         default=None,
@@ -665,7 +704,7 @@ class TestRunSubmittedResponse(JobSubmittedResponse):
     version: ContractVersion | None = Field(default=None, description="Contracts only. The version the run checks.")
     note: str | None = Field(
         default=None,
-        description="Contracts only. Why the run will not count as the contract's status, judged from the version's "
+        description="Contracts only. Why the run will not update the contract's results, judged from the version's "
         "state at submission.",
     )
 
@@ -876,7 +915,7 @@ _RULE_EVENT = (
 )
 _INLINE_KIND = "`inline`: the rule sends email to the addresses in `recipients`."
 _DESTINATION_KIND = "`destination`: the rule sends to the saved destination `destination_id`."
-_RULE_TEST_SUITE = "Only runs of this test suite, regular or contract. `null` covers every test suite in the project."
+_RULE_TEST_SUITE = "Only runs of this test suite. `null` covers every test suite in the project."
 _RULE_TABLE_GROUP = "Only profiling runs of this table group. `null` covers every table group in the project."
 _RULE_MONITOR_SUITE = "The monitor suite whose anomalies the rule reports."
 _RULE_TABLE_NAME = "Only anomalies on this table. `null` covers every table in the table group."
@@ -1289,7 +1328,12 @@ class ConnectionResponse(BaseModel):
             "`access_keys`, `iam_role`, `account_key`, or `public`. `public` reads without credentials."
         ),
     )
-    max_threads: int | None = Field(default=None, description="Queries TestGen runs against the connection at a time.")
+    max_threads: int = Field(
+        description=(
+            "Queries TestGen runs against the connection at a time: 1 for DuckDB, Local Files, Amazon S3, and "
+            "Azure Blob Storage connections, otherwise the stored value, from 1 to 16."
+        )
+    )
     max_expression_length: int | None = Field(
         default=None, description="Maximum character length of a generated query expression."
     )
@@ -1653,7 +1697,7 @@ class TestSuiteLatestRun(BaseModel):
 
 
 class TestSuiteItem(BaseModel):
-    """One test suite in a project listing, regular or contract, with its test count and last completed run."""
+    """One test suite in a project listing, with its test count and last completed run."""
 
     test_suite_id: UUID
     test_suite_name: str
@@ -1668,7 +1712,7 @@ class TestSuiteItem(BaseModel):
     )
     active_version: int | None = Field(
         default=None,
-        description="Contracts only. The number of the active version, the agreement in force. `null` when no "
+        description="Contracts only. The number of the active version. `null` when no "
         "version has been frozen.",
     )
     draft_version: int | None = Field(
@@ -1691,7 +1735,7 @@ class TestSuiteListResponse(BaseModel):
 
 
 class ContractActiveVersion(BaseModel):
-    """The contract's active version: the highest frozen version, and so the agreement in force."""
+    """The contract's active version: the highest frozen version."""
 
     number: int = Field(description=VERSION_NUMBER)
     label: str | None = Field(default=None, description="A name for the version. `null` when it has none.")
@@ -1718,7 +1762,7 @@ class ContractVerification(BaseModel):
 
 
 class ContractStatusResponse(BaseModel):
-    """A contract's versions and the latest run that verified the agreement in force."""
+    """A contract's versions and the latest verification of the active version."""
 
     active_version: ContractActiveVersion | None = Field(
         default=None, description="`null` when no version has been frozen."
@@ -1767,7 +1811,8 @@ class TestSuiteResponse(BaseModel):
     component_name: str | None = Field(default=None, description=_COMPONENT_NAME)
     generation_sets: list[str] = Field(
         default_factory=list,
-        description="Generation sets test generation uses for the suite. Empty means `Standard`.",
+        description="Generation sets test generation uses for the suite. Empty means `Standard`, or `Contract` for "
+        "a contract.",
     )
     is_default: bool = Field(
         description="Whether this is its table group's default test suite, which the table group's first "
@@ -1806,7 +1851,7 @@ class ContractCustomServer(BaseModel):
 
 
 class TestSuiteCreatedResponse(TestSuiteResponse):
-    """A test suite just created, regular or contract."""
+    """A test suite just created."""
 
     generation: ContractGeneration | None = Field(
         default=None,
@@ -1829,7 +1874,7 @@ class TestSuiteCreate(BaseModel):
     """A test suite to create under a table group.
 
     Omitted optional fields, and fields sent as `null`, take the default shown.
-    Unknown fields are rejected. A name another test suite or contract in the project holds
+    Unknown fields are rejected. A name another test suite in the project holds
     is rejected.
     """
 
@@ -1837,8 +1882,8 @@ class TestSuiteCreate(BaseModel):
 
     test_suite_name: str = Field(description="Up to 200 characters.")
     suite_type: TestSuiteType = Field(
-        default=TestSuiteType.regular,  # type: ignore[attr-defined]
-        description="`regular` for a test suite, or `contract` for a data contract.",
+        default=TestSuiteType.standard,  # type: ignore[attr-defined]
+        description="The type of test suite: `standard` or `contract`.",
     )
     table_names: list[str] | None = Field(
         default=None,
@@ -1859,7 +1904,7 @@ class TestSuiteCreate(BaseModel):
     generation_sets: list[str] | None = Field(
         default=None,
         description="Generation sets test generation uses for the suite, from those TestGen defines. "
-        "Omit to use `Standard`.",
+        "Omit to use `Standard`, or `Contract` for a contract. Only a contract can use `Contract`.",
     )
     set_as_default: StrictBool = Field(
         default=False,

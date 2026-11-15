@@ -43,7 +43,7 @@ const Link = (/** @type Properties */ props) => {
                 ${getValue(props.disabled) ? 'disabled' : ''}
                 ${getValue(props.class) ?? ''}`,
             style: props.style,
-            href: isExternal ? href : `/${href}${getQueryFromParams(params)}`,
+            href: isExternal ? href : `./${href}${getQueryFromParams(params)}`,
             target: open_new ? '_blank' : '',
             onclick: open_new ? null : (onClick ?? ((event) => {
                 event.preventDefault();

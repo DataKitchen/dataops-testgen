@@ -503,7 +503,7 @@ def test_get_inventory_lists_contract_suites_and_drops_monitor_suites(session_mo
 
     statement = session_mock.execute.call_args.args[0]
     sql = str(statement.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
-    assert "test_suites.suite_type IN ('regular', 'contract')" in sql
+    assert "test_suites.suite_type IN ('standard', 'contract')" in sql
     assert "monitor" not in sql
 
 
