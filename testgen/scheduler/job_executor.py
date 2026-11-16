@@ -8,7 +8,7 @@ from uuid import UUID
 
 from testgen import settings
 from testgen.commands.job_registry import JOB_DISPATCH, finalize
-from testgen.common.enums import PAUSABLE_JOB_KEYS, JobStatus
+from testgen.common.enums import PAUSABLE_JOB_KEYS, STOPPABLE_JOB_KEYS, JobStatus
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution, process_failure_message
 
@@ -126,7 +126,8 @@ class JobExecutor:
 
     def _handle_cancellation(self, job_exec: JobExecution):
         """Leave a canceled job to stop on its own, and terminate it if it has not stopped within
-        ``JOB_CANCEL_TIMEOUT``. A job with no process is settled here.
+        ``JOB_CANCEL_TIMEOUT``. A job that cannot stop on its own is terminated at once, and a job
+        with no process is settled here.
 
         A cancel_requested row stays claimable until its process settles, so the poll asks again
         every cycle -- only the first ask arms a deadline.
@@ -135,6 +136,9 @@ class JobExecutor:
         if not proc:
             finalize(job_exec, job_exec.mark_canceled)
             return
+        if job_exec.job_key not in STOPPABLE_JOB_KEYS:
+            self._terminate(job_exec.id, proc)
+            return
         with self._running_jobs_cond:
             if job_exec.id in self._cancel_deadlines:
                 return
@@ -142,20 +146,24 @@ class JobExecutor:
                 "Job %s (PID %d) was canceled; terminating it if it has not stopped within %ds",
                 job_exec.id, proc.pid, settings.JOB_CANCEL_TIMEOUT,
             )
-            timer = threading.Timer(settings.JOB_CANCEL_TIMEOUT, self._terminate, args=(job_exec.id, proc))
+            timer = threading.Timer(settings.JOB_CANCEL_TIMEOUT, self._terminate_late, args=(job_exec.id, proc))
             timer.daemon = True
             self._cancel_deadlines[job_exec.id] = timer
         timer.start()
 
+    def _terminate_late(self, job_id: UUID, proc: subprocess.Popen) -> None:
+        """Terminate a canceled job that did not stop on its own within ``JOB_CANCEL_TIMEOUT``."""
+        if proc.returncode is None:
+            LOG.warning("Job %s did not stop within %ds of its cancel", job_id, settings.JOB_CANCEL_TIMEOUT)
+        self._terminate(job_id, proc)
+
     def _terminate(self, job_id: UUID, proc: subprocess.Popen) -> None:
+        """Terminate a canceled job's process, and arm the kill that follows."""
         # returncode rather than poll(): the waiting thread holds Popen's waitpid lock, and
         # poll() reports a reaped child as still running when it cannot take it.
         if proc.returncode is not None:
             return
-        LOG.warning(
-            "Terminating job %s (PID %d): it did not stop within %ds of its cancel",
-            job_id, proc.pid, settings.JOB_CANCEL_TIMEOUT,
-        )
+        LOG.info("Terminating canceled job %s (PID %d)", job_id, proc.pid)
         try:
             proc.terminate()
         except OSError:

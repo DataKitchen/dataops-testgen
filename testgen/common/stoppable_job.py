@@ -3,7 +3,7 @@
 A :class:`StoppableJob` declares an ordered list of :class:`Step` s and the base drives them.
 Between steps, between the outcomes of a fan-out, and while a fan-out waits on long work, the
 job asks its :class:`StopSignal` whether the run was asked to stop. When it was, the job cancels
-its in-flight statements if the reason calls for it, and unwinds.
+its in-flight statements and unwinds.
 
 The job's own thread is the only one that reads the request: it owns the database session, and
 an answer read anywhere else would need a session of its own.
@@ -178,13 +178,11 @@ class FanOutResult:
 class StoppableJob(ABC, Generic[K]):
     """Base for a job that stops at a step or work-key boundary when asked to.
 
-    A stop raises :class:`JobStopped`, which the job's caller settles. Reasons in
-    ``CANCELS_IN_FLIGHT_ON`` also cancel the job's running target-database statements, so the
-    job stops within seconds; any other reason lets them finish first.
+    A stop cancels the job's running target-database statements, so the job stops within
+    seconds, and raises :class:`JobStopped`, which the job's caller settles.
     """
 
     STEPS: ClassVar[tuple[Step, ...]] = ()
-    CANCELS_IN_FLIGHT_ON: ClassVar[frozenset[StopReason]] = frozenset({StopReason.INTERRUPT, StopReason.CANCEL})
 
     def __init__(self, job_id: UUID | None, stop_signal: StopSignal | None = None) -> None:
         self.job_id = job_id
@@ -259,14 +257,12 @@ class StoppableJob(ABC, Generic[K]):
         return self._stop_signal.stopped
 
     def stop_if_requested(self) -> None:
-        """Stop the job if it was asked to: cancel its in-flight statements when the reason
-        calls for it, then unwind. Call it from the thread that owns the database session."""
+        """Stop the job if it was asked to: cancel its in-flight statements, then unwind. Call it
+        from the thread that owns the database session."""
         if not self._stop_signal.check():
             return
-        reason = self._stop_signal.reason or StopReason.PAUSE
-        if reason in self.CANCELS_IN_FLIGHT_ON:
-            cancel_target_statements()
-        self._stop(reason)
+        cancel_target_statements()
+        self._stop(self._stop_signal.reason or StopReason.PAUSE)
 
     def _stop(self, reason: StopReason) -> None:
         """Unwind a job that was asked to stop."""

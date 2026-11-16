@@ -604,7 +604,25 @@ def test_a_canceled_job_is_left_to_stop_until_the_cancel_timeout(executor, execu
     proc.terminate.assert_not_called()
     delay, terminate = timer.call_args[0]
     assert delay == settings.JOB_CANCEL_TIMEOUT
-    assert terminate == executor._terminate
+    assert terminate == executor._terminate_late
+
+
+def test_a_canceled_job_that_cannot_stop_is_terminated_at_once(executor, executor_db_session):
+    """Waiting gains nothing for a job that never looks for the request, and a job that finishes
+    in the wait would settle as canceled with its work committed."""
+    job_exec = JobExecution(id=uuid4(), status="cancel_requested", job_key=JobKey.run_test_generation)
+    proc = MagicMock(returncode=None)
+    executor._running_jobs[job_exec.id] = proc
+
+    with (
+        patch(f"{EXECUTOR_MODULE}.threading.Timer") as timer,
+        patch.object(executor, "_schedule_force_kill") as escalation,
+    ):
+        executor._handle_cancellation(job_exec)
+
+    proc.terminate.assert_called_once()
+    escalation.assert_called_once_with(job_exec.id, proc)
+    timer.assert_not_called()
 
 
 def test_the_cancel_deadline_is_armed_once_however_often_the_poll_asks(executor, executor_db_session):

@@ -46,7 +46,7 @@ class StatementTracker:
         self._flavor_service = flavor_service
         self._lock = threading.Lock()
         self._running: dict[int, RunningStatement] = {}
-        self._canceled = threading.Event()
+        self._canceled = False
         event.listen(engine, "before_cursor_execute", self._before)
         event.listen(engine, "after_cursor_execute", self._forget)
         event.listen(engine, "handle_error", self._on_error)
@@ -57,21 +57,29 @@ class StatementTracker:
         Each connection type cancels in its own way; one that cannot leaves its statements to
         finish.
 
+        A failure to cancel is logged and counts as nothing canceled, so the job still stops on its
+        normal path.
+
         :returns: How many statements were asked to cancel.
         """
-        self._canceled.set()
+        # Under the lock that registers statements, so a statement is either in this snapshot or refused.
         with self._lock:
+            self._canceled = True
             running = list(self._running.values())
         if not running:
             return 0
-        asked = self._flavor_service.cancel_statements(running)
+        try:
+            asked = self._flavor_service.cancel_statements(running)
+        except Exception:
+            LOG.warning("Could not cancel the running queries on the data source", exc_info=True)
+            return 0
         LOG.info("Canceled %d of %d running queries on the data source", asked, len(running))
         return asked
 
     def _before(self, conn: Connection, cursor: Any, *_args: Any) -> None:
-        if self._canceled.is_set():
-            raise StatementsCanceled
         with self._lock:
+            if self._canceled:
+                raise StatementsCanceled
             self._running[threading.get_ident()] = RunningStatement(conn.engine, conn.connection.dbapi_connection, cursor)
 
     def _forget(self, *_args: Any) -> None:

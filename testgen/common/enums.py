@@ -71,6 +71,12 @@ class JobKey(StrEnum):
 # of its run.
 PAUSABLE_JOB_KEYS: frozenset[JobKey] = frozenset({JobKey.run_profile})
 
+# Job keys whose handler checks for a stop request and stops on its own, built on ``StoppableJob``.
+# A canceled one is given time to stop before it is terminated; any other is terminated at once.
+STOPPABLE_JOB_KEYS: frozenset[JobKey] = frozenset({
+    JobKey.run_profile, JobKey.run_tests, JobKey.run_monitors, JobKey.refresh_data_catalog,
+})
+
 # Job keys of which a project runs at most one at a time. The scheduler leaves a row of one of
 # these pending while another row of the same key and project is working.
 ONE_PER_PROJECT_JOB_KEYS: frozenset[JobKey] = frozenset({JobKey.refresh_project_scores})

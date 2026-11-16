@@ -137,31 +137,17 @@ def test_a_cancel_while_every_worker_is_busy_cancels_their_statements(row, cance
 
 
 @pytest.mark.parametrize(
-    ("status", "cancels"),
-    [
-        (JobStatus.CANCEL_REQUESTED, True),
-        (JobStatus.INTERRUPT_REQUESTED, True),
-        (JobStatus.PAUSE_REQUESTED, False),
-    ],
+    "status", [JobStatus.CANCEL_REQUESTED, JobStatus.INTERRUPT_REQUESTED, JobStatus.PAUSE_REQUESTED],
 )
-def test_only_the_reasons_the_job_declares_cancel_its_statements(row, cancel_statements, status, cancels):
+def test_every_stop_cancels_the_running_statements(row, cancel_statements, status):
+    """A pause frees the data source now, like a cancel or an interrupt: a resume reruns what the
+    cancel cut short, and a query can run for hours."""
     row.status = status
 
     with pytest.raises(JobStopped):
         _Job([1]).execute()
 
-    assert cancel_statements.called is cancels
-
-
-def test_a_job_can_keep_its_statements_running_on_any_reason(row, cancel_statements):
-    row.status = JobStatus.CANCEL_REQUESTED
-    job = _Job([1])
-    job.CANCELS_IN_FLIGHT_ON = frozenset()
-
-    with pytest.raises(JobStopped):
-        job.execute()
-
-    cancel_statements.assert_not_called()
+    cancel_statements.assert_called_once()
 
 
 def test_a_stop_is_not_an_error_any_handler_can_swallow():

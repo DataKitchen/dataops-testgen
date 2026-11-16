@@ -151,3 +151,21 @@ def test_canceling_the_target_reaches_the_job_s_target_engine(engine):
 def test_canceling_with_no_target_engine_does_nothing():
     with patch.object(database_service, "engine_cache", database_service.EngineCache()):
         assert database_service.cancel_target_statements() == 0
+
+
+def test_a_failed_cancel_still_refuses_new_statements_and_raises_nothing(engine, caplog):
+    """A stop that cannot reach the data source still has to stop the job on its normal path: a
+    stray exception here would fail an interrupted run instead of parking it."""
+    flavor_service = MagicMock()
+    flavor_service.cancel_statements.side_effect = RuntimeError("login failed")
+    track_statements(engine, flavor_service)
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def _cancel_mid_statement(*_args):
+        assert cancel_statements(engine) == 0
+
+    with engine.connect() as connection, pytest.raises(StatementsCanceled):
+        connection.execute(text("SELECT 1"))
+        connection.execute(text("SELECT 2"))
+
+    assert "Could not cancel the running queries" in caplog.text

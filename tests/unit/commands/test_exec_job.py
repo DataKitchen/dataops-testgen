@@ -19,13 +19,13 @@ from testgen.commands.job_registry import (
     run_final_callbacks,
 )
 from testgen.commands.run_test_execution import run_test_execution
-from testgen.common.enums import PAUSABLE_JOB_KEYS, JobKey
+from testgen.common.enums import PAUSABLE_JOB_KEYS, STOPPABLE_JOB_KEYS, JobKey
 from testgen.common.job_context import job_context
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.pausable_job import JobParked, PausableJob
 from testgen.common.run_overrides import OVERRIDE_LABELS
-from testgen.common.stoppable_job import JobStopped, StopReason
+from testgen.common.stoppable_job import JobStopped, StoppableJob, StopReason
 
 pytestmark = pytest.mark.unit
 
@@ -546,6 +546,18 @@ def test_exec_job_fires_no_callbacks_on_pause(mock_session):
         exec_job(job.id)
 
     callback.assert_not_called()
+
+
+def test_the_stoppable_job_keys_are_the_handlers_built_on_the_engine():
+    """A key listed but not built on the engine is waited on for nothing before it is terminated;
+    one built on it but not listed is terminated without the chance to stop on its own."""
+    for job_key, config in JOB_DISPATCH.items():
+        module = sys.modules[config.handler.__module__]
+        built_on_engine = any(
+            isinstance(obj, type) and issubclass(obj, StoppableJob) and obj.__module__ == module.__name__
+            for obj in vars(module).values()
+        )
+        assert built_on_engine == (job_key in STOPPABLE_JOB_KEYS), job_key
 
 
 def test_only_handlers_built_on_the_engine_are_pausable():

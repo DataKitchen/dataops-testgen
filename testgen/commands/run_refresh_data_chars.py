@@ -43,7 +43,6 @@ def read_target_columns(
             params = resolve_connection_params(connection.__dict__)
             api_columns = sql_generator.flavor_service.get_schema_columns(params, sql_generator.schema_name) or []
             return sql_generator.filter_schema_columns(api_columns)
-        # Through the job, so a cancel stops the read rather than waiting it out.
         rows, errors = job.fetch_threaded([sql_generator.get_schema_ddf()], use_target_db=True, max_threads=1)
         if not errors:
             # Inside the try: a row the flavor describes with a column this does not take raises here,

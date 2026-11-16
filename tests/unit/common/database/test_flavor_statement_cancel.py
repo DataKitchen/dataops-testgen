@@ -147,24 +147,31 @@ def test_bigquery_labels_nothing_outside_a_run():
     assert client.default_query_job_config is None
 
 
-def test_bigquery_cancels_only_the_run_s_own_jobs(run_id):
-    statement = _statement()
-    client = statement.dbapi_connection._client
-    own = SimpleNamespace(job_id="own", location="US", labels={RUN_LABEL: str(run_id)})
+def test_bigquery_cancels_the_run_s_own_jobs_with_one_scan_for_every_statement(run_id):
+    statements = _statements(3)
+    client = statements[0].dbapi_connection._client
+    own = [SimpleNamespace(job_id=f"own-{i}", location="US", labels={RUN_LABEL: str(run_id)}) for i in range(2)]
     other = SimpleNamespace(job_id="other", location="US", labels={RUN_LABEL: str(uuid4())})
     unlabeled = SimpleNamespace(job_id="unlabeled", location="US", labels=None)
-    client.list_jobs.return_value = [own, other, unlabeled]
+    client.list_jobs.return_value = [*own, other, unlabeled]
 
-    assert BigqueryFlavorService().cancel_statement(statement) is True
+    assert BigqueryFlavorService().cancel_statements(statements) == 2
     client.list_jobs.assert_called_once_with(state_filter="running")
-    client.cancel_job.assert_called_once_with("own", location="US")
+    assert [c.args for c in client.cancel_job.call_args_list] == [("own-0",), ("own-1",)]
+
+
+def test_bigquery_counts_no_cancel_when_no_job_of_the_run_is_running(run_id):
+    statements = _statements(2)
+    statements[0].dbapi_connection._client.list_jobs.return_value = []
+
+    assert BigqueryFlavorService().cancel_statements(statements) == 0
 
 
 def test_bigquery_cancels_nothing_outside_a_run():
-    statement = _statement()
+    statements = _statements(1)
 
-    assert BigqueryFlavorService().cancel_statement(statement) is False
-    statement.dbapi_connection._client.list_jobs.assert_not_called()
+    assert BigqueryFlavorService().cancel_statements(statements) == 0
+    statements[0].dbapi_connection._client.list_jobs.assert_not_called()
 
 
 # ---- PostgreSQL ---------------------------------------------------------------------------

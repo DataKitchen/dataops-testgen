@@ -591,10 +591,11 @@ defaults to: 60
 
 JOB_CANCEL_TIMEOUT: int = int(getenv("TG_JOB_CANCEL_TIMEOUT", "60"))
 """
-Seconds the scheduler gives a canceled job to stop on its own before it terminates the job's
-process. A job stops at its next step or query boundary and cancels its running queries, so it
-normally stops well within this; one that does not is terminated, and killed if it still has not
-exited after TG_JOB_TERMINATE_TIMEOUT.
+Seconds the scheduler gives a canceled profiling run, test run, monitor run, or data catalog
+refresh to stop on its own before it terminates the job's process. Such a job stops at its next
+step or query boundary and cancels its running queries, so it normally stops well within this; one
+that does not is terminated, and killed if it still has not exited after TG_JOB_TERMINATE_TIMEOUT.
+Any other canceled job is terminated at once.
 
 from env variable: 'TG_JOB_CANCEL_TIMEOUT'
 defaults to: 60

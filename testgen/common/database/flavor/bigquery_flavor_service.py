@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Any
 
 from google.api_core.exceptions import NotFound
@@ -13,7 +14,7 @@ from testgen.common.database.flavor.flavor_service import (
     ResolvedConnectionParams,
     base_type_name,
 )
-from testgen.common.database.statement_cancel import RunningStatement
+from testgen.common.database.statement_cancel import RunningStatement, cancel_each
 from testgen.common.job_context import job_context
 from testgen.common.value_hash import DECIMAL_BOUND
 
@@ -88,14 +89,21 @@ class BigqueryFlavorService(FlavorService):
         event.listen(engine, "connect", _label_run_queries)
         return engine
 
-    def cancel_statement(self, statement: RunningStatement) -> bool:
-        if (run_id := job_context.get().job_id) is None:
-            return False
-        client = statement.dbapi_connection._client
-        for job in client.list_jobs(state_filter="running"):
-            if (job.labels or {}).get(RUN_LABEL) == str(run_id):
-                client.cancel_job(job.job_id, location=job.location)
-        return True
+    def cancel_statements(self, statements: Sequence[RunningStatement]) -> int:
+        # The connections share one client, and a statement does not name its job, so the run's jobs
+        # are found once by their label.
+        if not statements or (run_id := job_context.get().job_id) is None:
+            return 0
+        client = statements[0].dbapi_connection._client
+        run_jobs = [
+            job for job in client.list_jobs(state_filter="running") if (job.labels or {}).get(RUN_LABEL) == str(run_id)
+        ]
+
+        def cancel(job: Any) -> bool:
+            client.cancel_job(job.job_id, location=job.location)
+            return True
+
+        return cancel_each(run_jobs, cancel)
 
     def get_connection_string_head(self, params: ResolvedConnectionParams) -> str:  # noqa: ARG002
         return f"{self.url_scheme}://"
