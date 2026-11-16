@@ -3,17 +3,20 @@ IS_NUM: CASE
             ELSE 0
         END
 
-IS_DATE: CASE
-      WHEN to_date({$1}, 'yyyyMMdd') IS NOT NULL THEN 1
-      WHEN to_date({$1}, 'yyyy-MM-dd') IS NOT NULL THEN 1
-      WHEN to_date({$1}, 'MM/dd/yyyy') IS NOT NULL THEN 1
-      WHEN to_date({$1}, 'MM-dd-yyyy') IS NOT NULL THEN 1
-      WHEN to_date({$1}, 'MM-dd-yy') IS NOT NULL THEN 1
-      WHEN to_date({$1}, 'dd LLL yyyy') IS NOT NULL AND RIGHT({$1}, 4)::INT BETWEEN 1800 AND 2200 THEN 1
-      WHEN to_date({$1}, 'dd LLLL yyyy') IS NOT NULL AND RIGHT({$1}, 4)::INT BETWEEN 1800 AND 2200 THEN 1
-      WHEN to_date({$1}, 'yyyy-MM-dd HH:mm:ss SSSSSS') IS NOT NULL AND LEFT({$1}, 4)::INT BETWEEN 1800 AND 2200 THEN 1
-      WHEN to_date({$1}, 'yyyy-MM-dd HH:mm:ss') IS NOT NULL AND LEFT({$1}, 4)::INT BETWEEN 1800 AND 2200 THEN 1
+# A failed to_date is costly, so each format is tried only on values it could parse: every format
+# starts with an ASCII digit or a sign and needs its separators.
+IS_DATE: CASE WHEN SUBSTR({$1}, 1, 1) IN ('0','1','2','3','4','5','6','7','8','9','+','-') THEN CASE
+      WHEN LENGTH({$1}) >= 8 AND TRANSLATE({$1}, '0123456789+-', '') = '' AND to_date({$1}, 'yyyyMMdd') IS NOT NULL THEN 1
+      WHEN {$1} LIKE '%-%-%' AND to_date({$1}, 'yyyy-MM-dd') IS NOT NULL THEN 1
+      WHEN {$1} LIKE '%/%/%' AND to_date({$1}, 'MM/dd/yyyy') IS NOT NULL THEN 1
+      WHEN {$1} LIKE '%-%-%' AND to_date({$1}, 'MM-dd-yyyy') IS NOT NULL THEN 1
+      WHEN {$1} LIKE '%-%-%' AND to_date({$1}, 'MM-dd-yy') IS NOT NULL THEN 1
+      WHEN {$1} LIKE '% % %' AND to_date({$1}, 'dd LLL yyyy') IS NOT NULL AND RIGHT({$1}, 4)::INT BETWEEN 1800 AND 2200 THEN 1
+      WHEN {$1} LIKE '% % %' AND to_date({$1}, 'dd LLLL yyyy') IS NOT NULL AND RIGHT({$1}, 4)::INT BETWEEN 1800 AND 2200 THEN 1
+      WHEN {$1} LIKE '%:%:%' AND to_date({$1}, 'yyyy-MM-dd HH:mm:ss SSSSSS') IS NOT NULL AND LEFT({$1}, 4)::INT BETWEEN 1800 AND 2200 THEN 1
+      WHEN {$1} LIKE '%:%:%' AND to_date({$1}, 'yyyy-MM-dd HH:mm:ss') IS NOT NULL AND LEFT({$1}, 4)::INT BETWEEN 1800 AND 2200 THEN 1
       ELSE 0
+    END ELSE 0
   END
 
 DATEDIFF_MONTH: (YEAR({$2}) * 12 + MONTH({$2}) - YEAR({$1}) * 12 - MONTH({$1}))
