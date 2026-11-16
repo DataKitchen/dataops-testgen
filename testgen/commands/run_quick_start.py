@@ -24,7 +24,7 @@ from testgen.common.database.flavor.flavor_service import ConnectionParams
 from testgen.common.enums import JobSource, JobStatus
 from testgen.common.job_context import JobContext, job_context
 from testgen.common.models import database_session, with_database_session
-from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.job_execution import JobExecution, JobOwner
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.table_group import TableGroup
@@ -105,12 +105,17 @@ def _drain_queued_jobs() -> None:
     their work would never happen. Loops rather than draining once, because a job this runs can
     queue more of its own.
     """
-    while queued := _claim_queued_follow_ups():
-        for job_id, job_key, kwargs, source in queued:
+    owner = JobOwner.for_this_process("quick-start")
+    while queued := _claim_queued_follow_ups(owner):
+        for position, (job_id, job_key, kwargs, source) in enumerate(queued):
+            # Renewed before each job, for every claimed row still waiting: a running scheduler
+            # settles a row whose lease lapsed as abandoned.
+            with database_session():
+                JobExecution.renew_leases(owner, [queued_id for queued_id, *_ in queued[position:]])
             _run_queued_job(job_id, job_key, kwargs, source)
 
 
-def _claim_queued_follow_ups() -> list[tuple[UUID, str, dict[str, Any], str]]:
+def _claim_queued_follow_ups(owner: JobOwner) -> list[tuple[UUID, str, dict[str, Any], str]]:
     """Claim the seeded project's pending system jobs, returning what each needs to run.
 
     Scoped to the seeded project and to system-submitted rows, so seeding a database that has
@@ -129,7 +134,7 @@ def _claim_queued_follow_ups() -> list[tuple[UUID, str, dict[str, Any], str]]:
             .limit(FOLLOW_UP_POLL_LIMIT)
         ).all()
         for row in rows:
-            if row.claim():
+            if row.claim(owner):
                 claimed.append((row.id, row.job_key, dict(row.kwargs), row.source))
     return claimed
 

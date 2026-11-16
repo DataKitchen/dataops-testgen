@@ -28,8 +28,9 @@ class _Row:
         self.status = JobStatus.PENDING
         self.error_message = None
 
-    def claim(self):
+    def claim(self, owner):
         self.status = JobStatus.CLAIMED
+        self.owner = owner
         return True
 
     def mark_running(self):
@@ -44,6 +45,12 @@ class _Row:
         self.status = JobStatus.ERROR
         self.error_message = message
         return True
+
+
+@pytest.fixture(autouse=True)
+def renew_leases():
+    with patch.object(JobExecution, "renew_leases") as renew:
+        yield renew
 
 
 def _queue(*rounds, seen=None, depth=None):
@@ -97,6 +104,26 @@ def test_a_queued_follow_up_runs_and_is_marked_completed():
 
     handler.assert_called_once_with(test_suite_id="abc")
     assert row.status == JobStatus.COMPLETED
+
+
+def test_queued_follow_ups_are_claimed_for_quick_start_and_their_leases_renewed_before_each_runs(renew_leases):
+    """A running scheduler settles a claimed row whose lease lapsed, so rows waiting their turn
+    keep theirs renewed."""
+    rows = [_Row(kwargs={"test_suite_id": "abc"}), _Row(kwargs={"test_suite_id": "def"})]
+    with (
+        patch(f"{MODULE}.database_session", return_value=_queue(rows)),
+        patch.object(JobExecution, "get", side_effect=lambda job_id: next(r for r in rows if r.id == job_id)),
+        patch(f"{MODULE}.JOB_DISPATCH", _dispatch(MagicMock())),
+    ):
+        _drain_queued_jobs()
+
+    owner = rows[0].owner
+    assert rows[1].owner is owner
+    assert "quick-start" in owner.label
+    assert [call.args for call in renew_leases.call_args_list] == [
+        (owner, [rows[0].id, rows[1].id]),
+        (owner, [rows[1].id]),
+    ]
 
 
 def test_a_drained_handler_is_never_given_a_run_date():

@@ -7,7 +7,6 @@ from uuid import uuid4
 
 import pytest
 
-from testgen import settings
 from testgen.commands.job_registry import JobConfig
 from testgen.common.enums import JobKey, JobSource
 from testgen.common.models.job_execution import JobExecution
@@ -200,30 +199,6 @@ def test_a_second_signal_terminates_the_running_jobs(scheduler_instance, sig):
 
         shutdown_mock.assert_called_once()
         wait_mock.assert_called_once()
-
-
-def test_the_shutdown_wait_is_bounded(scheduler_instance):
-    """Waiting past the runtime's stop grace period gets the whole container killed, so a job
-    that will not stop must cost the scheduler its deadline, not its clean exit."""
-    with patch.object(scheduler_instance.executor, "_running_jobs_cond") as cond:
-        cond.__enter__ = Mock(return_value=cond)
-        cond.__exit__ = Mock(return_value=False)
-        cond.wait_for.return_value = False
-        scheduler_instance.executor._running_jobs[uuid4()] = MagicMock()
-        with (
-            patch.object(scheduler_instance, "start"),
-            patch.object(scheduler_instance, "shutdown"),
-            patch.object(scheduler_instance, "wait"),
-            patch.object(scheduler_instance.executor, "_ask_running_jobs_to_stop"),
-            patch.object(scheduler_instance.executor, "terminate_running_jobs") as terminate,
-            patch("testgen.scheduler.cli_scheduler.signal.signal"),
-            patch("testgen.scheduler.cli_scheduler.threading.Event") as event,
-        ):
-            event.return_value.wait.return_value = None
-            scheduler_instance.run()
-
-    assert cond.wait_for.call_args_list[0].kwargs["timeout"] == settings.JOB_SHUTDOWN_TIMEOUT
-    terminate.assert_called_once()
 
 
 def test_run_scheduler_starts_the_scheduler_once_the_database_is_ready():

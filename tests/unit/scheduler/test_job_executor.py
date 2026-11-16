@@ -56,10 +56,10 @@ def job_exec():
 
 
 @pytest.fixture
-def job_lock():
-    with patch(f"{EXECUTOR_MODULE}.job_lock") as lock:
-        lock.is_held.return_value = False
-        yield lock
+def exited():
+    """Whether each fake process has exited, as the executor checks it without reaping."""
+    with patch(f"{EXECUTOR_MODULE}._has_exited", return_value=False) as has_exited:
+        yield has_exited
 
 
 def _returning_row(job_exec, **overrides):
@@ -70,9 +70,11 @@ def _returning_row(job_exec, **overrides):
     return row
 
 
-def _register(executor, job_id=None, job_key=JobKey.run_tests, exitcode=None):
+def _register(executor, job_id=None, job_key=JobKey.run_tests, exitcode=None, in_process=False):
     """Register a running job with a fake process, and return it."""
-    job = _RunningJob(process=MagicMock(pid=555, exitcode=exitcode), doorbell=MagicMock(), job_key=job_key)
+    job = _RunningJob(
+        process=MagicMock(pid=555, exitcode=exitcode), doorbell=MagicMock(), job_key=job_key, in_process=in_process,
+    )
     executor._running_jobs[job_id or uuid4()] = job
     return job
 
@@ -99,8 +101,9 @@ def test_dispatch_starts_a_job_process_with_its_doorbell(executor, job_exec):
     job_id, doorbell, _verbose = kwargs["args"]
     assert job_id == job_exec.id
     process.start.assert_called_once()
-    assert executor._running_jobs[job_exec.id] == _RunningJob(process, doorbell, job_exec.job_key)
-    assert thread_cls.call_args.kwargs["target"] == executor._watch
+    job = executor._running_jobs[job_exec.id]
+    assert (job.process, job.doorbell, job.job_key) == (process, doorbell, job_exec.job_key)
+    assert thread_cls.call_args.kwargs["args"] == (job_exec.id, job)
     thread_cls.return_value.start.assert_called_once()
 
 
@@ -114,35 +117,24 @@ def test_dispatch_unknown_job_key(executor, mock_session):
     assert job_exec.status == "error"
 
 
-def test_dispatch_takes_a_slot_for_an_in_process_job(executor, job_exec):
-    job_exec.in_process = True
+@pytest.mark.parametrize("in_process", [True, False])
+def test_dispatch_records_whether_the_job_takes_an_in_process_slot(executor, job_exec, in_process):
+    job_exec.in_process = in_process
 
     _dispatch(executor, job_exec)
 
-    assert executor._in_process_jobs == {job_exec.id}
+    assert executor._running_jobs[job_exec.id].in_process is in_process
 
 
-def test_dispatch_takes_no_slot_for_a_server_job(executor, job_exec):
-    job_exec.in_process = False
-
-    _dispatch(executor, job_exec)
-
-    assert executor._in_process_jobs == set()
-
-
-def test_dispatch_takes_no_slot_when_the_process_fails_to_start(executor, job_exec):
-    job_exec.in_process = True
-
+def test_a_job_whose_process_fails_to_start_is_not_registered(executor, job_exec):
     with pytest.raises(OSError):
         _dispatch(executor, job_exec, **{"start.side_effect": OSError("no fork")})
 
-    assert executor._in_process_jobs == set()
     assert executor._running_jobs == {}
 
 
 def test_a_job_whose_watcher_cannot_start_is_killed_and_forgotten(executor, job_exec):
     """The watcher settles the run and frees the slot, so a process without one must not keep running."""
-    job_exec.in_process = True
     process = MagicMock()
     with (
         patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock())}, clear=False),
@@ -153,7 +145,6 @@ def test_a_job_whose_watcher_cannot_start_is_killed_and_forgotten(executor, job_
         executor._dispatch(job_exec)
 
     process.kill.assert_called_once()
-    assert executor._in_process_jobs == set()
     assert executor._running_jobs == {}
 
 
@@ -161,29 +152,26 @@ def test_a_job_whose_watcher_cannot_start_is_killed_and_forgotten(executor, job_
 
 
 @pytest.mark.parametrize("exit_code", [0, 1, -9])
-def test_the_watcher_reconciles_its_run_once_the_process_exits(executor, executor_db_session, job_lock, exit_code):
+def test_the_watcher_reconciles_its_run_once_the_process_exits(executor, executor_db_session, exit_code):
     job_id = uuid4()
     job = _register(executor, job_id, exitcode=exit_code)
-    executor._in_process_jobs.add(job_id)
 
     with (
         patch.object(JobExecution, "reconcile", return_value=set()) as reconcile,
         patch(f"{EXECUTOR_MODULE}._run_final_callbacks_for") as callbacks,
     ):
-        executor._watch(job_id)
+        executor._watch(job_id, job)
 
     job.process.join.assert_called_once()
     assert job_id in reconcile.call_args.args[0].compile().params.values()
     assert reconcile.call_args.kwargs["error_message"] == process_failure_message(555, exit_code, job.job_key)
     callbacks.assert_called_once_with(set())
-    job_lock.remove.assert_called_once_with(job_id)
     assert job_id not in executor._running_jobs
-    assert executor._in_process_jobs == set()
 
 
-def test_the_watcher_fires_the_callbacks_of_the_run_it_ended(executor, job_exec, mock_session, job_lock):
+def test_the_watcher_fires_the_callbacks_of_the_run_it_ended(executor, job_exec, mock_session):
     job_exec.status = "running"
-    _register(executor, job_exec.id, exitcode=-9)
+    job = _register(executor, job_exec.id, exitcode=-9)
     callback = Mock()
 
     with (
@@ -191,66 +179,99 @@ def test_the_watcher_fires_the_callbacks_of_the_run_it_ended(executor, job_exec,
         patch.object(JobExecution, "get", return_value=job_exec),
         patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [callback]}),
     ):
-        executor._watch(job_exec.id)
+        executor._watch(job_exec.id, job)
 
     callback.assert_called_once_with(job_exec)
 
 
-def test_the_watcher_forgets_its_job_when_settling_fails(executor, executor_db_session, job_lock):
+def test_the_watcher_frees_the_slot_before_the_callbacks_run(executor, executor_db_session):
+    """A notification can wait on its delivery timeout, and the slot is not the notification's to hold."""
     job_id = uuid4()
-    _register(executor, job_id, exitcode=1)
-    executor._in_process_jobs.add(job_id)
+    job = _register(executor, job_id, exitcode=-9, in_process=True)
+    seen = []
+
+    with (
+        patch.object(JobExecution, "reconcile", return_value={job_id}),
+        patch(f"{EXECUTOR_MODULE}._run_final_callbacks_for", side_effect=lambda _: seen.append(dict(executor._running_jobs))),
+    ):
+        executor._watch(job_id, job)
+
+    assert seen == [{}]
+
+
+def test_the_watcher_forgets_its_job_when_settling_fails(executor, executor_db_session):
+    job_id = uuid4()
+    job = _register(executor, job_id, exitcode=1)
 
     with patch.object(JobExecution, "reconcile", side_effect=RuntimeError("no database")):
-        executor._watch(job_id)
+        executor._watch(job_id, job)
 
     assert job_id not in executor._running_jobs
-    assert executor._in_process_jobs == set()
 
 
-def test_the_watcher_drops_its_job_s_pending_deadlines(executor, executor_db_session, job_lock):
+def test_the_watcher_cancels_its_job_s_pending_deadlines(executor, executor_db_session):
     job_id = uuid4()
-    _register(executor, job_id, exitcode=0)
-    cancel_deadline, kill_deadline = MagicMock(), MagicMock()
-    executor._cancel_deadlines[job_id] = cancel_deadline
-    executor._force_kills[job_id] = kill_deadline
+    job = _register(executor, job_id, exitcode=0)
+    job.cancel_deadline, job.force_kill = MagicMock(), MagicMock()
 
     with patch.object(JobExecution, "reconcile", return_value=set()):
-        executor._watch(job_id)
+        executor._watch(job_id, job)
 
-    cancel_deadline.cancel.assert_called_once()
-    kill_deadline.cancel.assert_called_once()
-    assert job_id not in executor._cancel_deadlines
-    assert job_id not in executor._force_kills
+    job.cancel_deadline.cancel.assert_called_once()
+    job.force_kill.cancel.assert_called_once()
 
 
-# ---- ringing ----------------------------------------------------------------------------
+def test_a_process_that_exits_after_its_run_was_claimed_again_leaves_the_new_process_alone(
+    executor, executor_db_session,
+):
+    """A run parked by one process can be claimed by the next before the first has exited. The first
+    one's watcher must not forget the second process, nor settle the run it now holds."""
+    job_id = uuid4()
+    old = _register(executor, job_id, exitcode=0)
+    new = _register(executor, job_id)
+
+    with patch.object(JobExecution, "reconcile") as reconcile:
+        executor._watch(job_id, old)
+
+    reconcile.assert_not_called()
+    assert executor._running_jobs[job_id] is new
 
 
-def test_the_poll_rings_every_running_job_whose_row_holds_a_request(executor, executor_db_session):
-    jobs = {status: (uuid4(), None) for status in JobStatus.stale_recoverable()}
-    jobs = {status: (job_id, _register(executor, job_id)) for status, (job_id, _) in jobs.items()}
+# ---- ringing and leases -----------------------------------------------------------------
 
-    with patch.object(
-        JobExecution, "select_in_progress", return_value={job_id: status for status, (job_id, _) in jobs.items()},
+
+def test_the_poll_renews_its_leases_and_rings_every_job_whose_row_holds_a_request(executor, executor_db_session):
+    jobs = {status: (job_id := uuid4(), _register(executor, job_id)) for status in JobStatus.stale_recoverable()}
+
+    with (
+        patch.object(JobExecution, "renew_leases") as renew,
+        patch.object(
+            JobExecution, "select_in_progress", return_value={job_id: status for status, (job_id, _) in jobs.items()},
+        ),
     ):
         executor._ring_requested()
 
+    assert renew.call_args.args[0] == executor._owner
+    assert set(renew.call_args.args[1]) == {job_id for job_id, _ in jobs.values()}
     rung = {status for status, (_, job) in jobs.items() if job.doorbell.ring.called}
     assert rung == {JobStatus.PAUSE_REQUESTED, JobStatus.INTERRUPT_REQUESTED, JobStatus.CANCEL_REQUESTED}
 
 
-def test_the_poll_reads_no_statuses_without_running_jobs(executor, executor_db_session):
-    with patch.object(JobExecution, "select_in_progress") as select:
+def test_the_poll_touches_no_rows_without_running_jobs(executor, executor_db_session):
+    with (
+        patch.object(JobExecution, "renew_leases") as renew,
+        patch.object(JobExecution, "select_in_progress") as select,
+    ):
         executor._ring_requested()
 
+    renew.assert_not_called()
     select.assert_not_called()
 
 
 def test_ringing_survives_a_database_failure(executor, executor_db_session):
     job = _register(executor)
 
-    with patch.object(JobExecution, "select_in_progress", side_effect=RuntimeError("no database")):
+    with patch.object(JobExecution, "renew_leases", side_effect=RuntimeError("no database")):
         executor._ring_requested()
 
     job.doorbell.ring.assert_not_called()
@@ -259,43 +280,36 @@ def test_ringing_survives_a_database_failure(executor, executor_db_session):
 # ---- reconcile --------------------------------------------------------------------------
 
 
-def test_runs_with_no_live_process_are_reconciled(executor, executor_db_session, job_lock):
-    own, alive, dead = uuid4(), uuid4(), uuid4()
-    _register(executor, own)
-    job_lock.is_held.side_effect = lambda job_id: job_id == alive
+def test_the_poll_settles_the_runs_no_live_process_holds(executor, executor_db_session):
+    live = uuid4()
+    _register(executor, live)
+    settled = {uuid4()}
 
     with (
-        patch.object(JobExecution, "select_in_progress", return_value={alive: "running", dead: "running"}) as select,
-        patch.object(JobExecution, "reconcile", return_value={dead}) as reconcile,
+        patch.object(JobExecution, "held_by_no_live_process", return_value="clause") as held_by_none,
+        patch.object(JobExecution, "reconcile", return_value=settled) as reconcile,
         patch(f"{EXECUTOR_MODULE}.threading.Thread") as thread_cls,
     ):
         executor._reconcile_without_process()
 
-    assert "NOT IN" in str(select.call_args.args[0].compile())
-    assert own in select.call_args.args[0].compile().params["id_1"]
-    assert reconcile.call_args.args[0].compile().params["id_1"] == [dead]
-    job_lock.remove.assert_called_once_with(dead)
-    assert thread_cls.call_args.kwargs["args"] == ({dead},)
+    assert held_by_none.call_args.args == (executor._owner, {live})
+    reconcile.assert_called_once_with("clause")
+    assert thread_cls.call_args.kwargs["args"] == (settled,)
     thread_cls.return_value.start.assert_called_once()
 
 
-def test_a_run_whose_process_is_alive_is_left_alone(executor, executor_db_session, job_lock):
-    """A restarted scheduler finds runs whose process outlived the old one for a moment; those
-    settle themselves."""
-    alive = uuid4()
-    job_lock.is_held.return_value = True
-
+def test_nothing_settled_starts_no_callback_thread(executor, executor_db_session):
     with (
-        patch.object(JobExecution, "select_in_progress", return_value={alive: "running"}),
-        patch.object(JobExecution, "reconcile") as reconcile,
+        patch.object(JobExecution, "reconcile", return_value=set()),
+        patch(f"{EXECUTOR_MODULE}.threading.Thread") as thread_cls,
     ):
         executor._reconcile_without_process()
 
-    reconcile.assert_not_called()
+    thread_cls.assert_not_called()
 
 
-def test_reconciling_survives_a_database_failure(executor, executor_db_session, job_lock):
-    with patch.object(JobExecution, "select_in_progress", side_effect=RuntimeError("no database")):
+def test_reconciling_survives_a_database_failure(executor, executor_db_session):
+    with patch.object(JobExecution, "reconcile", side_effect=RuntimeError("no database")):
         executor._reconcile_without_process()
 
 
@@ -339,7 +353,7 @@ def test_poll_loop_claims_and_dispatches(executor, job_exec, mock_session):
     ):
         executor._poll_loop()
 
-    claim_mock.assert_called_once_with(limit=executor._poll_batch_size, in_process_slots=1)
+    claim_mock.assert_called_once_with(limit=executor._poll_batch_size, in_process_slots=1, owner=executor._owner)
     dispatch_mock.assert_called_once_with(job_exec)
 
 
@@ -448,7 +462,9 @@ def _run_one_poll(executor, actionable):
 
 @pytest.mark.parametrize(("cap", "held", "expected_slots"), [(1, 0, 1), (1, 1, 0), (3, 1, 2), (2, 3, 0)])
 def test_poll_offers_the_slots_left_under_the_cap(executor, mock_session, cap, held, expected_slots):
-    executor._in_process_jobs = {uuid4() for _ in range(held)}
+    for _ in range(held):
+        _register(executor, in_process=True)
+    _register(executor, in_process=False)
 
     with patch(f"{EXECUTOR_MODULE}.settings.MAX_CONCURRENT_IN_PROCESS_RUNS", cap):
         claim_mock = _run_one_poll(executor, [])
@@ -551,10 +567,10 @@ def test_the_poll_reconciles_before_its_first_wait_and_rings_before_claiming(exe
 # ---- cancel -----------------------------------------------------------------------------
 
 
-def _armed_escalation(executor, process, job_id=None):
+def _armed_escalation(executor, job):
     """Arm the kill escalation and hand back (delay, the callback the timer would fire)."""
     with patch(f"{EXECUTOR_MODULE}.threading.Timer") as timer:
-        executor._schedule_force_kill(job_id or uuid4(), process)
+        executor._schedule_force_kill(job)
         delay, escalate = timer.call_args[0]
     return delay, escalate
 
@@ -568,23 +584,24 @@ def test_a_cancel_with_no_process_is_left_to_the_reconcile_step(executor, mock_s
     assert job_exec.status == "cancel_requested"
 
 
-def test_a_job_that_ignores_terminate_is_killed(executor):
-    process = MagicMock(exitcode=None)
+def test_a_job_that_ignores_terminate_is_killed(executor, exited):
+    job = _register(executor)
 
-    delay, escalate = _armed_escalation(executor, process)
+    delay, escalate = _armed_escalation(executor, job)
     escalate()
 
     assert delay == settings.JOB_TERMINATE_TIMEOUT
-    process.kill.assert_called_once()
+    job.process.kill.assert_called_once()
 
 
-def test_a_job_that_exited_in_time_is_not_killed(executor):
-    process = MagicMock(exitcode=0)
+def test_a_job_that_exited_in_time_is_not_killed(executor, exited):
+    job = _register(executor)
+    exited.return_value = True
 
-    _, escalate = _armed_escalation(executor, process)
+    _, escalate = _armed_escalation(executor, job)
     escalate()
 
-    process.kill.assert_not_called()
+    job.process.kill.assert_not_called()
 
 
 def test_a_canceled_job_is_left_to_stop_until_the_cancel_timeout(executor):
@@ -600,7 +617,7 @@ def test_a_canceled_job_is_left_to_stop_until_the_cancel_timeout(executor):
     assert terminate == executor._terminate_late
 
 
-def test_a_canceled_job_that_cannot_stop_is_terminated_at_once(executor):
+def test_a_canceled_job_that_cannot_stop_is_terminated_at_once(executor, exited):
     """Waiting gains nothing for a job that never looks for the request, and a job that finishes
     in the wait would settle as canceled with its work committed."""
     job_exec = JobExecution(id=uuid4(), status="cancel_requested", job_key=JobKey.run_test_generation)
@@ -613,7 +630,7 @@ def test_a_canceled_job_that_cannot_stop_is_terminated_at_once(executor):
         executor._handle_cancellation(job_exec)
 
     job.process.terminate.assert_called_once()
-    escalation.assert_called_once_with(job_exec.id, job.process)
+    escalation.assert_called_once_with(job)
     timer.assert_not_called()
 
 
@@ -630,34 +647,49 @@ def test_the_cancel_deadline_is_armed_once_however_often_the_poll_asks(executor)
     assert timer.call_count == 1
 
 
-def test_a_job_still_running_at_the_cancel_timeout_is_terminated_then_escalated(executor):
-    job_id, process = uuid4(), MagicMock(exitcode=None)
+def test_a_job_still_running_at_the_cancel_timeout_is_terminated_then_escalated(executor, exited):
+    job = _register(executor)
 
     with patch.object(executor, "_schedule_force_kill") as escalation:
-        executor._terminate(job_id, process)
+        executor._terminate(uuid4(), job)
 
-    process.terminate.assert_called_once()
-    escalation.assert_called_once_with(job_id, process)
+    job.process.terminate.assert_called_once()
+    escalation.assert_called_once_with(job)
 
 
-def test_a_job_that_stopped_within_the_cancel_timeout_is_not_terminated(executor):
-    process = MagicMock(exitcode=0)
+def test_a_job_that_stopped_within_the_cancel_timeout_is_not_terminated(executor, exited):
+    job = _register(executor)
+    exited.return_value = True
 
     with patch.object(executor, "_schedule_force_kill") as escalation:
-        executor._terminate(uuid4(), process)
+        executor._terminate(uuid4(), job)
 
-    process.terminate.assert_not_called()
+    job.process.terminate.assert_not_called()
     escalation.assert_not_called()
 
 
 def test_the_kill_deadline_is_armed_once_however_often_the_poll_asks(executor):
-    job_id, process = uuid4(), MagicMock(exitcode=None)
+    job = _register(executor)
 
     with patch(f"{EXECUTOR_MODULE}.threading.Timer") as timer:
         for _ in range(3):
-            executor._schedule_force_kill(job_id, process)
+            executor._schedule_force_kill(job)
 
     assert timer.call_count == 1
+
+
+def test_checking_whether_a_job_exited_does_not_reap_it():
+    """Only the watcher reaps, so the exit code it records is the process's own."""
+    process = MagicMock(sentinel=7)
+
+    with patch(f"{EXECUTOR_MODULE}.multiprocessing.connection.wait", return_value=[7]) as wait:
+        from testgen.scheduler.job_executor import _has_exited
+
+        assert _has_exited(process) is True
+
+    wait.assert_called_once_with([7], timeout=0)
+    process.poll.assert_not_called()
+    process.join.assert_not_called()
 
 
 # ---- shutdown ---------------------------------------------------------------------------
@@ -691,34 +723,56 @@ def test_shutdown_asks_nothing_without_running_jobs(executor, executor_db_sessio
     request.assert_not_called()
 
 
-def test_shutdown_terminates_the_jobs_still_running_at_its_timeout(executor):
-    _register(executor)
+@pytest.fixture
+def clock():
+    """A fake monotonic clock that waiting on the running-jobs condition advances."""
+    now = [0.0]
+    with patch(f"{EXECUTOR_MODULE}.time.monotonic", side_effect=lambda: now[0]):
+        yield now
+
+
+def _drain(executor, clock, stops_after=None):
+    """Drain with a condition whose waits advance the clock, and that reports every job gone after
+    ``stops_after`` seconds."""
+    def wait_for(predicate, timeout):
+        clock[0] += timeout
+        if stops_after is not None and clock[0] >= stops_after:
+            executor._running_jobs.clear()
+        return predicate()
 
     with (
-        patch.object(executor, "_ask_running_jobs_to_stop"),
-        patch.object(executor, "_running_jobs_cond") as cond,
+        patch.object(executor, "_ask_running_jobs_to_stop") as ask,
         patch.object(executor, "terminate_running_jobs") as terminate,
+        patch.object(executor, "_running_jobs_cond") as cond,
     ):
         cond.__enter__ = Mock(return_value=cond)
         cond.__exit__ = Mock(return_value=False)
-        cond.wait_for.return_value = False
+        cond.wait_for.side_effect = wait_for
         executor.drain()
+    return ask, terminate, cond
 
-    assert cond.wait_for.call_args_list[0].kwargs["timeout"] == settings.JOB_SHUTDOWN_TIMEOUT
+
+def test_shutdown_asks_again_until_its_timeout(executor, clock):
+    """A job still starting when shutdown began cannot take the first request, so it is asked again."""
+    _register(executor)
+
+    ask, terminate, cond = _drain(executor, clock)
+
+    assert ask.call_count == settings.JOB_SHUTDOWN_TIMEOUT
     terminate.assert_called_once()
+    assert cond.wait_for.call_args.kwargs["timeout"] == settings.JOB_TERMINATE_TIMEOUT + 5
 
 
-def test_shutdown_terminates_nothing_once_every_job_stopped(executor):
-    with (
-        patch.object(executor, "_ask_running_jobs_to_stop"),
-        patch.object(executor, "terminate_running_jobs") as terminate,
-    ):
-        executor.drain()
+def test_shutdown_stops_asking_once_every_job_stopped(executor, clock):
+    _register(executor)
 
+    ask, terminate, _ = _drain(executor, clock, stops_after=3)
+
+    assert ask.call_count == 3
     terminate.assert_not_called()
 
 
-def test_terminating_running_jobs_survives_a_job_exiting_meanwhile(executor):
+def test_terminating_running_jobs_survives_a_job_exiting_meanwhile(executor, exited):
     """It can run in a signal handler while watcher threads remove the jobs that exit."""
     first, second = _register(executor), _register(executor)
     first.process.terminate.side_effect = lambda: executor._running_jobs.pop(next(iter(executor._running_jobs)))
