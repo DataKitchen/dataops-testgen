@@ -19,12 +19,13 @@ from testgen.commands.job_registry import (
     run_final_callbacks,
 )
 from testgen.commands.run_test_execution import run_test_execution
-from testgen.common.enums import PAUSABLE_JOB_KEYS, JobKey
+from testgen.common.enums import PAUSABLE_JOB_KEYS, STOPPABLE_JOB_KEYS, JobKey
 from testgen.common.job_context import job_context
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.pausable_job import JobParked, PausableJob
 from testgen.common.run_overrides import OVERRIDE_LABELS
+from testgen.common.stoppable_job import JobStopped, StoppableJob, StopReason
 
 pytestmark = pytest.mark.unit
 
@@ -317,6 +318,43 @@ def test_exec_job_settles_a_stopped_run_as_canceled_when_a_cancel_arrived(mock_s
     callback.assert_called_once_with(job)
 
 
+def test_exec_job_settles_a_run_stopped_by_its_cancel_as_canceled(mock_session):
+    job = _make_job_exec(job_key=JobKey.run_tests)
+    _settles(job, job.mark_canceled, "canceled")
+    callback = Mock()
+
+    with (
+        patch.object(JobExecution, "get", return_value=job),
+        patch.dict(
+            JOB_DISPATCH,
+            {JobKey.run_tests: JobConfig(handler=Mock(side_effect=JobStopped("QUERY", StopReason.CANCEL)))},
+        ),
+        patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [callback]}),
+    ):
+        exec_job(job.id)
+
+    job.mark_canceled.assert_called_once()
+    job.mark_failed.assert_not_called()
+    callback.assert_called_once_with(job)
+
+
+def test_exec_job_fails_a_run_stopped_for_anything_but_a_cancel(mock_session):
+    job = _make_job_exec(job_key=JobKey.run_tests)
+    _settles(job, job.mark_failed, "error")
+
+    with (
+        patch.object(JobExecution, "get", return_value=job),
+        patch.dict(
+            JOB_DISPATCH,
+            {JobKey.run_tests: JobConfig(handler=Mock(side_effect=JobStopped("QUERY", StopReason.INTERRUPT)))},
+        ),
+    ):
+        exec_job(job.id)
+
+    job.mark_canceled.assert_not_called()
+    job.mark_failed.assert_called_once_with("The run was stopped before it finished")
+
+
 def test_finalize_fires_callbacks_after_the_transition_is_committed(mock_session):
     """A callback that reads the run, or queues follow-up work, must see the final status."""
     job = _make_job_exec(job_key=JobKey.run_tests)
@@ -508,6 +546,18 @@ def test_exec_job_fires_no_callbacks_on_pause(mock_session):
         exec_job(job.id)
 
     callback.assert_not_called()
+
+
+def test_the_stoppable_job_keys_are_the_handlers_built_on_the_engine():
+    """A key listed but not built on the engine is waited on for nothing before it is terminated;
+    one built on it but not listed is terminated without the chance to stop on its own."""
+    for job_key, config in JOB_DISPATCH.items():
+        module = sys.modules[config.handler.__module__]
+        built_on_engine = any(
+            isinstance(obj, type) and issubclass(obj, StoppableJob) and obj.__module__ == module.__name__
+            for obj in vars(module).values()
+        )
+        assert built_on_engine == (job_key in STOPPABLE_JOB_KEYS), job_key
 
 
 def test_only_handlers_built_on_the_engine_are_pausable():

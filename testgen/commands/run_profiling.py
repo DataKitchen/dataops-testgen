@@ -33,9 +33,10 @@ from testgen.common.models.profiling_run import PROGRESS_KEYS, ProfilingRun, Pro
 from testgen.common.models.stg_functional_table_update import StgFunctionalTableUpdate
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
-from testgen.common.pausable_job import PausableJob, Step
+from testgen.common.pausable_job import PausableJob
 from testgen.common.profile_frequency import build_frequent_values, with_frequent_patterns
 from testgen.common.read_file import get_template_files
+from testgen.common.stoppable_job import Step
 
 LOG = logging.getLogger("testgen")
 
@@ -287,6 +288,7 @@ class ProfilingJob(PausableJob[ColumnChars]):
 
     def _refresh_catalog(self) -> None:
         self.data_chars = run_data_chars_refresh(
+            self,
             self.connection, self.table_group, self.profiling_run.profiling_starttime
         )
 

@@ -593,16 +593,82 @@ def test_a_canceled_job_that_exited_in_time_is_not_killed(executor):
     proc.kill.assert_not_called()
 
 
-def test_cancellation_arms_the_kill_escalation(executor, executor_db_session):
-    job_exec = JobExecution(id=uuid4(), status="cancel_requested", job_key="run-profile")
+def test_a_canceled_job_is_left_to_stop_until_the_cancel_timeout(executor, executor_db_session):
+    job_exec = JobExecution(id=uuid4(), status="cancel_requested", job_key="run-tests")
     proc = MagicMock(returncode=None)
     executor._running_jobs[job_exec.id] = proc
 
-    with patch.object(executor, "_schedule_force_kill") as escalation:
+    with patch(f"{EXECUTOR_MODULE}.threading.Timer") as timer:
+        executor._handle_cancellation(job_exec)
+
+    proc.terminate.assert_not_called()
+    delay, terminate = timer.call_args[0]
+    assert delay == settings.JOB_CANCEL_TIMEOUT
+    assert terminate == executor._terminate_late
+
+
+def test_a_canceled_job_that_cannot_stop_is_terminated_at_once(executor, executor_db_session):
+    """Waiting gains nothing for a job that never looks for the request, and a job that finishes
+    in the wait would settle as canceled with its work committed."""
+    job_exec = JobExecution(id=uuid4(), status="cancel_requested", job_key=JobKey.run_test_generation)
+    proc = MagicMock(returncode=None)
+    executor._running_jobs[job_exec.id] = proc
+
+    with (
+        patch(f"{EXECUTOR_MODULE}.threading.Timer") as timer,
+        patch.object(executor, "_schedule_force_kill") as escalation,
+    ):
         executor._handle_cancellation(job_exec)
 
     proc.terminate.assert_called_once()
     escalation.assert_called_once_with(job_exec.id, proc)
+    timer.assert_not_called()
+
+
+def test_the_cancel_deadline_is_armed_once_however_often_the_poll_asks(executor, executor_db_session):
+    """A cancel_requested row stays claimable until its process settles, so the poll re-enters
+    the cancellation path every cycle."""
+    job_exec = JobExecution(id=uuid4(), status="cancel_requested", job_key="run-tests")
+    executor._running_jobs[job_exec.id] = MagicMock(returncode=None)
+
+    with patch(f"{EXECUTOR_MODULE}.threading.Timer") as timer:
+        for _ in range(3):
+            executor._handle_cancellation(job_exec)
+
+    assert timer.call_count == 1
+
+
+def test_a_job_still_running_at_the_cancel_timeout_is_terminated_then_escalated(executor):
+    job_id, proc = uuid4(), MagicMock(returncode=None)
+
+    with patch.object(executor, "_schedule_force_kill") as escalation:
+        executor._terminate(job_id, proc)
+
+    proc.terminate.assert_called_once()
+    escalation.assert_called_once_with(job_id, proc)
+
+
+def test_a_job_that_stopped_within_the_cancel_timeout_is_not_terminated(executor):
+    proc = MagicMock(returncode=0)
+
+    with patch.object(executor, "_schedule_force_kill") as escalation:
+        executor._terminate(uuid4(), proc)
+
+    proc.terminate.assert_not_called()
+    escalation.assert_not_called()
+
+
+def test_a_job_that_exits_drops_its_pending_cancel_deadline(executor):
+    job_exec = JobExecution(id=uuid4(), status="cancel_requested", job_key="run-tests")
+    proc = MagicMock(pid=1)
+    proc.wait.return_value = 0
+    deadline = MagicMock()
+    executor._cancel_deadlines[job_exec.id] = deadline
+
+    executor._proc_wrapper(proc, job_exec)
+
+    deadline.cancel.assert_called_once()
+    assert job_exec.id not in executor._cancel_deadlines
 
 
 def test_the_kill_deadline_is_armed_once_however_often_the_poll_asks(executor):

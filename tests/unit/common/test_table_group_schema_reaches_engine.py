@@ -100,6 +100,7 @@ def test_a_job_opens_its_target_engine_with_the_table_group_schema():
         stack.enter_context(patch.object(database_service, "engine_cache", database_service.EngineCache()))
         stack.enter_context(patch.object(database_service, "get_flavor_service", return_value=flavor_service))
         stack.enter_context(patch.object(database_service, "initialize_connection"))
+        stack.enter_context(patch.object(database_service, "track_statements"))
         database_service.set_target_db_params(SALESFORCE_PARAMS, table_group)
         database_service._init_target_db_connection()
 

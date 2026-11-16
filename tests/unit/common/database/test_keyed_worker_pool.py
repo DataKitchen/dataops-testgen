@@ -1,10 +1,13 @@
 """Unit tests for run_keyed_worker_pool / WorkerOutcome."""
+import contextvars
 import threading
 import time
+from unittest.mock import MagicMock
 
 import pytest
 
 from testgen.common.database.database_service import WorkerOutcome, run_keyed_worker_pool
+from testgen.common.models import bound_session, get_current_session
 
 pytestmark = pytest.mark.unit
 
@@ -179,3 +182,64 @@ def test_closing_the_iterator_stops_the_pool():
     outcomes.close()
 
     assert len(processed) < len(items) / 2
+
+
+def test_on_idle_runs_on_the_consumer_thread_while_every_worker_is_busy():
+    release = threading.Event()
+    idle_threads: list[int] = []
+
+    def on_idle():
+        idle_threads.append(threading.get_ident())
+        release.set()
+
+    outcomes = list(run_keyed_worker_pool(
+        [("k", 1)], lambda arg: release.wait(5) and arg, max_threads=1, on_idle=on_idle, idle_interval=0.01,
+    ))
+
+    assert [o.result for o in outcomes] == [1]
+    assert idle_threads
+    assert set(idle_threads) == {threading.get_ident()}
+
+
+def test_an_error_raised_by_on_idle_leaves_the_iterator_and_stops_the_pool():
+    started = threading.Event()
+    release = threading.Event()
+    processed: list[int] = []
+
+    def process(arg):
+        started.set()
+        release.wait(5)
+        processed.append(arg)
+        return arg
+
+    def on_idle():
+        if started.is_set():
+            release.set()
+            raise RuntimeError("stop")
+
+    with pytest.raises(RuntimeError, match="stop"):
+        list(run_keyed_worker_pool(
+            [(i, i) for i in range(10)], process, max_threads=1, on_idle=on_idle, idle_interval=0.01,
+        ))
+
+    # The item in flight finished; nothing after it was pulled.
+    assert processed == [0]
+
+
+def test_workers_see_the_callers_context():
+    request = contextvars.ContextVar("request", default=None)
+    token = request.set("job-1")
+    try:
+        outcomes = list(run_keyed_worker_pool([(i, i) for i in range(4)], lambda _arg: request.get(), max_threads=2))
+    finally:
+        request.reset(token)
+
+    assert {o.result for o in outcomes} == {"job-1"}
+
+
+def test_workers_do_not_share_a_session_bound_to_the_callers_context():
+    session = MagicMock()
+    with bound_session(session):
+        outcomes = list(run_keyed_worker_pool([(i, i) for i in range(2)], lambda _arg: get_current_session()))
+
+    assert {o.result for o in outcomes} == {None}

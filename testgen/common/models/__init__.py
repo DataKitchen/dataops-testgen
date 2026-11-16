@@ -107,10 +107,11 @@ def with_database_session(func):
 
 
 @contextlib.contextmanager
-def bound_session(session: SQLAlchemySession):
+def bound_session(session: SQLAlchemySession | None):
     """Make ``session`` the current session in this context, and in every thread given a copy of it.
 
-    Does not commit, roll back or close the session.
+    ``None`` unbinds whatever session the context carried. Does not commit, roll back or close the
+    session.
     """
     token = _context_session.set(session)
     try:

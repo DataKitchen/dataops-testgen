@@ -11,6 +11,7 @@ from testgen.common.database.flavor.flavor_service import (
     base_type_name,
     exact_float_canonical,
 )
+from testgen.common.database.statement_cancel import RunningStatement
 
 
 class _RedshiftDialect(PGDialect_psycopg2):
@@ -44,6 +45,11 @@ class RedshiftFlavorService(FlavorService):
 
     supports_value_hash = True
     float_types = frozenset({"double precision", "real", "double", "float", "float4", "float8"})
+
+    def cancel_statement(self, statement: RunningStatement) -> bool:
+        # psycopg2 sends the cancel over a socket of its own, so the busy connection is not touched.
+        statement.dbapi_connection.cancel()
+        return True
 
     def text_value(self, column_ref: str, column_type: str | None, db_data_type: str | None = None) -> str:  # noqa: ARG002
         # CHAR values are stored padded with spaces to the declared length.

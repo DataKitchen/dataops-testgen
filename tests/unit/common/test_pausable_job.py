@@ -9,12 +9,10 @@ from testgen.common.enums import JobStatus
 from testgen.common.pausable_job import (
     RESUME_STATE_VERSION,
     JobParked,
-    JobSignal,
     PausableJob,
-    PauseSignal,
-    Step,
     WorkTasksChanged,
 )
+from testgen.common.stoppable_job import JobSignal, JobStopped, Step, StopReason, StopSignal
 
 pytestmark = pytest.mark.unit
 
@@ -79,7 +77,10 @@ def session(job_exec):
     mock.scalar.side_effect = lambda *_a, **_k: job_exec.status
     mock.get.side_effect = lambda *_a, **_k: _LoadedRow(job_exec)
 
-    with patch(f"{MODULE}.get_current_session", return_value=mock):
+    with (
+        patch(f"{MODULE}.get_current_session", return_value=mock),
+        patch("testgen.common.stoppable_job.get_current_session", return_value=mock),
+    ):
         yield mock
 
 
@@ -139,7 +140,7 @@ class _Job(PausableJob[str]):
     def _handle(self, outcome):
         self.handled.append(outcome.key)
         if self.pause_after is not None and len(self.handled) >= self.pause_after:
-            self._pause.request()
+            self._stop_signal.request()
 
     def spread(self):
         return self.fan_out(self.keys, self._build, self._process, self._handle, max_threads=self.max_threads)
@@ -279,7 +280,7 @@ def _stopping_after(job_exec, job, handled_count, requesting=JobStatus.INTERRUPT
 
 def _stoppable(keys, job_exec, after, requesting=JobStatus.INTERRUPT_REQUESTED, **kwargs):
     job_id = uuid4()
-    job = _Job(keys, delays=_SLOW, job_id=job_id, pause_signal=PauseSignal(job_id, ttl=0), **kwargs)
+    job = _Job(keys, delays=_SLOW, job_id=job_id, stop_signal=StopSignal(job_id, ttl=0), **kwargs)
     return _stopping_after(job_exec, job, after, requesting)
 
 
@@ -338,7 +339,7 @@ def test_a_cancel_that_arrived_first_is_not_overwritten(session, job_exec):
     run still unwinds rather than carrying on."""
     job_exec.status = JobStatus.CANCEL_REQUESTED
     job = _Job(["a", "b"], job_id=uuid4())
-    job._pause.request()
+    job._stop_signal.request()
 
     with pytest.raises(JobParked):
         _run(job)
@@ -362,10 +363,10 @@ def test_every_signal_passes_through_a_failure_handler():
     """Engine signals unwind a job that is stopping or starting over, so a handler written
     for failures -- the engine's own, or one a step wraps its own work in -- must not see
     them. Anything that does intercept one turns it into silence."""
-    assert set(JobSignal.__subclasses__()) == {JobParked, WorkTasksChanged}, (
+    assert set(JobSignal.__subclasses__()) == {JobStopped, JobParked, WorkTasksChanged}, (
         "a signal that is not a JobSignal can be swallowed as an error; add it here once it is one"
     )
-    for signal in (JobParked, WorkTasksChanged):
+    for signal in (JobStopped, JobParked, WorkTasksChanged):
         assert not issubclass(signal, Exception), f"{signal.__name__} can be swallowed as an error"
 
 
@@ -385,7 +386,7 @@ def test_a_step_that_survives_its_own_failures_still_restarts_the_run(session, j
 
 def test_pause_before_a_guard_does_no_work(session):
     job = _Job(["a", "b"], job_id=uuid4())
-    job._pause.request()
+    job._stop_signal.request()
 
     with pytest.raises(JobParked):
         _run(job)
@@ -639,7 +640,7 @@ def test_fan_out_reports_running_totals(session):
 
 
 def test_pause_signal_latches_after_the_status_is_seen(session, job_exec):
-    signal = PauseSignal(uuid4(), ttl=0)
+    signal = StopSignal(uuid4(), ttl=0)
     job_exec.status = "interrupt_requested"
 
     assert signal.check() is True
@@ -648,7 +649,7 @@ def test_pause_signal_latches_after_the_status_is_seen(session, job_exec):
 
 
 def test_pause_signal_caches_within_its_ttl(session, job_exec):
-    signal = PauseSignal(uuid4(), ttl=3600)
+    signal = StopSignal(uuid4(), ttl=3600)
 
     assert signal.check() is False
     job_exec.status = "interrupt_requested"
@@ -659,7 +660,7 @@ def test_pause_signal_caches_within_its_ttl(session, job_exec):
 def test_pause_signal_reads_the_column_not_the_cached_row(session, job_exec):
     """The job's own row is already in this session, so loading the entity would answer
     from the identity map and never see a request made from another session."""
-    signal = PauseSignal(uuid4(), ttl=0)
+    signal = StopSignal(uuid4(), ttl=0)
     job_exec.status = "interrupt_requested"
 
     assert signal.check() is True
@@ -671,3 +672,14 @@ def test_guards_refuse_to_run_outside_a_step(session):
 
     with pytest.raises(RuntimeError, match="inside a step"):
         job.once(lambda: None)
+
+
+def test_a_cancel_stops_the_run_without_a_checkpoint(session, job_exec):
+    """A canceled run never resumes, so it parks nothing: it stops as any job stops."""
+    job = _stoppable(["a", "b", "c", "d", "e"], job_exec, after=1, requesting=JobStatus.CANCEL_REQUESTED)
+
+    with pytest.raises(JobStopped) as stopped:
+        _run(job)
+
+    assert stopped.value.reason == StopReason.CANCEL
+    assert job_exec.resume_state is None

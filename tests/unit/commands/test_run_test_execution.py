@@ -165,7 +165,7 @@ QUERY_COLUMNS = ("test_type", "test_definition_id", "schema_name", "table_name",
 
 
 def _returned_rows(*rows: tuple) -> list:
-    """Rows shaped as ``fetch_from_db_threaded`` returns them: immutable mappings keyed by column.
+    """Rows shaped as the job's threaded fetch returns them: immutable mappings keyed by column.
 
     Built by running a real query rather than by hand, because the shape is the thing under test:
     a list of lists would accept both integer indexing and assignment, and the production rows
@@ -287,15 +287,14 @@ def test_the_write_path_restores_identity_before_writing():
     sql_generator.test_results_table = "test_results"
     sql_generator.connection.effective_max_threads = 1
 
+    job = MagicMock()
+    job.fetch_threaded.return_value = (rows, {})
+
     with (
-        patch(
-            "testgen.commands.run_test_execution.fetch_from_db_threaded",
-            return_value=(rows, None, {}),
-        ),
         patch("testgen.commands.run_test_execution.write_to_app_db") as write_to_app_db,
         patch("testgen.commands.run_test_execution.get_current_session"),
     ):
-        _run_tests(sql_generator, "QUERY", [td])
+        _run_tests(job, sql_generator, "QUERY", [td])
 
     written_rows, written_columns, _table = write_to_app_db.call_args.args
     assert written_columns == QUERY_COLUMNS

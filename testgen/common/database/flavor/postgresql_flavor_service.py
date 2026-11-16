@@ -1,6 +1,11 @@
 from urllib.parse import quote_plus
 
+from sqlalchemy import text
+from sqlalchemy.engine import Connection
+from sqlalchemy.exc import DBAPIError
+
 from testgen.common.database.column_chars import ColumnChars, ObjectType
+from testgen.common.database.file_declarations import FileDeclaration
 from testgen.common.database.flavor.flavor_service import (
     ResolvedConnectionParams,
     base_type_name,
@@ -25,6 +30,25 @@ class PostgresqlFlavorService(RedshiftFlavorService):
 
     def exact_text(self, text_expr: str) -> str:
         return f'{text_expr} COLLATE "C"'
+
+    def init(
+        self,
+        connection: Connection,
+        params: ResolvedConnectionParams,
+        declarations: list[FileDeclaration],
+    ) -> None:
+        super().init(connection, params, declarations)
+        # The server learns that a client went away only when it next writes to it, so a statement of
+        # a job killed mid-query runs to its end. Checking the client every few seconds stops it soon
+        # after. PostgreSQL before 14, and servers on platforms without the check, refuse the setting,
+        # which leaves the connection as it was.
+        try:
+            with connection.begin_nested():
+                connection.execute(text("SET client_connection_check_interval = '5s'"))
+        except DBAPIError:
+            pass
+        # Committed, so the setting outlives this checkout: init runs once per physical connection.
+        connection.commit()
 
     def canonical_number(self, column_ref: str, is_float: bool) -> str:
         if is_float:
