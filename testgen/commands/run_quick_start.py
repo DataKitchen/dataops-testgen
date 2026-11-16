@@ -49,7 +49,7 @@ def run_with_job_execution(
 ) -> None:
     """Run a handler inline under a synthetic JE, then roll up DQ scores.
 
-    Quick-start doesn't have a scheduler, so we bypass exec_job's subprocess
+    Quick-start doesn't have a scheduler, so we bypass the scheduler's job process
     flow: create the JE directly, call the handler (which links the run row
     to the JE via job_context), then invoke `run_score_update` inline for the
     run/profile job types. No notifications — this is seed data, nobody's
@@ -140,7 +140,7 @@ def _run_queued_job(job_id: UUID, job_key: str, kwargs: dict[str, Any], source: 
     try:
         with database_session():
             JobExecution.get(job_id).mark_running()
-        # Inside a session, the way exec-job runs it: the handlers read entities straight off
+        # Inside a session, the way a job process runs it: the handlers read entities straight off
         # the current session and do not open one of their own.
         with database_session():
             JOB_DISPATCH[job_key].handler(**kwargs)

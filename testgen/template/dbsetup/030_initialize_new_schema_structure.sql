@@ -1159,6 +1159,10 @@ CREATE TABLE job_executions (
 -- Postgres cannot use the index for the poll.
 CREATE INDEX idx_job_executions_poll ON job_executions (created_at)
     WHERE status IN ('pending', 'interrupted', 'resume_requested', 'queued', 'cancel_requested');
+-- The scheduler reads the runs in progress on every poll, to settle the ones no live process
+-- holds. The predicate must match JobStatus.stale_recoverable() exactly.
+CREATE INDEX idx_job_executions_in_progress ON job_executions (id)
+    WHERE status IN ('claimed', 'running', 'cancel_requested', 'interrupt_requested', 'pause_requested');
 CREATE INDEX idx_job_executions_schedule ON job_executions (job_schedule_id);
 CREATE INDEX idx_job_executions_project ON job_executions (project_code, created_at DESC);
 CREATE INDEX idx_job_executions_project_completed

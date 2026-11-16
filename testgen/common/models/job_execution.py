@@ -473,53 +473,65 @@ class JobExecution(Base):
         return True
 
     @classmethod
-    def recover_stale(cls) -> set[UUID]:
-        """Settle rows left behind by a dead process. Returns the ids it ended as an error.
+    def select_in_progress(cls, *clauses: ColumnElement[bool]) -> dict[UUID, JobStatus]:
+        """Statuses of the rows matching ``*clauses`` that imply a process doing the run's work,
+        by id: the statuses :meth:`reconcile` settles."""
+        rows = get_current_session().execute(
+            select(cls.id, cls.status).where(cls.status.in_(JobStatus.stale_recoverable()), *clauses)
+        ).all()
+        return {job_id: JobStatus(status) for job_id, status in rows}
 
-        A row that was asked to stop and carries a checkpoint continues instead of ending. The
-        job commits that checkpoint as the last write it makes before unwinding, so its presence
-        means the work is accounted for and only the process's exit went unrecorded. A stopping
-        status on its own is not enough: inferring a continue from it would claim a run whose
-        process is merely unreachable -- ``exec-job`` is started in its own session and outlives
-        its scheduler -- and hand a second worker the same run.
+    @classmethod
+    def reconcile(cls, *clauses: ColumnElement[bool], error_message: str = RESTARTED_MESSAGE) -> set[UUID]:
+        """Settle the rows matching ``*clauses`` whose run has no live process, so nothing else
+        will. Returns the ids that reached a final status.
 
-        Where it continues from follows what stopped it. A run someone asked to pause is held at
-        PAUSED, because releasing it is a decision rather than a consequence, and one that was
-        interrupted is queued at INTERRUPTED for the next poll. Parking runs first, so a pause
-        carrying a checkpoint is settled before the error pass can reach it. Everything else
-        the passes reach ends as an error, a checkpoint it never got to signal included. A run
-        somebody asked to cancel is left at CANCEL_REQUESTED, for the poll to cancel.
+        A run somebody asked to cancel ends canceled. A run that carries a checkpoint continues
+        instead of ending: the job commits that checkpoint as the last write it makes before
+        unwinding, so its presence means the work is accounted for and only the process's exit
+        went unrecorded. Where it continues from follows what stopped it. A run someone asked to
+        pause is held at PAUSED, because releasing it is a decision rather than a consequence,
+        and any other is queued at INTERRUPTED for the next poll. Everything else ends as an
+        error with ``error_message``.
 
         The returned rows have reached a final status, so their final callbacks are still due.
         """
-        # Each pass ends a working period, so each bills what the dead process worked. Rows only
-        # reach here when the scheduler died too -- one that merely lost its subprocess was
-        # billed when the wrapper reaped it -- so the segment runs to this restart and carries
-        # the downtime. Recording nothing would instead read as no work at all. A row that was
-        # claimed and never started is the exception, and records nothing because that is true.
+        # Each pass ends a working period, so each bills what the dead process worked, up to now:
+        # recording nothing would read as no work at all. A row that was claimed and never started
+        # records nothing, because that is true.
+        canceled = cls._transition_bulk_where(
+            JobStatus.CANCELED,
+            *clauses,
+            completed_at=datetime.now(UTC),
+        )
         paused = cls._transition_bulk_where(
             JobStatus.PAUSED,
             cls.status == JobStatus.PAUSE_REQUESTED,
             cls.resume_state.isnot(None),
+            *clauses,
         )
         resumable = cls._transition_bulk_where(
             JobStatus.INTERRUPTED,
             cls.status.in_(JobStatus.stale_recoverable()),
             cls.resume_state.isnot(None),
+            *clauses,
         )
         failed = cls._transition_bulk_where(
             JobStatus.ERROR,
             cls.status.in_(JobStatus.stale_recoverable()),
+            *clauses,
             completed_at=datetime.now(UTC),
-            error_message=RESTARTED_MESSAGE,
+            error_message=error_message,
         )
+        if canceled:
+            LOG.info("Canceled %d job execution(s) with no process", len(canceled))
         if paused:
-            LOG.info("Parked %d job execution(s) that a previous session was pausing", len(paused))
+            LOG.info("Parked %d job execution(s) whose process stopped while pausing", len(paused))
         if resumable:
             LOG.info("Queued %d job execution(s) to continue from their checkpoint", len(resumable))
         if failed:
-            LOG.info("Ended %d job execution(s) that a previous session left unfinished", len(failed))
-        return failed
+            LOG.info("Ended %d job execution(s) whose process ended before they finished", len(failed))
+        return canceled | failed
 
     @classmethod
     def get(cls, execution_id: UUID) -> Self | None:

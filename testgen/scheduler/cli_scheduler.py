@@ -8,12 +8,11 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from testgen.commands.job_registry import JOB_DISPATCH, run_final_callbacks
+from testgen.commands.job_registry import JOB_DISPATCH
 from testgen.commands.run_upgrade_db_config import is_db_revision_up_to_date
 from testgen.common.audit.actions import AuditTargetType
 from testgen.common.audit.recorder import AuditContext, bind
-from testgen.common.models import database_session, with_database_session
-from testgen.common.models.job_execution import JobExecution
+from testgen.common.models import with_database_session
 from testgen.common.models.scheduler import JobSchedule
 from testgen.common.run_service import launch_run
 from testgen.scheduler.base import DelayedPolicy, Job, Scheduler
@@ -102,7 +101,8 @@ class CliScheduler(Scheduler):
         def sig_handler(signum, _):
             sig = signal.Signals(signum)
             if interrupted.is_set():
-                self.executor.signal_running_jobs(signum)
+                LOG.info("Received signal %s again, terminating running jobs.", sig.name)
+                self.executor.terminate_running_jobs()
             else:
                 LOG.info("Received signal %s for the first time, starting the shutdown process.", sig.name)
                 interrupted.set()
@@ -148,31 +148,9 @@ def check_db_is_ready() -> bool:
     return True
 
 
-def _run_final_callbacks_for(job_ids: Iterable[UUID]) -> None:
-    """Fire the final callbacks of each job execution in ``job_ids`` that can still be read."""
-    for job_id in job_ids:
-        try:
-            with database_session():
-                job_exec = JobExecution.get(job_id)
-        except Exception:
-            LOG.exception("Could not read job execution %s to fire its final callbacks", job_id)
-            continue
-        if job_exec:
-            run_final_callbacks(job_exec)
-
-
 def run_scheduler():
     while not check_db_is_ready():
         time.sleep(10)
-
-    with database_session():
-        failed = JobExecution.recover_stale()
-    if failed:
-        # On a thread, because a notification can wait on its delivery timeout, and the cron
-        # triggers that fall due before the scheduler starts are never fired.
-        threading.Thread(
-            target=_run_final_callbacks_for, args=(failed,), name="restart-callbacks", daemon=True,
-        ).start()
 
     scheduler = CliScheduler()
     scheduler.run()
