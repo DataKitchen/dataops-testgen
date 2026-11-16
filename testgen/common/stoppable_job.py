@@ -30,7 +30,9 @@ from testgen.common.database.database_service import (
     fetch_dict_from_db,
     run_keyed_worker_pool,
 )
+from testgen.common.doorbell import Doorbell
 from testgen.common.enums import JobStatus
+from testgen.common.job_context import job_context
 from testgen.common.models import get_current_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.utils import get_exception_message
@@ -73,10 +75,9 @@ class JobStopped(JobSignal):
 # Membership, not equality: statuses that mean this run must not keep working.
 #
 # The parked statuses are here too, not just the requests. A row can be parked by something
-# other than its own process -- a restart settling a pause it found -- and that process may
-# still be alive, since it is started in its own session and outlives the scheduler. Seeing its
-# own row already parked, it has to stop: carrying on would run to a completion the lifecycle
-# then refuses, leaving the work done, the row parked, and the final callbacks unfired.
+# other than its own process, and a process that sees its own row already parked has to stop:
+# carrying on would run to a completion the lifecycle then refuses, leaving the work done, the
+# row parked, and the final callbacks unfired.
 _STOP_REASONS: dict[JobStatus, StopReason] = {
     JobStatus.INTERRUPT_REQUESTED: StopReason.INTERRUPT,
     JobStatus.INTERRUPTED: StopReason.INTERRUPT,
@@ -92,12 +93,16 @@ class StopSignal:
 
     ``check`` reads the job status and is called from the thread that owns the database
     session; workers only read :attr:`stopped`, which is thread-safe and needs no session.
-    The answer is cached for a TTL and latches once set, so the cost is a function of how
-    long the job runs rather than of how many tasks it has.
+    With a doorbell, the status is read only after the doorbell rang. Without one, the answer is
+    cached for a TTL. Either way it latches once set.
     """
 
-    def __init__(self, job_id: UUID | None, ttl: float | None = None) -> None:
+    # How often a waiting job looks at its doorbell. Looking costs no query.
+    DOORBELL_INTERVAL: float = 0.5
+
+    def __init__(self, job_id: UUID | None, ttl: float | None = None, doorbell: Doorbell | None = None) -> None:
         self._job_id = job_id
+        self._doorbell = doorbell
         self.ttl = settings.JOB_PAUSE_CHECK_INTERVAL if ttl is None else ttl
         self._event = threading.Event()
         self._reason: StopReason | None = None
@@ -110,6 +115,11 @@ class StopSignal:
     @property
     def reason(self) -> StopReason | None:
         return self._reason
+
+    @property
+    def wait_interval(self) -> float:
+        """Seconds a job waiting on long work may go between checks."""
+        return self.DOORBELL_INTERVAL if self._doorbell else self.ttl
 
     def request(self, reason: StopReason = StopReason.PAUSE) -> None:
         """Set the signal without consulting the database. For tests and in-process callers."""
@@ -126,12 +136,18 @@ class StopSignal:
         if self._job_id is None:
             return False
 
-        # Only a negative answer is ever cached: a positive one sets the event and returns
-        # above, so there is no earlier result to remember here.
-        now = time.monotonic()
-        if self._checked_at is not None and now - self._checked_at < self.ttl:
-            return False
-        self._checked_at = now
+        if self._doorbell:
+            if not self._doorbell.is_rung():
+                return False
+            # Cleared before the read, so a ring that lands after it is not lost.
+            self._doorbell.clear()
+        else:
+            # Only a negative answer is ever cached: a positive one sets the event and returns
+            # above, so there is no earlier result to remember here.
+            now = time.monotonic()
+            if self._checked_at is not None and now - self._checked_at < self.ttl:
+                return False
+            self._checked_at = now
 
         # Read the column, not the row: the job's own JobExecution is already loaded in this
         # session, so fetching the entity would keep answering from the identity map and
@@ -186,7 +202,7 @@ class StoppableJob(ABC, Generic[K]):
 
     def __init__(self, job_id: UUID | None, stop_signal: StopSignal | None = None) -> None:
         self.job_id = job_id
-        self._stop_signal = stop_signal or StopSignal(job_id)
+        self._stop_signal = stop_signal or StopSignal(job_id, doorbell=job_context.get().doorbell)
         self._step: Step | None = None
         self._step_errors = 0
 
@@ -374,7 +390,7 @@ class StoppableJob(ABC, Generic[K]):
             # Every worker can be inside a long statement at once, and then no outcome arrives to
             # check after. Waking up on the signal's own interval is what still notices the request.
             on_idle=self.stop_if_requested,
-            idle_interval=max(self._stop_signal.ttl, 0.05),
+            idle_interval=max(self._stop_signal.wait_interval, 0.05),
         )
 
     def _handle_outcome(

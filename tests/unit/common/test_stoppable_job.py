@@ -5,7 +5,9 @@ from uuid import uuid4
 
 import pytest
 
+from testgen.common.doorbell import Doorbell
 from testgen.common.enums import JobStatus
+from testgen.common.job_context import JobContext, job_context
 from testgen.common.stoppable_job import JobStopped, Step, StoppableJob, StopReason, StopSignal
 
 pytestmark = pytest.mark.unit
@@ -81,6 +83,64 @@ def test_a_running_job_is_not_stopped(row):
 def test_a_job_with_no_id_never_reads_a_row(session):
     assert StopSignal(None, ttl=0).check() is False
     session.scalar.assert_not_called()
+
+
+def test_with_a_doorbell_the_signal_reads_nothing_until_it_rings(row, session):
+    doorbell = Doorbell()
+    signal = StopSignal(uuid4(), ttl=0, doorbell=doorbell)
+    row.status = JobStatus.CANCEL_REQUESTED
+
+    assert signal.check() is False
+    session.scalar.assert_not_called()
+
+    doorbell.ring()
+    assert signal.check() is True
+    assert signal.reason == StopReason.CANCEL
+    session.scalar.assert_called_once()
+
+
+def test_the_signal_clears_the_doorbell_before_it_reads(row, session):
+    """A ring that lands after the read must survive for the next check."""
+    doorbell = Doorbell()
+    signal = StopSignal(uuid4(), ttl=0, doorbell=doorbell)
+
+    def ring_during_the_read(*_args, **_kwargs):
+        doorbell.ring()
+        return JobStatus.RUNNING
+
+    session.scalar.side_effect = ring_during_the_read
+    doorbell.ring()
+
+    assert signal.check() is False
+    assert doorbell.is_rung()
+
+
+def test_a_ring_with_nothing_to_stop_for_leaves_the_job_running(row, session):
+    doorbell = Doorbell()
+    signal = StopSignal(uuid4(), ttl=0, doorbell=doorbell)
+    doorbell.ring()
+
+    assert signal.check() is False
+    assert not doorbell.is_rung()
+
+
+def test_a_waiting_job_looks_at_its_doorbell_more_often_than_it_would_read_its_row():
+    assert StopSignal(uuid4(), ttl=5).wait_interval == 5
+    assert StopSignal(uuid4(), ttl=5, doorbell=Doorbell()).wait_interval == StopSignal.DOORBELL_INTERVAL
+
+
+def test_a_job_takes_the_doorbell_of_the_process_it_runs_in():
+    doorbell = Doorbell()
+    token = job_context.set(JobContext(job_id=uuid4(), doorbell=doorbell))
+    try:
+        job = _Job([])
+        default = StoppableJob.__new__(_Job)
+        StoppableJob.__init__(default, uuid4())
+    finally:
+        job_context.reset(token)
+
+    assert default._stop_signal._doorbell is doorbell
+    assert job._stop_signal._doorbell is None
 
 
 # ---- stopping ------------------------------------------------------------------------------
