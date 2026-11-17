@@ -23,6 +23,7 @@ from testgen.common.date_service import parse_since
 from testgen.common.enums import (
     PAUSABLE_JOB_KEYS,
     PII_FLAG_PREFIX_TO_LABEL,
+    STOPPABLE_JOB_KEYS,
     STOPPABLE_ONLY_STATUSES,
     TEST_SUITE_TYPES,
     Disposition,
@@ -414,11 +415,16 @@ def _run_status_filters_for(job_key: JobKey) -> dict[str, list[JobStatus]]:
     """Narrow the filter labels to the ones a run of this ``job_key`` can actually hold."""
     if job_key in PAUSABLE_JOB_KEYS:
         return _RUN_STATUS_FILTER
-    return {
+    filters = {
         label: statuses
         for label, statuses in _RUN_STATUS_FILTER.items()
         if not STOPPABLE_ONLY_STATUSES.issuperset(statuses)
     }
+    if job_key in STOPPABLE_JOB_KEYS:
+        # A shutdown asks these to stop too. They cannot park, so the request is a moment of their
+        # running, on the way to an end.
+        filters["Running"] = [*filters["Running"], JobStatus.INTERRUPT_REQUESTED]
+    return filters
 
 
 def run_status_filter_options(job_key: JobKey) -> str:

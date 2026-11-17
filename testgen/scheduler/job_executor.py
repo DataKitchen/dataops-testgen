@@ -30,8 +30,7 @@ _SHUTDOWN_ASK_INTERVAL = 1.0
 
 @dataclass(eq=False)
 class _RunningJob:
-    """One job process this executor started. A run can have two at once, briefly: one that parked
-    it and is still exiting, and the one that claimed it next."""
+    """One job process this executor started."""
 
     process: BaseProcess
     doorbell: Doorbell
@@ -59,7 +58,9 @@ class JobExecutor:
     def __init__(self) -> None:
         self._context = multiprocessing.get_context("spawn")
         self._owner = JobOwner.for_this_process("scheduler")
-        self._running_jobs: dict[UUID, _RunningJob] = {}
+        # Each run's processes, oldest first. A run can have two at once, briefly: one that parked it
+        # and is still exiting, and the one that claimed it next, which is the run's current process.
+        self._running_jobs: dict[UUID, list[_RunningJob]] = {}
         self._running_jobs_cond = threading.Condition()
         self._poll_interval = settings.JOB_POLL_INTERVAL
         self._poll_batch_size = 5
@@ -84,7 +85,7 @@ class JobExecutor:
         ``JOB_TERMINATE_TIMEOUT``."""
         # A snapshot: this can run in a signal handler, which cannot take the lock, while job
         # watcher threads add and remove entries.
-        running = list(self._running_jobs.items())
+        running = [(job_id, job) for job_id, jobs in list(self._running_jobs.items()) for job in list(jobs)]
         LOG.info("Terminating %d running job(s)", len(running))
         for job_id, job in running:
             self._terminate(job_id, job)
@@ -133,7 +134,7 @@ class JobExecutor:
             try:
                 with self._running_jobs_cond:
                     free_slots = settings.MAX_CONCURRENT_IN_PROCESS_RUNS - sum(
-                        job.in_process for job in self._running_jobs.values()
+                        job.in_process for jobs in self._running_jobs.values() for job in jobs
                     )
                 with database_session():
                     actionable = JobExecution.claim_actionable(
@@ -178,7 +179,7 @@ class JobExecutor:
         saw the request is repeated.
         """
         with self._running_jobs_cond:
-            running = dict(self._running_jobs)
+            running = {job_id: jobs[-1] for job_id, jobs in self._running_jobs.items()}
         if not running:
             return
         try:
@@ -210,21 +211,27 @@ class JobExecutor:
             ).start()
 
     def _ask_running_jobs_to_stop(self) -> None:
-        """Ask every running job that can stop to stop at once, and ring them all. Does not wait."""
+        """Ask every running job that can stop to stop at once, and ring them all. Does not wait.
+
+        Renews the leases too: the poll that otherwise renews them has stopped, and a job that
+        outlives this scheduler counts its own deadline from the last renewal.
+        """
         with self._running_jobs_cond:
-            running = dict(self._running_jobs)
+            running = {job_id: list(jobs) for job_id, jobs in self._running_jobs.items()}
         if not running:
             return
         try:
             with database_session():
+                JobExecution.renew_leases(self._owner, running)
                 interrupting = JobExecution.request_interrupt_bulk(running, STOPPABLE_JOB_KEYS)
         except Exception:
             LOG.exception("Could not request interrupt on running jobs")
             interrupting = set()
         if interrupting:
             LOG.info("Requested interrupt on %d running job(s)", len(interrupting))
-        for job in running.values():
-            job.doorbell.ring()
+        for jobs in running.values():
+            for job in jobs:
+                job.doorbell.ring()
 
     def _handle_cancellation(self, job_exec: JobExecution):
         """Leave a canceled job to stop on its own, and terminate it if it has not stopped within
@@ -234,7 +241,7 @@ class JobExecutor:
         A cancel_requested row stays claimable until it settles, so the poll asks again every
         cycle -- only the first ask arms a deadline.
         """
-        job = self._running_jobs.get(job_exec.id)
+        job = self._current(job_exec.id)
         if not job:
             return
         if job_exec.job_key not in STOPPABLE_JOB_KEYS:
@@ -312,7 +319,7 @@ class JobExecutor:
         job = _RunningJob(process, doorbell, job_exec.job_key, bool(job_exec.in_process))
         # Registered here rather than in the watcher thread, so the next poll already counts it.
         with self._running_jobs_cond:
-            self._running_jobs[job_exec.id] = job
+            self._running_jobs.setdefault(job_exec.id, []).append(job)
         try:
             threading.Thread(target=self._watch, args=(job_exec.id, job), name=f"watch-{job_exec.id}").start()
         except Exception:
@@ -326,7 +333,7 @@ class JobExecutor:
         """Wait for a job process to exit, then settle its run if the process did not.
 
         A process that settled or parked its run leaves nothing to do: the guarded transitions
-        make this a no-op, and a run another process holds by now is not this executor's to
+        make this a no-op, and a run another process holds by now is not this process's to
         settle. Otherwise the process was terminated or killed (a cancel, a shutdown, the operating
         system) or crashed, and the run ends as the reconcile step decides.
         """
@@ -336,22 +343,33 @@ class JobExecutor:
             exit_code = job.process.exitcode
             LOG.info("Job PID %s ended with code %s", job.process.pid, exit_code)
             message = process_failure_message(job.process.pid, exit_code, job.job_key)
-            with self._running_jobs_cond:
-                # A process that claimed the run since this one parked it holds it now.
-                superseded = self._running_jobs.get(job_id) not in (job, None)
-            if not superseded:
+            # A newer process of this executor's, or another scheduler, may hold the run by now.
+            if self._current(job_id) is job:
                 with database_session():
-                    settled = JobExecution.reconcile(JobExecution.id == job_id, error_message=message)
+                    settled = JobExecution.reconcile(
+                        JobExecution.id == job_id,
+                        JobExecution.not_held_by_another(self._owner),
+                        error_message=message,
+                    )
         except Exception:
             LOG.exception("Error settling job %s after its process exited", job_id)
         finally:
             self._forget(job_id, job)
         _run_final_callbacks_for(settled)
 
+    def _current(self, job_id: UUID) -> _RunningJob | None:
+        """The run's newest process, which holds it."""
+        with self._running_jobs_cond:
+            jobs = self._running_jobs.get(job_id)
+            return jobs[-1] if jobs else None
+
     def _forget(self, job_id: UUID, job: _RunningJob) -> None:
         with self._running_jobs_cond:
-            if self._running_jobs.get(job_id) is job:
-                del self._running_jobs[job_id]
+            jobs = self._running_jobs.get(job_id, [])
+            if job in jobs:
+                jobs.remove(job)
+            if not jobs:
+                self._running_jobs.pop(job_id, None)
             # Cancel rather than drop: an armed timer keeps its thread, and the process it closes
             # over, alive for the rest of the deadline.
             for timer in (job.cancel_deadline, job.force_kill):

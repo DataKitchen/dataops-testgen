@@ -1,10 +1,7 @@
 """A flag a scheduler and one of its job processes share, to tell the job to look at its row."""
 
 import multiprocessing
-import time
 from multiprocessing.context import BaseContext
-
-_WAIT_STEP = 0.05
 
 
 class Doorbell:
@@ -26,12 +23,3 @@ class Doorbell:
 
     def is_rung(self) -> bool:
         return self._flag.value == 1
-
-    def wait(self, timeout: float | None = None) -> bool:
-        """Block until the doorbell is rung or ``timeout`` passes. Returns whether it was rung."""
-        deadline = None if timeout is None else time.monotonic() + timeout
-        while not self.is_rung():
-            if deadline is not None and time.monotonic() >= deadline:
-                return False
-            time.sleep(_WAIT_STEP)
-        return True

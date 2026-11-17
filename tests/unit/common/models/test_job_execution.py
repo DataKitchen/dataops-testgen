@@ -7,12 +7,14 @@ import pytest
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql.elements import Case
 
+from testgen import settings
 from testgen.common.models.job_execution import (
     RESTARTED_MESSAGE,
     JobExecution,
     JobOwner,
     JobStatus,
     OnlyWhenTransitioningTo,
+    lease_duration,
     process_failure_message,
 )
 
@@ -1396,9 +1398,6 @@ def test_a_claim_takes_a_lease_on_the_database_clock(mock_session):
 def test_the_lease_outlives_a_job_whose_scheduler_is_gone():
     """A job process ends itself within the shutdown timeout once its scheduler is gone, and is
     killed within the terminate timeout once terminated, so a lapsed lease means no live process."""
-    from testgen import settings
-    from testgen.common.models.job_execution import lease_duration
-
     assert lease_duration().total_seconds() > (
         settings.JOB_SHUTDOWN_TIMEOUT + settings.JOB_TERMINATE_TIMEOUT + settings.JOB_POLL_INTERVAL
     )
@@ -1455,15 +1454,23 @@ def test_renewing_nothing_touches_no_rows(mock_session):
     mock_session.execute.assert_not_called()
 
 
-def test_a_row_is_held_by_no_live_process_when_unclaimed_lapsed_or_its_own_process_is_gone():
+def test_a_row_is_not_held_by_another_when_this_owner_or_nobody_holds_it_or_the_lease_lapsed():
+    rendered = str(JobExecution.not_held_by_another(OWNER).compile(compile_kwargs={"literal_binds": True}))
+
+    assert "job_executions.owner_id IS NULL" in rendered
+    assert f"job_executions.owner_id = '{OWNER.id.hex}'" in rendered
+    assert "job_executions.lease_expires_at < now()" in rendered
+
+
+def test_a_row_an_own_process_runs_is_never_held_by_no_live_process_whatever_its_lease_says():
+    """A lapsed lease of the owner's own live run means the renewals failed, not that the process died."""
     live = uuid4()
 
     rendered = str(
         JobExecution.held_by_no_live_process(OWNER, [live]).compile(compile_kwargs={"literal_binds": True})
     )
 
-    assert "job_executions.owner_id IS NULL" in rendered
-    assert "job_executions.lease_expires_at < now()" in rendered
-    assert "job_executions.id NOT IN" in rendered
-    assert live.hex in rendered.replace("-", "")
-
+    not_live, not_held_by_another = rendered.split(" AND ", 1)
+    assert "job_executions.id NOT IN" in not_live
+    assert live.hex in not_live.replace("-", "")
+    assert "lease_expires_at < now()" in not_held_by_another

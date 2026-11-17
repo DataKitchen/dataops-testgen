@@ -1,8 +1,10 @@
 import logging
 import math
 import random
+import threading
+from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Self
 from uuid import UUID
 
 import click
@@ -106,13 +108,46 @@ def _drain_queued_jobs() -> None:
     queue more of its own.
     """
     owner = JobOwner.for_this_process("quick-start")
-    while queued := _claim_queued_follow_ups(owner):
-        for position, (job_id, job_key, kwargs, source) in enumerate(queued):
-            # Renewed before each job, for every claimed row still waiting: a running scheduler
-            # settles a row whose lease lapsed as abandoned.
-            with database_session():
-                JobExecution.renew_leases(owner, [queued_id for queued_id, *_ in queued[position:]])
-            _run_queued_job(job_id, job_key, kwargs, source)
+    # A running scheduler settles a claimed row whose lease lapsed as abandoned.
+    with _LeaseRenewer(owner) as renewer:
+        while queued := _claim_queued_follow_ups(owner):
+            renewer.hold(job_id for job_id, *_ in queued)
+            for job_id, job_key, kwargs, source in queued:
+                _run_queued_job(job_id, job_key, kwargs, source)
+
+
+class _LeaseRenewer:
+    """Renews ``owner``'s leases on the rows it holds, on a thread, every poll interval until the
+    ``with`` block ends. A row that has settled no longer has an owner, so renewing it is a no-op."""
+
+    def __init__(self, owner: JobOwner) -> None:
+        self._owner = owner
+        self._ids: set[UUID] = set()
+        self._lock = threading.Lock()
+        self._done = threading.Event()
+        self._thread = threading.Thread(target=self._renew, name="quick-start-leases", daemon=True)
+
+    def hold(self, ids: Iterable[UUID]) -> None:
+        with self._lock:
+            self._ids.update(ids)
+
+    def __enter__(self) -> Self:
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self._done.set()
+        self._thread.join()
+
+    def _renew(self) -> None:
+        while not self._done.wait(settings.JOB_POLL_INTERVAL):
+            with self._lock:
+                ids = list(self._ids)
+            try:
+                with database_session():
+                    JobExecution.renew_leases(self._owner, ids)
+            except Exception:
+                LOG.exception("Could not renew the leases of quick-start's follow-up jobs")
 
 
 def _claim_queued_follow_ups(owner: JobOwner) -> list[tuple[UUID, str, dict[str, Any], str]]:
@@ -141,10 +176,13 @@ def _claim_queued_follow_ups(owner: JobOwner) -> list[tuple[UUID, str, dict[str,
 
 def _run_queued_job(job_id: UUID, job_key: str, kwargs: dict[str, Any], source: str) -> None:
     """Take one claimed job through running to a terminal status, without callbacks."""
+    with database_session():
+        job_exec = JobExecution.get(job_id)
+        if not job_exec.mark_running() or job_exec.status != JobStatus.RUNNING:
+            LOG.info("Queued job %s (%s) could not start; skipping it", job_id, job_key)
+            return
     token = job_context.set(JobContext(job_id=job_id, source=source))
     try:
-        with database_session():
-            JobExecution.get(job_id).mark_running()
         # Inside a session, the way a job process runs it: the handlers read entities straight off
         # the current session and do not open one of their own.
         with database_session():

@@ -7,7 +7,7 @@ from testgen import settings
 from testgen.commands.job_registry import JOB_DISPATCH, JOB_FINAL_CALLBACKS, JobConfig
 from testgen.common.enums import STOPPABLE_JOB_KEYS, JobKey, JobStatus
 from testgen.common.models.job_execution import JobExecution, process_failure_message
-from testgen.scheduler.job_executor import JobExecutor, _run_final_callbacks_for, _RunningJob
+from testgen.scheduler.job_executor import JobExecutor, _has_exited, _run_final_callbacks_for, _RunningJob
 from testgen.scheduler.job_process import run_job_process
 
 pytestmark = pytest.mark.unit
@@ -75,7 +75,7 @@ def _register(executor, job_id=None, job_key=JobKey.run_tests, exitcode=None, in
     job = _RunningJob(
         process=MagicMock(pid=555, exitcode=exitcode), doorbell=MagicMock(), job_key=job_key, in_process=in_process,
     )
-    executor._running_jobs[job_id or uuid4()] = job
+    executor._running_jobs.setdefault(job_id or uuid4(), []).append(job)
     return job
 
 
@@ -101,7 +101,7 @@ def test_dispatch_starts_a_job_process_with_its_doorbell(executor, job_exec):
     job_id, doorbell, _verbose = kwargs["args"]
     assert job_id == job_exec.id
     process.start.assert_called_once()
-    job = executor._running_jobs[job_exec.id]
+    [job] = executor._running_jobs[job_exec.id]
     assert (job.process, job.doorbell, job.job_key) == (process, doorbell, job_exec.job_key)
     assert thread_cls.call_args.kwargs["args"] == (job_exec.id, job)
     thread_cls.return_value.start.assert_called_once()
@@ -123,7 +123,7 @@ def test_dispatch_records_whether_the_job_takes_an_in_process_slot(executor, job
 
     _dispatch(executor, job_exec)
 
-    assert executor._running_jobs[job_exec.id].in_process is in_process
+    assert executor._running_jobs[job_exec.id][-1].in_process is in_process
 
 
 def test_a_job_whose_process_fails_to_start_is_not_registered(executor, job_exec):
@@ -163,7 +163,9 @@ def test_the_watcher_reconciles_its_run_once_the_process_exits(executor, executo
         executor._watch(job_id, job)
 
     job.process.join.assert_called_once()
-    assert job_id in reconcile.call_args.args[0].compile().params.values()
+    id_clause, holder_clause = reconcile.call_args.args
+    assert job_id in id_clause.compile().params.values()
+    assert str(holder_clause.compile()) == str(JobExecution.not_held_by_another(executor._owner).compile())
     assert reconcile.call_args.kwargs["error_message"] == process_failure_message(555, exit_code, job.job_key)
     callbacks.assert_called_once_with(set())
     assert job_id not in executor._running_jobs
@@ -234,7 +236,24 @@ def test_a_process_that_exits_after_its_run_was_claimed_again_leaves_the_new_pro
         executor._watch(job_id, old)
 
     reconcile.assert_not_called()
-    assert executor._running_jobs[job_id] is new
+    assert executor._running_jobs[job_id] == [new]
+
+
+def test_a_run_s_exiting_process_still_counts_until_it_exits(executor):
+    """It still holds its memory and must still be stopped at shutdown, though a newer process now
+    holds the run."""
+    job_id = uuid4()
+    old = _register(executor, job_id, in_process=True)
+    new = _register(executor, job_id, in_process=True)
+
+    with patch(f"{EXECUTOR_MODULE}.settings.MAX_CONCURRENT_IN_PROCESS_RUNS", 2):
+        claim_mock = _run_one_poll(executor, [])
+    with patch.object(executor, "_terminate") as terminate:
+        executor.terminate_running_jobs()
+
+    assert claim_mock.call_args.kwargs["in_process_slots"] == 0
+    assert [call.args[1] for call in terminate.call_args_list] == [old, new]
+    assert executor._current(job_id) is new
 
 
 # ---- ringing and leases -----------------------------------------------------------------
@@ -683,8 +702,6 @@ def test_checking_whether_a_job_exited_does_not_reap_it():
     process = MagicMock(sentinel=7)
 
     with patch(f"{EXECUTOR_MODULE}.multiprocessing.connection.wait", return_value=[7]) as wait:
-        from testgen.scheduler.job_executor import _has_exited
-
         assert _has_exited(process) is True
 
     wait.assert_called_once_with([7], timeout=0)
@@ -698,8 +715,15 @@ def test_checking_whether_a_job_exited_does_not_reap_it():
 def test_shutdown_asks_every_stoppable_job_to_stop_and_rings_them_all(executor, executor_db_session):
     jobs = {job_id: _register(executor, job_id) for job_id in (uuid4(), uuid4())}
 
-    with patch.object(JobExecution, "request_interrupt_bulk", return_value=set()) as request:
+    with (
+        patch.object(JobExecution, "request_interrupt_bulk", return_value=set()) as request,
+        patch.object(JobExecution, "renew_leases") as renew,
+    ):
         executor._ask_running_jobs_to_stop()
+
+    # Renewed every time it asks: a job that outlives this scheduler counts its deadline from the last renewal.
+    assert renew.call_args.args[0] == executor._owner
+    assert set(renew.call_args.args[1]) == set(jobs)
 
     assert set(request.call_args.args[0]) == set(jobs)
     assert request.call_args.args[1] == STOPPABLE_JOB_KEYS

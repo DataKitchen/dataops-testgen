@@ -21,14 +21,6 @@ def test_a_doorbell_stays_rung_until_cleared():
     assert doorbell.is_rung() is False
 
 
-def test_waiting_returns_once_rung_or_at_the_timeout():
-    doorbell = Doorbell()
-    assert doorbell.wait(0.1) is False
-
-    doorbell.ring()
-    assert doorbell.wait(0.1) is True
-
-
 # Spins on the doorbell in a child process, kills it at random moments, and rings after each kill.
 _KILLED_MID_CHECK = textwrap.dedent("""
     import multiprocessing, os, random, signal, threading, time

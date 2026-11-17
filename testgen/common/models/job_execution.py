@@ -821,14 +821,15 @@ class JobExecution(Base):
             )
 
     @classmethod
+    def not_held_by_another(cls, owner: JobOwner) -> ColumnElement[bool]:
+        """Rows that ``owner`` holds, that nobody holds, or whose holder's lease lapsed."""
+        return or_(cls.owner_id.is_(None), cls.owner_id == owner.id, cls.lease_expires_at < func.now())
+
+    @classmethod
     def held_by_no_live_process(cls, owner: JobOwner, live_ids: Iterable[UUID]) -> ColumnElement[bool]:
-        """Rows no live process holds, as far as ``owner`` can tell: unclaimed, whose lease lapsed, or
-        held by ``owner`` itself with no process among ``live_ids``."""
-        return or_(
-            cls.owner_id.is_(None),
-            cls.lease_expires_at < func.now(),
-            and_(cls.owner_id == owner.id, cls.id.not_in(list(live_ids))),
-        )
+        """Rows no live process holds, as far as ``owner`` can tell: not held by another holder, and
+        none of ``owner``'s own processes in ``live_ids`` running them, whatever their lease says."""
+        return and_(cls.id.not_in(list(live_ids)), cls.not_held_by_another(owner))
 
     def mark_running(self) -> bool:
         """Mark as RUNNING, or CANCELED if a cancellation was requested before the run started."""
