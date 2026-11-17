@@ -551,9 +551,13 @@ class FlavorService:
             column_forms = (numeric_ref, numeric_ref, numeric_ref)
             literal_pairs = [(number, number) for number in numbers]
         else:
-            text_ref = self.value_list_text(
+            value_expr = (
                 self.text_value(column_ref, column.column_type, column.db_data_type) if column else column_ref
             )
+            # A padded column is read without its trailing spaces, so a listed value can only match without them
+            if value_expr != column_ref:
+                values = [value.rstrip(" ") for value in values]
+            text_ref = self.value_list_text(value_expr)
             exact_ref = self.exact_text(text_ref)
             strings = [
                 value for value in dict.fromkeys(values) if value or self.stores_empty_string
