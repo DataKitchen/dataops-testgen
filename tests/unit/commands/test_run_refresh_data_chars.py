@@ -19,6 +19,7 @@ from testgen.commands.run_refresh_data_chars import (
 from testgen.common.database.column_chars import ObjectType
 from testgen.common.flavors import SqlFlavorCode
 from testgen.common.read_file import read_template_sql_file
+from testgen.common.stoppable_job import JobStopped, StopReason
 
 pytestmark = pytest.mark.unit
 
@@ -153,19 +154,31 @@ SCHEMA_ROWS = [
 ]
 
 
-ROW_COUNTS = ([], [], {})
+ROW_COUNTS = ([], {})
+
+# The job the refresh runs for. It answers the schema read itself and hands every other batch of
+# queries, the counts, to ``fetch_counts``, which each test patches.
+_JOB = MagicMock()
+
+
+def _fetch_threaded(queries, **kwargs):
+    if queries == [("schema query", {})]:
+        return SCHEMA_ROWS, {}
+    return _JOB.fetch_counts(queries, **kwargs)
+
+
+_JOB.fetch_threaded.side_effect = _fetch_threaded
 
 
 @patch(f"{MODULE}.write_data_chars")
-@patch(f"{MODULE}.fetch_from_db_threaded")
-@patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
+@patch.object(_JOB, "fetch_counts")
 @patch(f"{MODULE}.RefreshDataCharsSQL")
-def test_a_refresh_records_each_file_table(mock_sql, _fetch, mock_threaded, mock_write):
+def test_a_refresh_records_each_file_table(mock_sql, mock_threaded, mock_write):
     mock_sql.return_value = _file_refresh_generator()
     file_counts = [{"table_name": "claims", "file_ct": 3}, {"table_name": "orders", "file_ct": 1}]
-    mock_threaded.side_effect = [ROW_COUNTS, (file_counts, [], {})]
+    mock_threaded.side_effect = [ROW_COUNTS, (file_counts, {})]
 
-    data_chars = run_data_chars_refresh(_connection(), MagicMock(), datetime.now(UTC))
+    data_chars = run_data_chars_refresh(_JOB, _connection(), MagicMock(), datetime.now(UTC))
 
     assert [(c.table_name, c.object_type, c.file_ct) for c in data_chars] == [
         ("claims", ObjectType.FILES, 3),
@@ -176,14 +189,13 @@ def test_a_refresh_records_each_file_table(mock_sql, _fetch, mock_threaded, mock
 
 
 @patch(f"{MODULE}.write_data_chars")
-@patch(f"{MODULE}.fetch_from_db_threaded")
-@patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
+@patch.object(_JOB, "fetch_counts")
 @patch(f"{MODULE}.RefreshDataCharsSQL")
-def test_a_failed_file_count_does_not_stop_the_refresh(mock_sql, _fetch, mock_threaded, mock_write, caplog):
+def test_a_failed_file_count_does_not_stop_the_refresh(mock_sql, mock_threaded, mock_write, caplog):
     mock_sql.return_value = _file_refresh_generator()
-    mock_threaded.side_effect = [ROW_COUNTS, ([], [], {0: "glob failed"})]
+    mock_threaded.side_effect = [ROW_COUNTS, ([], {0: "glob failed"})]
 
-    data_chars = run_data_chars_refresh(_connection(), MagicMock(), datetime.now(UTC))
+    data_chars = run_data_chars_refresh(_JOB, _connection(), MagicMock(), datetime.now(UTC))
 
     # The object type does not depend on the count, so it is still recorded.
     assert {(c.object_type, c.file_ct) for c in data_chars} == {(ObjectType.FILES, None)}
@@ -192,13 +204,12 @@ def test_a_failed_file_count_does_not_stop_the_refresh(mock_sql, _fetch, mock_th
 
 
 @patch(f"{MODULE}.write_data_chars")
-@patch(f"{MODULE}.fetch_from_db_threaded", return_value=ROW_COUNTS)
-@patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
+@patch.object(_JOB, "fetch_counts", return_value=ROW_COUNTS)
 @patch(f"{MODULE}.RefreshDataCharsSQL")
-def test_a_catalog_refresh_records_no_file_counts(mock_sql, _fetch, mock_threaded, mock_write):
+def test_a_catalog_refresh_records_no_file_counts(mock_sql, mock_threaded, mock_write):
     mock_sql.return_value = sql_generator = _file_refresh_generator()
 
-    data_chars = run_data_chars_refresh(_connection(SqlFlavorCode.POSTGRESQL), MagicMock(), datetime.now(UTC))
+    data_chars = run_data_chars_refresh(_JOB, _connection(SqlFlavorCode.POSTGRESQL), MagicMock(), datetime.now(UTC))
 
     assert {(c.object_type, c.file_ct) for c in data_chars} == {(None, None)}
     sql_generator.get_file_counts.assert_not_called()
@@ -219,18 +230,17 @@ def test_metadata_via_api_flavors_scan_the_table_group_s_schema(mock_sql_cls, _m
     sql_generator.flavor_service.get_schema_columns.return_value = []
     sql_generator.filter_schema_columns.return_value = []
 
-    run_data_chars_refresh(MagicMock(), MagicMock(table_group_schema="onboard_2026_09_10"), datetime.now(UTC))
+    run_data_chars_refresh(_JOB, MagicMock(), MagicMock(table_group_schema="onboard_2026_09_10"), datetime.now(UTC))
 
     assert sql_generator.flavor_service.get_schema_columns.call_args.args[1] == "onboard_2026_09_10"
 
 
 @patch(f"{MODULE}.write_data_chars")
 @patch(f"{MODULE}.cache_target_tables")
-@patch(f"{MODULE}.fetch_from_db_threaded")
-@patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
+@patch.object(_JOB, "fetch_counts")
 @patch(f"{MODULE}.RefreshDataCharsSQL")
 def test_a_caching_connection_copies_its_tables_before_counting_them(
-    mock_sql, _fetch, mock_threaded, mock_cache, _write
+    mock_sql, mock_threaded, mock_cache, _write
 ):
     mock_sql.return_value = sql_generator = _file_refresh_generator()
     sql_generator.flavor_service.caches_tables.return_value = True
@@ -238,7 +248,7 @@ def test_a_caching_connection_copies_its_tables_before_counting_them(
     mock_cache.side_effect = lambda tables: order.cache(set(tables))
     mock_threaded.side_effect = lambda *_args, **_kwargs: (order.count(), ROW_COUNTS)[1]
 
-    run_data_chars_refresh(_connection(SqlFlavorCode.S3), MagicMock(), datetime.now(UTC))
+    run_data_chars_refresh(_JOB, _connection(SqlFlavorCode.S3), MagicMock(), datetime.now(UTC))
 
     assert order.mock_calls[0] == call.cache({"claims", "orders"})
     assert order.mock_calls[1] == call.count()
@@ -246,33 +256,53 @@ def test_a_caching_connection_copies_its_tables_before_counting_them(
 
 @patch(f"{MODULE}.write_data_chars")
 @patch(f"{MODULE}.cache_target_tables")
-@patch(f"{MODULE}.fetch_from_db_threaded", return_value=ROW_COUNTS)
-@patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
+@patch.object(_JOB, "fetch_counts", return_value=ROW_COUNTS)
 @patch(f"{MODULE}.RefreshDataCharsSQL")
-def test_a_connection_that_reads_in_place_copies_nothing(mock_sql, _fetch, _threaded, mock_cache, _write):
+def test_a_connection_that_reads_in_place_copies_nothing(mock_sql, _threaded, mock_cache, _write):
     mock_sql.return_value = _file_refresh_generator()
 
-    run_data_chars_refresh(_connection(), MagicMock(), datetime.now(UTC))
+    run_data_chars_refresh(_JOB, _connection(), MagicMock(), datetime.now(UTC))
 
     mock_cache.assert_not_called()
 
 
 @patch(f"{MODULE}.write_data_chars")
 @patch(f"{MODULE}.cache_target_tables")
-@patch(f"{MODULE}.fetch_from_db_threaded", return_value=([], [], {}))
-@patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
+@patch.object(_JOB, "fetch_counts", return_value=([], {}))
 @patch(f"{MODULE}.RefreshDataCharsSQL")
-def test_a_refresh_without_row_counts_reads_no_table_data(mock_sql, _fetch, mock_threaded, mock_cache, mock_write):
+def test_a_refresh_without_row_counts_reads_no_table_data(mock_sql, mock_threaded, mock_cache, mock_write):
     mock_sql.return_value = sql_generator = _file_refresh_generator()
     sql_generator.flavor_service.caches_tables.return_value = True
 
-    data_chars = run_data_chars_refresh(_connection(SqlFlavorCode.S3), MagicMock(), datetime.now(UTC), count_rows=False)
+    data_chars = run_data_chars_refresh(
+        _JOB, _connection(SqlFlavorCode.S3), MagicMock(), datetime.now(UTC), count_rows=False,
+    )
 
     mock_cache.assert_not_called()
     sql_generator.get_row_counts.assert_not_called()
     assert {column.table_name for column in data_chars} == {"claims", "orders"}
     assert {column.record_ct for column in data_chars} == {None}
     mock_write.assert_called_once()
+
+
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+def test_a_failed_schema_read_fails_the_refresh(mock_sql):
+    mock_sql.return_value = _file_refresh_generator()
+    job = MagicMock()
+    job.fetch_threaded.return_value = ([], {0: "permission denied for schema demo"})
+
+    with pytest.raises(RuntimeError, match="Error refreshing columns for data catalog. Error reading columns from .* permission denied"):
+        run_data_chars_refresh(job, _connection(), MagicMock(), datetime.now(UTC))
+
+
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+def test_a_stop_during_the_schema_read_is_not_a_refresh_error(mock_sql):
+    mock_sql.return_value = _file_refresh_generator()
+    job = MagicMock()
+    job.fetch_threaded.side_effect = JobStopped("data_chars", StopReason.CANCEL)
+
+    with pytest.raises(JobStopped):
+        run_data_chars_refresh(job, _connection(), MagicMock(), datetime.now(UTC))
 
 
 def _pg_connection() -> MagicMock:
@@ -334,13 +364,13 @@ def test_an_empty_table_set_matches_nothing_rather_than_everything():
     assert "1=0" in query
 
 
-@patch(f"{MODULE}.fetch_dict_from_db")
-def test_a_column_the_reader_cannot_take_is_reported_as_a_read_failure(mock_fetch):
+def test_a_column_the_reader_cannot_take_is_reported_as_a_read_failure():
     """The caller catches only RuntimeError, so a row the flavor describes with a field
     ``ColumnChars`` has no place for has to be wrapped here or it escapes the job bare."""
-    mock_fetch.return_value = [{"column_name": "amount", "a_field_from_the_future": 1}]
+    job = MagicMock()
+    job.fetch_threaded.return_value = ([{"column_name": "amount", "a_field_from_the_future": 1}], {})
     sql_generator = MagicMock(schema_name="staging")
     sql_generator.flavor_service.metadata_via_api = False
 
     with pytest.raises(RuntimeError, match="Error reading columns from staging"):
-        read_target_columns(MagicMock(), sql_generator)
+        read_target_columns(job, MagicMock(), sql_generator)

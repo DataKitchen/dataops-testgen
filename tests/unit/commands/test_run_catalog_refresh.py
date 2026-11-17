@@ -236,6 +236,8 @@ def catalog_refresh_job(monkeypatch):
         patch(f"{MODULE}.run_monitor_generation"),
         patch(f"{MODULE}.JobExecution.submit") as submit,
         patch(f"{MODULE}.get_current_session") as job_session,
+        # The run's row is never asked to stop.
+        patch("testgen.common.stoppable_job.get_current_session"),
     ):
         submit.return_value = SimpleNamespace(id=uuid4(), job_key=JobKey.run_profile, project_code="DEFAULT")
         yield SimpleNamespace(submitted=submit.return_value, users=job_session.return_value)

@@ -9,6 +9,7 @@ from testgen.commands import run_test_execution
 from testgen.common.enums import JobKey, JobSource, JobStatus
 from testgen.common.job_context import JobContext, job_context, measurements_for, record_measurement
 from testgen.common.models.job_execution import RESTARTED_MESSAGE
+from testgen.common.stoppable_job import JobStopped
 
 pytestmark = pytest.mark.unit
 
@@ -50,6 +51,10 @@ def mocked_collaborators(monkeypatch):
     monkeypatch.setattr(run_test_execution, "TestThresholdsPrediction", MagicMock())
     monkeypatch.setattr(run_test_execution, "MixpanelService", MagicMock())
     monkeypatch.setattr(run_test_execution, "TestRun", test_run_cls)
+    # The run's own row, which the job reads to learn whether it was asked to stop.
+    job_session = MagicMock()
+    job_session.scalar.return_value = JobStatus.RUNNING
+    monkeypatch.setattr("testgen.common.stoppable_job.get_current_session", MagicMock(return_value=job_session))
     # A standard suite's placeholder version is frozen but owned by no suite, so the default
     # here is the answer every non-contract run gets.
     monkeypatch.setattr(
@@ -61,6 +66,7 @@ def mocked_collaborators(monkeypatch):
         "test_run": test_run,
         "test_run_cls": test_run_cls,
         "session": session,
+        "job_session": job_session,
     }
 
 
@@ -226,6 +232,45 @@ def test_a_run_that_fails_early_still_attempts_its_prediction(monkeypatch, mocke
         run_test_execution.run_test_execution(uuid4())
 
     prediction.assert_called_once()
+
+
+def test_a_canceled_run_stops_before_its_next_step_and_predicts_nothing(
+    monkeypatch, mocked_collaborators, running_as_job
+):
+    def refresh_then_cancel(*_args, **_kwargs):
+        mocked_collaborators["job_session"].scalar.return_value = JobStatus.CANCEL_REQUESTED
+        return []
+
+    monkeypatch.setattr(run_test_execution, "run_data_chars_refresh", MagicMock(side_effect=refresh_then_cancel))
+    monkeypatch.setattr("testgen.settings.JOB_PAUSE_CHECK_INTERVAL", 0)
+    prediction = MagicMock()
+    monkeypatch.setattr(run_test_execution, "TestThresholdsPrediction", prediction)
+
+    with pytest.raises(JobStopped) as stopped:
+        run_test_execution.run_test_execution(uuid4())
+
+    assert stopped.value.step == "prepare"
+    run_test_execution.TestExecutionSQL.assert_not_called()
+    prediction.assert_not_called()
+    assert mocked_collaborators["test_suite"].last_complete_test_run_id is None
+
+
+def test_a_cancel_during_the_threshold_update_stops_before_the_definitions_are_read(
+    monkeypatch, mocked_collaborators, running_as_job
+):
+    def update_then_cancel(*_args, **_kwargs):
+        mocked_collaborators["job_session"].scalar.return_value = JobStatus.CANCEL_REQUESTED
+
+    monkeypatch.setattr(run_test_execution, "execute_db_queries", MagicMock(side_effect=update_then_cancel))
+    fetch_definitions = MagicMock(return_value=[])
+    monkeypatch.setattr(run_test_execution, "fetch_dict_from_db", fetch_definitions)
+    monkeypatch.setattr("testgen.settings.JOB_PAUSE_CHECK_INTERVAL", 0)
+
+    with pytest.raises(JobStopped) as stopped:
+        run_test_execution.run_test_execution(uuid4())
+
+    assert stopped.value.step == "prepare"
+    fetch_definitions.assert_not_called()
 
 
 def test_a_run_opens_its_own_database_session(monkeypatch, mocked_collaborators):

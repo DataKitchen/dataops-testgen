@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from urllib.parse import quote_plus
 
 from cryptography.hazmat.backends import default_backend
@@ -6,6 +7,7 @@ from snowflake.sqlalchemy import URL
 
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.flavor.flavor_service import FlavorService, ResolvedConnectionParams, base_type_name
+from testgen.common.database.statement_cancel import RunningStatement, cancel_each
 
 
 class SnowflakeFlavorService(FlavorService):
@@ -23,6 +25,23 @@ class SnowflakeFlavorService(FlavorService):
 
     def exact_text(self, text_expr: str) -> str:
         return f"TO_BINARY({text_expr}, 'UTF-8')"
+
+    def cancel_statements(self, statements: Sequence[RunningStatement]) -> int:
+        # From one connection of its own, for all of them: the connector cancels a query only through
+        # a private call, and a new connection is a new login.
+        if not statements:
+            return 0
+        other = statements[0].engine.raw_connection()
+        try:
+            with other.cursor() as cursor:
+
+                def cancel(statement: RunningStatement) -> bool:
+                    cursor.execute("SELECT SYSTEM$CANCEL_ALL_QUERIES(%s)", (statement.dbapi_connection.session_id,))
+                    return True
+
+                return cancel_each(statements, cancel)
+        finally:
+            other.close()
 
     def hex_to_wide_decimal(self, hex_expr: str) -> str:
         return f"CAST(TO_NUMBER(UPPER({hex_expr}), 'XXXXXXXXXXXXXX') AS {self.wide_decimal_type})"

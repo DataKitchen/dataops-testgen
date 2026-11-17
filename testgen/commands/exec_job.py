@@ -22,6 +22,7 @@ from testgen.common.job_context import JobContext, job_context
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.pausable_job import JobParked
+from testgen.common.stoppable_job import JobStopped, StopReason
 from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
@@ -76,6 +77,14 @@ def exec_job(job_execution_id: UUID) -> None:
             LOG.info("Job %s stopped in step '%s'", job_execution_id, interrupted.step)
             resume_state = interrupted.resume_state
             _settle(job_execution_id, lambda job: job.park(resume_state))
+        except JobStopped as stopped:
+            # A run that cannot park is only ever asked to cancel. Stopped for anything else, it is
+            # left unfinished with nothing to finish it, so it ends as an error.
+            LOG.info("Job %s stopped in step '%s' (%s)", job_execution_id, stopped.step, stopped.reason)
+            if stopped.reason == StopReason.CANCEL:
+                _settle(job_execution_id, lambda job: job.mark_canceled())
+            else:
+                _settle(job_execution_id, lambda job: job.mark_failed("The run was stopped before it finished"))
         except Exception as e:
             LOG.exception("Job %s failed", job_execution_id)
             message = get_exception_message(e)

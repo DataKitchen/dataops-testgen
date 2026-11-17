@@ -1,9 +1,9 @@
 """Cooperatively pausable, resumable job engine.
 
-A :class:`PausableJob` declares an ordered list of :class:`Step` s and the base drives them.
-Every step is invoked on every run; what makes a step resumable is that its work sits inside
-a guard -- :meth:`PausableJob.fan_out` for work that spreads over many items, or
-:meth:`PausableJob.once` for a single indivisible body. A guard whose tasks are already
+A :class:`PausableJob` is a :class:`StoppableJob` that keeps a checkpoint, so a run stopped by a
+pause or an interrupt can continue in a later process. Every step is invoked on every run; what
+makes a step resumable is that its work sits inside a guard -- :meth:`PausableJob.fan_out` for
+work that spreads over many items, or :meth:`PausableJob.once` for a single indivisible body. A guard whose tasks are already
 recorded does nothing, so anything a step leaves *outside* a guard is setup it wants repeated
 and anything inside is checkpointed work it wants skipped.
 
@@ -25,22 +25,25 @@ Three properties an adopter must uphold:
 """
 
 import logging
-import threading
-import time
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
-from typing import Any, ClassVar, Generic, TypeVar
+from typing import Any, TypeVar
 from uuid import UUID
 
 from sqlalchemy import select
 
-from testgen import settings
-from testgen.common.database.database_service import WorkerOutcome, run_keyed_worker_pool
+from testgen.common.database.database_service import WorkerOutcome
 from testgen.common.enums import JobStatus
 from testgen.common.models import get_current_session
 from testgen.common.models.job_execution import JobExecution
-from testgen.utils import get_exception_message
+from testgen.common.stoppable_job import (
+    FanOutResult,
+    JobSignal,
+    Step,
+    StoppableJob,
+    StopReason,
+    StopSignal,
+)
 
 LOG = logging.getLogger("testgen")
 
@@ -53,17 +56,12 @@ RESUME_STATE_VERSION = 1
 # the schema, table, and column names that make up a key.
 _TASK_SEPARATOR = "\x1f"
 
-
-class JobSignal(BaseException):
-    """Raised to unwind a job that is not finished and has not failed.
-
-    Subclasses ``BaseException`` rather than ``Exception`` so it passes through every handler
-    written to deal with failures: the blanket one this module wraps each step in, whatever a
-    step wraps its own work in, and ``database_session``, which reads ``Exception`` as a
-    rollback signal. None of those apply to a job that is stopping or starting over, and each
-    one that intercepts a signal turns it into silence. The same reasoning makes Streamlit's
-    ``RerunException`` a ``BaseException``.
-    """
+# Statuses whose run a resume can still reach, so a checkpoint written under them is kept. A cancel
+# is not one: a canceled run never resumes, and a checkpoint written now would only outlive it.
+_CHECKPOINT_STATUSES: frozenset[JobStatus] = frozenset({
+    JobStatus.INTERRUPT_REQUESTED, JobStatus.INTERRUPTED,
+    JobStatus.PAUSE_REQUESTED, JobStatus.PAUSED,
+})
 
 
 class JobParked(JobSignal):
@@ -80,116 +78,20 @@ class WorkTasksChanged(JobSignal):
     is unusable and the job has to start over."""
 
 
-@dataclass(frozen=True)
-class Step:
-    """One stage of a job.
-
-    ``fatal`` says whether a failure here ends the run or is recorded and stepped over.
-    """
-
-    name: str
-    #: Taken unbound, so STEPS can be declared in the class body next to the methods it names.
-    method: Callable[["PausableJob"], None]
-    fatal: bool = True
-
-
-@dataclass
-class FanOutResult:
-    """What a fan-out did in this process, as opposed to what a resumed run had already done."""
-    processed: int = 0
-    skipped: int = 0
-    errors: int = 0
-
-    @property
-    def all_failed(self) -> bool:
-        """Every task this process ran failed, and none carried over from an earlier one.
-
-        Counting the carried-over ones is what keeps one bad task at the tail of a resumed run
-        from reading as a total failure and discarding everything already done.
-        """
-        return self.processed > 0 and self.errors == self.processed and self.skipped == 0
-
-
-# Membership, not equality: statuses that mean this run must not keep working. One cooperative
-# stop serves both intents; where the run parks is decided when it gets there.
-#
-# The parked statuses are here too, not just the requests. A row can be parked by something
-# other than its own process -- a restart settling a pause it found -- and that process may
-# still be alive, since it is started in its own session and outlives the scheduler. Seeing its
-# own row already parked, it has to stop: carrying on would run to a completion the lifecycle
-# then refuses, leaving the work done, the row parked, and the final callbacks unfired. Parking
-# again is a no-op, because a parked status is a source of itself.
-_STOP_SIGNALLING_STATUSES: frozenset[JobStatus] = frozenset({
-    JobStatus.INTERRUPT_REQUESTED, JobStatus.INTERRUPTED,
-    JobStatus.PAUSE_REQUESTED, JobStatus.PAUSED,
-})
-
-
-class PauseSignal:
-    """Tracks whether a pause has been requested for a job.
-
-    ``check`` reads the job status and is called from the thread that owns the database
-    session; workers only read :attr:`stopped`, which is thread-safe and needs no session.
-    The answer is cached for a TTL and latches once set, so the cost is a function of how
-    long the job runs rather than of how many tasks it has.
-    """
-
-    def __init__(self, job_id: UUID, ttl: int | None = None) -> None:
-        self._job_id = job_id
-        self._ttl = settings.JOB_PAUSE_CHECK_INTERVAL if ttl is None else ttl
-        self._event = threading.Event()
-        self._checked_at: float | None = None
-
-    @property
-    def stopped(self) -> bool:
-        return self._event.is_set()
-
-    def request(self) -> None:
-        """Set the signal without consulting the database. For tests and in-process callers."""
-        self._event.set()
-
-    def check(self) -> bool:
-        """Refresh from the database if the cached answer has expired, and return it."""
-        if self._event.is_set():
-            return True
-
-        # Only a negative answer is ever cached: a positive one sets the event and returns
-        # above, so there is no earlier result to remember here.
-        now = time.monotonic()
-        if self._checked_at is not None and now - self._checked_at < self._ttl:
-            return False
-        self._checked_at = now
-
-        # Read the column, not the row: the job's own JobExecution is already loaded in this
-        # session, so fetching the entity would keep answering from the identity map and
-        # never see the request, which arrives from somewhere else entirely.
-        status = get_current_session().scalar(
-            select(JobExecution.status).where(JobExecution.id == self._job_id)
-        )
-        if status in _STOP_SIGNALLING_STATUSES:
-            LOG.info("Stop requested for job %s", self._job_id)
-            self._event.set()
-        return self._event.is_set()
-
-
-class PausableJob(ABC, Generic[K]):
+class PausableJob(StoppableJob[K]):
     """Base for a job that can stop at a task boundary and continue in a later process.
 
     The checkpoint lives on the job's ``job_executions`` row, so a job that has no id has
-    nowhere to stop.
+    nowhere to stop. A pause or an interrupt parks the run with its checkpoint; a cancel stops
+    it as any :class:`StoppableJob` stops.
     """
 
-    STEPS: ClassVar[tuple[Step, ...]] = ()
-
-    def __init__(self, job_id: UUID, pause_signal: PauseSignal | None = None) -> None:
-        self.job_id = job_id
-        self._pause = pause_signal or PauseSignal(job_id)
+    def __init__(self, job_id: UUID, stop_signal: StopSignal | None = None) -> None:
+        super().__init__(job_id, stop_signal)
         self._tasks: list[str] = []
         self._completed = 0
         self._pins: dict[str, Any] = {}
         self._out_of_order: set[int] = set()
-        self._step: Step | None = None
-        self._step_errors = 0
         self._errors: dict[str, int] = {}
 
     # ---- subclass contract ---------------------------------------------------------------
@@ -198,34 +100,8 @@ class PausableJob(ABC, Generic[K]):
     def canonical_key(self, key: K) -> str:
         """Stable identity of one work item, independent of run order or process."""
 
-    # Observers, called for every step. What a job displays, and what it calls each state, is
-    # entirely its own: the engine reports what happened, never how to describe it, and does
-    # not assume a job surfaces every step it runs.
-
-    def on_step_start(self, step: Step) -> None:
-        """A step is about to run."""
-
-    def on_step_progress(self, step: Step, done: int, total: int) -> None:
-        """A fan-out advanced. ``done`` counts tasks this run skipped as well as ran."""
-
-    def on_step_end(self, step: Step, errors: int) -> None:
-        """A step returned. ``errors`` counts its individual tasks that failed."""
-
-    def on_step_failed(self, step: Step, error: str) -> None:
-        """A step raised. The run ends after this when the step is fatal."""
-
-    def on_start(self) -> None:
-        """Runs once per process before any step, on a fresh run and on a resume alike.
-
-        Where a job prepares what every step needs -- entities, connections, the run's own row.
-        Kept out of ``__init__`` so constructing the job has no side effects.
-        """
-
     def on_restart(self) -> None:
         """Hook for state a restart must reset, such as the run timestamp."""
-
-    def on_end(self) -> None:
-        """Runs once after every step completes. Not called on a pause or a fatal failure."""
 
     # ---- guards, for use inside a step ----------------------------------------------------
 
@@ -240,7 +116,7 @@ class PausableJob(ABC, Generic[K]):
         if self._is_done(name):
             LOG.info("Step '%s' already completed; skipping", name)
             return False
-        self._park_if_requested()
+        self.stop_if_requested()
 
         body()
         self._advance(self._tasks.index(name))
@@ -269,6 +145,7 @@ class PausableJob(ABC, Generic[K]):
         handle: Callable[[WorkerOutcome[K, R]], None],
         on_error: Callable[[K, str], None] | None = None,
         max_threads: int = 4,
+        checkpoint: bool = True,
     ) -> FanOutResult:
         """Spread ``keys`` across the worker pool, skipping whatever the checkpoint covers.
 
@@ -280,8 +157,14 @@ class PausableJob(ABC, Generic[K]):
         A task that fails, in the worker or in ``handle``, is counted and passed to
         ``on_error`` rather than ending the step: one bad item must not discard the rest.
 
+        Without ``checkpoint``, the keys are neither recorded nor skipped, and nothing is
+        committed: it runs as :meth:`StoppableJob.fan_out` does.
+
         Raises :class:`JobParked` when a stop request cut the work short.
         """
+        if not checkpoint:
+            return super().fan_out(keys, build_arg, process, handle, on_error, max_threads)
+
         step = self._require_step()
         names = [self._task_name(step.name, key) for key in keys]
         if len(set(names)) != len(names):
@@ -298,40 +181,26 @@ class PausableJob(ABC, Generic[K]):
             LOG.info("Step '%s': skipping %d task(s) done before the pause", step.name, result.skipped)
         if not pending:
             return result
-        self._park_if_requested()
+        self.stop_if_requested()
 
         session = get_current_session()
         items = [(by_name[name], build_arg(by_name[name])) for name in pending]
 
-        for outcome in run_keyed_worker_pool(items, process, max_threads=max_threads, stop=lambda: self._pause.stopped):
-            error = outcome.error
-            if error is None:
-                try:
-                    handle(outcome)
-                except Exception as e:
-                    LOG.exception("Error handling the result of a work key")
-                    error = get_exception_message(e)
-            if error is not None:
-                result.errors += 1
-                self._step_errors += 1
-                self._errors[step.name] = self._step_errors
-                if on_error is not None:
-                    on_error(outcome.key, error)
+        for outcome in self._worker_pool(items, process, max_threads):
+            self._handle_outcome(step, outcome, handle, on_error, result)
+            self._errors[step.name] = self._step_errors
             # An errored task still counts as done: its error was recorded, and holding the
             # checkpoint back for it would make every later resume redo everything after it.
             self._advance(position[self._task_name(step.name, outcome.key)])
-            self._park_if_requested()
-            result.processed += 1
+            self.stop_if_requested()
             # Progress writes onto this session, so it lands in the commit below.
             self.on_step_progress(step, result.processed + result.skipped, len(keys))
             session.commit()
 
         if result.processed < len(pending):
             # The pool stopped dispatching before every task ran, so the loop above never
-            # reached its stop check. Persist the checkpoint here, on the same terms.
-            payload = self._state_payload()
-            self._park_checkpoint(payload)
-            raise JobParked(step.name, payload)
+            # reached its stop check. Stop here, on the same terms.
+            self._stop(self._stop_signal.reason or StopReason.PAUSE)
         return result
 
     def pin(self, key: str, value: Any) -> None:
@@ -344,9 +213,6 @@ class PausableJob(ABC, Generic[K]):
             self._pins[key] = value
         elif self._pins[key] != value:
             raise WorkTasksChanged(f"Pinned value '{key}' changed since the checkpoint was written")
-
-    def _should_pause(self) -> bool:
-        return self._pause.check()
 
     # ---- driver --------------------------------------------------------------------------
 
@@ -369,31 +235,10 @@ class PausableJob(ABC, Generic[K]):
         self.on_end()
         self._stage_state(None)
 
-    def _run_steps(self) -> None:
-        for step in self.STEPS:
-            self._step = step
-            self._step_errors = self._errors.get(step.name, 0)
-            self.on_step_start(step)
-            try:
-                step.method(self)
-            except Exception as e:
-                LOG.exception("Step '%s' failed for job %s", step.name, self.job_id)
-                self.on_step_failed(step, get_exception_message(e))
-                if step.fatal:
-                    raise
-            else:
-                # A step can finish having lost individual tasks. Whether that reads as a
-                # warning is the job's call; the count is what lets it decide and word it.
-                self.on_step_end(step, self._step_errors)
-            finally:
-                self._step = None
+    def _errors_before(self, step: Step) -> int:
+        return self._errors.get(step.name, 0)
 
     # ---- checkpoint ----------------------------------------------------------------------
-
-    def _require_step(self) -> Step:
-        if self._step is None:
-            raise RuntimeError("Guards may only be used from inside a step")
-        return self._step
 
     def _task_name(self, step: str, key: K) -> str:
         return f"{step}{_TASK_SEPARATOR}{self.canonical_key(key)}"
@@ -401,8 +246,8 @@ class PausableJob(ABC, Generic[K]):
     def _is_done(self, name: str) -> bool:
         return name in self._tasks and self._tasks.index(name) < self._completed
 
-    def _park_if_requested(self) -> None:
-        """Commit the checkpoint and unwind, if a stop has been requested.
+    def _stop(self, reason: StopReason) -> None:
+        """Commit the checkpoint and unwind, or stop as canceled.
 
         Writes the checkpoint but not the status. A claimable status published here would offer
         the run to a new claimer while this process still holds it: the process is not finished
@@ -410,8 +255,8 @@ class PausableJob(ABC, Generic[K]):
         every task already in flight. ``exec_job`` publishes the status once the process is
         genuinely done, and picks which parked status from what asked the run to stop.
         """
-        if not self._should_pause():
-            return
+        if reason == StopReason.CANCEL:
+            super()._stop(reason)
         payload = self._state_payload()
         self._park_checkpoint(payload)
         raise JobParked(self._require_step().name, payload)
@@ -425,7 +270,7 @@ class PausableJob(ABC, Generic[K]):
         # Read the column, not the row: this job's JobExecution is already in the session's
         # identity map, so fetching the entity would never see a status set from elsewhere.
         status = get_current_session().scalar(select(JobExecution.status).where(JobExecution.id == self.job_id))
-        if status in _STOP_SIGNALLING_STATUSES:
+        if status in _CHECKPOINT_STATUSES:
             self._stage_state(payload)
         get_current_session().commit()
 

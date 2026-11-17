@@ -8,7 +8,7 @@ from uuid import UUID
 
 from testgen import settings
 from testgen.commands.job_registry import JOB_DISPATCH, finalize
-from testgen.common.enums import PAUSABLE_JOB_KEYS, JobStatus
+from testgen.common.enums import PAUSABLE_JOB_KEYS, STOPPABLE_JOB_KEYS, JobStatus
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution, process_failure_message
 
@@ -27,6 +27,7 @@ class JobExecutor:
         # slots ``MAX_CONCURRENT_IN_PROCESS_RUNS`` allows. Guarded by ``_running_jobs_cond``.
         self._in_process_jobs: set[UUID] = set()
         self._running_jobs_cond = threading.Condition()
+        self._cancel_deadlines: dict[UUID, threading.Timer] = {}
         self._force_kills: dict[UUID, threading.Timer] = {}
         self._poll_interval = settings.JOB_POLL_INTERVAL
         self._poll_batch_size = 5
@@ -124,25 +125,57 @@ class JobExecutor:
                         LOG.exception("Error marking job execution %s as error", job_exec.id)
 
     def _handle_cancellation(self, job_exec: JobExecution):
+        """Leave a canceled job to stop on its own, and terminate it if it has not stopped within
+        ``JOB_CANCEL_TIMEOUT``. A job that cannot stop on its own is terminated at once, and a job
+        with no process is settled here.
+
+        A cancel_requested row stays claimable until its process settles, so the poll asks again
+        every cycle -- only the first ask arms a deadline.
+        """
         proc = self._running_jobs.get(job_exec.id)
-        if proc:
-            LOG.info("Terminating canceled job %s (PID %d)", job_exec.id, proc.pid)
-            try:
-                proc.terminate()
-            except OSError:
-                pass  # Process already exited — _proc_wrapper will finalize
-            else:
-                self._schedule_force_kill(job_exec.id, proc)
-        else:
+        if not proc:
             finalize(job_exec, job_exec.mark_canceled)
+            return
+        if job_exec.job_key not in STOPPABLE_JOB_KEYS:
+            self._terminate(job_exec.id, proc)
+            return
+        with self._running_jobs_cond:
+            if job_exec.id in self._cancel_deadlines:
+                return
+            LOG.info(
+                "Job %s (PID %d) was canceled; terminating it if it has not stopped within %ds",
+                job_exec.id, proc.pid, settings.JOB_CANCEL_TIMEOUT,
+            )
+            timer = threading.Timer(settings.JOB_CANCEL_TIMEOUT, self._terminate_late, args=(job_exec.id, proc))
+            timer.daemon = True
+            self._cancel_deadlines[job_exec.id] = timer
+        timer.start()
+
+    def _terminate_late(self, job_id: UUID, proc: subprocess.Popen) -> None:
+        """Terminate a canceled job that did not stop on its own within ``JOB_CANCEL_TIMEOUT``."""
+        if proc.returncode is None:
+            LOG.warning("Job %s did not stop within %ds of its cancel", job_id, settings.JOB_CANCEL_TIMEOUT)
+        self._terminate(job_id, proc)
+
+    def _terminate(self, job_id: UUID, proc: subprocess.Popen) -> None:
+        """Terminate a canceled job's process, and arm the kill that follows."""
+        # returncode rather than poll(): the waiting thread holds Popen's waitpid lock, and
+        # poll() reports a reaped child as still running when it cannot take it.
+        if proc.returncode is not None:
+            return
+        LOG.info("Terminating canceled job %s (PID %d)", job_id, proc.pid)
+        try:
+            proc.terminate()
+        except OSError:
+            pass  # Process already exited — _proc_wrapper will finalize
+        else:
+            self._schedule_force_kill(job_id, proc)
 
     def _schedule_force_kill(self, job_id: UUID, proc: subprocess.Popen) -> None:
         """Arm a SIGKILL for ``JOB_TERMINATE_TIMEOUT`` seconds from now, and return.
 
         Deadlines on a timer rather than inline: the poll loop must not block on a process that
         is ignoring the signal, and ``_proc_wrapper`` is already blocked waiting on this one.
-        A cancel_requested row stays claimable until its process settles, so the poll asks again
-        every cycle -- only the first ask arms a deadline.
         """
         if job_id in self._force_kills:
             return
@@ -216,16 +249,17 @@ class JobExecutor:
                 self._in_process_jobs.discard(job_exec.id)
                 # Cancel rather than drop: an armed timer keeps its thread, and the Popen it
                 # closes over, alive for the rest of the deadline.
-                if timer := self._force_kills.pop(job_exec.id, None):
-                    timer.cancel()
+                for timers in (self._cancel_deadlines, self._force_kills):
+                    if timer := timers.pop(job_exec.id, None):
+                        timer.cancel()
                 self._running_jobs_cond.notify_all()
 
     def _request_interrupt_on_running_jobs(self) -> set[UUID]:
         """Ask pausable running jobs to stop at a work-key boundary. Returns the ids asked.
 
-        Only pausable job keys are asked, since no other handler can see the request. This
-        does not wait: the jobs that honor it exit like any other, so the shutdown wait that
-        follows covers them and asking adds no delay of its own. A job that stops writes its own
+        Only pausable job keys are asked: they park and resume later, while any other job asked
+        to stop would end as an error. This does not wait: the jobs that honor it exit like any
+        other, so the shutdown wait that follows covers them and asking adds no delay of its own. A job that stops writes its own
         INTERRUPTED and the next start claims it; one killed before it got there is ended as an
         error by ``recover_stale``, since nothing recorded where it had reached.
         """

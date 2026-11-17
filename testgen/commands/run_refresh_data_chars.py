@@ -8,26 +8,27 @@ from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.database.database_service import (
     cache_target_tables,
     execute_db_queries,
-    fetch_dict_from_db,
-    fetch_from_db_threaded,
     write_to_app_db,
 )
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.flavors import declares_files
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
+from testgen.common.stoppable_job import StoppableJob
 from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
 
 
 def read_target_columns(
+    job: StoppableJob,
     connection: Connection,
     sql_generator: RefreshDataCharsSQL,
 ) -> list[ColumnChars]:
     """Read column metadata from the target, writing nothing.
 
     Args:
+        job: The job reading it, which stops the read when it is asked to stop.
         connection: The connection to read through.
         sql_generator: Names the schema and the tables to read.
 
@@ -42,15 +43,19 @@ def read_target_columns(
             params = resolve_connection_params(connection.__dict__)
             api_columns = sql_generator.flavor_service.get_schema_columns(params, sql_generator.schema_name) or []
             return sql_generator.filter_schema_columns(api_columns)
-        rows = fetch_dict_from_db(*sql_generator.get_schema_ddf(), use_target_db=True)
-        # Inside the try: a row the flavor describes with a column this does not take raises here,
-        # and the caller reports only what this wraps.
-        return [ColumnChars(**row) for row in rows]
+        rows, errors = job.fetch_threaded([sql_generator.get_schema_ddf()], use_target_db=True, max_threads=1)
+        if not errors:
+            # Inside the try: a row the flavor describes with a column this does not take raises here,
+            # and the caller reports only what this wraps.
+            return [ColumnChars(**row) for row in rows]
+        failure = errors[0]
     except Exception as e:
         raise RuntimeError(f"Error reading columns from {sql_generator.schema_name}. {get_exception_message(e)}") from e
+    raise RuntimeError(f"Error reading columns from {sql_generator.schema_name}. {failure}")
 
 
 def read_run_columns(
+    job: StoppableJob,
     connection: Connection,
     table_group: TableGroup,
     schema_name: str,
@@ -59,6 +64,7 @@ def read_run_columns(
     """Read the columns of the tables a run reads, for validating its tests against them.
 
     Args:
+        job: The run's job, which stops the read when it is asked to stop.
         connection: The connection to read through.
         table_group: The table group the run belongs to.
         schema_name: The schema the run reads.
@@ -69,10 +75,11 @@ def read_run_columns(
         table group's catalog, which a run never rewrites from an overridden location.
     """
     LOG.info(f"Getting DDF for the {len(table_names)} tables this run reads from {schema_name}")
-    return read_target_columns(connection, RefreshDataCharsSQL(connection, table_group, schema_name, table_names))
+    return read_target_columns(job, connection, RefreshDataCharsSQL(connection, table_group, schema_name, table_names))
 
 
 def run_data_chars_refresh(
+    job: StoppableJob,
     connection: Connection,
     table_group: TableGroup,
     run_date: datetime,
@@ -80,6 +87,7 @@ def run_data_chars_refresh(
 ) -> list[ColumnChars]:
     """Refresh a table group's data catalog from its target and return the columns written.
 
+    :param job: The job refreshing it, which stops the refresh's queries when it is asked to stop.
     :param count_rows: Count each table's rows. Without it the catalog gets the tables and columns
         only, and no table's data is read.
     """
@@ -87,7 +95,7 @@ def run_data_chars_refresh(
 
     LOG.info("Getting DDF for table group")
     try:
-        data_chars = read_target_columns(connection, sql_generator)
+        data_chars = read_target_columns(job, connection, sql_generator)
     except RuntimeError as e:
         raise RuntimeError(f"Error refreshing columns for data catalog. {get_exception_message(e)}") from e
 
@@ -102,7 +110,7 @@ def run_data_chars_refresh(
             count_queries = sql_generator.get_row_counts(distinct_tables)
 
             LOG.info("Getting row counts for table group")
-            count_results, _, error_data = fetch_from_db_threaded(
+            count_results, error_data = job.fetch_threaded(
                 count_queries, use_target_db=True, max_threads=connection.effective_max_threads,
             )
 
@@ -114,7 +122,7 @@ def run_data_chars_refresh(
             file_count_map = {}
             if file_count_queries := sql_generator.get_file_counts():
                 LOG.info("Getting file counts for table group")
-                file_count_results, _, file_count_error_data = fetch_from_db_threaded(
+                file_count_results, file_count_error_data = job.fetch_threaded(
                     file_count_queries, use_target_db=True, max_threads=connection.effective_max_threads,
                 )
                 if file_count_error_data:
