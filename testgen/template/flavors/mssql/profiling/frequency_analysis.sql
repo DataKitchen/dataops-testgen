@@ -26,7 +26,7 @@ ranked_vals
 AS
     (SELECT CAST(COALESCE(short_bin, long_bin) AS NVARCHAR(MAX)) AS val,
             ct,
-            ROW_NUMBER() OVER (ORDER BY CASE WHEN min_val > ' ' THEN 0 ELSE 1 END, ct DESC,
+            ROW_NUMBER() OVER (ORDER BY CASE WHEN DATALENGTH(RTRIM(min_val)) > 0 THEN 0 ELSE 1 END, ct DESC,
                                         CAST(COALESCE(short_bin, long_bin) AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2,
                                         DATALENGTH(COALESCE(short_bin, long_bin))) AS rn,
             SUM(ct) OVER () AS sample_value_ct
@@ -38,7 +38,7 @@ grouped_vals
 AS (
     SELECT CASE WHEN rn <= 10 THEN val END AS top_val, CASE WHEN rn <= 10 THEN rn END AS top_rn, ct, rn, sample_value_ct
     FROM ranked_vals
-    WHERE val > ' '
+    WHERE DATALENGTH(RTRIM(val)) > 0
     ),
 -- The hash is over the UTF-8 bytes of the distinct values, which SQL Server 2017 has no collation
 -- to produce, so they are built from the code points: one row per UTF-16 code unit, a surrogate
@@ -49,6 +49,10 @@ AS (
     SELECT CASE WHEN COUNT_BIG(*) <= 70 THEN STRING_AGG(val, N'|') WITHIN GROUP (ORDER BY val, DATALENGTH(val)) END AS agg
     FROM (SELECT val COLLATE Latin1_General_100_BIN2 AS val FROM ranked_vals) distinct_vals
     ),
+-- Row numbers come from VALUES, not a system view: Fabric rejects a query that reads a system view
+-- alongside user tables
+digits
+AS (SELECT d FROM (VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9)) v(d)),
 hash_code_points
 AS (
     SELECT pos,
@@ -58,7 +62,8 @@ AS (
             FROM hash_input h
            CROSS JOIN (SELECT TOP (SELECT ISNULL(DATALENGTH(agg) / 2, 0) FROM hash_input)
                               ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS pos
-                         FROM sys.all_columns a CROSS JOIN sys.all_columns b) p) units
+                         FROM digits d1 CROSS JOIN digits d2 CROSS JOIN digits d3
+                              CROSS JOIN digits d4 CROSS JOIN digits d5 CROSS JOIN digits d6) p) units
     WHERE unit NOT BETWEEN 56320 AND 57343
     ),
 hash_bytes

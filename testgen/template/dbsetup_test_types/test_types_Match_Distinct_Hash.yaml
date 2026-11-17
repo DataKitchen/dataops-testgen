@@ -225,6 +225,11 @@ test_types:
                             FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
                            WHERE {COLUMN_VALUE} IS NOT NULL ) distinct_bins ) distinct_vals
       ),
+      -- Row numbers come from VALUES, not a system view: Fabric rejects a query that reads a system view
+      -- alongside user tables
+      digits AS (
+        SELECT d FROM ( VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9) ) v(d)
+      ),
       hash_code_points AS (
         SELECT pos,
                CASE WHEN unit BETWEEN 55296 AND 56319 THEN 65536 + (unit - 55296) * 1024 + (next_unit - 56320)
@@ -233,7 +238,8 @@ test_types:
                    FROM hash_input h
                   CROSS JOIN ( SELECT TOP (SELECT ISNULL(DATALENGTH(agg) / 2, 0) FROM hash_input)
                                       ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS pos
-                                 FROM sys.all_columns a CROSS JOIN sys.all_columns b ) p ) units
+                                 FROM digits d1 CROSS JOIN digits d2 CROSS JOIN digits d3
+                                      CROSS JOIN digits d4 CROSS JOIN digits d5 CROSS JOIN digits d6 ) p ) units
          WHERE unit NOT BETWEEN 56320 AND 57343
       ),
       hash_bytes AS (
