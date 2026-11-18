@@ -49,10 +49,10 @@ AS (
     SELECT CASE WHEN COUNT_BIG(*) <= 70 THEN STRING_AGG(val, N'|') WITHIN GROUP (ORDER BY val, DATALENGTH(val)) END AS agg
     FROM (SELECT val COLLATE Latin1_General_100_BIN2 AS val FROM ranked_vals) distinct_vals
     ),
--- Row numbers come from VALUES, not a system view: Fabric rejects a query that reads a system view
--- alongside user tables
+-- Row numbers come from constants: Fabric rejects a query that reads a system view alongside user
+-- tables, and Synapse rejects a VALUES list of rows
 digits
-AS (SELECT d FROM (VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9)) v(d)),
+AS (SELECT 0 AS d UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9),
 hash_code_points
 AS (
     SELECT pos,
