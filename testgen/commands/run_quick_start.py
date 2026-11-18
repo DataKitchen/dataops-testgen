@@ -1,8 +1,10 @@
 import logging
 import math
 import random
+import threading
+from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Self
 from uuid import UUID
 
 import click
@@ -24,7 +26,7 @@ from testgen.common.database.flavor.flavor_service import ConnectionParams
 from testgen.common.enums import JobSource, JobStatus
 from testgen.common.job_context import JobContext, job_context
 from testgen.common.models import database_session, with_database_session
-from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.job_execution import JobExecution, JobOwner
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.table_group import TableGroup
@@ -49,7 +51,7 @@ def run_with_job_execution(
 ) -> None:
     """Run a handler inline under a synthetic JE, then roll up DQ scores.
 
-    Quick-start doesn't have a scheduler, so we bypass exec_job's subprocess
+    Quick-start doesn't have a scheduler, so we bypass the scheduler's job process
     flow: create the JE directly, call the handler (which links the run row
     to the JE via job_context), then invoke `run_score_update` inline for the
     run/profile job types. No notifications — this is seed data, nobody's
@@ -105,12 +107,50 @@ def _drain_queued_jobs() -> None:
     their work would never happen. Loops rather than draining once, because a job this runs can
     queue more of its own.
     """
-    while queued := _claim_queued_follow_ups():
-        for job_id, job_key, kwargs, source in queued:
-            _run_queued_job(job_id, job_key, kwargs, source)
+    owner = JobOwner.for_this_process("quick-start")
+    # A running scheduler settles a claimed row whose lease lapsed as abandoned.
+    with _LeaseRenewer(owner) as renewer:
+        while queued := _claim_queued_follow_ups(owner):
+            renewer.hold(job_id for job_id, *_ in queued)
+            for job_id, job_key, kwargs, source in queued:
+                _run_queued_job(job_id, job_key, kwargs, source)
 
 
-def _claim_queued_follow_ups() -> list[tuple[UUID, str, dict[str, Any], str]]:
+class _LeaseRenewer:
+    """Renews ``owner``'s leases on the rows it holds, on a thread, every poll interval until the
+    ``with`` block ends. A row that has settled no longer has an owner, so renewing it is a no-op."""
+
+    def __init__(self, owner: JobOwner) -> None:
+        self._owner = owner
+        self._ids: set[UUID] = set()
+        self._lock = threading.Lock()
+        self._done = threading.Event()
+        self._thread = threading.Thread(target=self._renew, name="quick-start-leases", daemon=True)
+
+    def hold(self, ids: Iterable[UUID]) -> None:
+        with self._lock:
+            self._ids.update(ids)
+
+    def __enter__(self) -> Self:
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self._done.set()
+        self._thread.join()
+
+    def _renew(self) -> None:
+        while not self._done.wait(settings.JOB_POLL_INTERVAL):
+            with self._lock:
+                ids = list(self._ids)
+            try:
+                with database_session():
+                    JobExecution.renew_leases(self._owner, ids)
+            except Exception:
+                LOG.exception("Could not renew the leases of quick-start's follow-up jobs")
+
+
+def _claim_queued_follow_ups(owner: JobOwner) -> list[tuple[UUID, str, dict[str, Any], str]]:
     """Claim the seeded project's pending system jobs, returning what each needs to run.
 
     Scoped to the seeded project and to system-submitted rows, so seeding a database that has
@@ -129,18 +169,21 @@ def _claim_queued_follow_ups() -> list[tuple[UUID, str, dict[str, Any], str]]:
             .limit(FOLLOW_UP_POLL_LIMIT)
         ).all()
         for row in rows:
-            if row.claim():
+            if row.claim(owner):
                 claimed.append((row.id, row.job_key, dict(row.kwargs), row.source))
     return claimed
 
 
 def _run_queued_job(job_id: UUID, job_key: str, kwargs: dict[str, Any], source: str) -> None:
     """Take one claimed job through running to a terminal status, without callbacks."""
+    with database_session():
+        job_exec = JobExecution.get(job_id)
+        if not job_exec.mark_running() or job_exec.status != JobStatus.RUNNING:
+            LOG.info("Queued job %s (%s) could not start; skipping it", job_id, job_key)
+            return
     token = job_context.set(JobContext(job_id=job_id, source=source))
     try:
-        with database_session():
-            JobExecution.get(job_id).mark_running()
-        # Inside a session, the way exec-job runs it: the handlers read entities straight off
+        # Inside a session, the way a job process runs it: the handlers read entities straight off
         # the current session and do not open one of their own.
         with database_session():
             JOB_DISPATCH[job_key].handler(**kwargs)

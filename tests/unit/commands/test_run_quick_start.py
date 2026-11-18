@@ -1,5 +1,6 @@
 """Quick-start runs handlers directly, with no scheduler behind them."""
 
+import time
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
@@ -7,9 +8,9 @@ from uuid import uuid4
 
 import pytest
 
-from testgen.commands.run_quick_start import _drain_queued_jobs, run_with_job_execution
+from testgen.commands.run_quick_start import _drain_queued_jobs, _LeaseRenewer, run_with_job_execution
 from testgen.common.enums import JobSource, JobStatus
-from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.job_execution import JobExecution, JobOwner
 
 pytestmark = pytest.mark.unit
 
@@ -28,8 +29,9 @@ class _Row:
         self.status = JobStatus.PENDING
         self.error_message = None
 
-    def claim(self):
+    def claim(self, owner):
         self.status = JobStatus.CLAIMED
+        self.owner = owner
         return True
 
     def mark_running(self):
@@ -44,6 +46,12 @@ class _Row:
         self.status = JobStatus.ERROR
         self.error_message = message
         return True
+
+
+@pytest.fixture(autouse=True)
+def renew_leases():
+    with patch.object(JobExecution, "renew_leases") as renew:
+        yield renew
 
 
 def _queue(*rounds, seen=None, depth=None):
@@ -97,6 +105,63 @@ def test_a_queued_follow_up_runs_and_is_marked_completed():
 
     handler.assert_called_once_with(test_suite_id="abc")
     assert row.status == JobStatus.COMPLETED
+
+
+def test_queued_follow_ups_are_claimed_for_quick_start_and_held_by_its_lease_renewer():
+    """A running scheduler settles a claimed row whose lease lapsed, so the rows stay renewed for
+    as long as the drain runs, the ones waiting their turn included."""
+    rows = [_Row(kwargs={"test_suite_id": "abc"}), _Row(kwargs={"test_suite_id": "def"})]
+    with (
+        patch(f"{MODULE}.database_session", return_value=_queue(rows)),
+        patch.object(JobExecution, "get", side_effect=lambda job_id: next(r for r in rows if r.id == job_id)),
+        patch(f"{MODULE}.JOB_DISPATCH", _dispatch(MagicMock())),
+        patch(f"{MODULE}._LeaseRenewer") as renewer_cls,
+    ):
+        _drain_queued_jobs()
+
+    owner = rows[0].owner
+    assert rows[1].owner is owner
+    assert "quick-start" in owner.label
+    assert renewer_cls.call_args.args == (owner,)
+    renewer = renewer_cls.return_value.__enter__.return_value
+    assert [list(call.args[0]) for call in renewer.hold.call_args_list] == [[rows[0].id, rows[1].id]]
+    renewer_cls.return_value.__exit__.assert_called_once()
+
+
+def test_the_lease_renewer_renews_what_it_holds_until_the_drain_ends(renew_leases):
+    owner, job_id = JobOwner.for_this_process("quick-start"), uuid4()
+
+    with (
+        patch(f"{MODULE}.settings.JOB_POLL_INTERVAL", 0.01),
+        patch(f"{MODULE}.database_session"),
+        _LeaseRenewer(owner) as renewer,
+    ):
+        renewer.hold([job_id])
+        deadline = time.monotonic() + 5
+        while not any(call.args[1] == [job_id] for call in renew_leases.call_args_list):
+            assert time.monotonic() < deadline, "never renewed"
+            time.sleep(0.01)
+    calls = renew_leases.call_count
+    time.sleep(0.05)
+
+    assert renew_leases.call_args.args[0] == owner
+    assert renew_leases.call_count == calls
+
+
+def test_a_follow_up_that_cannot_start_is_skipped():
+    """A row that is no longer this drain's to run, such as one a scheduler settled, must not run."""
+    row = _Row(kwargs={"test_suite_id": "abc"})
+    row.mark_running = lambda: False
+    handler = MagicMock()
+    with (
+        patch(f"{MODULE}.database_session", return_value=_queue([row])),
+        patch.object(JobExecution, "get", return_value=row),
+        patch(f"{MODULE}.JOB_DISPATCH", _dispatch(handler)),
+    ):
+        _drain_queued_jobs()
+
+    handler.assert_not_called()
+    assert row.status == JobStatus.CLAIMED
 
 
 def test_a_drained_handler_is_never_given_a_run_date():

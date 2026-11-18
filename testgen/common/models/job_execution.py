@@ -1,9 +1,11 @@
 import json
 import logging
+import os
 import signal
+import socket
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar, Self
 from uuid import UUID, uuid4
 
@@ -33,6 +35,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import QueryableAttribute, aliased
 from sqlalchemy.sql.elements import ColumnElement
 
+from testgen import settings
 from testgen.common.enums import (
     ONE_PER_PROJECT_JOB_KEYS,
     PAUSABLE_JOB_KEYS,
@@ -62,6 +65,8 @@ QUEUED_MESSAGE = (
     "Waiting for another run on a DuckDB or file connection to finish."
     " TestGen runs a limited number of these at once."
 )
+
+_LEASE_COLUMNS = ("owner_id", "owner_label", "lease_expires_at")
 
 RESTARTED_MESSAGE = "TestGen restarted before this run could finish."
 
@@ -144,6 +149,30 @@ def validate_caller_metadata(value: object) -> str | None:
     return None
 
 
+@dataclass(frozen=True)
+class JobOwner:
+    """A process that claims runs and holds them while they are in progress."""
+
+    id: UUID
+    #: For support: which host and process it is.
+    label: str
+
+    @classmethod
+    def for_this_process(cls, role: str) -> Self:
+        return cls(uuid4(), f"{role} on {socket.gethostname()}, pid {os.getpid()}"[:200])
+
+
+def lease_duration() -> timedelta:
+    """How long a claim holds a run without being renewed.
+
+    Longer than a job process can outlive the scheduler that started it, which ends it within the
+    shutdown timeout, so a lapsed lease means no live process holds the run, on any host.
+    """
+    return timedelta(
+        seconds=settings.JOB_SHUTDOWN_TIMEOUT + settings.JOB_TERMINATE_TIMEOUT + settings.JOB_POLL_INTERVAL + 30
+    )
+
+
 class JobExecution(Base):
     __tablename__ = "job_executions"
 
@@ -186,6 +215,11 @@ class JobExecution(Base):
     # caller's and nothing here reads it.
     # Named for its origin rather than `metadata`, which Declarative reserves.
     caller_metadata: dict[str, Any] | None = Column(postgresql.JSONB(none_as_null=True), nullable=True)
+    # Who holds the run while it is in progress, and until when unless the holder renews it. Set on
+    # claim, renewed by the holder, and cleared when the run leaves its in-progress statuses.
+    owner_id: UUID | None = Column(postgresql.UUID(as_uuid=True), nullable=True)
+    owner_label: str | None = Column(String(200), nullable=True)
+    lease_expires_at: datetime | None = Column(postgresql.TIMESTAMP(timezone=True), nullable=True)
 
     @classmethod
     def submit(
@@ -324,7 +358,7 @@ class JobExecution(Base):
         )
 
     @classmethod
-    def claim_actionable(cls, limit: int, in_process_slots: int) -> list[Self]:
+    def claim_actionable(cls, limit: int, in_process_slots: int, owner: JobOwner) -> list[Self]:
         """Claim startable rows and fetch cancel_requested rows.
 
         PENDING (fresh start), INTERRUPTED (a shutdown stopped it), RESUME_REQUESTED (a resume
@@ -361,7 +395,7 @@ class JobExecution(Base):
                     if (row.job_key, row.project_code) in one_per_project_claims:
                         continue
                     one_per_project_claims.add((row.job_key, row.project_code))
-                if not row.claim():
+                if not row.claim(owner):
                     continue
                 claimed += 1
             actionable.append(row)
@@ -473,53 +507,65 @@ class JobExecution(Base):
         return True
 
     @classmethod
-    def recover_stale(cls) -> set[UUID]:
-        """Settle rows left behind by a dead process. Returns the ids it ended as an error.
+    def select_in_progress(cls, *clauses: ColumnElement[bool]) -> dict[UUID, JobStatus]:
+        """Statuses of the rows matching ``*clauses`` that imply a process doing the run's work,
+        by id: the statuses :meth:`reconcile` settles."""
+        rows = get_current_session().execute(
+            select(cls.id, cls.status).where(cls.status.in_(JobStatus.stale_recoverable()), *clauses)
+        ).all()
+        return {job_id: JobStatus(status) for job_id, status in rows}
 
-        A row that was asked to stop and carries a checkpoint continues instead of ending. The
-        job commits that checkpoint as the last write it makes before unwinding, so its presence
-        means the work is accounted for and only the process's exit went unrecorded. A stopping
-        status on its own is not enough: inferring a continue from it would claim a run whose
-        process is merely unreachable -- ``exec-job`` is started in its own session and outlives
-        its scheduler -- and hand a second worker the same run.
+    @classmethod
+    def reconcile(cls, *clauses: ColumnElement[bool], error_message: str = RESTARTED_MESSAGE) -> set[UUID]:
+        """Settle the rows matching ``*clauses`` whose run has no live process, so nothing else
+        will. Returns the ids that reached a final status.
 
-        Where it continues from follows what stopped it. A run someone asked to pause is held at
-        PAUSED, because releasing it is a decision rather than a consequence, and one that was
-        interrupted is queued at INTERRUPTED for the next poll. Parking runs first, so a pause
-        carrying a checkpoint is settled before the error pass can reach it. Everything else
-        the passes reach ends as an error, a checkpoint it never got to signal included. A run
-        somebody asked to cancel is left at CANCEL_REQUESTED, for the poll to cancel.
+        A run somebody asked to cancel ends canceled. A run that carries a checkpoint continues
+        instead of ending: the job commits that checkpoint as the last write it makes before
+        unwinding, so its presence means the work is accounted for and only the process's exit
+        went unrecorded. Where it continues from follows what stopped it. A run someone asked to
+        pause is held at PAUSED, because releasing it is a decision rather than a consequence,
+        and any other is queued at INTERRUPTED for the next poll. Everything else ends as an
+        error with ``error_message``.
 
         The returned rows have reached a final status, so their final callbacks are still due.
         """
-        # Each pass ends a working period, so each bills what the dead process worked. Rows only
-        # reach here when the scheduler died too -- one that merely lost its subprocess was
-        # billed when the wrapper reaped it -- so the segment runs to this restart and carries
-        # the downtime. Recording nothing would instead read as no work at all. A row that was
-        # claimed and never started is the exception, and records nothing because that is true.
+        # Each pass ends a working period, so each bills what the dead process worked, up to now:
+        # recording nothing would read as no work at all. A row that was claimed and never started
+        # records nothing, because that is true.
+        canceled = cls._transition_bulk_where(
+            JobStatus.CANCELED,
+            *clauses,
+            completed_at=datetime.now(UTC),
+        )
         paused = cls._transition_bulk_where(
             JobStatus.PAUSED,
             cls.status == JobStatus.PAUSE_REQUESTED,
             cls.resume_state.isnot(None),
+            *clauses,
         )
         resumable = cls._transition_bulk_where(
             JobStatus.INTERRUPTED,
             cls.status.in_(JobStatus.stale_recoverable()),
             cls.resume_state.isnot(None),
+            *clauses,
         )
         failed = cls._transition_bulk_where(
             JobStatus.ERROR,
             cls.status.in_(JobStatus.stale_recoverable()),
+            *clauses,
             completed_at=datetime.now(UTC),
-            error_message=RESTARTED_MESSAGE,
+            error_message=error_message,
         )
+        if canceled:
+            LOG.info("Canceled %d job execution(s) with no process", len(canceled))
         if paused:
-            LOG.info("Parked %d job execution(s) that a previous session was pausing", len(paused))
+            LOG.info("Parked %d job execution(s) whose process stopped while pausing", len(paused))
         if resumable:
             LOG.info("Queued %d job execution(s) to continue from their checkpoint", len(resumable))
         if failed:
-            LOG.info("Ended %d job execution(s) that a previous session left unfinished", len(failed))
-        return failed
+            LOG.info("Ended %d job execution(s) whose process ended before they finished", len(failed))
+        return canceled | failed
 
     @classmethod
     def get(cls, execution_id: UUID) -> Self | None:
@@ -599,6 +645,8 @@ class JobExecution(Base):
             set() if target in WORKING_STATUSES
             else set(JobStatus.sources_for(target)) & WORKING_STATUSES
         )
+        if target not in JobStatus.stale_recoverable():
+            values = {**dict.fromkeys(_LEASE_COLUMNS), **values}
         return set(session.scalars(
             update(cls)
             .where(cls.status.in_(JobStatus.sources_for(target)), *clauses)
@@ -730,6 +778,12 @@ class JobExecution(Base):
                 # row can land on them.
                 resolved[key] = value.otherwise
 
+        # A run that leaves its in-progress statuses is held by nobody, whichever target it lands on.
+        if releasing := [selected_by[t] for t in selected_by if t not in JobStatus.stale_recoverable()]:
+            for column in _LEASE_COLUMNS:
+                if column not in resolved:
+                    resolved[column] = case((or_(*releasing), None), else_=getattr(cls, column))
+
         row = session.execute(
             update(cls)
             .where(cls.id == self.id, cls.status.in_(all_valid_from))
@@ -743,8 +797,39 @@ class JobExecution(Base):
         LOG.warning("Transition to %s failed for job %s (in-memory status: '%s')", [t.value for t in targets], self.id, self.status)
         return False
 
-    def claim(self) -> bool:
-        return self._transition(JobStatus.CLAIMED, claimed_at=datetime.now(UTC))
+    def claim(self, owner: JobOwner) -> bool:
+        """Claim the run for ``owner``, which holds it for :func:`lease_duration` unless it renews."""
+        return self._transition(JobStatus.CLAIMED, claimed_at=datetime.now(UTC), **self._lease_for(owner))
+
+    @classmethod
+    def _lease_for(cls, owner: JobOwner) -> dict[str, Any]:
+        # The database's clock on both ends, so hosts whose clocks disagree still agree on a lapse.
+        return {
+            "owner_id": owner.id,
+            "owner_label": owner.label,
+            "lease_expires_at": func.now() + lease_duration(),
+        }
+
+    @classmethod
+    def renew_leases(cls, owner: JobOwner, ids: Iterable[UUID]) -> None:
+        """Extend ``owner``'s hold on the runs in ``ids`` that it still holds."""
+        if ids := list(ids):
+            get_current_session().execute(
+                update(cls)
+                .where(cls.id.in_(ids), cls.owner_id == owner.id)
+                .values(lease_expires_at=func.now() + lease_duration())
+            )
+
+    @classmethod
+    def not_held_by_another(cls, owner: JobOwner) -> ColumnElement[bool]:
+        """Rows that ``owner`` holds, that nobody holds, or whose holder's lease lapsed."""
+        return or_(cls.owner_id.is_(None), cls.owner_id == owner.id, cls.lease_expires_at < func.now())
+
+    @classmethod
+    def held_by_no_live_process(cls, owner: JobOwner, live_ids: Iterable[UUID]) -> ColumnElement[bool]:
+        """Rows no live process holds, as far as ``owner`` can tell: not held by another holder, and
+        none of ``owner``'s own processes in ``live_ids`` running them, whatever their lease says."""
+        return and_(cls.id.not_in(list(live_ids)), cls.not_held_by_another(owner))
 
     def mark_running(self) -> bool:
         """Mark as RUNNING, or CANCELED if a cancellation was requested before the run started."""

@@ -1441,6 +1441,12 @@ def test_a_stopped_run_is_rejected_for_a_key_that_cannot_stop(label):
     assert label not in str(err.value).split("Valid values:")[1]
 
 
+def test_a_run_that_cannot_park_counts_as_running_while_a_shutdown_stops_it():
+    assert parse_run_status_filter("Running", JobKey.run_tests) == [JobStatus.RUNNING, JobStatus.INTERRUPT_REQUESTED]
+    assert parse_run_status_filter("Running", JobKey.run_score_update) == [JobStatus.RUNNING]
+    assert parse_run_status_filter("Running", JobKey.run_profile) == [JobStatus.RUNNING]
+
+
 def test_the_two_stop_intents_filter_separately():
     # Only one of them picks itself back up, so collapsing the two would hide which runs are
     # waiting to be resumed.

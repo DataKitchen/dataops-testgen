@@ -1,34 +1,67 @@
 import logging
-import signal
-import subprocess
-import sys
+import multiprocessing
+import multiprocessing.connection
 import threading
+import time
+from collections.abc import Iterable
+from dataclasses import dataclass, field
 from functools import partial
+from multiprocessing.process import BaseProcess
 from uuid import UUID
 
 from testgen import settings
-from testgen.commands.job_registry import JOB_DISPATCH, finalize
-from testgen.common.enums import PAUSABLE_JOB_KEYS, STOPPABLE_JOB_KEYS, JobStatus
+from testgen.commands.job_registry import JOB_DISPATCH, finalize, run_final_callbacks
+from testgen.common.doorbell import Doorbell
+from testgen.common.enums import STOPPABLE_JOB_KEYS, JobStatus
 from testgen.common.models import database_session
-from testgen.common.models.job_execution import JobExecution, process_failure_message
+from testgen.common.models.job_execution import JobExecution, JobOwner, process_failure_message
+from testgen.scheduler.job_process import run_job_process
 
 LOG = logging.getLogger("testgen")
 
+# Statuses that ask a running job to do something, which its doorbell tells it to look at.
+_REQUEST_STATUSES = frozenset({
+    JobStatus.PAUSE_REQUESTED, JobStatus.INTERRUPT_REQUESTED, JobStatus.CANCEL_REQUESTED,
+})
+
+# Seconds between the repeated stop requests of a shutdown.
+_SHUTDOWN_ASK_INTERVAL = 1.0
+
+
+@dataclass(eq=False)
+class _RunningJob:
+    """One job process this executor started."""
+
+    process: BaseProcess
+    doorbell: Doorbell
+    job_key: str
+    in_process: bool
+    cancel_deadline: threading.Timer | None = field(default=None)
+    force_kill: threading.Timer | None = field(default=None)
+
+
+def _has_exited(process: BaseProcess) -> bool:
+    """Whether ``process`` has ended, without reaping it: only the job's watcher reaps, so the exit
+    code it reads is the process's own."""
+    return bool(multiprocessing.connection.wait([process.sentinel], timeout=0))
+
 
 class JobExecutor:
-    """Runs queued jobs: claims them, starts a process for each, watches it, and stops it on request.
+    """Runs queued jobs: claims them, starts a process for each, tells it about requests on its
+    row, and settles the runs no live process holds.
 
-    Polls on a thread of its own between ``start`` and ``stop``.
+    Owns its job processes: none outlives it by more than its shutdown. Holds a lease on each run it
+    claimed, renewed every poll, so another scheduler can tell its runs from abandoned ones. Polls
+    on a thread of its own between ``start`` and ``stop``.
     """
 
     def __init__(self) -> None:
-        self._running_jobs: dict[UUID, subprocess.Popen] = {}
-        # The in-process jobs this executor has dispatched and not yet reaped, which hold the
-        # slots ``MAX_CONCURRENT_IN_PROCESS_RUNS`` allows. Guarded by ``_running_jobs_cond``.
-        self._in_process_jobs: set[UUID] = set()
+        self._context = multiprocessing.get_context("spawn")
+        self._owner = JobOwner.for_this_process("scheduler")
+        # Each run's processes, oldest first. A run can have two at once, briefly: one that parked it
+        # and is still exiting, and the one that claimed it next, which is the run's current process.
+        self._running_jobs: dict[UUID, list[_RunningJob]] = {}
         self._running_jobs_cond = threading.Condition()
-        self._cancel_deadlines: dict[UUID, threading.Timer] = {}
-        self._force_kills: dict[UUID, threading.Timer] = {}
         self._poll_interval = settings.JOB_POLL_INTERVAL
         self._poll_batch_size = 5
         self._stopping = threading.Event()
@@ -47,51 +80,65 @@ class JobExecutor:
         if self._poll_thread:
             self._poll_thread.join(timeout)
 
-    def signal_running_jobs(self, signum: int) -> None:
-        """Send ``signum`` to every running job process."""
-        LOG.info("Received signal %s, propagating to %d running job(s)", signal.Signals(signum).name, len(self._running_jobs))
-        # A snapshot: this runs in a signal handler, which cannot take the lock, while job
+    def terminate_running_jobs(self) -> None:
+        """Terminate every running job process, and kill the ones still alive after
+        ``JOB_TERMINATE_TIMEOUT``."""
+        # A snapshot: this can run in a signal handler, which cannot take the lock, while job
         # watcher threads add and remove entries.
-        for proc in list(self._running_jobs.values()):
-            proc.send_signal(signum)
+        running = [(job_id, job) for job_id, jobs in list(self._running_jobs.items()) for job in list(jobs)]
+        LOG.info("Terminating %d running job(s)", len(running))
+        for job_id, job in running:
+            self._terminate(job_id, job)
 
     def drain(self) -> None:
-        """Ask pausable running jobs to stop, then wait for every running job to exit, up to
-        ``JOB_SHUTDOWN_TIMEOUT``."""
-        self._request_interrupt_on_running_jobs()
-
+        """Stop every running job: ask the ones that can stop to stop, wait for every job process
+        to exit up to ``JOB_SHUTDOWN_TIMEOUT``, then terminate the rest."""
+        deadline = time.monotonic() + settings.JOB_SHUTDOWN_TIMEOUT
         with self._running_jobs_cond:
             if self._running_jobs:
-                LOG.info("Waiting %d running job(s) to complete", len(self._running_jobs))
-                # Bounded, because the runtime's stop grace period is: waiting past it gets
-                # the whole container killed, which is worse than leaving a job to the next
-                # start. A step with no interior stop check cannot honor any deadline.
-                stopped = self._running_jobs_cond.wait_for(
-                    lambda: len(self._running_jobs) == 0,
-                    timeout=settings.JOB_SHUTDOWN_TIMEOUT,
-                )
-            else:
-                stopped = True
-            still_running = len(self._running_jobs)
+                LOG.info("Waiting for %d running job(s) to stop", len(self._running_jobs))
+        # Bounded, because the runtime's stop grace period is: waiting past it gets the whole
+        # container killed, which is worse than terminating a job and leaving it to the next start.
+        # Asked again every second: a job that had not started running yet cannot take the request.
+        while (remaining := deadline - time.monotonic()) > 0:
+            self._ask_running_jobs_to_stop()
+            with self._running_jobs_cond:
+                if self._running_jobs_cond.wait_for(
+                    lambda: not self._running_jobs, timeout=min(_SHUTDOWN_ASK_INTERVAL, remaining),
+                ):
+                    break
 
-        if stopped:
-            LOG.info("All jobs terminated")
-        else:
+        with self._running_jobs_cond:
+            still_running = len(self._running_jobs)
+        if still_running:
             LOG.warning(
-                "Exiting with %d job(s) still running after %ds; the next start will settle them",
-                still_running, settings.JOB_SHUTDOWN_TIMEOUT,
+                "%d job(s) still running after %ds; terminating them", still_running, settings.JOB_SHUTDOWN_TIMEOUT,
             )
+            self.terminate_running_jobs()
+            with self._running_jobs_cond:
+                # The kill lands at the terminate timeout, and the watcher still has to settle the run.
+                self._running_jobs_cond.wait_for(
+                    lambda: not self._running_jobs,
+                    timeout=settings.JOB_TERMINATE_TIMEOUT + 5,
+                )
+        LOG.info("All jobs stopped")
 
     def _poll_loop(self):
+        # Runs abandoned by an earlier scheduler are settled before anything is claimed.
+        self._reconcile_without_process()
         skip_wait = False
         # Checked on its own as well: a full batch skips the wait, and with it the stop check.
         while not self._stopping.is_set() and (skip_wait or not self._stopping.wait(timeout=self._poll_interval)):
+            self._ring_requested()
+            self._reconcile_without_process()
             try:
                 with self._running_jobs_cond:
-                    free_slots = settings.MAX_CONCURRENT_IN_PROCESS_RUNS - len(self._in_process_jobs)
+                    free_slots = settings.MAX_CONCURRENT_IN_PROCESS_RUNS - sum(
+                        job.in_process for jobs in self._running_jobs.values() for job in jobs
+                    )
                 with database_session():
                     actionable = JobExecution.claim_actionable(
-                        limit=self._poll_batch_size, in_process_slots=max(0, free_slots),
+                        limit=self._poll_batch_size, in_process_slots=max(0, free_slots), owner=self._owner,
                     )
                 # Claimed in-process rows are bounded by the free slots, not by ``limit``, so they
                 # say nothing about more rows waiting. Counting them would re-poll without waiting
@@ -124,156 +171,221 @@ class JobExecutor:
                     except Exception:
                         LOG.exception("Error marking job execution %s as error", job_exec.id)
 
+    def _ring_requested(self) -> None:
+        """Renew the lease on every run this executor has a process for, and ring the doorbell of
+        each whose row holds a request.
+
+        Rung on every poll while the request stands, so a ring the job cleared before its read
+        saw the request is repeated.
+        """
+        with self._running_jobs_cond:
+            running = {job_id: jobs[-1] for job_id, jobs in self._running_jobs.items()}
+        if not running:
+            return
+        try:
+            with database_session():
+                JobExecution.renew_leases(self._owner, running)
+                statuses = JobExecution.select_in_progress(JobExecution.id.in_(running))
+        except Exception:
+            LOG.exception("Could not read the status of running jobs")
+            return
+        for job_id, status in statuses.items():
+            if status in _REQUEST_STATUSES:
+                running[job_id].doorbell.ring()
+
+    def _reconcile_without_process(self) -> None:
+        """Settle the runs in progress that no live process holds: unclaimed, held by this executor
+        with no process left, or whose lease lapsed."""
+        with self._running_jobs_cond:
+            live = set(self._running_jobs)
+        try:
+            with database_session():
+                settled = JobExecution.reconcile(JobExecution.held_by_no_live_process(self._owner, live))
+        except Exception:
+            LOG.exception("Could not settle runs with no process")
+            return
+        if settled:
+            # On a thread, because a notification can wait on its delivery timeout.
+            threading.Thread(
+                target=_run_final_callbacks_for, args=(settled,), name="reconcile-callbacks", daemon=True,
+            ).start()
+
+    def _ask_running_jobs_to_stop(self) -> None:
+        """Ask every running job that can stop to stop at once, and ring them all. Does not wait.
+
+        Renews the leases too: the poll that otherwise renews them has stopped, and a job that
+        outlives this scheduler counts its own deadline from the last renewal.
+        """
+        with self._running_jobs_cond:
+            running = {job_id: list(jobs) for job_id, jobs in self._running_jobs.items()}
+        if not running:
+            return
+        try:
+            with database_session():
+                JobExecution.renew_leases(self._owner, running)
+                interrupting = JobExecution.request_interrupt_bulk(running, STOPPABLE_JOB_KEYS)
+        except Exception:
+            LOG.exception("Could not request interrupt on running jobs")
+            interrupting = set()
+        if interrupting:
+            LOG.info("Requested interrupt on %d running job(s)", len(interrupting))
+        for jobs in running.values():
+            for job in jobs:
+                job.doorbell.ring()
+
     def _handle_cancellation(self, job_exec: JobExecution):
         """Leave a canceled job to stop on its own, and terminate it if it has not stopped within
-        ``JOB_CANCEL_TIMEOUT``. A job that cannot stop on its own is terminated at once, and a job
-        with no process is settled here.
+        ``JOB_CANCEL_TIMEOUT``. A job that cannot stop on its own is terminated at once. A run with
+        no process is left to the reconcile step.
 
-        A cancel_requested row stays claimable until its process settles, so the poll asks again
-        every cycle -- only the first ask arms a deadline.
+        A cancel_requested row stays claimable until it settles, so the poll asks again every
+        cycle -- only the first ask arms a deadline.
         """
-        proc = self._running_jobs.get(job_exec.id)
-        if not proc:
-            finalize(job_exec, job_exec.mark_canceled)
+        job = self._current(job_exec.id)
+        if not job:
             return
         if job_exec.job_key not in STOPPABLE_JOB_KEYS:
-            self._terminate(job_exec.id, proc)
+            self._terminate(job_exec.id, job)
             return
         with self._running_jobs_cond:
-            if job_exec.id in self._cancel_deadlines:
+            if job.cancel_deadline:
                 return
             LOG.info(
-                "Job %s (PID %d) was canceled; terminating it if it has not stopped within %ds",
-                job_exec.id, proc.pid, settings.JOB_CANCEL_TIMEOUT,
+                "Job %s (PID %s) was canceled; terminating it if it has not stopped within %ds",
+                job_exec.id, job.process.pid, settings.JOB_CANCEL_TIMEOUT,
             )
-            timer = threading.Timer(settings.JOB_CANCEL_TIMEOUT, self._terminate_late, args=(job_exec.id, proc))
-            timer.daemon = True
-            self._cancel_deadlines[job_exec.id] = timer
-        timer.start()
+            job.cancel_deadline = threading.Timer(
+                settings.JOB_CANCEL_TIMEOUT, self._terminate_late, args=(job_exec.id, job),
+            )
+            job.cancel_deadline.daemon = True
+        job.cancel_deadline.start()
 
-    def _terminate_late(self, job_id: UUID, proc: subprocess.Popen) -> None:
+    def _terminate_late(self, job_id: UUID, job: _RunningJob) -> None:
         """Terminate a canceled job that did not stop on its own within ``JOB_CANCEL_TIMEOUT``."""
-        if proc.returncode is None:
+        if not _has_exited(job.process):
             LOG.warning("Job %s did not stop within %ds of its cancel", job_id, settings.JOB_CANCEL_TIMEOUT)
-        self._terminate(job_id, proc)
+        self._terminate(job_id, job)
 
-    def _terminate(self, job_id: UUID, proc: subprocess.Popen) -> None:
-        """Terminate a canceled job's process, and arm the kill that follows."""
-        # returncode rather than poll(): the waiting thread holds Popen's waitpid lock, and
-        # poll() reports a reaped child as still running when it cannot take it.
-        if proc.returncode is not None:
+    def _terminate(self, job_id: UUID, job: _RunningJob) -> None:
+        """Terminate a job's process, and arm the kill that follows."""
+        if _has_exited(job.process):
             return
-        LOG.info("Terminating canceled job %s (PID %d)", job_id, proc.pid)
+        LOG.info("Terminating job %s (PID %s)", job_id, job.process.pid)
         try:
-            proc.terminate()
+            job.process.terminate()
         except OSError:
-            pass  # Process already exited — _proc_wrapper will finalize
+            pass  # Already exited; its watcher settles it
         else:
-            self._schedule_force_kill(job_id, proc)
+            self._schedule_force_kill(job)
 
-    def _schedule_force_kill(self, job_id: UUID, proc: subprocess.Popen) -> None:
-        """Arm a SIGKILL for ``JOB_TERMINATE_TIMEOUT`` seconds from now, and return.
+    def _schedule_force_kill(self, job: _RunningJob) -> None:
+        """Arm a kill for ``JOB_TERMINATE_TIMEOUT`` seconds from now, and return.
 
-        Deadlines on a timer rather than inline: the poll loop must not block on a process that
-        is ignoring the signal, and ``_proc_wrapper`` is already blocked waiting on this one.
+        Deadlines on a timer rather than inline: the caller must not block on a process that is
+        ignoring the signal, and the job's watcher is already blocked waiting on this one.
         """
-        if job_id in self._force_kills:
+        if job.force_kill:
             return
 
         def escalate() -> None:
-            # returncode rather than poll(): the waiting thread holds Popen's waitpid lock, and
-            # poll() reports a reaped child as still running when it cannot take it.
-            if proc.returncode is not None:
+            if _has_exited(job.process):
                 return
             LOG.warning(
-                "Job PID %d did not exit within %ds of terminate; killing it",
-                proc.pid, settings.JOB_TERMINATE_TIMEOUT,
+                "Job PID %s did not exit within %ds of terminate; killing it",
+                job.process.pid, settings.JOB_TERMINATE_TIMEOUT,
             )
             try:
-                proc.kill()
+                job.process.kill()
             except OSError:
                 pass  # Exited between the check and the signal
 
-        timer = threading.Timer(settings.JOB_TERMINATE_TIMEOUT, escalate)
-        timer.daemon = True
-        self._force_kills[job_id] = timer
-        timer.start()
+        job.force_kill = threading.Timer(settings.JOB_TERMINATE_TIMEOUT, escalate)
+        job.force_kill.daemon = True
+        job.force_kill.start()
 
     def _dispatch(self, job_exec: JobExecution):
         if job_exec.job_key not in JOB_DISPATCH:
             finalize(job_exec, partial(job_exec.mark_failed, f"Unknown job key: {job_exec.job_key}"))
             return
 
-        exec_cmd = [sys.executable, sys.argv[0], "exec-job", str(job_exec.id)]
-        LOG.info("Dispatching job execution %s: %s", job_exec.id, " ".join(exec_cmd))
-
-        proc = subprocess.Popen(
-            exec_cmd,  # noqa: S603
-            start_new_session=True,
+        doorbell = Doorbell(self._context)
+        process = self._context.Process(
+            target=run_job_process,
+            args=(job_exec.id, doorbell, LOG.isEnabledFor(logging.DEBUG)),
+            name=f"job-{job_exec.id}",
         )
-        if job_exec.in_process:
-            # Taken here rather than in the wrapper thread, so the next poll already counts it.
-            with self._running_jobs_cond:
-                self._in_process_jobs.add(job_exec.id)
+        LOG.info("Dispatching job execution %s (%s)", job_exec.id, job_exec.job_key)
+        process.start()
+        job = _RunningJob(process, doorbell, job_exec.job_key, bool(job_exec.in_process))
+        # Registered here rather than in the watcher thread, so the next poll already counts it.
+        with self._running_jobs_cond:
+            self._running_jobs.setdefault(job_exec.id, []).append(job)
         try:
-            threading.Thread(target=self._proc_wrapper, args=(proc, job_exec)).start()
+            threading.Thread(target=self._watch, args=(job_exec.id, job), name=f"watch-{job_exec.id}").start()
         except Exception:
-            # The wrapper is what frees the slot, so a wrapper that never started must not keep it.
-            with self._running_jobs_cond:
-                self._in_process_jobs.discard(job_exec.id)
+            # The watcher is what settles the run and frees the slot, so without one the process
+            # must not keep running.
+            process.kill()
+            self._forget(job_exec.id, job)
             raise
 
-    def _proc_wrapper(self, proc: subprocess.Popen, job_exec: JobExecution):
-        """Watch a job process and settle its job when the process exits non-zero.
+    def _watch(self, job_id: UUID, job: _RunningJob):
+        """Wait for a job process to exit, then settle its run if the process did not.
 
-        A process that exits cleanly has settled its own job. A non-zero exit means it was
-        terminated or killed (a cancel, a force-kill, the operating system) or crashed before it
-        could, and this settles the job as failed, or as canceled when a cancel was requested.
-        The guarded transition makes this a no-op for a job the process did settle.
+        A process that settled or parked its run leaves nothing to do: the guarded transitions
+        make this a no-op, and a run another process holds by now is not this process's to
+        settle. Otherwise the process was terminated or killed (a cancel, a shutdown, the operating
+        system) or crashed, and the run ends as the reconcile step decides.
         """
-        with self._running_jobs_cond:
-            self._running_jobs[job_exec.id] = proc
+        settled: set[UUID] = set()
         try:
-            ret_code = proc.wait()
-            LOG.info("Job PID %d ended with code %d", proc.pid, ret_code)
-            if ret_code != 0:
-                message = process_failure_message(proc.pid, ret_code, job_exec.job_key)
-                finalize(job_exec, partial(job_exec.mark_failed, message))
+            job.process.join()
+            exit_code = job.process.exitcode
+            LOG.info("Job PID %s ended with code %s", job.process.pid, exit_code)
+            message = process_failure_message(job.process.pid, exit_code, job.job_key)
+            # A newer process of this executor's, or another scheduler, may hold the run by now.
+            if self._current(job_id) is job:
+                with database_session():
+                    settled = JobExecution.reconcile(
+                        JobExecution.id == job_id,
+                        JobExecution.not_held_by_another(self._owner),
+                        error_message=message,
+                    )
         except Exception:
-            LOG.exception("Error monitoring job PID %d", proc.pid)
-            message = f"Process monitoring error for PID {proc.pid}"
-            finalize(job_exec, partial(job_exec.mark_failed, message))
+            LOG.exception("Error settling job %s after its process exited", job_id)
         finally:
-            with self._running_jobs_cond:
-                del self._running_jobs[job_exec.id]
-                self._in_process_jobs.discard(job_exec.id)
-                # Cancel rather than drop: an armed timer keeps its thread, and the Popen it
-                # closes over, alive for the rest of the deadline.
-                for timers in (self._cancel_deadlines, self._force_kills):
-                    if timer := timers.pop(job_exec.id, None):
-                        timer.cancel()
-                self._running_jobs_cond.notify_all()
+            self._forget(job_id, job)
+        _run_final_callbacks_for(settled)
 
-    def _request_interrupt_on_running_jobs(self) -> set[UUID]:
-        """Ask pausable running jobs to stop at a work-key boundary. Returns the ids asked.
-
-        Only pausable job keys are asked: they park and resume later, while any other job asked
-        to stop would end as an error. This does not wait: the jobs that honor it exit like any
-        other, so the shutdown wait that follows covers them and asking adds no delay of its own. A job that stops writes its own
-        INTERRUPTED and the next start claims it; one killed before it got there is ended as an
-        error by ``recover_stale``, since nothing recorded where it had reached.
-        """
+    def _current(self, job_id: UUID) -> _RunningJob | None:
+        """The run's newest process, which holds it."""
         with self._running_jobs_cond:
-            running_ids = set(self._running_jobs)
-        if not running_ids:
-            return set()
+            jobs = self._running_jobs.get(job_id)
+            return jobs[-1] if jobs else None
+
+    def _forget(self, job_id: UUID, job: _RunningJob) -> None:
+        with self._running_jobs_cond:
+            jobs = self._running_jobs.get(job_id, [])
+            if job in jobs:
+                jobs.remove(job)
+            if not jobs:
+                self._running_jobs.pop(job_id, None)
+            # Cancel rather than drop: an armed timer keeps its thread, and the process it closes
+            # over, alive for the rest of the deadline.
+            for timer in (job.cancel_deadline, job.force_kill):
+                if timer:
+                    timer.cancel()
+            self._running_jobs_cond.notify_all()
+
+
+def _run_final_callbacks_for(job_ids: Iterable[UUID]) -> None:
+    """Fire the final callbacks of each job execution in ``job_ids`` that can still be read."""
+    for job_id in job_ids:
         try:
             with database_session():
-                interrupting = JobExecution.request_interrupt_bulk(running_ids, PAUSABLE_JOB_KEYS)
+                job_exec = JobExecution.get(job_id)
         except Exception:
-            LOG.exception("Could not request interrupt on running jobs")
-            return set()
-        if interrupting:
-            LOG.info("Requested interrupt on %d running job(s)", len(interrupting))
-        return interrupting
-
+            LOG.exception("Could not read job execution %s to fire its final callbacks", job_id)
+            continue
+        if job_exec:
+            run_final_callbacks(job_exec)

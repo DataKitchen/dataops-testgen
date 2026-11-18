@@ -4,6 +4,7 @@ import contextvars
 from dataclasses import dataclass, field
 from uuid import UUID
 
+from testgen.common.doorbell import Doorbell
 from testgen.common.enums import JobSource
 
 
@@ -11,6 +12,8 @@ from testgen.common.enums import JobSource
 class JobContext:
     job_id: UUID | None = None
     source: JobSource = JobSource.cli
+    # Rung by the scheduler when the job's row holds a request. None outside a scheduler's job process.
+    doorbell: Doorbell | None = None
     # Values the job's handler measured that only its own process knows, kept for the final
     # callbacks that report on the run.
     measurements: dict[str, float] = field(default_factory=dict)
