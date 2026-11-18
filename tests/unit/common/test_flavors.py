@@ -192,14 +192,24 @@ def test_value_list_params_matches_other_columns_exactly_by_text(column):
 def test_value_list_params_compares_column_and_literals_in_one_form(family):
     service = get_flavor_service(family)
     params = service.value_list_params('"c"', _column("A"), ["x"])
-    assert params["VALUE_LIST_COLUMN"] == service.exact_text(service.value_list_text('"c"'))
+    assert params["VALUE_LIST_COLUMN"] == service.exact_value_list_text('"c"')
     assert params["VALUE_LIST_LITERALS"] == service.exact_text(service.string_literal("x"))
 
 
 def test_value_list_params_compares_bytes_on_mssql():
     params = get_flavor_service("mssql").value_list_params('"c"', _column("A", "varchar(5)"), ["é "])
-    assert params["VALUE_LIST_COLUMN"] == 'CAST(CAST("c" AS NVARCHAR(MAX)) AS VARBINARY(MAX))'
-    assert params["VALUE_LIST_LITERALS"] == "CAST(N'é ' AS VARBINARY(MAX))"
+    assert params["VALUE_LIST_COLUMN"] == (
+        'CASE WHEN DATALENGTH("c") <= 4000 THEN CAST(CAST("c" AS NVARCHAR(4000)) AS VARBINARY(8000))'
+        ' WHEN DATALENGTH(CAST("c" AS NVARCHAR(MAX))) <= 8000'
+        ' THEN CAST(CAST("c" AS NVARCHAR(MAX)) AS VARBINARY(8000))'
+        ' ELSE 0x01 + CAST(HASHBYTES(\'SHA2_256\', CAST("c" AS NVARCHAR(MAX))) AS BINARY(32)) END'
+    )
+    assert params["VALUE_LIST_VALUE"] == 'CAST("c" AS NVARCHAR(MAX))'
+    assert params["VALUE_LIST_LITERALS"] == (
+        "CASE WHEN DATALENGTH(N'é ') <= 4000 THEN CAST(CAST(N'é ' AS NVARCHAR(4000)) AS VARBINARY(8000))"
+        " WHEN DATALENGTH(CAST(N'é ' AS NVARCHAR(MAX))) <= 8000 THEN CAST(CAST(N'é ' AS NVARCHAR(MAX)) AS VARBINARY(8000))"
+        " ELSE 0x01 + CAST(HASHBYTES('SHA2_256', CAST(N'é ' AS NVARCHAR(MAX))) AS BINARY(32)) END"
+    )
 
 
 def test_mssql_text_digest_reads_short_values_through_a_bounded_cast():

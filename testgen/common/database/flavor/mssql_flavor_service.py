@@ -60,8 +60,21 @@ class MssqlFlavorService(FlavorService):
         return f"CAST({value_expr} AS NVARCHAR(MAX))"
 
     def exact_text(self, text_expr: str) -> str:
-        # Binary collations still ignore trailing spaces, so the bytes are compared instead
-        return f"CAST({text_expr} AS VARBINARY(MAX))"
+        # Binary collations still ignore trailing spaces, so the UTF-16 bytes are compared instead. A
+        # large-object conversion on every row is slow, so only text longer than NVARCHAR(4000) holds
+        # takes one, and is compared by a hash. A leading byte gives the hash an odd length, which
+        # UTF-16 bytes never have. Up to 4000 bytes fit whatever the type, since no byte holds more
+        # than one UTF-16 code unit.
+        unbounded = f"CAST({text_expr} AS NVARCHAR(MAX))"
+        return (
+            f"CASE WHEN DATALENGTH({text_expr}) <= 4000"
+            f" THEN CAST(CAST({text_expr} AS NVARCHAR(4000)) AS VARBINARY(8000))"
+            f" WHEN DATALENGTH({unbounded}) <= 8000 THEN CAST({unbounded} AS VARBINARY(8000))"
+            f" ELSE 0x01 + CAST(HASHBYTES('SHA2_256', {unbounded}) AS BINARY(32)) END"
+        )
+
+    def exact_value_list_text(self, value_expr: str) -> str:
+        return self.exact_text(value_expr)
 
     def canonical_digest(self, column_ref: str, column: ColumnChars, digest: Callable[[str], str]) -> str:
         if column.general_type != "A":

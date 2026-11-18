@@ -530,6 +530,10 @@ class FlavorService:
         """
         return text_expr
 
+    def exact_value_list_text(self, value_expr: str) -> str:
+        """Return the SQL expression that casts a column's value to text in the form ``exact_text`` returns."""
+        return self.exact_text(self.value_list_text(value_expr))
+
     def value_list_params(self, column_ref: str, column: ColumnChars | None, values: list[str]) -> dict[str, str]:
         """Return the template parameters that match a column against a list of expected values.
 
@@ -566,7 +570,7 @@ class FlavorService:
             if column and self.pads_text(column.column_type, column.db_data_type):
                 values = [value.rstrip(" ") for value in values]
             text_ref = self.value_list_text(value_expr)
-            exact_ref = self.exact_text(text_ref)
+            exact_ref = self.exact_value_list_text(value_expr)
             strings = [
                 value for value in dict.fromkeys(values) if value or self.stores_empty_string
             ]
