@@ -202,6 +202,21 @@ def test_value_list_params_compares_bytes_on_mssql():
     assert params["VALUE_LIST_LITERALS"] == "CAST(N'é ' AS VARBINARY(MAX))"
 
 
+def test_mssql_text_digest_reads_short_values_through_a_bounded_cast():
+    service = get_flavor_service("mssql")
+    digest = service.canonical_digest('"c"', _column("A", "char(5)"), lambda text: f"D({text})")
+    short = 'D(CAST(CAST(RTRIM("c") AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2_UTF8 AS VARCHAR(8000)))'
+    long = 'D(CAST(CAST(RTRIM("c") AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2_UTF8 AS VARCHAR(MAX)))'
+    assert digest == f'CASE WHEN DATALENGTH(RTRIM("c")) < 2667 THEN {short} ELSE {long} END'
+
+
+def test_mssql_number_digest_does_not_branch():
+    service = get_flavor_service("mssql")
+    column = _column("N", "bigint")
+    text = service.canonical_text('"c"', column)
+    assert service.canonical_digest('"c"', column, lambda text: f"D({text})") == f"D({text})"
+
+
 def test_value_list_params_compares_bytes_on_redshift():
     params = get_flavor_service("redshift").value_list_params('"c"', _column("A"), ["a "])
     assert params["VALUE_LIST_COLUMN"] == "TO_VARBYTE(CAST(\"c\" AS VARCHAR(1000)), 'utf8')"

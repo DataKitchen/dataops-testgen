@@ -1,4 +1,5 @@
 import re
+from collections.abc import Callable
 
 from sqlalchemy.engine import URL
 
@@ -64,11 +65,29 @@ class MssqlFlavorService(FlavorService):
         # Binary collations still ignore trailing spaces, so the bytes are compared instead
         return f"CAST({text_expr} AS VARBINARY(MAX))"
 
+    def canonical_digest(self, column_ref: str, column: ColumnChars, digest: Callable[[str], str]) -> str:
+        if column.general_type != "A":
+            return super().canonical_digest(column_ref, column, digest)
+        # NVARCHAR(MAX) costs several times NVARCHAR(4000) per row. UTF-8 takes up to three bytes per
+        # UTF-16 code unit, so a value under 2,667 bytes fits VARCHAR(8000) whatever its type.
+        text = super().canonical_text(column_ref, column)
+        short = self._utf8_text(text, "4000", "8000")
+        long = self._utf8_text(text, "MAX", "MAX")
+        return f"CASE WHEN DATALENGTH({text}) < 2667 THEN {digest(short)} ELSE {digest(long)} END"
+
     def canonical_text(self, column_ref: str, column: ColumnChars) -> str:
         text = super().canonical_text(column_ref, column)
         if column.general_type == "A":
-            return f"CAST(CAST({text} AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2_UTF8 AS VARCHAR(MAX))"
+            return self._utf8_text(text, "MAX", "MAX")
         return text
+
+    @staticmethod
+    def _utf8_text(text_expr: str, nvarchar_length: str, varchar_length: str) -> str:
+        """Return the SQL expression for a text value as UTF-8 VARCHAR, through NVARCHAR of the given lengths."""
+        return (
+            f"CAST(CAST({text_expr} AS NVARCHAR({nvarchar_length})) COLLATE Latin1_General_100_BIN2_UTF8 "
+            f"AS VARCHAR({varchar_length}))"
+        )
 
     def canonical_number(self, column_ref: str, is_float: bool) -> str:
         if is_float:

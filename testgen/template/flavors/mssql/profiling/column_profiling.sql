@@ -222,9 +222,9 @@ SELECT
   SUM(CASE WHEN "{COL_NAME}" IS NULL THEN CAST(1 AS BIGINT) ELSE 0 END) AS null_value_ct,
 -- TG-ENDIF
 -- TG-IF is_type_DN
-  MIN((LEN(CAST("{COL_NAME}" AS NVARCHAR(MAX)) + N'.') - 1)) AS min_length,
-  MAX((LEN(CAST("{COL_NAME}" AS NVARCHAR(MAX)) + N'.') - 1)) AS max_length,
-  AVG(CAST(NULLIF((LEN(CAST("{COL_NAME}" AS NVARCHAR(MAX)) + N'.') - 1), 0) AS FLOAT)) AS avg_length,
+  MIN((LEN(CAST("{COL_NAME}" AS NVARCHAR(4000)) + N'.') - 1)) AS min_length,
+  MAX((LEN(CAST("{COL_NAME}" AS NVARCHAR(4000)) + N'.') - 1)) AS max_length,
+  AVG(CAST(NULLIF((LEN(CAST("{COL_NAME}" AS NVARCHAR(4000)) + N'.') - 1), 0) AS FLOAT)) AS avg_length,
 -- TG-ENDIF
 -- TG-IF is_type_N
   SUM(CAST(1 - ABS(SIGN("{COL_NAME}")) AS BIGINT)) AS zero_value_ct,
