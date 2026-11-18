@@ -50,7 +50,8 @@ AS (
     FROM (SELECT val COLLATE Latin1_General_100_BIN2 AS val FROM ranked_vals) distinct_vals
     ),
 -- Row numbers come from constants: Fabric rejects a query that reads a system view alongside user
--- tables, and Synapse rejects a VALUES list of rows
+-- tables, and Synapse rejects a VALUES list of rows. Fabric's TOP keeps any rows it likes, so the
+-- numbers are ordered before it takes them.
 digits
 AS (SELECT 0 AS d UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9),
 hash_code_points
@@ -63,7 +64,8 @@ AS (
            CROSS JOIN (SELECT TOP (SELECT ISNULL(DATALENGTH(agg) / 2, 0) FROM hash_input)
                               ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS pos
                          FROM digits d1 CROSS JOIN digits d2 CROSS JOIN digits d3
-                              CROSS JOIN digits d4 CROSS JOIN digits d5 CROSS JOIN digits d6) p) units
+                              CROSS JOIN digits d4 CROSS JOIN digits d5 CROSS JOIN digits d6
+                        ORDER BY pos) p) units
     WHERE unit NOT BETWEEN 56320 AND 57343
     ),
 hash_bytes
