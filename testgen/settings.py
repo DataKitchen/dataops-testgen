@@ -572,8 +572,9 @@ defaults to: 5
 
 JOB_PAUSE_CHECK_INTERVAL: int = int(getenv("TG_JOB_PAUSE_CHECK_INTERVAL", "5"))
 """
-Seconds a running job caches the answer to "have I been asked to stop" before asking the
-database again. Bounds how long a job takes to notice a pause, interrupt, or cancel request.
+Seconds a job run outside the scheduler caches the answer to "have I been asked to stop" before
+asking the database again. Jobs the scheduler runs read their status only when the scheduler tells
+them a request is waiting, which it does on every poll (TG_JOB_POLL_INTERVAL).
 
 from env variable: 'TG_JOB_PAUSE_CHECK_INTERVAL'
 defaults to: 5
@@ -581,9 +582,11 @@ defaults to: 5
 
 JOB_SHUTDOWN_TIMEOUT: int = int(getenv("TG_JOB_SHUTDOWN_TIMEOUT", "60"))
 """
-Seconds the scheduler waits for running jobs to stop before it exits anyway. Must stay below
-the runtime's stop grace period, or the container is killed mid-wait and jobs that would have
-stopped cleanly are cut instead. A job that outlives this is left for the next start to settle.
+Seconds the scheduler waits, when it shuts down, for running jobs to stop before it terminates
+them. A job whose scheduler ended without stopping it ends itself after this as well. This plus
+TG_JOB_TERMINATE_TIMEOUT must stay below the runtime's stop grace period, or the container is
+killed mid-wait and jobs that would have stopped cleanly are cut instead. A run a terminated job
+leaves unsettled is settled by the next start.
 
 from env variable: 'TG_JOB_SHUTDOWN_TIMEOUT'
 defaults to: 60
@@ -616,7 +619,8 @@ defaults to: 1
 JOB_TERMINATE_TIMEOUT: int = int(getenv("TG_JOB_TERMINATE_TIMEOUT", "10"))
 """
 Seconds a job's process is given to exit after SIGTERM before it is killed. The scheduler
-terminates a canceled job only once TG_JOB_CANCEL_TIMEOUT has passed.
+terminates a canceled job only once TG_JOB_CANCEL_TIMEOUT has passed, and a job still running
+at shutdown once TG_JOB_SHUTDOWN_TIMEOUT has.
 A job process that installs no handler is terminated by the signal itself, so this bounds the
 cases that do: a handler that runs cleanup, or a process the kernel cannot deliver to promptly.
 

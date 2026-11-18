@@ -53,7 +53,6 @@ import click
 from click.core import Context
 
 from testgen import settings
-from testgen.commands.exec_job import exec_job
 from testgen.commands.job_runner import submit_and_wait
 from testgen.commands.run_get_entities import (
     run_get_results,
@@ -88,7 +87,6 @@ from testgen.common import (
     get_tg_schema,
     version_service,
 )
-from testgen.common.database.flavor.duckdb_flavor_service import remove_own_spill_directories
 from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.settings import PersistedSetting
@@ -114,15 +112,13 @@ LOG = logging.getLogger("testgen")
 
 # Commands TestGen itself invokes, or that bootstrap and maintain an installation. They are
 # exempt from the deprecation notice, and they skip the automatic schema upgrade below: several
-# run before the schema is usable, and ``exec-job`` is spawned once per concurrent job, where
-# racing migrations would collide. Every other command is a data operation the API and MCP
+# run before the schema is usable. Every other command is a data operation the API and MCP
 # server cover. ``quick-start`` and ``export-test-metadata`` are here because neither has an
 # equivalent outside the CLI: one seeds a demo database, the other regenerates the packaged
 # metadata YAMLs.
 SYSTEM_COMMANDS = frozenset({
     "run-app",
     "ui",
-    "exec-job",
     "setup-system-db",
     "upgrade-system-version",
     "standalone-setup",
@@ -385,26 +381,6 @@ def run_monitors(test_suite_id: str, no_wait: bool = False):
     with database_session():
         project_code = TestSuite.get(test_suite_id).project_code
     submit_and_wait("run-monitors", {"test_suite_id": str(test_suite_id)}, project_code, no_wait)
-
-
-@cli.command("exec-job", hidden=True, help="Execute a queued job. Internal use by the scheduler.")
-@click.argument("job_execution_id", type=click.UUID)
-def exec_job_cmd(job_execution_id):
-    signal.signal(signal.SIGTERM, _terminate_job)
-    exec_job(job_execution_id)
-
-
-def _terminate_job(signum, _):
-    """Delete this process's local file copies and spill, then die of the signal."""
-    # Ignored during cleanup: the scheduler repeats the signal every poll until the process is gone.
-    signal.signal(signum, signal.SIG_IGN)
-    try:
-        remove_own_spill_directories()
-    finally:
-        # Dying of the signal rather than raising SystemExit keeps a canceled job from unwinding through
-        # its handler's finally blocks, and leaves the exit status the scheduler settles the cancel on.
-        signal.signal(signum, signal.SIG_DFL)
-        os.kill(os.getpid(), signum)
 
 
 @cli.command("list-profiles", help="Lists all profile runs for a table group.")

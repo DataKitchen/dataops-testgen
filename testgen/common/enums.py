@@ -260,7 +260,9 @@ def run_duration_seconds(active_seconds: float | None, status: str) -> float | N
     return None if status in _ACCRUING_STATUSES else active_seconds
 
 # Statuses reached only by stopping a run at a task boundary, so a job whose key is not in
-# ``PAUSABLE_JOB_KEYS`` never holds one.
+# ``PAUSABLE_JOB_KEYS`` never holds one. The one exception is INTERRUPT_REQUESTED, which a
+# stopping scheduler asks of every key in ``STOPPABLE_JOB_KEYS`` and which such a run holds only
+# until it ends.
 STOPPABLE_ONLY_STATUSES: frozenset[JobStatus] = frozenset({
     JobStatus.INTERRUPT_REQUESTED, JobStatus.INTERRUPTED,
     JobStatus.PAUSE_REQUESTED, JobStatus.PAUSED, JobStatus.RESUME_REQUESTED,

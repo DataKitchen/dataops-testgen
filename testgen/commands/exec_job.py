@@ -1,4 +1,4 @@
-"""Subprocess entry point for the scheduler's `testgen exec-job <id>` command.
+"""The lifecycle of a single claimed job, run inside the job process the scheduler starts for it.
 
 Owns the end-to-end lifecycle of a single claimed job: dispatch to its handler,
 then settle the JobExecution and fire final callbacks through `finalize`. A job
@@ -17,6 +17,7 @@ from uuid import UUID
 
 from testgen.commands.job_registry import JOB_DISPATCH, finalize
 from testgen.common.database.flavor.duckdb_flavor_service import sweep_stale_spill_directories
+from testgen.common.doorbell import Doorbell
 from testgen.common.enums import JobStatus
 from testgen.common.job_context import JobContext, job_context
 from testgen.common.models import database_session
@@ -28,8 +29,10 @@ from testgen.utils import get_exception_message
 LOG = logging.getLogger("testgen")
 
 
-def exec_job(job_execution_id: UUID) -> None:
-    """Execute a queued job. Called as a subprocess by the scheduler.
+def exec_job(job_execution_id: UUID, doorbell: Doorbell | None = None) -> None:
+    """Execute a queued job in the job process the scheduler started for it.
+
+    :param doorbell: Rung by the scheduler when the job's row holds a request.
 
     Owns the full lifecycle: mark_running -> dispatch -> settle, parking when the handler stopped
     at a checkpoint. Every exit settles the job itself, as canceled when a cancellation was
@@ -61,7 +64,7 @@ def exec_job(job_execution_id: UUID) -> None:
             return
 
         # Held until the job settles: its final callbacks read what the handler measured.
-        context_token = job_context.set(JobContext(job_id=job_execution_id, source=job_exec.source))
+        context_token = job_context.set(JobContext(job_id=job_execution_id, source=job_exec.source, doorbell=doorbell))
         try:
             with database_session():
                 job_exec = JobExecution.get(job_execution_id)

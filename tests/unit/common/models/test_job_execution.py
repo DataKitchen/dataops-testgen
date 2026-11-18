@@ -7,15 +7,20 @@ import pytest
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql.elements import Case
 
+from testgen import settings
 from testgen.common.models.job_execution import (
     RESTARTED_MESSAGE,
     JobExecution,
+    JobOwner,
     JobStatus,
     OnlyWhenTransitioningTo,
+    lease_duration,
     process_failure_message,
 )
 
 pytestmark = pytest.mark.unit
+
+OWNER = JobOwner(uuid4(), "scheduler on test, pid 1")
 
 MODULE = "testgen.common.models.job_execution"
 
@@ -109,7 +114,7 @@ def test_claim_actionable_claims_pending_rows(mock_session):
     mock_session.scalars.return_value.all.return_value = [row1, row2]
     _mock_claim_results(mock_session, row1, row2)
 
-    result = JobExecution.claim_actionable(limit=5, in_process_slots=0)
+    result = JobExecution.claim_actionable(limit=5, in_process_slots=0, owner=OWNER)
 
     assert len(result) == 2
     assert row1.status == "claimed"
@@ -124,7 +129,7 @@ def test_claim_actionable_passes_through_cancel_requested(mock_session):
     mock_session.scalars.return_value.all.return_value = [pending, cancel]
     _mock_claim_results(mock_session, pending)
 
-    result = JobExecution.claim_actionable(limit=5, in_process_slots=0)
+    result = JobExecution.claim_actionable(limit=5, in_process_slots=0, owner=OWNER)
 
     assert len(result) == 2
     assert pending.status == "claimed"
@@ -136,7 +141,7 @@ def test_claim_actionable_does_not_commit(mock_session):
         JobExecution(id=uuid4(), status="pending", job_key="run-profile")
     ]
 
-    JobExecution.claim_actionable(limit=5, in_process_slots=0)
+    JobExecution.claim_actionable(limit=5, in_process_slots=0, owner=OWNER)
 
     mock_session.commit.assert_not_called()
 
@@ -144,7 +149,7 @@ def test_claim_actionable_does_not_commit(mock_session):
 def test_claim_actionable_empty(mock_session):
     mock_session.scalars.return_value.all.return_value = []
 
-    result = JobExecution.claim_actionable(limit=5, in_process_slots=0)
+    result = JobExecution.claim_actionable(limit=5, in_process_slots=0, owner=OWNER)
 
     assert result == []
 
@@ -365,7 +370,7 @@ def test_claim_actionable_claims_a_run_queued_to_continue(mock_session, status):
     mock_session.scalars.return_value.all.return_value = [row]
     _mock_claim_results(mock_session, row)
 
-    result = JobExecution.claim_actionable(limit=5, in_process_slots=0)
+    result = JobExecution.claim_actionable(limit=5, in_process_slots=0, owner=OWNER)
 
     assert len(result) == 1
     assert row.status == "claimed"
@@ -379,7 +384,7 @@ def test_the_poll_query_cannot_reach_a_paused_row(mock_session):
     no filter of its own and would hand back whatever it was given."""
     mock_session.scalars.return_value.all.return_value = []
 
-    JobExecution.claim_actionable(limit=5, in_process_slots=0)
+    JobExecution.claim_actionable(limit=5, in_process_slots=0, owner=OWNER)
 
     selected = next(
         v for v in mock_session.scalars.call_args[0][0].compile().params.values()
@@ -394,7 +399,7 @@ def test_claim_actionable_drops_a_row_it_lost_the_race_for(mock_session):
     mock_session.scalars.return_value.all.return_value = [row]
     mock_session.execute.return_value.scalar_one_or_none.return_value = None
 
-    assert JobExecution.claim_actionable(limit=5, in_process_slots=0) == []
+    assert JobExecution.claim_actionable(limit=5, in_process_slots=0, owner=OWNER) == []
 
 
 def test_actionable_statuses_match_the_transition_graph():
@@ -550,14 +555,19 @@ def test_request_resume_hands_a_paused_run_back_to_the_poll(mock_session):
     assert job.status == "resume_requested"
 
 
-def test_recover_stale_ends_every_status_that_implies_a_dead_process_as_an_error(mock_session):
-    moved = {JobStatus.PAUSED: {uuid4()}, JobStatus.INTERRUPTED: {uuid4()}, JobStatus.ERROR: {uuid4(), uuid4()}}
+def test_reconcile_returns_the_rows_it_ended(mock_session):
+    moved = {
+        JobStatus.CANCELED: {uuid4()},
+        JobStatus.PAUSED: {uuid4()},
+        JobStatus.INTERRUPTED: {uuid4()},
+        JobStatus.ERROR: {uuid4(), uuid4()},
+    }
     mock_session.scalars.side_effect = lambda statement: MagicMock(
         all=MagicMock(return_value=list(moved[statement.compile().params["status"]]))
     )
 
-    # Only the error pass's rows have settled; the parked ones still have work coming.
-    assert JobExecution.recover_stale() == moved[JobStatus.ERROR]
+    # Only the canceled and errored rows have settled; the parked ones still have work coming.
+    assert JobExecution.reconcile() == moved[JobStatus.CANCELED] | moved[JobStatus.ERROR]
 
     error = _settling_pass(mock_session, JobStatus.ERROR)
     assert _narrows_to(error, JobStatus.stale_recoverable())
@@ -565,17 +575,34 @@ def test_recover_stale_ends_every_status_that_implies_a_dead_process_as_an_error
     assert "completed_at" in error.params
 
 
-def test_recover_stale_leaves_a_requested_cancel_for_the_poll(mock_session):
-    """A cancel somebody asked for is the only thing that ends a run as canceled, so a restart
-    neither cancels a run on its own nor turns a requested cancel into an error."""
+def test_reconcile_writes_the_given_error_message(mock_session):
     mock_session.scalars.return_value.all.return_value = []
 
-    JobExecution.recover_stale()
+    JobExecution.reconcile(error_message="Process 12 exited with code -9.")
 
-    targets = {call[0][0].compile().params["status"] for call in mock_session.scalars.call_args_list}
-    assert JobStatus.CANCEL_REQUESTED not in targets
-    assert JobStatus.CANCELED not in targets
+    assert _settling_pass(mock_session, JobStatus.ERROR).params["error_message"] == "Process 12 exited with code -9."
+
+
+def test_reconcile_cancels_a_requested_cancel(mock_session):
+    """A run somebody asked to cancel ends canceled, whether or not a process ever ran it."""
+    mock_session.scalars.return_value.all.return_value = []
+
+    JobExecution.reconcile()
+
+    cancel = _settling_pass(mock_session, JobStatus.CANCELED)
+    assert JobStatus.sources_for(JobStatus.CANCELED) == (JobStatus.CANCEL_REQUESTED,)
+    assert "completed_at" in cancel.params
     assert JobStatus.CANCEL_REQUESTED not in JobStatus.sources_for(JobStatus.ERROR)
+
+
+def test_reconcile_scopes_every_pass_to_the_given_rows(mock_session):
+    job_id = uuid4()
+    mock_session.scalars.return_value.all.return_value = []
+
+    JobExecution.reconcile(JobExecution.id == job_id)
+
+    for target in (JobStatus.CANCELED, JobStatus.PAUSED, JobStatus.INTERRUPTED, JobStatus.ERROR):
+        assert job_id in _settling_pass(mock_session, target).params.values(), target
 
 
 def _billing_expression(statement):
@@ -585,7 +612,8 @@ def _billing_expression(statement):
     status lists too, and matching on content alone would happily return the wrong one.
     """
     rendered = str(statement.compile(compile_kwargs={"literal_binds": True})).split(" WHERE ")[0]
-    return rendered[rendered.index("active_seconds=CASE"):]
+    start = rendered.index("active_seconds=CASE")
+    return rendered[start:rendered.index(" END", start) + len(" END")]
 
 
 def _narrows_to(compiled, statuses):
@@ -599,9 +627,9 @@ def _narrows_to(compiled, statuses):
 
 
 def _settling_pass(mock_session, target):
-    """The recover_stale statement that settles rows into ``target``.
+    """The reconcile statement that settles rows into ``target``.
 
-    Selected by target rather than call order: recover_stale runs several passes and which one
+    Selected by target rather than call order: reconcile runs several passes and which one
     goes first is an implementation detail these tests should not pin.
     """
     for call in mock_session.scalars.call_args_list:
@@ -611,14 +639,14 @@ def _settling_pass(mock_session, target):
     raise AssertionError(f"no pass settled anything into {target}")
 
 
-def test_recover_stale_holds_a_checkpointed_pause_rather_than_queueing_it(mock_session):
+def test_reconcile_holds_a_checkpointed_pause_rather_than_queueing_it(mock_session):
     """A pause is the one stop a restart must not undo. Continuing it would land INTERRUPTED,
     which the next poll claims -- silently resuming a run somebody chose to stop.
 
     Runs before the error pass, so the pause is settled by the time that pass looks."""
     mock_session.scalars.return_value.all.return_value = []
 
-    JobExecution.recover_stale()
+    JobExecution.reconcile()
 
     park = _settling_pass(mock_session, JobStatus.PAUSED)
     assert JobStatus.PAUSE_REQUESTED in park.params.values()
@@ -626,35 +654,35 @@ def test_recover_stale_holds_a_checkpointed_pause_rather_than_queueing_it(mock_s
     assert "resume_state IS NOT NULL" in str(park)
 
 
-def test_recover_stale_ends_a_pause_that_never_checkpointed_as_an_error(mock_session):
+def test_reconcile_ends_a_pause_that_never_checkpointed_as_an_error(mock_session):
     """The error pass takes the whole stale set, so a pause that never got far enough to write
     a checkpoint falls through to it rather than parking as progress it does not have."""
     mock_session.scalars.return_value.all.return_value = []
 
-    JobExecution.recover_stale()
+    JobExecution.reconcile()
 
     error = _settling_pass(mock_session, JobStatus.ERROR)
     assert _narrows_to(error, JobStatus.stale_recoverable())
     assert "resume_state IS NOT NULL" not in str(error)
 
 
-def test_recover_stale_continues_a_row_that_carries_a_checkpoint(mock_session):
+def test_reconcile_continues_a_row_that_carries_a_checkpoint(mock_session):
     """The checkpoint is the job's last write before it unwinds, so a row holding one has its
     work accounted for and only its exit went unrecorded. Ending it would throw that away."""
     mock_session.scalars.return_value.all.return_value = []
 
-    JobExecution.recover_stale()
+    JobExecution.reconcile()
 
     resume = _settling_pass(mock_session, JobStatus.INTERRUPTED)
     assert "resume_state IS NOT NULL" in str(resume)
 
 
-def test_recover_stale_never_continues_a_row_with_no_checkpoint(mock_session):
-    """Without a checkpoint the status alone is not evidence the process finished -- exec-job
-    outlives its scheduler -- so continuing would hand a second worker a run still writing."""
+def test_reconcile_never_continues_a_row_with_no_checkpoint(mock_session):
+    """Without a checkpoint the status alone is not evidence the job reached a boundary, so
+    continuing would resume work nothing recorded."""
     mock_session.scalars.return_value.all.return_value = []
 
-    JobExecution.recover_stale()
+    JobExecution.reconcile()
 
     for call in mock_session.scalars.call_args_list:
         compiled = call[0][0].compile()
@@ -805,12 +833,12 @@ def test_a_terminal_transition_does_not_rebill_a_cancel(mock_session):
     assert "'running'" in billing
 
 
-def test_the_recovery_passes_bill_what_the_dead_process_worked(mock_session):
-    """The only route that bills a row the current process never worked. Without it a settled
+def test_the_reconcile_passes_bill_what_the_dead_process_worked(mock_session):
+    """The only route that bills a row the settling process never worked. Without it a settled
     run carries nothing and every display reads it as no work at all."""
     mock_session.scalars.return_value.all.return_value = []
 
-    JobExecution.recover_stale()
+    JobExecution.reconcile()
 
     for target in (JobStatus.PAUSED, JobStatus.INTERRUPTED, JobStatus.ERROR):
         statement = str(_settling_pass(mock_session, target)).split(" WHERE ")[0]
@@ -818,13 +846,13 @@ def test_the_recovery_passes_bill_what_the_dead_process_worked(mock_session):
         assert "coalesce(job_executions.active_seconds" in statement, target
 
 
-def test_the_recovery_error_pass_does_not_bill_a_claim_that_never_dispatched(mock_session):
+def test_the_reconcile_error_pass_does_not_bill_a_claim_that_never_dispatched(mock_session):
     """It is the one recovery pass a claimed row reaches, and the span from a claim the row is
     still sitting on is nobody's work. Spelled out rather than derived the way the code derives
     it, so re-admitting CLAIMED fails here rather than passing silently."""
     mock_session.scalars.return_value.all.return_value = []
 
-    JobExecution.recover_stale()
+    JobExecution.reconcile()
 
     assert _narrows_to(
         _settling_pass(mock_session, JobStatus.ERROR),
@@ -842,7 +870,7 @@ def test_a_transition_into_a_working_status_bills_nothing(mock_session, method, 
     job = JobExecution(id=uuid4(), status=status, job_key="run-profile")
     mock_session.execute.return_value.scalar_one_or_none.return_value = None
 
-    getattr(job, method)()
+    getattr(job, method)(*([OWNER] if method == "claim" else []))
 
     assert "active_seconds=" not in str(mock_session.execute.call_args[0][0]).split(" WHERE ")[0]
 
@@ -1073,7 +1101,7 @@ def _queue_update(mock_session) -> str:
 def test_claim_with_no_free_slot_issues_no_in_process_claim(mock_session):
     mock_session.scalars.return_value.all.return_value = []
 
-    JobExecution.claim_actionable(limit=5, in_process_slots=0)
+    JobExecution.claim_actionable(limit=5, in_process_slots=0, owner=OWNER)
 
     [query] = _claim_selects(mock_session)
     assert "job_executions.in_process IS false" in query
@@ -1084,7 +1112,7 @@ def test_claim_keeps_in_process_rows_out_of_the_batch(mock_session):
     the slot count and out of order. It still returns their cancel requests."""
     mock_session.scalars.return_value.all.return_value = []
 
-    JobExecution.claim_actionable(limit=5, in_process_slots=1)
+    JobExecution.claim_actionable(limit=5, in_process_slots=1, owner=OWNER)
 
     batch, in_process = _claim_selects(mock_session)
     assert "job_executions.status = 'cancel_requested' OR job_executions.in_process IS false" in batch
@@ -1100,7 +1128,7 @@ def test_both_claim_queries_take_the_oldest_rows_first(mock_session, slots):
     ties between rows submitted in one transaction, which share ``created_at``."""
     mock_session.scalars.return_value.all.return_value = []
 
-    JobExecution.claim_actionable(limit=5, in_process_slots=slots)
+    JobExecution.claim_actionable(limit=5, in_process_slots=slots, owner=OWNER)
 
     for query in _claim_selects(mock_session):
         assert "ORDER BY job_executions.created_at, job_executions.id" in query
@@ -1112,7 +1140,7 @@ def test_both_claim_queries_keep_the_poll_index_predicate(mock_session):
     mock_session.scalars.return_value.all.return_value = []
     actionable = ", ".join(f"'{status}'" for status in JobExecution.ACTIONABLE_STATUSES)
 
-    JobExecution.claim_actionable(limit=5, in_process_slots=1)
+    JobExecution.claim_actionable(limit=5, in_process_slots=1, owner=OWNER)
 
     for query in _claim_selects(mock_session):
         assert f"job_executions.status IN ({actionable})" in query
@@ -1127,7 +1155,7 @@ def test_the_in_process_claim_takes_queued_rows():
 def test_claim_queues_the_in_process_rows_it_could_not_take(mock_session, slots):
     mock_session.scalars.return_value.all.return_value = []
 
-    JobExecution.claim_actionable(limit=5, in_process_slots=slots)
+    JobExecution.claim_actionable(limit=5, in_process_slots=slots, owner=OWNER)
 
     update = _queue_update(mock_session)
     waiting = ", ".join(f"'{status}'" for status in JobStatus.sources_for(JobStatus.QUEUED))
@@ -1142,7 +1170,7 @@ def test_the_queue_update_skips_rows_another_scheduler_holds(mock_session):
     scheduler has locked could deadlock the two."""
     mock_session.scalars.return_value.all.return_value = []
 
-    JobExecution.claim_actionable(limit=5, in_process_slots=1)
+    JobExecution.claim_actionable(limit=5, in_process_slots=1, owner=OWNER)
 
     assert "FOR UPDATE SKIP LOCKED" in _queue_update(mock_session)
 
@@ -1152,7 +1180,7 @@ def test_claim_queues_only_after_claiming(mock_session):
     for this poll."""
     mock_session.scalars.return_value.all.return_value = []
 
-    JobExecution.claim_actionable(limit=5, in_process_slots=1)
+    JobExecution.claim_actionable(limit=5, in_process_slots=1, owner=OWNER)
 
     kinds = [_compiled(call[0][0]).split(" ", 1)[0] for call in mock_session.scalars.call_args_list]
     assert kinds == ["SELECT", "SELECT", "UPDATE"]
@@ -1169,7 +1197,7 @@ def test_claim_returns_both_queries_rows_in_submission_order(mock_session):
     ]
     _mock_claim_results(mock_session, in_process_early, server_late)
 
-    result = JobExecution.claim_actionable(limit=5, in_process_slots=1)
+    result = JobExecution.claim_actionable(limit=5, in_process_slots=1, owner=OWNER)
 
     assert result == [cancel, in_process_early, server_late]
     assert cancel.status == "cancel_requested"
@@ -1208,7 +1236,7 @@ def test_request_project_score_refresh_merges_into_the_pending_refresh(mock_sess
 def test_claim_actionable_skips_a_project_refresh_while_one_of_the_project_is_working(mock_session):
     mock_session.scalars.return_value.all.return_value = []
 
-    JobExecution.claim_actionable(limit=5, in_process_slots=0)
+    JobExecution.claim_actionable(limit=5, in_process_slots=0, owner=OWNER)
 
     sql = _compiled(mock_session.scalars.call_args_list[0].args[0])
     assert "NOT (job_executions.job_key IN ('refresh-project-scores')" in sql
@@ -1227,7 +1255,7 @@ def test_claim_actionable_claims_one_project_refresh_per_project_per_poll(mock_s
     mock_session.scalars.return_value.all.return_value = rows
     _mock_claim_results(mock_session, first, other_project, other_key)
 
-    result = JobExecution.claim_actionable(limit=5, in_process_slots=0)
+    result = JobExecution.claim_actionable(limit=5, in_process_slots=0, owner=OWNER)
 
     assert result == [first, other_project, other_key]
     assert second.status == "pending"
@@ -1346,3 +1374,103 @@ def test_select_active_by_kwargs_narrows_to_the_job_key_given():
     where = _selected_where(kwargs_match={"test_suite_id": "abc"}, job_key="run-tests")
 
     assert "job_executions.job_key = 'run-tests'" in where
+
+
+# ---- leases ----------------------------------------------------------------------------------
+
+
+def _set_clause(statement) -> str:
+    return str(statement.compile()).split(" WHERE ")[0]
+
+
+def test_a_claim_takes_a_lease_on_the_database_clock(mock_session):
+    job = JobExecution(id=uuid4(), status="pending", job_key="run-profile")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = None
+
+    job.claim(OWNER)
+
+    statement = mock_session.execute.call_args[0][0]
+    assert OWNER.id in statement.compile().params.values()
+    assert OWNER.label in statement.compile().params.values()
+    assert "lease_expires_at=(now() + :" in _set_clause(statement)
+
+
+def test_the_lease_outlives_a_job_whose_scheduler_is_gone():
+    """A job process ends itself within the shutdown timeout once its scheduler is gone, and is
+    killed within the terminate timeout once terminated, so a lapsed lease means no live process."""
+    assert lease_duration().total_seconds() > (
+        settings.JOB_SHUTDOWN_TIMEOUT + settings.JOB_TERMINATE_TIMEOUT + settings.JOB_POLL_INTERVAL
+    )
+
+
+@pytest.mark.parametrize("method", ["mark_completed", "mark_canceled", "park"])
+def test_leaving_the_in_progress_statuses_releases_the_lease(mock_session, method):
+    job = JobExecution(id=uuid4(), status="running", job_key="run-profile")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = None
+
+    getattr(job, method)(*([{"version": 1}] if method == "park" else []))
+
+    set_clause = _set_clause(mock_session.execute.call_args[0][0])
+    for column in ("owner_id", "owner_label", "lease_expires_at"):
+        assert f"{column}=CASE WHEN" in set_clause and f"THEN NULL ELSE job_executions.{column} END" in set_clause
+
+
+def test_a_request_keeps_the_lease(mock_session):
+    job = JobExecution(id=uuid4(), status="running", job_key="run-profile")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = None
+
+    job.request_cancel()
+
+    assert "owner_id" not in _set_clause(mock_session.execute.call_args[0][0])
+
+
+def test_a_bulk_settle_releases_the_lease_and_a_bulk_request_keeps_it(mock_session):
+    mock_session.scalars.return_value.all.return_value = []
+
+    JobExecution.reconcile()
+    JobExecution.request_interrupt_bulk([uuid4()], ["run-profile"])
+
+    params = {call[0][0].compile().params["status"]: call[0][0].compile().params for call in mock_session.scalars.call_args_list}
+    for status in (JobStatus.CANCELED, JobStatus.PAUSED, JobStatus.INTERRUPTED, JobStatus.ERROR):
+        assert (params[status]["owner_id"], params[status]["lease_expires_at"]) == (None, None), status
+    assert "owner_id" not in params[JobStatus.INTERRUPT_REQUESTED]
+
+
+def test_renewing_extends_only_the_owner_s_own_leases(mock_session):
+    job_id = uuid4()
+
+    JobExecution.renew_leases(OWNER, [job_id])
+
+    statement = mock_session.execute.call_args[0][0]
+    assert "lease_expires_at=(now() + :" in str(statement.compile())
+    assert "job_executions.owner_id = :owner_id_1" in str(statement.compile())
+    assert statement.compile().params["owner_id_1"] == OWNER.id
+    assert [job_id] in statement.compile().params.values()
+
+
+def test_renewing_nothing_touches_no_rows(mock_session):
+    JobExecution.renew_leases(OWNER, [])
+
+    mock_session.execute.assert_not_called()
+
+
+def test_a_row_is_not_held_by_another_when_this_owner_or_nobody_holds_it_or_the_lease_lapsed():
+    rendered = str(JobExecution.not_held_by_another(OWNER).compile(compile_kwargs={"literal_binds": True}))
+
+    assert "job_executions.owner_id IS NULL" in rendered
+    assert f"job_executions.owner_id = '{OWNER.id.hex}'" in rendered
+    assert "job_executions.lease_expires_at < now()" in rendered
+
+
+def test_a_row_an_own_process_runs_is_never_held_by_no_live_process_whatever_its_lease_says():
+    """A lapsed lease of the owner's own live run means the renewals failed, not that the process died."""
+    live = uuid4()
+
+    rendered = str(
+        JobExecution.held_by_no_live_process(OWNER, [live]).compile(compile_kwargs={"literal_binds": True})
+    )
+
+    not_live, not_held_by_another = rendered.split(" AND ", 1)
+    assert "job_executions.id NOT IN" in not_live
+    assert live.hex in not_live.replace("-", "")
+    assert "lease_expires_at < now()" in not_held_by_another
