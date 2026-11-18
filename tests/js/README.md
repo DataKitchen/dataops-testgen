@@ -8,22 +8,26 @@ Unit tests for the frontend modules under `testgen/ui/static/js/`, run with [Vit
 From the repository root (the directory holding `vitest.config.mjs` and `pyproject.toml`):
 
 ```bash
-npx --yes -p vitest@5.1.0 -p happy-dom@21.0.4 vitest run tests/js
+npm ci
+npm test
 ```
 
-Run a single file by passing its path: `... vitest run tests/js/utils.test.js`. Drop `run` for watch mode.
+Run a single file by passing its path: `npm test -- tests/js/utils.test.js`. For watch mode, run `npx vitest`.
+`npm test` never downloads anything: without `npm ci` it fails, where a bare `npx vitest` would fetch the latest
+release instead of the pinned one.
 
 - **Node 22.12 or later** is required by Vitest 5.
-- **There is no install step.** `npx` fetches the pinned packages into its own cache. There is no `package.json` or
-  lockfile, and `node_modules/` is ignored. Vite still writes a cache there.
+- **`npm ci` installs exactly what `package-lock.json` lists** into `node_modules/` (ignored by git). Run it again
+  after the lockfile changes.
 - **Run it from this repository's root.** From any other directory Vitest finds neither the config nor the tests, and
   exits with "No test files found".
-- **The versions are pinned** here and in the CI job that runs these tests. Change them in both places together.
-  An unpinned `npx` would pick up every new release, so a release could fail unrelated changes.
+- **The lockfile pins every package**, dependencies of dependencies included, so a new upstream release cannot
+  change what the tests run with. To upgrade, change the versions in `package.json` and run `npx -y npm@11 install`,
+  which rewrites `package-lock.json`; commit both. Regenerating the lockfile needs npm 11 or later: npm 10, which
+  Node 22 ships, fails to resolve this dependency tree.
 
-`vitest.config.mjs` imports nothing, because `vitest/config` cannot be resolved without an install. It sets the
-process time zone to UTC and the locale to `en_US.UTF-8`, so date and number assertions behave the same on every
-machine. `tests/js/harness.test.js` checks both.
+`vitest.config.mjs` sets the process time zone to UTC and the locale to `en_US.UTF-8`, so date and number assertions
+behave the same on every machine. `tests/js/harness.test.js` checks both.
 
 ## Layout and naming
 
