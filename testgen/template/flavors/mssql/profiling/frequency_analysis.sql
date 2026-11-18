@@ -11,19 +11,28 @@ WITH target_table AS (
 -- TG-ENDIF
     ),
 -- Grouped by binary value: under the collation, values that differ only in case or trailing spaces would
--- group together, and a list of expected values built from them would leave the others out
+-- group together, and a list of expected values built from them would leave the others out.
+-- Short values go through NVARCHAR(4000), which costs a fraction of NVARCHAR(MAX) per row. They are two
+-- keys rather than one CASE, which would take the MAX type for both.
+value_bins
+AS (
+    SELECT CASE WHEN DATALENGTH("{COL_NAME}") < 4000 THEN CAST(CAST("{COL_NAME}" AS NVARCHAR(4000)) AS VARBINARY(8000)) END AS short_bin,
+           CASE WHEN DATALENGTH("{COL_NAME}") >= 4000 THEN CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX)) END AS long_bin,
+           "{COL_NAME}"
+    FROM target_table
+    WHERE "{COL_NAME}" IS NOT NULL
+    ),
 ranked_vals
 AS
-    (SELECT CAST(MIN(CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX)) AS val,
-            COUNT_BIG(*) AS  ct,
-            ROW_NUMBER() OVER (ORDER BY CASE WHEN MIN("{COL_NAME}") > ' ' THEN 0 ELSE 1 END, COUNT_BIG(*) DESC,
-                                        CAST(MIN(CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX))) AS NVARCHAR(MAX))
-                                            COLLATE Latin1_General_100_BIN2,
-                                        DATALENGTH(MIN(CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX))))) AS rn,
-            SUM(COUNT_BIG(*)) OVER () AS sample_value_ct
-     FROM target_table
-     WHERE "{COL_NAME}" IS NOT NULL
-     GROUP BY CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX))
+    (SELECT CAST(COALESCE(short_bin, long_bin) AS NVARCHAR(MAX)) AS val,
+            ct,
+            ROW_NUMBER() OVER (ORDER BY CASE WHEN min_val > ' ' THEN 0 ELSE 1 END, ct DESC,
+                                        CAST(COALESCE(short_bin, long_bin) AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2,
+                                        DATALENGTH(COALESCE(short_bin, long_bin))) AS rn,
+            SUM(ct) OVER () AS sample_value_ct
+     FROM (SELECT short_bin, long_bin, MIN("{COL_NAME}") AS min_val, COUNT_BIG(*) AS ct
+             FROM value_bins
+            GROUP BY short_bin, long_bin) value_groups
     ),
 grouped_vals
 AS (
@@ -33,15 +42,12 @@ AS (
     ),
 -- The hash is over the UTF-8 bytes of the distinct values, which SQL Server 2017 has no collation
 -- to produce, so they are built from the code points: one row per UTF-16 code unit, a surrogate
--- pair read as one code point, each written out as its UTF-8 bytes in hex. Values are made
--- distinct as binary because string comparison ignores trailing spaces, even under BIN2.
+-- pair read as one code point, each written out as its UTF-8 bytes in hex. The values come from
+-- ranked_vals, distinct as binary, because string comparison ignores trailing spaces even under BIN2.
 hash_input
 AS (
     SELECT CASE WHEN COUNT_BIG(*) <= 70 THEN STRING_AGG(val, N'|') WITHIN GROUP (ORDER BY val, DATALENGTH(val)) END AS agg
-    FROM (SELECT CAST(bin AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2 AS val
-            FROM (SELECT DISTINCT CAST(CAST("{COL_NAME}" AS NVARCHAR(MAX)) AS VARBINARY(MAX)) AS bin
-                    FROM target_table
-                   WHERE "{COL_NAME}" IS NOT NULL) distinct_bins) distinct_vals
+    FROM (SELECT val COLLATE Latin1_General_100_BIN2 AS val FROM ranked_vals) distinct_vals
     ),
 hash_code_points
 AS (

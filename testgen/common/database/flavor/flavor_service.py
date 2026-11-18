@@ -343,7 +343,7 @@ class FlavorService:
             The first 56 bits of the MD5 of the value's canonical text, as the wide decimal type, or
             NULL for a value ``hashable_condition`` excludes.
         """
-        hashed = self.hash_integer(self.canonical_text(column_ref, column))
+        hashed = self.canonical_digest(column_ref, column, self.hash_integer)
         return f"CASE WHEN {self.hashable_condition(column_ref, column)} THEN {hashed} END"
 
     def keyed_hash_term(self, key_ref: str, key_column: ColumnChars, column_ref: str, column: ColumnChars) -> str:
@@ -353,8 +353,8 @@ class FlavorService:
         have a fixed width, so two different key and value pairs never produce the same text. A row
         with a NULL value contributes NULL.
         """
-        key_hex = self.md5_hex(self.canonical_text(key_ref, key_column))
-        value_hex = self.md5_hex(self.canonical_text(column_ref, column))
+        key_hex = self.canonical_digest(key_ref, key_column, self.md5_hex)
+        value_hex = self.canonical_digest(column_ref, column, self.md5_hex)
         hashed = self.hash_integer(f"{key_hex} {self.concat_operator} {value_hex}")
         condition = f"{self.hashable_condition(column_ref, column)} AND {self.hashable_condition(key_ref, key_column)}"
         return f"CASE WHEN {condition} THEN {hashed} END"
@@ -382,6 +382,19 @@ class FlavorService:
         """Return the SQL expression for one date value in seconds since 1970-01-01 UTC, truncated."""
         seconds = f"CAST({self.epoch_seconds(self.utc_timestamp(column_ref, column))} AS {self.wide_decimal_type})"
         return f"CASE WHEN {self.hashable_condition(column_ref, column)} THEN {seconds} END"
+
+    def canonical_digest(self, column_ref: str, column: ColumnChars, digest: Callable[[str], str]) -> str:
+        """Return the SQL expression for a digest of a value's canonical text.
+
+        Args:
+            column_ref: The quoted column reference.
+            column: The column's catalog characteristics.
+            digest: Builds the digest's SQL expression from a text expression, such as ``md5_hex``.
+
+        Returns:
+            ``digest`` applied to ``canonical_text``.
+        """
+        return digest(self.canonical_text(column_ref, column))
 
     def canonical_text(self, column_ref: str, column: ColumnChars) -> str:
         """Return the SQL expression for a value's canonical text, which renders identical values
