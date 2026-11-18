@@ -159,7 +159,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (
+      WITH cte AS (
         SELECT LEN(SUBSTRING(CAST(ABS("{COLUMN_NAME}") % 1 AS VARCHAR), 3, LEN("{COLUMN_NAME}"))) AS decimal_scale
         FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE}
       )
