@@ -278,7 +278,16 @@ class FlavorService:
         """
         return ""
 
-    def text_value(self, column_ref: str, column_type: str | None, db_data_type: str | None = None) -> str:  # noqa: ARG002
+    def pads_text(self, column_type: str | None, db_data_type: str | None = None) -> bool:  # noqa: ARG002
+        """Return whether the flavor stores or reads a column's text values padded with spaces to its declared length.
+
+        Args:
+            column_type: The column's type as recorded in the data catalog.
+            db_data_type: The column's type as the database declares it, if the catalog has it.
+        """
+        return False
+
+    def text_value(self, column_ref: str, column_type: str | None, db_data_type: str | None = None) -> str:
         """Return the SQL expression that reads a column's text value.
 
         Args:
@@ -287,10 +296,9 @@ class FlavorService:
             db_data_type: The column's type as the database declares it, if the catalog has it.
 
         Returns:
-            ``column_ref``, or an expression over it that strips padding the flavor adds to
-            fixed-length text values.
+            ``RTRIM(column_ref)`` for a column whose values are padded, else ``column_ref``.
         """
-        return column_ref
+        return f"RTRIM({column_ref})" if self.pads_text(column_type, db_data_type) else column_ref
 
     def numeric_value(self, column_ref: str, column_type: str | None) -> str:  # noqa: ARG002
         """Return the SQL expression that reads a numeric column's value as a number.
@@ -555,7 +563,7 @@ class FlavorService:
                 self.text_value(column_ref, column.column_type, column.db_data_type) if column else column_ref
             )
             # A padded column is read without its trailing spaces, so a listed value can only match without them
-            if value_expr != column_ref:
+            if column and self.pads_text(column.column_type, column.db_data_type):
                 values = [value.rstrip(" ") for value in values]
             text_ref = self.value_list_text(value_expr)
             exact_ref = self.exact_text(text_ref)

@@ -51,11 +51,9 @@ class RedshiftFlavorService(FlavorService):
         statement.dbapi_connection.cancel()
         return True
 
-    def text_value(self, column_ref: str, column_type: str | None, db_data_type: str | None = None) -> str:  # noqa: ARG002
+    def pads_text(self, column_type: str | None, db_data_type: str | None = None) -> bool:  # noqa: ARG002
         # CHAR values are stored padded with spaces to the declared length.
-        if column_type and re.fullmatch(r"char(\(\d+\))?", column_type.lower()):
-            return f"RTRIM({column_ref})"
-        return column_ref
+        return bool(column_type and re.fullmatch(r"char(\(\d+\))?", column_type.lower()))
 
     def exact_text(self, text_expr: str) -> str:
         # Comparisons ignore trailing blanks whatever the collation, so the bytes are compared instead
