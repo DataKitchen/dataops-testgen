@@ -256,26 +256,29 @@ def apply_table_filters(
         table_group: The table group to set the filters on. Its schema is the one the conditions are checked in.
         value: Filters as ``{"table_name", "condition"}`` entries; empty or None removes every filter.
         connection: The table group's connection. Without one, the filters are only normalized.
-        tables: The tables the table group holds. None reads them from the target.
+        tables: The tables the table group's criteria select on the target. None reads them from the target.
+
+    A filter on a table the table group's catalog holds but the target no longer selects, such as one dropped at
+    the source, is stored without being checked.
 
     Raises:
         InvalidTableFilters: An entry is incomplete, a table has more than one filter, a filter names a table the
-            table group does not hold, or a condition fails on the target. Nothing is stored.
+            table group neither selects nor catalogs, or a condition fails on the target. Nothing is stored.
         TableFiltersUnchecked: The target could not be read. Nothing is stored.
     """
     filters = normalize_table_filters([dict(entry) for entry in value or []])
     if filters and connection is not None:
         if tables is None:
             tables = _table_names(table_group, connection)
+        catalogued = _catalog_table_names(table_group.id)
         outside = [
             f"Table {entry['table_name']} has a filter but is not in the table group."
             for entry in filters
-            if entry["table_name"] not in tables
+            if entry["table_name"] not in tables and entry["table_name"] not in catalogued
         ]
         try:
-            validate_table_filters(
-                connection, table_group, [entry for entry in filters if entry["table_name"] in tables]
-            )
+            if checked := [entry for entry in filters if entry["table_name"] in tables]:
+                validate_table_filters(connection, table_group, checked)
         except TableFiltersUnchecked:
             raise
         except InvalidTableFilters as error:
@@ -283,6 +286,15 @@ def apply_table_filters(
         if outside:
             raise InvalidTableFilters(*outside)
     table_group.table_filters = filters
+
+
+def _catalog_table_names(table_group_id: UUID | None) -> set[str]:
+    """Return the names of every table the table group's catalog holds, those marked dropped included."""
+    if table_group_id is None:
+        return set()
+    return set(
+        get_current_session().scalars(select(DataTable.table_name).where(DataTable.table_groups_id == table_group_id))
+    )
 
 
 def _table_names(table_group: TableGroup, connection: Connection) -> set[str]:

@@ -31,7 +31,10 @@ class _AnyTable:
 
 @pytest.fixture(autouse=True)
 def _table_group_holds_every_table():
-    with patch("testgen.common.database.table_group_service._table_names", return_value=_AnyTable()):
+    with (
+        patch("testgen.common.database.table_group_service._table_names", return_value=_AnyTable()),
+        patch("testgen.common.database.table_group_service._catalog_table_names", return_value=set()),
+    ):
         yield
 
 MODULE = "testgen.api.table_groups"
@@ -1837,6 +1840,24 @@ def test_update_table_group_answers_422_when_the_table_filters_cannot_be_checked
     assert result.resp.status_code == 422
     assert _error_entries(result.resp) == [{"code": "target_unreachable", "detail": message}]
     result.table_group.save.assert_not_called()
+
+
+def test_update_table_group_moves_to_a_schema_without_a_filtered_table(validate_filters):
+    # A missing table is listed rather than refused, whether or not it has a filter
+    table_group = _table_group()
+    table_group.table_filters = [ORDERS_FILTER]
+
+    def move_to(tg, schema, **_kwargs):
+        tg.table_group_schema = schema
+        return replace(_move(schema=schema, missing=["orders"]), tables=frozenset({"customers"}))
+
+    with patch(f"{SERVICE_MODULE}._catalog_table_names", return_value={"orders", "customers"}):
+        result = _patch({"schema_name": "onboard"}, table_group=table_group, move_error=move_to)
+
+    assert result.resp.status_code == 200, result.resp.text
+    assert result.resp.json()["schema_change"]["missing_tables"] == ["orders"]
+    assert table_group.table_filters == [ORDERS_FILTER]
+    validate_filters.assert_not_called()
 
 
 def test_update_table_group_without_a_move_leaves_the_stored_table_filters_unchecked(validate_filters):

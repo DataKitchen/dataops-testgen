@@ -1144,9 +1144,10 @@ def test_save_new_table_group_returns_the_scorecard_it_creates(add_scorecard):
 # ---------------------------------------------------------------------------
 
 
+@patch(f"{MODULE}._catalog_table_names", return_value=set())
 @patch(f"{MODULE}.validate_table_filters")
 @patch(f"{MODULE}._table_names", return_value={"orders", "returns"})
-def test_apply_refuses_a_filter_on_a_table_the_table_group_does_not_hold(_mock_tables, mock_validate):
+def test_apply_refuses_a_filter_on_a_table_the_table_group_does_not_hold(_mock_tables, mock_validate, _catalog):
     # Names match with exact case, so a filter typed for another case would never apply
     table_group = _tg()
     filters = [{"table_name": "orders", "condition": "a = 1"}, {"table_name": "Returns", "condition": "b = 1"}]
@@ -1159,9 +1160,12 @@ def test_apply_refuses_a_filter_on_a_table_the_table_group_does_not_hold(_mock_t
     assert table_group.table_filters is None
 
 
+@patch(f"{MODULE}._catalog_table_names", return_value=set())
 @patch(f"{MODULE}.validate_table_filters")
 @patch(f"{MODULE}._table_names", return_value={"orders"})
-def test_apply_reports_a_table_outside_the_group_with_the_conditions_that_fail(_mock_tables, mock_validate):
+def test_apply_reports_a_table_outside_the_group_with_the_conditions_that_fail(
+    _mock_tables, mock_validate, _catalog
+):
     mock_validate.side_effect = InvalidTableFilters(
         database_errors=[("The filter for table orders is not valid", 'column "regoin" does not exist')]
     )
@@ -1176,9 +1180,10 @@ def test_apply_reports_a_table_outside_the_group_with_the_conditions_that_fail(_
     ]
 
 
+@patch(f"{MODULE}._catalog_table_names", return_value=set())
 @patch(f"{MODULE}.validate_table_filters")
 @patch(f"{MODULE}.preview_table_group")
-def test_apply_lists_the_table_group_tables_without_reading_through_the_filters(mock_preview, mock_validate):
+def test_apply_lists_the_table_group_tables_without_reading_through_the_filters(mock_preview, mock_validate, _catalog):
     # The listing counts records through the filters, so a broken filter must not break the listing
     mock_preview.return_value = ({"tables": {"orders": {}}, "success": True, "message": None}, [MagicMock()], None)
     filters = [{"table_name": "orders", "condition": "regoin = 1"}]
@@ -1196,3 +1201,25 @@ def test_apply_reports_a_target_it_cannot_list(mock_preview):
 
     with pytest.raises(TableFiltersUnchecked, match="^The table filters could not be checked: connection refused$"):
         apply_table_filters(_tg(), [{"table_name": "orders", "condition": "a = 1"}], _conn())
+
+
+@patch(f"{MODULE}._catalog_table_names", return_value={"orders", "returns"})
+@patch(f"{MODULE}.validate_table_filters")
+@patch(f"{MODULE}._table_names", return_value={"returns"})
+def test_apply_keeps_unchecked_a_filter_on_a_catalogued_table_the_target_lacks(_mock_tables, mock_validate, _catalog):
+    # A table dropped at the source, or missing from the schema a move goes to, keeps its filter
+    filters = [{"table_name": "orders", "condition": "a = 1"}, {"table_name": "returns", "condition": "b = 1"}]
+    table_group = _tg()
+
+    apply_table_filters(table_group, filters, _conn())
+
+    mock_validate.assert_called_once_with(ANY, table_group, [{"table_name": "returns", "condition": "b = 1"}])
+    assert table_group.table_filters == filters
+
+
+@patch(f"{MODULE}._catalog_table_names", return_value={"orders"})
+@patch(f"{MODULE}.validate_table_filters")
+@patch(f"{MODULE}._table_names", return_value={"orders"})
+def test_apply_refuses_a_name_the_catalog_holds_in_another_letter_case(_mock_tables, _mock_validate, _catalog):
+    with pytest.raises(InvalidTableFilters, match="Table Orders has a filter but is not in the table group."):
+        apply_table_filters(_tg(), [{"table_name": "Orders", "condition": "a = 1"}], _conn())

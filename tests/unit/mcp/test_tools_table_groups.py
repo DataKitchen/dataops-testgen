@@ -30,7 +30,10 @@ class _AnyTable:
 
 @pytest.fixture(autouse=True)
 def _table_group_holds_every_table():
-    with patch("testgen.common.database.table_group_service._table_names", return_value=_AnyTable()):
+    with (
+        patch("testgen.common.database.table_group_service._table_names", return_value=_AnyTable()),
+        patch("testgen.common.database.table_group_service._catalog_table_names", return_value=set()),
+    ):
         yield
 
 MODULE = "testgen.mcp.tools.table_groups"
