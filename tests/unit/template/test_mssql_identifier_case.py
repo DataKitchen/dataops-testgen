@@ -8,7 +8,7 @@ import re
 
 import pytest
 
-from tests.unit.template.test_mssql_system_views import _mssql_sql
+from tests.unit.template.mssql_sql import mssql_sql
 
 pytestmark = pytest.mark.unit
 
@@ -46,7 +46,7 @@ def mixed_case_names(sql: str) -> set[str]:
 
 
 def test_mssql_queries_use_each_defined_name_in_one_case():
-    offenders = {name: mixed for name, text in _mssql_sql() if (mixed := mixed_case_names(text))}
+    offenders = {name: mixed for name, text in mssql_sql() if (mixed := mixed_case_names(text))}
     assert offenders == {}
 
 

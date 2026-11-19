@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from tests.unit.template.test_mssql_system_views import _mssql_sql, _without_comments_and_literals
+from tests.unit.template.mssql_sql import mssql_sql, without_comments_and_literals
 
 pytestmark = pytest.mark.unit
 
@@ -12,7 +12,7 @@ VALUES_ROWS = re.compile(r"\bVALUES\s*\(", re.IGNORECASE)
 
 
 def test_mssql_queries_build_no_rows_from_values():
-    offenders = [name for name, text in _mssql_sql() if VALUES_ROWS.search(_without_comments_and_literals(text))]
+    offenders = [name for name, text in mssql_sql() if VALUES_ROWS.search(without_comments_and_literals(text))]
     assert offenders == []
 
 

@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from tests.unit.template.test_mssql_system_views import _mssql_sql
+from tests.unit.template.mssql_sql import mssql_sql
 
 pytestmark = pytest.mark.unit
 
@@ -20,7 +20,7 @@ def _with_space_literals_marked(sql: str) -> str:
 
 
 def test_mssql_blank_checks_do_not_compare_with_a_space():
-    offenders = [name for name, text in _mssql_sql() if SPACE_COMPARISON.search(_with_space_literals_marked(text))]
+    offenders = [name for name, text in mssql_sql() if SPACE_COMPARISON.search(_with_space_literals_marked(text))]
     assert offenders == []
 
 
