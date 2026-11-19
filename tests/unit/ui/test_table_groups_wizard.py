@@ -124,7 +124,7 @@ def test_wizard_saves_table_filters_normalized_and_checked_against_the_connectio
     expected = [{"table_name": "orders", "condition": "region = 'EMEA'"}]
     table_group = mocks["save_new_table_group"].call_args.args[0]
     assert table_group.table_filters == expected
-    mocks["validate_table_filters"].assert_called_once_with(mocks["connection"], table_group, expected)
+    mocks["validate_table_filters"].assert_called_once_with(mocks["connection"], table_group, expected, None)
     assert table_group.table_group_schema == "sales"
 
 

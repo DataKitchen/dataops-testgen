@@ -27,7 +27,7 @@ rules are form-shaped per-flavor logic, not model invariants.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -244,7 +244,10 @@ def validate_table_naming(
 
 
 def apply_table_filters(
-    table_group: TableGroup, value: Sequence[Mapping[str, object]] | None, connection: Connection | None
+    table_group: TableGroup,
+    value: Sequence[Mapping[str, object]] | None,
+    connection: Connection | None,
+    tables: Collection[str] | None = None,
 ) -> None:
     """Store record filters on a table group after normalizing them and checking each against the target.
 
@@ -252,14 +255,17 @@ def apply_table_filters(
         table_group: The table group to set the filters on. Its schema is the one the conditions are checked in.
         value: Filters as ``{"table_name", "condition"}`` entries; empty or None removes every filter.
         connection: The table group's connection. Without one, the conditions are not checked against the target.
+        tables: The tables the table group holds. A filter on any other table is stored without being checked.
+            None checks every filter.
 
     Raises:
         InvalidTableFilters: An entry is incomplete, a table has more than one filter, or a condition fails on
             the target. Nothing is stored.
+        TableFiltersUnchecked: The target could not be read. Nothing is stored.
     """
     filters = normalize_table_filters([dict(entry) for entry in value or []])
     if filters and connection is not None:
-        validate_table_filters(connection, table_group, filters)
+        validate_table_filters(connection, table_group, filters, tables)
     table_group.table_filters = filters
 
 
@@ -470,10 +476,6 @@ def preview_table_group(
         preview, data_chars, sql_generator = _build_preview(
             table_group, connection, verify_access=verify_access, table_filters=table_filters
         )
-
-        if verify_access and preview["success"]:
-            if not all(t["can_access"] for t in preview["tables"].values()) and not preview["message"]:
-                preview["message"] = _INACCESSIBLE_MESSAGE
     except Exception as error:
         preview["success"] = False
         preview["message"] = error.args[0] if error.args else str(error)
@@ -614,6 +616,8 @@ def _build_preview(
             # A declaration whose view could not be built is listed without columns, and has no
             # view for a probe to read.
             table["can_access"] = access.get(table_name, False)
+        if not all(table["can_access"] for table in tables.values()) and not preview["message"]:
+            preview["message"] = _INACCESSIBLE_MESSAGE
 
     if preview["success"]:
         _add_table_filter_detail(preview, table_filters, filter_errors)
@@ -626,7 +630,8 @@ def _add_table_filter_detail(
 ) -> None:
     """Mark each table whose filter fails, and name each filtered table the table group does not hold.
 
-    Either one fails the preview, since the filter would fail every run or apply to no records.
+    A failing filter fails the preview, since it would fail every run. A filter on a table the table group
+    does not hold reads no records, so it is only named.
     """
     tables = preview["tables"]
     failed = 0
@@ -647,8 +652,9 @@ def _add_table_filter_detail(
             + " Check the highlighted tables."
         )
     sentences.extend(f"Table {name} has a filter but is not in the table group." for name in missing)
-    if failed or missing:
+    if failed:
         preview["success"] = False
+    if failed or missing:
         preview["message"] = " ".join(sentences)
 
 
@@ -721,7 +727,8 @@ class SchemaMoveRefused(Exception):
 
 @dataclass
 class SchemaMove:
-    """What a move did: where it went, and which catalogued tables the new schema lacks.
+    """What a move did: where it went, which tables the table group holds in the schema it moved to, and
+    which catalogued tables that schema lacks.
 
     ``refresh_catalog`` rewrites the catalog against the schema the move names. It is handed back
     rather than run, because it writes on its own connection and commits there and then -- see
@@ -732,6 +739,7 @@ class SchemaMove:
     schema: str
     missing_tables: list[str]
     definitions_repointed: int
+    tables: frozenset[str] | None = None
     refresh_catalog: Callable[[UUID], None] | None = field(default=None, repr=False, compare=False)
 
 
@@ -879,6 +887,7 @@ def move_table_group_schema(
         schema=schema,
         missing_tables=missing,
         definitions_repointed=repointed,
+        tables=frozenset(preview["tables"]),
         refresh_catalog=(
             make_save_data_chars(data_chars, sql_generator) if data_chars and sql_generator else None
         ),

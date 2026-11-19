@@ -5,6 +5,7 @@ import pytest
 
 from testgen.common.table_filter_validation import (
     InvalidTableFilters,
+    TableFiltersUnchecked,
     normalize_table_filters,
     table_filter_errors,
     validate_table_filters,
@@ -33,7 +34,7 @@ def test_normalize_stores_no_filters_as_none(value):
     ("value", "message"),
     [
         ([{"table_name": "orders", "condition": " "}], "Enter a filter condition for table orders."),
-        ([{"table_name": "", "condition": "a = 1"}], "Select a table for each filter condition."),
+        ([{"table_name": "", "condition": "a = 1"}], "Each table filter needs a table name."),
         (
             [{"table_name": "orders", "condition": "a = 1"}, {"table_name": "orders ", "condition": "b = 2"}],
             "Table orders has more than one filter.",
@@ -58,7 +59,7 @@ def test_normalize_reports_every_problem_once():
 
     assert raised.value.messages == [
         "Enter a filter condition for table orders.",
-        "Select a table for each filter condition.",
+        "Each table filter needs a table name.",
         "Table returns has more than one filter.",
     ]
 
@@ -128,3 +129,41 @@ def test_validate_opens_no_session_without_filters():
         validate_table_filters(_connection(), SimpleNamespace(table_group_schema="sales"), None)
 
     session.assert_not_called()
+
+
+def test_validate_checks_only_the_filters_on_tables_the_table_group_holds():
+    table_group = SimpleNamespace(table_group_schema="sales")
+    value = [
+        {"table_name": "orders", "condition": "region = 'EMEA'"},
+        {"table_name": "tmp_orders", "condition": "regoin = 1"},
+    ]
+    run, queries = _runner(failing="tmp_orders")
+    with patch(SESSION) as session:
+        session.return_value.__enter__.return_value = run
+        validate_table_filters(_connection(), table_group, value, tables={"orders", "returns"})
+
+    assert len(queries) == 1
+    assert '"orders"' in queries[0]
+
+
+def test_validate_opens_no_session_when_no_filtered_table_is_in_the_table_group():
+    with patch(SESSION) as session:
+        validate_table_filters(
+            _connection(),
+            SimpleNamespace(table_group_schema="sales"),
+            [{"table_name": "tmp_orders", "condition": "a = 1"}],
+            tables={"orders"},
+        )
+
+    session.assert_not_called()
+
+
+def test_validate_reports_an_unreachable_target_as_unchecked_filters():
+    # A connection failure is not a fault in the filters, so it raises its own exception type
+    with (
+        patch(SESSION, side_effect=ConnectionRefusedError("connection refused")),
+        pytest.raises(TableFiltersUnchecked, match="^The table filters could not be checked: connection refused$"),
+    ):
+        validate_table_filters(
+            _connection(), SimpleNamespace(table_group_schema="sales"), [{"table_name": "orders", "condition": "a = 1"}]
+        )

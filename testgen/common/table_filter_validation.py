@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Collection, Sequence
 
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.models.connection import Connection
@@ -10,11 +11,22 @@ LOG = logging.getLogger("testgen")
 
 
 class InvalidTableFilters(ValueError):
-    """The table filters cannot be saved. ``messages`` holds one user-facing message per problem."""
+    """The table filters cannot be saved. ``messages`` holds one user-facing message per problem.
 
-    def __init__(self, *messages: str):
-        super().__init__(" ".join(messages))
-        self.messages = list(messages)
+    ``problems`` holds the messages TestGen wrote. ``database_errors`` holds the problems the target database
+    reported, as ``(lead, error)`` pairs whose message is ``"{lead}: {error}"``; the database's text can quote
+    source values.
+    """
+
+    def __init__(self, *problems: str, database_errors: Sequence[tuple[str, str]] = ()):
+        self.problems = list(problems)
+        self.database_errors = list(database_errors)
+        self.messages = [*self.problems, *(f"{lead}: {error}" for lead, error in self.database_errors)]
+        super().__init__(" ".join(self.messages))
+
+
+class TableFiltersUnchecked(InvalidTableFilters):
+    """The table filters could not be checked, because the target could not be read."""
 
 
 def normalize_table_filters(value: list[dict] | None) -> list[dict] | None:
@@ -34,7 +46,7 @@ def normalize_table_filters(value: list[dict] | None) -> list[dict] | None:
         condition = (entry.get("condition") or "").strip()
         if table_name and not condition:
             problems.append(f"Enter a filter condition for table {table_name}.")
-        if condition and not table_name and (problem := "Select a table for each filter condition.") not in problems:
+        if condition and not table_name and (problem := "Each table filter needs a table name.") not in problems:
             problems.append(problem)
         if table_name in seen and (problem := f"Table {table_name} has more than one filter.") not in problems:
             problems.append(problem)
@@ -44,6 +56,15 @@ def normalize_table_filters(value: list[dict] | None) -> list[dict] | None:
         raise InvalidTableFilters(*problems)
     filters = [{"table_name": f.table_name, "condition": f.condition} for f in parse_table_filters(value)]
     return filters or None
+
+
+def table_filter_problems(value: list[dict] | None) -> list[str]:
+    """Return every problem ``normalize_table_filters`` finds in the filters, or an empty list."""
+    try:
+        normalize_table_filters(value)
+    except InvalidTableFilters as error:
+        return error.messages
+    return []
 
 
 def table_filter_errors(
@@ -80,24 +101,41 @@ def table_filter_errors(
     return errors
 
 
-def validate_table_filters(connection: Connection, table_group: TableGroup, value: list[dict] | None) -> None:
+def validate_table_filters(
+    connection: Connection,
+    table_group: TableGroup,
+    value: list[dict] | None,
+    tables: Collection[str] | None = None,
+) -> None:
     """Check each table filter by reading one record of its table through it.
 
     Args:
         connection: The table group's connection.
         table_group: The table group the filters are for; its schema holds the tables.
         value: Filters as ``{"table_name", "condition"}`` entries, in their stored form.
+        tables: The tables the table group holds. A filter on any other table reads no records and is not
+            checked. None checks every filter.
 
     Raises:
         InvalidTableFilters: A filter's query fails. It carries the database's error for each failing filter.
+        TableFiltersUnchecked: The target could not be read.
     """
-    if not parse_table_filters(value):
+    checked = [f for f in value or [] if tables is None or f.get("table_name") in tables]
+    if not parse_table_filters(checked):
         return
-    with target_db_session(connection, table_group) as run:
-        errors = table_filter_errors(run, connection, table_group, value)
+    try:
+        with target_db_session(connection, table_group) as run:
+            errors = table_filter_errors(run, connection, table_group, checked)
+    except Exception as error:
+        LOG.info(f"Table filters could not be checked: {error}")
+        raise TableFiltersUnchecked(
+            database_errors=[("The table filters could not be checked", _error_text(error))]
+        ) from error
     if errors:
         raise InvalidTableFilters(
-            *(f"The filter for table {table_name} is not valid: {error}" for table_name, error in errors.items())
+            database_errors=[
+                (f"The filter for table {table_name} is not valid", error) for table_name, error in errors.items()
+            ]
         )
 
 

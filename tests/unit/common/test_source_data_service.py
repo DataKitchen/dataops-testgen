@@ -78,11 +78,7 @@ def _run_input_parameters(**values: str) -> str:
     # literal: the writer holds nothing back and rewrites nothing, so the blob reads as the
     # values given here.
     test_def = SimpleNamespace(param_columns={"custom_query"}, **{"table_name": None, **fields})
-    writer = SimpleNamespace(
-        flavor_service=get_flavor_service("postgresql"),
-        _filter_condition=lambda _table_name: None,
-        _match_filter_condition=lambda _test_def: None,
-    )
+    writer = SimpleNamespace(flavor_service=get_flavor_service("postgresql"))
     return TestExecutionSQL._get_input_parameters(writer, test_def)
 
 
@@ -823,7 +819,7 @@ def _filtered_lookup_data() -> LookupData:
 @patch(f"{MODULE}.TestDefinition.get_for_project", return_value=_FakeTestDefinition())
 @patch(f"{MODULE}._get_lookup_data", side_effect=lambda *_: _filtered_lookup_data())
 def test_a_result_lookup_reads_through_the_filter_its_test_recorded(_mock_lookup, _mock_td):
-    query = _build_query_standard(_standard_issue_data(table_filter="region = 'CA'"), limit=500)
+    query = _build_query_standard(_standard_issue_data(test_result_id="tr-1", table_filter="region = 'CA'"), limit=500)
 
     assert query == "SELECT * FROM (SELECT * FROM orders WHERE (region = 'CA'))"
 
@@ -831,9 +827,43 @@ def test_a_result_lookup_reads_through_the_filter_its_test_recorded(_mock_lookup
 @patch(f"{MODULE}.TestDefinition.get_for_project", return_value=_FakeTestDefinition())
 @patch(f"{MODULE}._get_lookup_data", side_effect=lambda *_: _filtered_lookup_data())
 def test_a_result_whose_test_read_no_filter_reads_the_whole_table(_mock_lookup, _mock_td):
-    query = _build_query_standard(_standard_issue_data(table_filter=""), limit=500)
+    query = _build_query_standard(_standard_issue_data(test_result_id="tr-1", table_filter=""), limit=500)
 
     assert query == "SELECT * FROM orders"
+
+
+@patch(f"{MODULE}.get_current_session")
+@patch(f"{MODULE}.TestDefinition.get_for_project", return_value=_FakeTestDefinition())
+@patch(f"{MODULE}._get_lookup_data", side_effect=lambda *_: _filtered_lookup_data())
+def test_a_result_row_without_its_recorded_filters_reads_them_from_the_result(_mock_lookup, _mock_td, mock_session):
+    # A row built by a query that does not select the recorded filters must not fall back to the current ones
+    recorded = SimpleNamespace(table_filter="region = 'CA'", match_table_filter=None)
+    mock_session.return_value.execute.return_value.first.return_value = recorded
+
+    query = _build_query_standard(_standard_issue_data(test_result_id="tr-1"), limit=500)
+
+    assert query == "SELECT * FROM (SELECT * FROM orders WHERE (region = 'CA'))"
+
+
+@patch(f"{MODULE}.get_current_session")
+@patch(f"{MODULE}.TestDefinition.get_for_project")
+@patch(f"{MODULE}._get_lookup_data")
+def test_a_result_row_without_its_recorded_filters_reads_the_match_filter_from_the_result(
+    mock_lookup, mock_td, mock_session
+):
+    mock_lookup.return_value = LookupData(
+        lookup_query="SELECT * FROM {MATCH_TABLE_FILTER_OPEN}returns{MATCH_TABLE_FILTER_CLOSE_UNALIASED}",
+        sql_flavor="postgresql",
+        table_group_schema="demo",
+        table_filters=[{"table_name": "returns", "condition": "region = 'NY'"}],
+    )
+    mock_td.return_value = _FakeTestDefinition(match_schema_name="demo", match_table_name="returns")
+    recorded = SimpleNamespace(table_filter=None, match_table_filter="region = 'CA'")
+    mock_session.return_value.execute.return_value.first.return_value = recorded
+
+    query = _build_query_standard(_standard_issue_data(test_result_id="tr-1"), limit=500)
+
+    assert query == "SELECT * FROM (SELECT * FROM returns WHERE (region = 'CA'))"
 
 
 @patch(f"{MODULE}.TestDefinition.get_for_project", return_value=_FakeTestDefinition())

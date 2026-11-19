@@ -75,7 +75,7 @@ def filtered_table_source(
     """Return the FROM target that reads a table's records passing the table group's filter for it."""
     flavor_service = get_flavor_service(connection.sql_flavor)
     quote = flavor_service.quote_character
-    filters = TableGroup.get(table_group.id).table_filters if table_group else None
+    filters = table_group.table_filters if table_group else None
     return filtered_table_ref(
         flavor_service.get_table_ref(schema, table_name, connection.sql_flavor_code),
         table_filter_condition(filters, table_name),

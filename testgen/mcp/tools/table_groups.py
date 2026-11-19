@@ -8,6 +8,8 @@ so the rules and SQL paths stay in one place.
 from __future__ import annotations
 
 import hashlib
+import re
+from collections.abc import Collection
 from dataclasses import astuple, dataclass
 from typing import Annotated, Any
 from uuid import UUID
@@ -23,6 +25,7 @@ from testgen.common.audit.table_groups import (
 )
 from testgen.common.database.table_group_service import (
     SchemaMoveRefused,
+    TableGroupPreview,
     apply_table_filters,
     apply_table_group_flavor_rules,
     cascade_delete_table_group,
@@ -49,7 +52,7 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.data_table import CATALOG_TAG_LABELS
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.table_group import TableGroup, TableGroupDeletionCounts, table_group_defaults
-from testgen.common.table_filter_validation import InvalidTableFilters
+from testgen.common.table_filter_validation import InvalidTableFilters, table_filter_problems
 from testgen.mcp.confirmation import confirm_destructive_action
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
@@ -479,6 +482,7 @@ def create_table_group(
 
     apply_table_group_flavor_rules(table_group, connection)
     errors = validate_table_group_fields(table_group, connection, field_names=_FIELD_NAMES)
+    errors.extend(table_filter_problems(_filter_entries(table_filters)))
     if errors:
         _raise_validation_error(errors, "Table group creation rejected. No changes saved.")
     _apply_table_filters(table_group, table_filters, connection)
@@ -697,20 +701,27 @@ def update_table_group(
 
     apply_table_group_flavor_rules(table_group, connection)
     errors = validate_table_group_fields(table_group, connection, field_names=_FIELD_NAMES)
+    if table_filters is not None:
+        errors.extend(table_filter_problems(_filter_entries(table_filters)))
     if errors:
         _raise_validation_error(errors, "Update rejected. No changes saved.")
 
+    if table_filters is not None:
+        # Stored unchecked first, so a move reads the schema it moves to through these filters
+        _apply_table_filters(table_group, table_filters, None)
     move = None
     if moving_to:
         try:
             move = move_table_group_schema(table_group, moving_to)
         except SchemaMoveRefused as refusal:
             raise MCPUserError(refusal.message) from refusal
-    if table_filters is not None:
-        _apply_table_filters(table_group, table_filters, connection)
-    elif move is not None and table_group.table_filters:
-        # The stored conditions are checked again in the schema the table group moves to
-        _apply_table_filters(table_group, [TableFilter(**entry) for entry in table_group.table_filters], connection)
+    if table_group.table_filters and (table_filters is not None or move is not None):
+        _apply_table_filters(
+            table_group,
+            [TableFilter(**entry) for entry in table_group.table_filters],
+            connection,
+            move.tables if move is not None else None,
+        )
 
     after = _snapshot(table_group)
 
@@ -784,10 +795,12 @@ def preview_table_group(
             doc.text(preview["message"])
         else:
             doc.heading(1, f"Preview failed for table group `{name}`")
-            doc.text(
-                target_db_error_text(preview.get("message"))
-                or "Preview failed for an unknown reason."
-            )
+            # MCP has no highlighted rows, so each failing table is named with its error instead
+            message = _HIGHLIGHTED_SENTENCE.sub("", preview.get("message") or "").strip()
+            failures = _table_failures(preview)
+            if message or not failures:
+                doc.text(target_db_error_text(message) or "Preview failed for an unknown reason.")
+            _render_table_failures(doc, failures)
         return doc.render()
 
     doc.heading(1, f"Preview for table group `{name}`")
@@ -826,16 +839,9 @@ def preview_table_group(
 
     # A declaration that cannot be read is a row of zeroes above, indistinguishable from an empty
     # table, and a run does not stop for one. Naming it here is the only place it is reported.
-    if failures := {
-        table_name: info["error"]
-        for table_name, info in preview["tables"].items()
-        if info.get("error")
-    }:
-        doc.heading(2, "Tables that could not be read")
-        for table_name, reason in sorted(failures.items()):
-            doc.field(table_name, target_db_error_text(reason))
-    elif preview.get("message"):
-        doc.text(target_db_error_text(preview["message"]))
+    if message := _HIGHLIGHTED_SENTENCE.sub("", preview.get("message") or "").strip():
+        doc.text(target_db_error_text(message))
+    _render_table_failures(doc, _table_failures(preview))
 
     if include_columns:
         doc.heading(2, "Columns")
@@ -1045,13 +1051,35 @@ def _snapshot(table_group: TableGroup) -> dict[str, Any]:
     return values
 
 
+def _filter_entries(table_filters: list[TableFilter] | None) -> list[dict]:
+    return [entry.model_dump() for entry in table_filters or []]
+
+
 def _apply_table_filters(
-    table_group: TableGroup, table_filters: list[TableFilter] | None, connection: Connection | None
+    table_group: TableGroup,
+    table_filters: list[TableFilter] | None,
+    connection: Connection | None,
+    tables: Collection[str] | None = None,
 ) -> None:
     try:
-        apply_table_filters(table_group, [entry.model_dump() for entry in table_filters or []], connection)
+        apply_table_filters(table_group, _filter_entries(table_filters), connection, tables)
     except InvalidTableFilters as err:
-        raise MCPUserError(str(err)) from err
+        database_messages = [f"{lead}: {target_db_error_text(error)}" for lead, error in err.database_errors]
+        raise MCPUserError(" ".join([*err.problems, *database_messages])) from err
+
+
+_HIGHLIGHTED_SENTENCE = re.compile(r"\s*Check the highlighted (?:tables|paths)\.")
+
+
+def _table_failures(preview: TableGroupPreview) -> dict[str, str]:
+    return {table_name: info["error"] for table_name, info in preview["tables"].items() if info.get("error")}
+
+
+def _render_table_failures(doc: MdDoc, failures: dict[str, str]) -> None:
+    if failures:
+        doc.heading(2, "Tables that could not be read")
+        for table_name, reason in sorted(failures.items()):
+            doc.field(table_name, target_db_error_text(reason))
 
 
 def _render_table_filters(doc: MdDoc, table_group: TableGroup) -> None:

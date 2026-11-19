@@ -331,6 +331,30 @@ def test_create_table_group_validation_error_no_save(mock_resolve, mock_tg_cls, 
 
 @patch(f"{MODULE}.TableGroup")
 @patch(f"{MODULE}.resolve_connection")
+def test_create_table_group_reports_field_and_table_filter_failures_together(
+    mock_resolve, mock_tg_cls, db_session_mock
+):
+    mock_resolve.return_value = _mock_connection()
+    instance = _mock_table_group(table_groups_name="ab")
+    mock_tg_cls.return_value = instance
+
+    from testgen.mcp.tools.table_groups import create_table_group
+
+    with _patch_perms(), pytest.raises(MCPUserError) as exc:
+        create_table_group(
+            connection_id=42,
+            table_group_name="ab",
+            schema="public",
+            table_filters=[TableFilter(table_name="orders", condition=" ")],
+        )
+    msg = str(exc.value)
+    assert "must be between 3 and 40 characters" in msg
+    assert "Enter a filter condition for table orders." in msg
+    instance.save.assert_not_called()
+
+
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_connection")
 def test_create_table_group_duplicate_name_maps_to_user_error(mock_resolve, mock_tg_cls, db_session_mock):
     mock_resolve.return_value = _mock_connection()
     instance = _mock_table_group()
@@ -954,6 +978,79 @@ def test_preview_failed_returns_text_not_raises(mock_resolve, mock_conn_cls, moc
 
     assert "Preview failed" in out
     assert "Could not connect" in out
+
+
+@patch(f"{MODULE}.preview_table_group_service")
+@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.resolve_table_group")
+def test_preview_keeps_a_filter_warning_beside_tables_that_could_not_be_read(
+    mock_resolve, mock_conn_cls, mock_preview_svc, db_session_mock
+):
+    tg = _mock_table_group(table_groups_name="Sample TG")
+    mock_resolve.return_value = tg
+    mock_conn_cls.get_by_table_group.return_value = _mock_connection()
+    mock_preview_svc.return_value = (
+        {
+            "stats": {
+                "id": tg.id, "table_groups_name": "Sample TG", "table_group_schema": "public",
+                "table_ct": 1, "column_ct": 0, "approx_record_ct": None, "approx_data_point_ct": None,
+            },
+            "tables": {"orders": {"column_ct": 0, "error": "No files found"}},
+            "success": True,
+            "message": "1 table could not be read. Check the highlighted paths. "
+            "Table invoices has a filter but is not in the table group.",
+        },
+        None,
+        None,
+    )
+
+    from testgen.mcp.tools.table_groups import preview_table_group
+
+    with _patch_perms():
+        out = preview_table_group(table_group_id=str(tg.id))
+
+    assert "Table invoices has a filter but is not in the table group." in out
+    assert "No files found" in out
+    assert "highlighted" not in out
+
+
+@patch(f"{MODULE}.preview_table_group_service")
+@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.resolve_table_group")
+def test_preview_failed_on_a_table_filter_names_the_table_and_its_error(
+    mock_resolve, mock_conn_cls, mock_preview_svc, db_session_mock
+):
+    # MCP has no highlighted rows, so the table and the database's error must be in the text
+    tg = _mock_table_group(table_groups_name="Sample TG")
+    mock_resolve.return_value = tg
+    mock_conn_cls.get_by_table_group.return_value = _mock_connection()
+    mock_preview_svc.return_value = (
+        {
+            "stats": {
+                "id": tg.id, "table_groups_name": "Sample TG", "table_group_schema": "public",
+                "table_ct": 2, "column_ct": 4, "approx_record_ct": None, "approx_data_point_ct": None,
+            },
+            "tables": {
+                "orders": {"column_ct": 2, "error": 'The filter is not valid: column "no_such_column" does not exist'},
+                "returns": {"column_ct": 2},
+            },
+            "success": False,
+            "message": "1 table filter is not valid. Check the highlighted tables.",
+        },
+        None,
+        None,
+    )
+
+    from testgen.mcp.tools.table_groups import preview_table_group
+
+    with _patch_perms():
+        out = preview_table_group(table_group_id=str(tg.id))
+
+    assert "Preview failed" in out
+    assert "1 table filter is not valid." in out
+    assert "highlighted" not in out
+    assert "orders" in out
+    assert 'column "no_such_column" does not exist' in out
 
 
 @patch(f"{MODULE}.resolve_table_group")
@@ -2164,7 +2261,7 @@ def test_create_table_group_stores_checked_table_filters(mock_resolve, mock_tg_c
         )
 
     assert instance.table_filters == [ORDERS_FILTER]
-    mock_validate.assert_called_once_with(connection, instance, [ORDERS_FILTER])
+    mock_validate.assert_called_once_with(connection, instance, [ORDERS_FILTER], None)
     instance.save.assert_called_once()
     assert "## Table filters" in out
     assert "**orders:** `region = 'EMEA'`" in out
@@ -2217,9 +2314,77 @@ def test_update_table_group_replaces_the_table_filters(
         out = update_table_group(table_group_id=str(tg.id), table_filters=[TableFilter(**ORDERS_FILTER)])
 
     assert tg.table_filters == [ORDERS_FILTER]
-    mock_validate.assert_called_once_with(connection, tg, [ORDERS_FILTER])
+    mock_validate.assert_called_once_with(connection, tg, [ORDERS_FILTER], None)
     tg.save.assert_called_once()
     assert "| `Table filters` | customers: active | orders: region = 'EMEA' |" in out
+
+
+@patch(f"{SERVICE_MODULE}.apply_schema_move", return_value=None)
+@patch(f"{MODULE}.move_table_group_schema")
+@patch(f"{SERVICE_MODULE}.validate_table_filters")
+@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_moves_through_the_table_filters_it_sets(
+    mock_resolve, mock_tg_cls, mock_conn_cls, mock_validate, mock_move, _mock_apply, db_session_mock
+):
+    # The move's probe writes the catalog, so it must read the schema it moves to through the request's filters
+    tg = _mock_table_group(table_group_schema="public", table_filters=[{"table_name": "orders", "condition": "old"}])
+    mock_resolve.return_value = tg
+    connection = _mock_connection()
+    mock_conn_cls.get.return_value = connection
+    probed_with = []
+
+    def move(table_group, schema, **_kwargs):
+        probed_with.append(table_group.table_filters)
+        table_group.table_group_schema = schema
+        return SchemaMove(
+            previous_schema="public", schema=schema, missing_tables=[], definitions_repointed=0,
+            tables=frozenset({"orders"}),
+        )
+
+    mock_move.side_effect = move
+
+    from testgen.mcp.tools.table_groups import update_table_group
+
+    with _patch_perms():
+        update_table_group(table_group_id=str(tg.id), schema="staging", table_filters=[TableFilter(**ORDERS_FILTER)])
+
+    assert probed_with == [[ORDERS_FILTER]]
+    mock_validate.assert_called_once_with(connection, tg, [ORDERS_FILTER], frozenset({"orders"}))
+
+
+@patch(f"{SERVICE_MODULE}.validate_table_filters")
+@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_withholds_a_filter_error_under_source_data_protection(
+    mock_resolve, mock_tg_cls, mock_conn_cls, mock_validate, db_session_mock
+):
+    from testgen.common.table_filter_validation import InvalidTableFilters
+
+    # The database's error can quote a source value
+    mock_validate.side_effect = InvalidTableFilters(
+        database_errors=[
+            ("The filter for table orders is not valid", 'invalid input syntax for type integer: "alice@example.com"')
+        ]
+    )
+    tg = _mock_table_group()
+    mock_resolve.return_value = tg
+    mock_conn_cls.get.return_value = _mock_connection()
+
+    from testgen.mcp.tools.table_groups import update_table_group
+
+    with (
+        _patch_perms(),
+        patch("testgen.mcp.tools.common.mcp_source_data_protected", return_value=True),
+        pytest.raises(MCPUserError) as exc,
+    ):
+        update_table_group(table_group_id=str(tg.id), table_filters=[TableFilter(**ORDERS_FILTER)])
+
+    assert "The filter for table orders is not valid" in str(exc.value)
+    assert "alice@example.com" not in str(exc.value)
+    assert "withheld by the source-data protection policy" in str(exc.value)
 
 
 @patch(f"{SERVICE_MODULE}.validate_table_filters")

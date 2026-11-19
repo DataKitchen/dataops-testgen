@@ -45,7 +45,7 @@ def _save(table_filters: list[dict] | None, *, filter_error=None) -> tuple[dict,
                 "testgen.common.database.table_group_service.validate_table_filters", side_effect=filter_error,
             ) as validate_table_filters,
         ):
-            mock_queries.get_table_group_preview.return_value = {"success": True}
+            mock_queries.get_table_group_preview.return_value = {"success": True, "tables": {"customers": {}, "orders": {}}}
             data_table_cls.select_table_names.return_value = ["customers", "orders"]
             from testgen.ui.views.table_groups import TableGroupsPage
 
@@ -73,7 +73,9 @@ def test_edit_saves_table_filters_normalized_and_checked_against_the_connection(
     table_group = mocks["table_group"]
     assert data["result"] is None
     assert table_group.table_filters == expected
-    mocks["validate_table_filters"].assert_called_once_with(mocks["connection"], table_group, expected)
+    mocks["validate_table_filters"].assert_called_once_with(
+        mocks["connection"], table_group, expected, {"customers": {}, "orders": {}}
+    )
     table_group.save.assert_called_once()
     mocks["record"].assert_called_once_with(AuditAction.TABLE_GROUP_UPDATED, table_group)
 

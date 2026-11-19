@@ -35,6 +35,7 @@ from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import MISSING_TEST_DEFINITION_MESSAGE, TestDefinition
+from testgen.common.models.test_result import TestResult
 from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_source_data_pii
 from testgen.common.read_file import replace_templated_functions
 from testgen.common.table_filters import table_filter_condition, table_filter_params
@@ -265,10 +266,8 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
     run_parameters = dict_from_kv(issue_data.get("input_parameters"))
     column, key_column = _catalog_columns(flavor_service, issue_data, test_definition)
     match_schema_name = run_parameters.get("match_schema_name") or test_definition.match_schema_name
-    if "table_filter" in issue_data:
-        # A result records the filters its test read through, which may differ from the table group's
-        table_condition = issue_data["table_filter"] or None
-        match_condition = issue_data.get("match_table_filter") or None
+    if issue_data.get("test_result_id"):
+        table_condition, match_condition = _recorded_filter_conditions(issue_data)
     else:
         table_condition, match_condition = _current_filter_conditions(
             lookup_data,
@@ -432,6 +431,22 @@ def _table_filter_params(
             escape_colons=False,
         ),
     }
+
+
+def _recorded_filter_conditions(issue_data: dict) -> tuple[str | None, str | None]:
+    """Return the filter conditions a test result's run read its table and its match table through.
+
+    They may differ from the table group's filters. When ``issue_data`` lacks the recorded columns, they are
+    read from the test result its ``test_result_id`` names; a missing result gives no conditions.
+    """
+    if "table_filter" in issue_data:
+        return issue_data["table_filter"] or None, issue_data.get("match_table_filter") or None
+    row = get_current_session().execute(
+        select(TestResult.table_filter, TestResult.match_table_filter).where(
+            TestResult.id == issue_data["test_result_id"]
+        )
+    ).first()
+    return (row.table_filter or None, row.match_table_filter or None) if row else (None, None)
 
 
 def _hygiene_filter_condition(lookup_data: LookupData, issue_data: dict) -> str | None:

@@ -108,13 +108,8 @@ const TableGroupTest = (preview, options) => {
             const tables = tableGroupPreview?.tables ?? {};
             const hasTables = Object.keys(tables).length > 0;
             const verifiedAccess = Object.values(tables).some(({ can_access }) => can_access != null);
-            const anyTableUnreadable = Object.values(tables).some(
-                ({ can_access, error }) => error || (can_access != null && can_access === false),
-            );
             // With no tables, the message fills the empty table instead.
-            const tableAccessWarning = hasTables && (anyTableUnreadable || tableGroupPreview.success === false)
-                ? tableGroupPreview.message
-                : '';
+            const tableAccessWarning = hasTables ? tableGroupPreview.message : '';
 
             const showFiles = Object.values(tables).some(({ file_ct }) => file_ct != null);
             const columns = [showFiles ? '40%' : '50%', '14%', '14%', '14%', '8%'];

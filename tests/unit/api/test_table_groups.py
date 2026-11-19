@@ -1,9 +1,10 @@
 """Tests for testgen.api.table_groups."""
 
 import re
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -687,6 +688,21 @@ def test_create_table_group_reports_every_validation_failure():
         {"code": "invalid_table_group", "detail": "`schema_name` is required."},
         {"code": "invalid_table_group", "detail": "`profiling_delay_days` must be a non-negative integer."},
         {"code": "invalid_table_group", "detail": "`profile_sample_percent` must be between 1 and 100."},
+    ]
+    mock_save.assert_not_called()
+
+
+def test_create_table_group_reports_field_and_table_filter_failures_together():
+    resp, mock_save, _ = _post({
+        "table_group_name": "ab",
+        "schema_name": "sales",
+        "table_filters": [{"table_name": "orders", "condition": " "}],
+    })
+
+    assert resp.status_code == 400
+    assert _error_entries(resp) == [
+        {"code": "invalid_table_group", "detail": "`table_group_name` must be between 3 and 40 characters."},
+        {"code": "invalid_table_filters", "detail": "Enter a filter condition for table orders."},
     ]
     mock_save.assert_not_called()
 
@@ -1582,7 +1598,7 @@ def test_create_table_group_stores_the_checked_table_filters(validate_filters):
     assert resp.status_code == 201, resp.text
     saved = _saved(mock_save)
     assert saved.table_filters == [ORDERS_FILTER]
-    validate_filters.assert_called_once_with(CONNECTION, saved, [ORDERS_FILTER])
+    validate_filters.assert_called_once_with(CONNECTION, saved, [ORDERS_FILTER], None)
     assert resp.json()["table_filters"] == [ORDERS_FILTER]
 
 
@@ -1652,7 +1668,7 @@ def test_update_table_group_replaces_the_table_filters(validate_filters, target_
 
     assert result.resp.status_code == 200, result.resp.text
     assert table_group.table_filters == [ORDERS_FILTER]
-    validate_filters.assert_called_once_with(target_connection, table_group, [ORDERS_FILTER])
+    validate_filters.assert_called_once_with(target_connection, table_group, [ORDERS_FILTER], None)
     table_group.save.assert_called_once_with()
     assert result.resp.json()["table_filters"] == [ORDERS_FILTER]
 
@@ -1692,7 +1708,7 @@ def test_update_table_group_refuses_an_incomplete_table_filter(validate_filters)
 
     assert result.resp.status_code == 400
     assert _error_entries(result.resp) == [
-        {"code": "invalid_table_filters", "detail": "Select a table for each filter condition."}
+        {"code": "invalid_table_filters", "detail": "Each table filter needs a table name."}
     ]
     result.table_group.save.assert_not_called()
 
@@ -1773,6 +1789,41 @@ def test_update_table_group_refuses_a_move_the_stored_table_filters_do_not_fit(v
     assert result.resp.status_code == 400
     assert _error_entries(result.resp) == [{"code": "invalid_table_filters", "detail": message}]
     table_group.save.assert_not_called()
+
+
+def test_update_table_group_moves_through_the_table_filters_it_sets(validate_filters):
+    # The move's probe writes the catalog, so it must read the schema it moves to through the request's filters
+    new_filter = {"table_name": "orders", "condition": "region = 'EU'"}
+    table_group = _table_group()
+    table_group.table_filters = [ORDERS_FILTER]
+    probed_with = []
+
+    def move_to(tg, schema, **_kwargs):
+        probed_with.append(tg.table_filters)
+        tg.table_group_schema = schema
+        return replace(_move(schema=schema), tables=frozenset({"orders"}))
+
+    result = _patch(
+        {"schema_name": "onboard", "table_filters": [new_filter]}, table_group=table_group, move_error=move_to
+    )
+
+    assert result.resp.status_code == 200, result.resp.text
+    assert probed_with == [[new_filter]]
+    validate_filters.assert_called_once_with(ANY, table_group, [new_filter], frozenset({"orders"}))
+    assert validate_filters.call_args.args[1].table_group_schema == "onboard"
+
+
+def test_update_table_group_answers_422_when_the_table_filters_cannot_be_checked(validate_filters):
+    from testgen.common.table_filter_validation import TableFiltersUnchecked
+
+    message = "The table filters could not be checked: connection refused"
+    validate_filters.side_effect = TableFiltersUnchecked(message)
+
+    result = _patch({"table_filters": [ORDERS_FILTER]})
+
+    assert result.resp.status_code == 422
+    assert _error_entries(result.resp) == [{"code": "target_unreachable", "detail": message}]
+    result.table_group.save.assert_not_called()
 
 
 def test_update_table_group_without_a_move_leaves_the_stored_table_filters_unchecked(validate_filters):

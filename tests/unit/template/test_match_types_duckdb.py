@@ -55,12 +55,18 @@ COLUMN_CHARS = {column: _chars(column, general_type) for column, general_type, *
 KEYED_TYPES = {"A": "Match_Keyed_Hash_Text", "N": "Match_Keyed_Hash_Num", "D": "Match_Keyed_Hash_Date"}
 
 
-def _keyed_hashes(con, key: ColumnChars, columns: list[ColumnChars], max_query_chars: int | None = None) -> list:
+def _keyed_hashes(
+    con,
+    key: ColumnChars,
+    columns: list[ColumnChars],
+    max_query_chars: int | None = None,
+    table_filters: list[dict] | None = None,
+) -> list:
     """The keyed hashes profiling records for ``columns``, by the queries it runs."""
     sql = ProfilingSQL.__new__(ProfilingSQL)
     sql.connection = SimpleNamespace(sql_flavor_code=FLAVOR, max_query_chars=max_query_chars)
     sql.flavor_service = get_flavor_service(FLAVOR)
-    sql.table_group = SimpleNamespace(table_filters=None)
+    sql.table_group = SimpleNamespace(table_filters=table_filters, table_group_schema="s")
     return [value for query, _ in sql.run_keyed_hash(key, columns) for value in con.execute(query).fetchone()]
 
 
@@ -555,6 +561,18 @@ def test_a_key_value_out_of_decimal_range_leaves_its_row_out_of_the_keyed_hash()
     key, value = _chars("k", "N", "DECIMAL(38,0)"), _chars("v", "A", "VARCHAR")
 
     assert _keyed_hashes(con, key, [value]) == [value_hash.keyed_hash(rows)] == [value_hash.keyed_hash(rows[:1])]
+
+
+def test_a_keyed_hash_covers_only_the_records_the_table_filter_selects():
+    con = duckdb.connect()
+    con.execute("CREATE SCHEMA s")
+    con.execute("CREATE TABLE s.src AS SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) t(k, v)")
+    key, value = _chars("k", "N", "INTEGER"), _chars("v", "A", "VARCHAR")
+    table_filters = [{"table_name": "src", "condition": "v <> 'b'"}]
+
+    assert _keyed_hashes(con, key, [value], table_filters=table_filters) == [
+        value_hash.keyed_hash([(1, "a"), (3, "c")])
+    ]
 
 
 @pytest.mark.parametrize(

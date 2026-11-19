@@ -602,7 +602,9 @@ class TableGroupsPage(Page):
                 )
                 move = None
                 try:
-                    apply_table_filters(table_group, table_group.table_filters, connection)
+                    apply_table_filters(
+                        table_group, table_group.table_filters, connection, table_group_preview["tables"]
+                    )
                     if moving_to:
                         # The move reads the schema being left off the instance, and the form has
                         # already written the new one onto it.

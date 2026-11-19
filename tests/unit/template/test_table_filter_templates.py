@@ -22,7 +22,7 @@ _QUOTE = r'(?:["`]|\{QUOTE\})'
 _SCHEMA = r"\{(?:TARGET_SCHEMA|SCHEMA_NAME|DATA_SCHEMA|MATCH_SCHEMA_NAME)\}"
 _TABLE = r"\{(TABLE_NAME|DATA_TABLE|MATCH_TABLE_NAME)\}"
 _TABLE_REF = re.compile(
-    rf"\bFROM\s+(?P<open>\{{(?:MATCH_)?TABLE_FILTER_OPEN\}})?"
+    rf"(?:\b(?:FROM|JOIN)\s+|,\s*)(?P<open>\{{(?:MATCH_)?TABLE_FILTER_OPEN\}})?"
     rf"(?:(?:{_QUOTE}?{_SCHEMA}{_QUOTE}?\.)?{_QUOTE}{_TABLE}{_QUOTE}|`{_SCHEMA}\.{_TABLE}`)",
     re.IGNORECASE,
 )

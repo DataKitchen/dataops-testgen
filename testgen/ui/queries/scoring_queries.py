@@ -100,6 +100,8 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]) -> list
             results.column_names,
             column_chars.column_type,
             results.input_parameters,
+            results.table_filter,
+            results.match_table_filter,
             results.result_message,
             groups.table_groups_name,
             suites.test_suite,

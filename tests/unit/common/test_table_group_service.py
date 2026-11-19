@@ -452,6 +452,19 @@ def test_preview_names_a_filtered_table_the_table_group_does_not_hold(mock_sessi
 
 @patch(f"{MODULE}.RefreshDataCharsSQL")
 @patch(f"{MODULE}.target_db_session")
+def test_preview_passes_with_a_warning_when_a_filtered_table_is_not_in_the_table_group(mock_session, mock_sql_cls):
+    # A filter on a table the group does not hold reads no records, and failing the preview would fail every
+    # catalog write until the filter is removed
+    filters = [{"table_name": "invoices", "condition": "a = 1"}]
+
+    preview, _ = _filtered_preview(mock_session, mock_sql_cls, filters, failing=("invoices",))
+
+    assert preview["success"] is True
+    assert preview["message"] == "Table invoices has a filter but is not in the table group."
+
+
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+@patch(f"{MODULE}.target_db_session")
 def test_preview_refuses_an_incomplete_table_filter_before_reading_the_target(mock_session, mock_sql_cls):
     filters = [{"table_name": "customer", "condition": " "}]
 
@@ -584,6 +597,35 @@ def test_preview_verify_access_partial_failure_sets_footer(mock_session, mock_sq
     assert preview["tables"]["rental"]["can_access"] is False
     assert preview["message"] == (
         "Some tables were not accessible. Check that TestGen has read access to them."
+    )
+
+
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+@patch(f"{MODULE}.target_db_session")
+def test_preview_keeps_the_access_warning_beside_a_filter_on_a_table_outside_the_table_group(
+    mock_session, mock_sql_cls
+):
+    sql_generator = mock_sql_cls.return_value
+    sql_generator.flavor_service.metadata_via_api = False
+    sql_generator.get_schema_ddf.return_value = ("SELECT ...", {})
+    sql_generator.verify_access.side_effect = lambda name: (f"SELECT 1 FROM {name}", None)
+
+    def respond(query):
+        if "SELECT ..." in query:
+            return [_column_row("customer", "id"), _column_row("rental", "id")]
+        if "SELECT 1 FROM rental" in query:
+            raise RuntimeError("permission denied")
+        return []
+
+    _session(mock_session, respond)
+    table_group = _tg(table_filters=[{"table_name": "invoices", "condition": "a = 1"}])
+
+    preview, _, _ = preview_table_group(table_group, connection=_conn(), verify_access=True)
+
+    assert preview["success"] is True
+    assert preview["message"] == (
+        "Some tables were not accessible. Check that TestGen has read access to them. "
+        "Table invoices has a filter but is not in the table group."
     )
 
 
