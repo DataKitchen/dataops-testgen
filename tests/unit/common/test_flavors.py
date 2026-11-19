@@ -191,9 +191,10 @@ def test_value_list_params_matches_other_columns_exactly_by_text(column):
 @pytest.mark.parametrize("family", sorted(FLAVOR_FAMILIES))
 def test_value_list_params_compares_column_and_literals_in_one_form(family):
     service = get_flavor_service(family)
-    params = service.value_list_params('"c"', _column("A"), ["x"])
-    assert params["VALUE_LIST_COLUMN"] == service.exact_value_list_text('"c"')
-    assert params["VALUE_LIST_LITERALS"] == service.exact_text(service.string_literal("x"))
+    column = _column("A")
+    params = service.value_list_params('"c"', column, ["x"])
+    assert params["VALUE_LIST_COLUMN"] == service.exact_value_list_text('"c"', column)
+    assert params["VALUE_LIST_LITERALS"] == service.exact_literal("x")
 
 
 def test_value_list_params_compares_bytes_on_mssql():
@@ -205,10 +206,28 @@ def test_value_list_params_compares_bytes_on_mssql():
         ' ELSE 0x01 + CAST(HASHBYTES(\'SHA2_256\', CAST("c" AS NVARCHAR(MAX))) AS BINARY(32)) END'
     )
     assert params["VALUE_LIST_VALUE"] == 'CAST("c" AS NVARCHAR(MAX))'
-    assert params["VALUE_LIST_LITERALS"] == (
-        "CASE WHEN DATALENGTH(N'é ') <= 4000 THEN CAST(CAST(N'é ' AS NVARCHAR(4000)) AS VARBINARY(8000))"
-        " WHEN DATALENGTH(CAST(N'é ' AS NVARCHAR(MAX))) <= 8000 THEN CAST(CAST(N'é ' AS NVARCHAR(MAX)) AS VARBINARY(8000))"
-        " ELSE 0x01 + CAST(HASHBYTES('SHA2_256', CAST(N'é ' AS NVARCHAR(MAX))) AS BINARY(32)) END"
+    assert params["VALUE_LIST_LITERALS"] == "CAST(N'é ' AS VARBINARY(8000))"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("x" * 4000, f"CAST(N'{'x' * 4000}' AS VARBINARY(8000))"),
+        ("x" * 4001, f"0x01 + CAST(HASHBYTES('SHA2_256', CAST(N'{'x' * 4001}' AS NVARCHAR(MAX))) AS BINARY(32))"),
+        ("😀" * 2000, f"CAST(N'{'😀' * 2000}' AS VARBINARY(8000))"),
+        ("😀" * 2001, f"0x01 + CAST(HASHBYTES('SHA2_256', CAST(N'{'😀' * 2001}' AS NVARCHAR(MAX))) AS BINARY(32))"),
+    ],
+)
+def test_mssql_literal_takes_its_compared_form_by_its_utf16_length(value, expected):
+    assert get_flavor_service("mssql").exact_literal(value) == expected
+
+
+@pytest.mark.parametrize("column", [_column("X", "xml"), _column("X", "geography"), None])
+def test_mssql_value_list_measures_other_columns_after_converting_them_to_text(column):
+    params = get_flavor_service("mssql").value_list_params('"c"', column, ["x"])
+    assert params["VALUE_LIST_COLUMN"] == (
+        'CASE WHEN DATALENGTH(CAST("c" AS NVARCHAR(MAX))) <= 8000 THEN CAST(CAST("c" AS NVARCHAR(MAX)) AS VARBINARY(8000))'
+        ' ELSE 0x01 + CAST(HASHBYTES(\'SHA2_256\', CAST("c" AS NVARCHAR(MAX))) AS BINARY(32)) END'
     )
 
 
@@ -243,7 +262,7 @@ def test_value_list_params_matches_a_padded_column_without_trailing_spaces(famil
     column.db_data_type = db_data_type
     params = service.value_list_params('"c"', column, ["N ", "N", "Y  ", " Y"])
     assert params["VALUE_LIST_LITERALS"] == ", ".join(
-        service.exact_text(service.string_literal(value)) for value in ["N", "Y", " Y"]
+        service.exact_literal(value) for value in ["N", "Y", " Y"]
     )
     assert params["VALUE_LIST_CT"] == "3"
 
@@ -252,7 +271,7 @@ def test_value_list_params_keeps_trailing_spaces_for_an_unpadded_column():
     service = get_flavor_service("mssql")
     params = service.value_list_params('"c"', _column("A", "varchar(2)"), ["N ", "N"])
     assert params["VALUE_LIST_LITERALS"] == ", ".join(
-        service.exact_text(service.string_literal(value)) for value in ["N ", "N"]
+        service.exact_literal(value) for value in ["N ", "N"]
     )
 
 
