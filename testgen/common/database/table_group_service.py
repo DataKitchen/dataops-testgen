@@ -10,7 +10,10 @@ any future caller:
   ``(preview, data_chars, sql_generator)``; the ``save_data_chars`` callback
   is built by callers via ``make_save_data_chars``.
 * ``cascade_delete_table_group`` — deletes a table group and everything recorded
-  against it, unless a job for it is still running.
+  against it, with the scorecard created with it, unless a job for it is still running.
+* ``scorecards_created_with`` — the scorecards a delete of the table group removes.
+* ``rename_table_group_in_scorecards`` — points the project's scorecards at a renamed
+  table group.
 * ``delete_blockers`` — the jobs that keep ``cascade_delete_table_group`` from
   deleting a table group, read without locking or canceling anything.
 
@@ -923,8 +926,8 @@ def delete_blockers(table_group: TableGroup) -> list[JobExecution]:
 
 
 def cascade_delete_table_group(table_group: TableGroup) -> DeleteBlocker | None:
-    """Delete a table group with its test suites, runs, results, schedules, hygiene issues, and
-    data catalog, unless a job for it is queued or running.
+    """Delete a table group with its test suites, runs, results, schedules, hygiene issues, data
+    catalog, and the scorecards created with it, unless a job for it is queued or running.
 
     Catalog refreshes for the table group that have not started are canceled rather than counted.
 
@@ -936,8 +939,27 @@ def cascade_delete_table_group(table_group: TableGroup) -> DeleteBlocker | None:
         return DeleteBlocker.JOB
     if not JobExecution.cancel_queued_catalog_refreshes(TableGroup, table_group.id):
         return DeleteBlocker.CATALOG_REFRESH
+    for scorecard in scorecards_created_with(table_group):
+        scorecard.delete()
     TableGroup.cascade_delete([str(table_group.id)])
     return None
+
+
+def scorecards_created_with(table_group: TableGroup | TableGroupMinimal) -> list[ScoreDefinition]:
+    """Return the project's scorecards still shaped as the one created with the table group: named after it, with it
+    as their only filter.
+    """
+    return ScoreDefinition.created_with_table_group(table_group.project_code, table_group.table_groups_name)
+
+
+def rename_table_group_in_scorecards(table_group: TableGroup, previous_name: str) -> list[ScoreDefinition]:
+    """Point the project's scorecards at the table group's name, when it is no longer ``previous_name``.
+
+    :returns: the scorecards whose filters or name changed, with those changes not yet flushed.
+    """
+    if table_group.table_groups_name == previous_name:
+        return []
+    return ScoreDefinition.rename_table_group(table_group.project_code, previous_name, table_group.table_groups_name)
 
 
 def save_new_table_group(table_group: TableGroup, *, add_scorecard: bool = False) -> ScoreDefinition | None:

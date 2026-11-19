@@ -382,6 +382,11 @@ const TableGroupList = (props) => {
                             }),
                         )
                         : '',
+                    info.scorecard_count === 1
+                        ? span('The scorecard ', b(tableGroup.table_groups_name), ', created with this table group, will also be deleted.')
+                        : info.scorecard_count > 1
+                            ? span(`The ${info.scorecard_count} scorecards named `, b(tableGroup.table_groups_name), ', created with this table group, will also be deleted.')
+                            : '',
                     div(
                         { class: 'flex-row fx-justify-content-flex-end' },
                         () => Button({

@@ -103,7 +103,10 @@ def test_deleting_a_destination_records_its_name(audit_session, audit_log):
 def test_deleting_a_table_group_records_its_name(audit_session, audit_log):
     table_group = _stored(TableGroup(id=uuid4(), project_code="demo", table_groups_name="Sales"))
 
-    with patch("testgen.api.table_groups.cascade_delete_table_group", return_value=None):
+    with (
+        patch("testgen.api.table_groups.scorecards_created_with", return_value=[]),
+        patch("testgen.api.table_groups.cascade_delete_table_group", return_value=None),
+    ):
         delete_table_group(table_group=table_group)
     audit_session.commit()
 
@@ -117,6 +120,7 @@ def test_a_refused_table_group_delete_records_nothing(audit_session, audit_log):
     table_group = _stored(TableGroup(id=uuid4(), project_code="demo", table_groups_name="Sales"))
 
     with (
+        patch("testgen.api.table_groups.scorecards_created_with", return_value=[]),
         patch("testgen.api.table_groups.cascade_delete_table_group", return_value="job"),
         pytest.raises(HTTPException),
     ):

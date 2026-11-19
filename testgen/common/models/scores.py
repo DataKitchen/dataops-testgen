@@ -23,12 +23,14 @@ from sqlalchemy import (
     String,
     column,
     delete,
+    exists,
     func,
     or_,
     select,
     table,
     text,
     tuple_,
+    update,
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import aliased, attributes, joinedload, relationship
@@ -36,6 +38,7 @@ from sqlalchemy.orm import aliased, attributes, joinedload, relationship
 from testgen.common import read_template_sql_file
 from testgen.common.audit.actions import AuditTargetType
 from testgen.common.audit.fields import AuditFields
+from testgen.common.database.sql_quoting import sql_literal
 from testgen.common.models import Base, database_session, get_current_session
 from testgen.utils import is_uuid4
 
@@ -74,6 +77,8 @@ Categories = Literal[
     "data_classification",
 ]
 ScoreTypes = Literal["score", "cde_score"]
+# Cached result categories that hold a scorecard's own scores; the others are category labels.
+SCORE_RESULT_KEYS = ("score", "profiling_score", "testing_score", "cde_score")
 
 # Sentinel passed by the breakdown UI when the user drills down into a bucket whose
 # grouping value is NULL (e.g. table-scope tests that have no column_name).
@@ -158,6 +163,101 @@ class ScoreDefinition(Base):
             ],
         )
         return definition
+
+    @classmethod
+    def created_with_table_group(cls, project_code: str, table_groups_name: str) -> list[Self]:
+        """Return the project's scorecards shaped as the one ``from_table_group`` creates for the named table group:
+        named after it, with that table group as their only filter.
+        """
+        root_filter = aliased(ScoreDefinitionFilter)
+        root_count = (
+            select(func.count())
+            .where(root_filter.criteria_id == ScoreDefinitionCriteria.id)
+            .scalar_subquery()
+        )
+        chained_filter = aliased(ScoreDefinitionFilter)
+        has_chain = exists().where(chained_filter.next_filter_id == ScoreDefinitionFilter.id)
+        query = (
+            select(cls)
+            .join(ScoreDefinitionCriteria, ScoreDefinitionCriteria.definition_id == cls.id)
+            .join(ScoreDefinitionFilter, ScoreDefinitionFilter.criteria_id == ScoreDefinitionCriteria.id)
+            .where(
+                cls.project_code == project_code,
+                cls.name == table_groups_name,
+                ScoreDefinitionFilter.field == "table_groups_name",
+                ScoreDefinitionFilter.value == table_groups_name,
+                root_count == 1,
+                ~has_chain,
+            )
+        )
+        return list(get_current_session().scalars(query).unique().all())
+
+    @classmethod
+    def rename_table_group(cls, project_code: str, old_name: str, new_name: str) -> list[Self]:
+        """Point the project's scorecards at a table group's new name.
+
+        Rewrites every filter on ``old_name``, renames the scorecards ``created_with_table_group``, and relabels the
+        table group in the cached results and breakdowns, which hold its name until their next refresh.
+
+        :returns: the scorecards whose filters or name changed, with those changes not yet flushed.
+        """
+        session = get_current_session()
+        project_definitions = select(cls.id).where(cls.project_code == project_code)
+        # Table group names are unique in a project, so cached rows already labeled with the new name are left
+        # over from a deleted table group, and would collide with the relabeled ones.
+        session.execute(
+            delete(ScoreDefinitionBreakdownItem)
+            .where(
+                ScoreDefinitionBreakdownItem.definition_id.in_(project_definitions),
+                ScoreDefinitionBreakdownItem.category == "table_groups_name",
+                ScoreDefinitionBreakdownItem.table_groups_name == new_name,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        session.execute(
+            update(ScoreDefinitionBreakdownItem)
+            .where(
+                ScoreDefinitionBreakdownItem.definition_id.in_(project_definitions),
+                ScoreDefinitionBreakdownItem.table_groups_name == old_name,
+            )
+            .values(table_groups_name=new_name)
+            .execution_options(synchronize_session=False)
+        )
+        if not {old_name, new_name} & set(SCORE_RESULT_KEYS):
+            by_table_group = ScoreDefinitionResult.definition_id.in_(
+                project_definitions.where(cls.category == ScoreCategory.table_groups_name)
+            )
+            session.execute(
+                delete(ScoreDefinitionResult)
+                .where(by_table_group, ScoreDefinitionResult.category == new_name)
+                .execution_options(synchronize_session=False)
+            )
+            session.execute(
+                update(ScoreDefinitionResult)
+                .where(by_table_group, ScoreDefinitionResult.category == old_name)
+                .values(category=new_name)
+                .execution_options(synchronize_session=False)
+            )
+
+        created_ids = {definition.id for definition in cls.created_with_table_group(project_code, old_name)}
+        query = (
+            select(cls)
+            .options(joinedload(cls.criteria))
+            .where(cls.project_code == project_code)
+            .execution_options(populate_existing=True)
+        )
+        renamed: list[Self] = []
+        # Autoflush would clear the pending changes this method returns unflushed.
+        with session.no_autoflush:
+            for definition in session.scalars(query).unique().all():
+                criteria = definition.criteria
+                if criteria is None or not criteria.names_table_group(old_name):
+                    continue
+                definition.criteria = criteria.with_table_group_renamed(old_name, new_name)
+                if definition.id in created_ids:
+                    definition.name = new_name
+                renamed.append(definition)
+        return renamed
 
     @classmethod
     def get(cls, id_: str) -> Self | None:
@@ -418,7 +518,6 @@ class ScoreDefinition(Base):
 
     def as_cached_score_card(self, include_definition: bool = False) -> ScoreCard:
         """Reads the cached values to build a scorecard"""
-        root_keys: list[str] = ["score", "profiling_score", "testing_score", "cde_score"]
         score_card: ScoreCard = {
             "id": self.id,
             "project_code": self.project_code,
@@ -429,7 +528,7 @@ class ScoreDefinition(Base):
         }
 
         for result in sorted(self.results, key=lambda r: r.category):
-            if result.category in root_keys:
+            if result.category in SCORE_RESULT_KEYS:
                 score_card[result.category] = result.score
                 continue
             score_card["categories"].append({"label": result.category, "score": result.score})
@@ -533,11 +632,11 @@ class ScoreDefinition(Base):
         filters = self._get_raw_query_filters(cde_only=score_type == "cde_score")
         if group_by == "table_name":
             table_group_id, value_ = value.split(".", 1)
-            filters.append(f"table_groups_id = '{table_group_id}'")
+            filters.append(f"table_groups_id = {sql_literal(table_group_id)}")
         elif group_by == "column_name":
             table_group_id, table_name, value_ = value.split(".", 2)
-            filters.append(f"table_groups_id = '{table_group_id}'")
-            filters.append(f"table_name = '{table_name}'")
+            filters.append(f"table_groups_id = {sql_literal(table_group_id)}")
+            filters.append(f"table_name = {sql_literal(table_name)}")
         filters = " AND ".join(filters)
 
         # Drilldown rows for buckets where the grouping value is NULL (e.g. table-scope
@@ -640,7 +739,7 @@ class ScoreDefinition(Base):
         session.execute(text("SET LOCAL lock_timeout = DEFAULT"))
 
     def _get_raw_query_filters(self, cde_only: bool = False, prefix: str | None = None) -> list[str]:
-        parts = [f"{prefix or ''}project_code = '{self.project_code}'"]
+        parts = [f"{prefix or ''}project_code = {sql_literal(self.project_code)}"]
         if cde_only:
             parts.append(f"{prefix or ''}critical_data_element = true")
         if (criteria_sql := self.criteria.get_as_sql(prefix=prefix)) is not None:
@@ -755,6 +854,24 @@ class ScoreDefinitionCriteria(Base):
             parts = [chain_can_match(f) for f in self.filters]
         return all(parts) if self.operand == "AND" else any(parts)
 
+    def names_table_group(self, table_groups_name: str) -> bool:
+        """Whether any filter, root or chained, is on the named table group."""
+        return any(
+            f.field == "table_groups_name" and f.value == table_groups_name for root in self.filters for f in root
+        )
+
+    def with_table_group_renamed(self, old_name: str, new_name: str) -> ScoreDefinitionCriteria:
+        """Return a copy of these criteria whose filters on the table group ``old_name`` name ``new_name``."""
+        def renamed(item: dict) -> dict:
+            if item["field"] == "table_groups_name" and item["value"] == old_name:
+                return {**item, "value": new_name}
+            return item
+
+        filters = [{**renamed(item), "others": [renamed(other) for other in item["others"]]} for item in self]
+        criteria = ScoreDefinitionCriteria.from_filters(filters, group_by_field=self.group_by_field)
+        criteria.operand = self.operand
+        return criteria
+
     @classmethod
     def from_filters(cls, filters: list[dict], group_by_field: bool = True) -> ScoreDefinitionCriteria:
         chained_filters: list[ScoreDefinitionFilter] = []
@@ -809,7 +926,7 @@ class ScoreDefinitionFilter(Base):
             current_filter = current_filter.next_filter
 
     def get_as_sql(self, prefix: str | None = None, operand: Literal["AND", "OR"] = "AND") -> str:
-        sql_filters = [f"{prefix or ''}{f.field} = '{f.value}'" for f in self]
+        sql_filters = [f"{prefix or ''}{f.field} = {sql_literal(f.value)}" for f in self]
         return f"({f' {operand} '.join(sql_filters)})"
 
 
