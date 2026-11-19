@@ -27,7 +27,7 @@ def setup_steps(tmp_path, monkeypatch):
         patch("testgen.ui.scripts.patch_streamlit.patch"),
         patch(f"{MODULE}.start_standalone_postgres") as start,
         patch(f"{MODULE}.run_launch_db_config") as launch_db,
-        patch(f"{MODULE}.is_server_running", return_value=False) as running,
+        patch(f"{MODULE}.is_server_in_use", return_value=False) as running,
         patch("testgen.common.mixpanel_service.MixpanelService"),
     ):
         yield {"home": home, "start": start, "launch_db": launch_db, "running": running}

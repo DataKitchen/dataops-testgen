@@ -7,6 +7,7 @@ user — no Docker, no system Postgres, no root access required.
 """
 
 import atexit
+import json
 import logging
 import os
 import platform
@@ -135,24 +136,32 @@ def start_server(data_dir: Path | None = None) -> None:
 
 def _describe_start_failure(pgserver_errors: list[str], error: subprocess.SubprocessError) -> str:
     output = "\n".join(pgserver_errors)
-    if "administrative permissions" in output:
-        return f"Embedded PostgreSQL could not start. {ELEVATED_PROCESS_HINT}"
     if not output:
         output = "\n".join(str(part) for part in (error, getattr(error, "stderr", None)) if part)
-    return f"Embedded PostgreSQL could not start.\n{output}".rstrip()
+    # The output can include log lines from earlier attempts, so the hint is added to it rather than replacing it.
+    hint = f" {ELEVATED_PROCESS_HINT}" if "administrative permissions" in output else ""
+    return f"Embedded PostgreSQL could not start.{hint}\n{output}".rstrip()
 
 
-def is_server_running(data_dir: Path | None = None) -> bool:
-    """Return whether a PostgreSQL server is running on the data directory.
+def is_server_in_use(data_dir: Path | None = None) -> bool:
+    """Return whether a live process holds a handle on the embedded server.
+
+    pgserver records the PID of every process that opens a handle on the server in ``.handle_pids.json`` in the
+    data directory. A PID stays listed after its process dies without exiting cleanly, so a listed PID counts
+    only while that process is alive.
 
     :param data_dir: The cluster's data directory. Defaults to ``<TestGen home>/pgdata``.
     """
     try:
-        from pixeltable_pgserver.utils import PostmasterInfo
+        import psutil
     except ImportError:
         return False
-    info = PostmasterInfo.read_from_pgdata(data_dir or get_home_dir() / "pgdata")
-    return info is not None and info.is_running()
+    handles_path = (data_dir or get_home_dir() / "pgdata") / ".handle_pids.json"
+    try:
+        pids = json.loads(handles_path.read_text() or "[]")
+    except (OSError, ValueError):
+        return False
+    return isinstance(pids, list) and any(isinstance(pid, int) and psutil.pid_exists(pid) for pid in pids)
 
 
 def get_server_uri() -> str | None:

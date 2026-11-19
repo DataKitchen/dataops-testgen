@@ -133,16 +133,50 @@ def test_a_failure_pgserver_did_not_log_carries_the_command_error(fake_pgserver,
     assert "cannot lock /etc/passwd" in str(raised.value)
 
 
-@pytest.mark.parametrize(
-    ("postmaster_info", "expected"),
-    [(None, False), (mock.Mock(is_running=mock.Mock(return_value=False)), False),
-     (mock.Mock(is_running=mock.Mock(return_value=True)), True)],
-    ids=["no pid file", "stale pid file", "running"],
-)
-def test_is_server_running_reads_the_postmaster_pid(fake_pgserver, tmp_path, postmaster_info, expected):
-    fake_utils = mock.MagicMock()
-    fake_utils.PostmasterInfo.read_from_pgdata.return_value = postmaster_info
-    with mock.patch.dict(sys.modules, {"pixeltable_pgserver.utils": fake_utils}):
-        assert standalone_postgres.is_server_running(tmp_path / "pgdata") is expected
+@pytest.fixture
+def fake_psutil():
+    fake = mock.MagicMock()
+    fake.pid_exists.side_effect = lambda pid: pid == 4242
+    with mock.patch.dict(sys.modules, {"psutil": fake}):
+        yield fake
 
-    fake_utils.PostmasterInfo.read_from_pgdata.assert_called_once_with(tmp_path / "pgdata")
+
+@pytest.mark.parametrize(
+    ("handles", "expected"),
+    [
+        (None, False), ("", False), ("[]", False), ("[1111]", False), ("[1111, 4242]", True),
+        ("not json", False), ('{"pid": 4242}', False),
+    ],
+    ids=[
+        "no handle file", "empty file", "no handles", "only a dead process", "a live process",
+        "unreadable file", "not a list",
+    ],
+)
+def test_server_in_use_counts_only_live_handles(fake_psutil, tmp_path, handles, expected):
+    """A process that dies without exiting cleanly stays listed, so a listed PID counts only while it is alive."""
+    if handles is not None:
+        (tmp_path / ".handle_pids.json").write_text(handles)
+
+    assert standalone_postgres.is_server_in_use(tmp_path) is expected
+
+
+def test_the_elevation_hint_keeps_the_postgres_output(fake_pgserver, tmp_path):
+    """The server log spans earlier attempts, so a stale refusal must not hide the current cause."""
+    fake_pgserver.pgdata_version.return_value = None
+    fake_pgserver.get_server.side_effect = _fail_like_pgserver(
+        "Execution of PostgreSQL by a user with administrative permissions is not\npermitted.\n"
+        'FATAL:  invalid value for parameter "port": "notanumber"'
+    )
+
+    with pytest.raises(standalone_postgres.EmbeddedPostgresError) as raised:
+        standalone_postgres.start_server(tmp_path / "pgdata")
+
+    assert standalone_postgres.ELEVATED_PROCESS_HINT in str(raised.value)
+    assert 'invalid value for parameter "port"' in str(raised.value)
+
+
+def test_server_in_use_is_false_without_psutil(tmp_path):
+    (tmp_path / ".handle_pids.json").write_text("[4242]")
+
+    with mock.patch.dict(sys.modules, {"psutil": None}):
+        assert standalone_postgres.is_server_in_use(tmp_path) is False

@@ -98,7 +98,7 @@ from testgen.common.standalone_postgres import (
     STANDALONE_URI_ENV_VAR,
     EmbeddedPostgresError,
     get_server_uri,
-    is_server_running,
+    is_server_in_use,
     is_standalone_mode,
 )
 from testgen.common.standalone_postgres import (
@@ -148,17 +148,23 @@ def _subprocess_spawn_kwargs() -> dict:
 
 
 def _install_shutdown_handler(handler) -> None:
-    """Register *handler* for SIGINT, SIGTERM, and (on Windows) SIGBREAK.
+    """Register *handler* for SIGINT, SIGTERM, (on Windows) SIGBREAK, and (on POSIX) SIGHUP.
 
     Windows children spawned with ``CREATE_NEW_PROCESS_GROUP`` receive
     ``CTRL_BREAK_EVENT`` (delivered as SIGBREAK) instead of console Ctrl+C —
     treat it the same as SIGTERM so atexit hooks run and pgserver's PID list
     stays clean.
+
+    Closing the terminal sends SIGHUP to this process only, since children run in their own
+    sessions. It reaches *handler* as SIGTERM, so a handler that forwards the signal stops the
+    children gracefully.
     """
     signal.signal(signal.SIGINT, handler)
     signal.signal(signal.SIGTERM, handler)
     if sigbreak := getattr(signal, "SIGBREAK", None):
         signal.signal(sigbreak, handler)
+    if sighup := getattr(signal, "SIGHUP", None):
+        signal.signal(sighup, lambda _signum, frame: handler(signal.SIGTERM, frame))
 
 
 def _forward_signal_to_child(child: subprocess.Popen, signum: int) -> None:
@@ -637,7 +643,7 @@ def setup_standalone(username: str, password: str):
                 err=True,
             )
             sys.exit(1)
-        if is_server_running():
+        if is_server_in_use():
             # Overwriting drops the database under the running app, which keeps the replaced keys.
             click.secho(
                 "TestGen is running with the existing configuration. Stop TestGen, then run this command again.",

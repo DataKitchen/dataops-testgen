@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from testgen.__main__ import run_app
+from testgen.__main__ import _install_shutdown_handler, run_app
 
 pytestmark = pytest.mark.unit
 
@@ -67,3 +67,16 @@ def test_a_requested_shutdown_exits_cleanly():
 
     stop.assert_called_once()
     assert all(child.returncode == 0 for child in children)
+
+
+@pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="SIGHUP exists only on POSIX")
+def test_closing_the_terminal_reaches_the_handler_as_sigterm():
+    """Children run in their own sessions, so a hangup reaches only this process and has to stop them."""
+    handler = MagicMock()
+    registered = {}
+
+    with patch(f"{MODULE}.signal.signal", side_effect=lambda signum, fn: registered.setdefault(signum, fn)):
+        _install_shutdown_handler(handler)
+    registered[signal.SIGHUP](signal.SIGHUP, None)
+
+    handler.assert_called_once_with(signal.SIGTERM, None)
