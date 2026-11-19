@@ -21,6 +21,19 @@ from testgen.common.models.table_group import TableGroup
 
 pytestmark = pytest.mark.unit
 
+
+class _AnyTable:
+    """Stands in for the table group's tables, holding every name; membership is tested in the service tests."""
+
+    def __contains__(self, _name: object) -> bool:
+        return True
+
+
+@pytest.fixture(autouse=True)
+def _table_group_holds_every_table():
+    with patch("testgen.common.database.table_group_service._table_names", return_value=_AnyTable()):
+        yield
+
 MODULE = "testgen.api.table_groups"
 SERVICE_MODULE = "testgen.common.database.table_group_service"
 RULES_MODULE = "testgen.common.database.table_group_service"
@@ -1598,7 +1611,7 @@ def test_create_table_group_stores_the_checked_table_filters(validate_filters):
     assert resp.status_code == 201, resp.text
     saved = _saved(mock_save)
     assert saved.table_filters == [ORDERS_FILTER]
-    validate_filters.assert_called_once_with(CONNECTION, saved, [ORDERS_FILTER], None)
+    validate_filters.assert_called_once_with(CONNECTION, saved, [ORDERS_FILTER])
     assert resp.json()["table_filters"] == [ORDERS_FILTER]
 
 
@@ -1668,7 +1681,7 @@ def test_update_table_group_replaces_the_table_filters(validate_filters, target_
 
     assert result.resp.status_code == 200, result.resp.text
     assert table_group.table_filters == [ORDERS_FILTER]
-    validate_filters.assert_called_once_with(target_connection, table_group, [ORDERS_FILTER], None)
+    validate_filters.assert_called_once_with(target_connection, table_group, [ORDERS_FILTER])
     table_group.save.assert_called_once_with()
     assert result.resp.json()["table_filters"] == [ORDERS_FILTER]
 
@@ -1809,7 +1822,7 @@ def test_update_table_group_moves_through_the_table_filters_it_sets(validate_fil
 
     assert result.resp.status_code == 200, result.resp.text
     assert probed_with == [[new_filter]]
-    validate_filters.assert_called_once_with(ANY, table_group, [new_filter], frozenset({"orders"}))
+    validate_filters.assert_called_once_with(ANY, table_group, [new_filter])
     assert validate_filters.call_args.args[1].table_group_schema == "onboard"
 
 

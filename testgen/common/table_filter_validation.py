@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Collection, Sequence
+from collections.abc import Sequence
 
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.models.connection import Connection
@@ -105,7 +105,6 @@ def validate_table_filters(
     connection: Connection,
     table_group: TableGroup,
     value: list[dict] | None,
-    tables: Collection[str] | None = None,
 ) -> None:
     """Check each table filter by reading one record of its table through it.
 
@@ -113,19 +112,16 @@ def validate_table_filters(
         connection: The table group's connection.
         table_group: The table group the filters are for; its schema holds the tables.
         value: Filters as ``{"table_name", "condition"}`` entries, in their stored form.
-        tables: The tables the table group holds. A filter on any other table reads no records and is not
-            checked. None checks every filter.
 
     Raises:
         InvalidTableFilters: A filter's query fails. It carries the database's error for each failing filter.
         TableFiltersUnchecked: The target could not be read.
     """
-    checked = [f for f in value or [] if tables is None or f.get("table_name") in tables]
-    if not parse_table_filters(checked):
+    if not parse_table_filters(value):
         return
     try:
         with target_db_session(connection, table_group) as run:
-            errors = table_filter_errors(run, connection, table_group, checked)
+            errors = table_filter_errors(run, connection, table_group, value)
     except Exception as error:
         LOG.info(f"Table filters could not be checked: {error}")
         raise TableFiltersUnchecked(

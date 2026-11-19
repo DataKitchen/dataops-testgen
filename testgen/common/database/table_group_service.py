@@ -62,6 +62,7 @@ from testgen.common.models.test_suite import TestSuite
 from testgen.common.run_overrides import MATCH_SCHEMA_OVERRIDE_UNSUPPORTED, SCHEMA_OVERRIDE_UNSUPPORTED
 from testgen.common.table_filter_validation import (
     InvalidTableFilters,
+    TableFiltersUnchecked,
     normalize_table_filters,
     table_filter_errors,
     validate_table_filters,
@@ -254,19 +255,51 @@ def apply_table_filters(
     Args:
         table_group: The table group to set the filters on. Its schema is the one the conditions are checked in.
         value: Filters as ``{"table_name", "condition"}`` entries; empty or None removes every filter.
-        connection: The table group's connection. Without one, the conditions are not checked against the target.
-        tables: The tables the table group holds. A filter on any other table is stored without being checked.
-            None checks every filter.
+        connection: The table group's connection. Without one, the filters are only normalized.
+        tables: The tables the table group holds. None reads them from the target.
 
     Raises:
-        InvalidTableFilters: An entry is incomplete, a table has more than one filter, or a condition fails on
-            the target. Nothing is stored.
+        InvalidTableFilters: An entry is incomplete, a table has more than one filter, a filter names a table the
+            table group does not hold, or a condition fails on the target. Nothing is stored.
         TableFiltersUnchecked: The target could not be read. Nothing is stored.
     """
     filters = normalize_table_filters([dict(entry) for entry in value or []])
     if filters and connection is not None:
-        validate_table_filters(connection, table_group, filters, tables)
+        if tables is None:
+            tables = _table_names(table_group, connection)
+        outside = [
+            f"Table {entry['table_name']} has a filter but is not in the table group."
+            for entry in filters
+            if entry["table_name"] not in tables
+        ]
+        try:
+            validate_table_filters(
+                connection, table_group, [entry for entry in filters if entry["table_name"] in tables]
+            )
+        except TableFiltersUnchecked:
+            raise
+        except InvalidTableFilters as error:
+            raise InvalidTableFilters(*outside, *error.problems, database_errors=error.database_errors) from error
+        if outside:
+            raise InvalidTableFilters(*outside)
     table_group.table_filters = filters
+
+
+def _table_names(table_group: TableGroup, connection: Connection) -> set[str]:
+    """Return the names of the tables the table group's table criteria select on the target.
+
+    Raises:
+        TableFiltersUnchecked: The target could not be read.
+    """
+    # The listing counts records through the table filters, which are what is being checked
+    probe = TableGroup(**{column.name: getattr(table_group, column.name) for column in TableGroup.__table__.columns})
+    probe.table_filters = None
+    preview, data_chars, _ = preview_table_group(probe, connection=connection, verify_access=False)
+    if data_chars is None:
+        raise TableFiltersUnchecked(
+            database_errors=[("The table filters could not be checked", preview["message"] or "The schema could not be read.")]
+        )
+    return set(preview["tables"])
 
 
 def apply_table_group_flavor_rules(table_group: TableGroup, connection: Connection | None) -> None:
@@ -630,8 +663,8 @@ def _add_table_filter_detail(
 ) -> None:
     """Mark each table whose filter fails, and name each filtered table the table group does not hold.
 
-    A failing filter fails the preview, since it would fail every run. A filter on a table the table group
-    does not hold reads no records, so it is only named.
+    A failing filter fails the preview, since it would fail every run. A filter on a table the table group no
+    longer holds, such as one dropped at the source, is only named, so the catalog can still be written.
     """
     tables = preview["tables"]
     failed = 0

@@ -14,6 +14,19 @@ from testgen.common.table_filter_validation import InvalidTableFilters
 
 pytestmark = pytest.mark.unit
 
+
+class _AnyTable:
+    """Stands in for the table group's tables, holding every name; membership is tested in the service tests."""
+
+    def __contains__(self, _name: object) -> bool:
+        return True
+
+
+@pytest.fixture(autouse=True)
+def _table_group_holds_every_table():
+    with patch("testgen.common.database.table_group_service._table_names", return_value=_AnyTable()):
+        yield
+
 MODULE = "testgen.ui.views.table_groups"
 
 PROJECT_CODE = "demo"
@@ -124,7 +137,7 @@ def test_wizard_saves_table_filters_normalized_and_checked_against_the_connectio
     expected = [{"table_name": "orders", "condition": "region = 'EMEA'"}]
     table_group = mocks["save_new_table_group"].call_args.args[0]
     assert table_group.table_filters == expected
-    mocks["validate_table_filters"].assert_called_once_with(mocks["connection"], table_group, expected, None)
+    mocks["validate_table_filters"].assert_called_once_with(mocks["connection"], table_group, expected)
     assert table_group.table_group_schema == "sales"
 
 

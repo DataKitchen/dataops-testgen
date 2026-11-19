@@ -20,6 +20,19 @@ from testgen.mcp.tools.table_groups import TableFilter
 
 pytestmark = pytest.mark.unit
 
+
+class _AnyTable:
+    """Stands in for the table group's tables, holding every name; membership is tested in the service tests."""
+
+    def __contains__(self, _name: object) -> bool:
+        return True
+
+
+@pytest.fixture(autouse=True)
+def _table_group_holds_every_table():
+    with patch("testgen.common.database.table_group_service._table_names", return_value=_AnyTable()):
+        yield
+
 MODULE = "testgen.mcp.tools.table_groups"
 SERVICE_MODULE = "testgen.common.database.table_group_service"
 
@@ -1012,6 +1025,39 @@ def test_preview_keeps_a_filter_warning_beside_tables_that_could_not_be_read(
     assert "Table invoices has a filter but is not in the table group." in out
     assert "No files found" in out
     assert "highlighted" not in out
+
+
+@patch(f"{MODULE}.preview_table_group_service")
+@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.resolve_table_group")
+def test_preview_under_source_data_protection_withholds_only_the_database_text(
+    mock_resolve, mock_conn_cls, mock_preview_svc, db_session_mock
+):
+    tg = _mock_table_group(table_groups_name="Sample TG")
+    mock_resolve.return_value = tg
+    mock_conn_cls.get_by_table_group.return_value = _mock_connection()
+    mock_preview_svc.return_value = (
+        {
+            "stats": {
+                "id": tg.id, "table_groups_name": "Sample TG", "table_group_schema": "public",
+                "table_ct": 1, "column_ct": 2, "approx_record_ct": None, "approx_data_point_ct": None,
+            },
+            "tables": {"orders": {"column_ct": 2, "error": 'The filter is not valid: invalid input "alice@example.com"'}},
+            "success": False,
+            "message": "1 table filter is not valid. Check the highlighted tables.",
+        },
+        None,
+        None,
+    )
+
+    from testgen.mcp.tools.table_groups import preview_table_group
+
+    with _patch_perms(), patch("testgen.mcp.tools.common.mcp_source_data_protected", return_value=True):
+        out = preview_table_group(table_group_id=str(tg.id))
+
+    assert "1 table filter is not valid." in out
+    assert "orders" in out
+    assert "alice@example.com" not in out
 
 
 @patch(f"{MODULE}.preview_table_group_service")
@@ -2261,7 +2307,7 @@ def test_create_table_group_stores_checked_table_filters(mock_resolve, mock_tg_c
         )
 
     assert instance.table_filters == [ORDERS_FILTER]
-    mock_validate.assert_called_once_with(connection, instance, [ORDERS_FILTER], None)
+    mock_validate.assert_called_once_with(connection, instance, [ORDERS_FILTER])
     instance.save.assert_called_once()
     assert "## Table filters" in out
     assert "**orders:** `region = 'EMEA'`" in out
@@ -2314,7 +2360,7 @@ def test_update_table_group_replaces_the_table_filters(
         out = update_table_group(table_group_id=str(tg.id), table_filters=[TableFilter(**ORDERS_FILTER)])
 
     assert tg.table_filters == [ORDERS_FILTER]
-    mock_validate.assert_called_once_with(connection, tg, [ORDERS_FILTER], None)
+    mock_validate.assert_called_once_with(connection, tg, [ORDERS_FILTER])
     tg.save.assert_called_once()
     assert "| `Table filters` | customers: active | orders: region = 'EMEA' |" in out
 
@@ -2351,7 +2397,7 @@ def test_update_table_group_moves_through_the_table_filters_it_sets(
         update_table_group(table_group_id=str(tg.id), schema="staging", table_filters=[TableFilter(**ORDERS_FILTER)])
 
     assert probed_with == [[ORDERS_FILTER]]
-    mock_validate.assert_called_once_with(connection, tg, [ORDERS_FILTER], frozenset({"orders"}))
+    mock_validate.assert_called_once_with(connection, tg, [ORDERS_FILTER])
 
 
 @patch(f"{SERVICE_MODULE}.validate_table_filters")

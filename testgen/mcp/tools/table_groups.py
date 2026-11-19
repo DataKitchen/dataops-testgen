@@ -798,7 +798,11 @@ def preview_table_group(
             # MCP has no highlighted rows, so each failing table is named with its error instead
             message = _HIGHLIGHTED_SENTENCE.sub("", preview.get("message") or "").strip()
             failures = _table_failures(preview)
-            if message or not failures:
+            if failures:
+                # TestGen wrote the summary; only the tables' errors carry the database's text
+                if message:
+                    doc.text(message)
+            else:
                 doc.text(target_db_error_text(message) or "Preview failed for an unknown reason.")
             _render_table_failures(doc, failures)
         return doc.render()
@@ -840,7 +844,7 @@ def preview_table_group(
     # A declaration that cannot be read is a row of zeroes above, indistinguishable from an empty
     # table, and a run does not stop for one. Naming it here is the only place it is reported.
     if message := _HIGHLIGHTED_SENTENCE.sub("", preview.get("message") or "").strip():
-        doc.text(target_db_error_text(message))
+        doc.text(message)
     _render_table_failures(doc, _table_failures(preview))
 
     if include_columns:

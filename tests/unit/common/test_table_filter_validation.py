@@ -131,33 +131,6 @@ def test_validate_opens_no_session_without_filters():
     session.assert_not_called()
 
 
-def test_validate_checks_only_the_filters_on_tables_the_table_group_holds():
-    table_group = SimpleNamespace(table_group_schema="sales")
-    value = [
-        {"table_name": "orders", "condition": "region = 'EMEA'"},
-        {"table_name": "tmp_orders", "condition": "regoin = 1"},
-    ]
-    run, queries = _runner(failing="tmp_orders")
-    with patch(SESSION) as session:
-        session.return_value.__enter__.return_value = run
-        validate_table_filters(_connection(), table_group, value, tables={"orders", "returns"})
-
-    assert len(queries) == 1
-    assert '"orders"' in queries[0]
-
-
-def test_validate_opens_no_session_when_no_filtered_table_is_in_the_table_group():
-    with patch(SESSION) as session:
-        validate_table_filters(
-            _connection(),
-            SimpleNamespace(table_group_schema="sales"),
-            [{"table_name": "tmp_orders", "condition": "a = 1"}],
-            tables={"orders"},
-        )
-
-    session.assert_not_called()
-
-
 def test_validate_reports_an_unreachable_target_as_unchecked_filters():
     # A connection failure is not a fault in the filters, so it raises its own exception type
     with (

@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from testgen.common.audit.actions import AuditAction
 from testgen.common.table_filter_validation import InvalidTableFilters
 
 pytestmark = pytest.mark.unit
@@ -38,7 +37,9 @@ def _save(table_filters: list[dict] | None, *, filter_error=None) -> tuple[dict,
             patch(f"{MODULE}.table_group_queries") as mock_queries,
             patch(f"{MODULE}.sampled_profile_gaps"),
             patch(f"{MODULE}.DataTable") as data_table_cls,
-            patch(f"{MODULE}.record") as record,
+            patch(f"{MODULE}.TableGroup.get_minimal", return_value=MagicMock(table_groups_name="Sales")),
+            patch(f"{MODULE}.rename_table_group_in_scorecards", return_value=[]),
+            patch(f"{MODULE}.record_table_group_updated") as record,
             patch(f"{MODULE}.submit_table_group_setup"),
             patch(f"{MODULE}.safe_rerun"),
             patch(
@@ -73,11 +74,9 @@ def test_edit_saves_table_filters_normalized_and_checked_against_the_connection(
     table_group = mocks["table_group"]
     assert data["result"] is None
     assert table_group.table_filters == expected
-    mocks["validate_table_filters"].assert_called_once_with(
-        mocks["connection"], table_group, expected, {"customers": {}, "orders": {}}
-    )
+    mocks["validate_table_filters"].assert_called_once_with(mocks["connection"], table_group, expected)
     table_group.save.assert_called_once()
-    mocks["record"].assert_called_once_with(AuditAction.TABLE_GROUP_UPDATED, table_group)
+    mocks["record"].assert_called_once_with(table_group, [])
 
 
 def test_edit_clears_table_filters_without_checking_the_database():

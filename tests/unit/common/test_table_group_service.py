@@ -6,7 +6,7 @@ verify-access flag, partial-inaccessible footer, no-connection branch,
 connection failure, empty result).
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -17,6 +17,7 @@ from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.database.table_group_service import (
     SchemaMove,
     apply_schema_move,
+    apply_table_filters,
     apply_table_group_flavor_rules,
     catalog_source,
     is_duplicate_name_error,
@@ -29,6 +30,7 @@ from testgen.common.database.table_group_service import (
 from testgen.common.models.connection import Connection
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.table_group import SCHEMA_NAME_MAX_LENGTH, TableGroup, table_group_defaults
+from testgen.common.table_filter_validation import InvalidTableFilters, TableFiltersUnchecked
 from testgen.ui.services.database_service import TargetQuery
 
 pytestmark = pytest.mark.unit
@@ -453,8 +455,8 @@ def test_preview_names_a_filtered_table_the_table_group_does_not_hold(mock_sessi
 @patch(f"{MODULE}.RefreshDataCharsSQL")
 @patch(f"{MODULE}.target_db_session")
 def test_preview_passes_with_a_warning_when_a_filtered_table_is_not_in_the_table_group(mock_session, mock_sql_cls):
-    # A filter on a table the group does not hold reads no records, and failing the preview would fail every
-    # catalog write until the filter is removed
+    # A table dropped at the source leaves its filter behind, and failing the preview would fail every catalog
+    # write until the filter is removed
     filters = [{"table_name": "invoices", "condition": "a = 1"}]
 
     preview, _ = _filtered_preview(mock_session, mock_sql_cls, filters, failing=("invoices",))
@@ -1135,3 +1137,62 @@ def test_save_new_table_group_returns_the_scorecard_it_creates(add_scorecard):
     else:
         assert scorecard is None
         save_scorecard.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# apply_table_filters: a filter names a table the table group holds
+# ---------------------------------------------------------------------------
+
+
+@patch(f"{MODULE}.validate_table_filters")
+@patch(f"{MODULE}._table_names", return_value={"orders", "returns"})
+def test_apply_refuses_a_filter_on_a_table_the_table_group_does_not_hold(_mock_tables, mock_validate):
+    # Names match with exact case, so a filter typed for another case would never apply
+    table_group = _tg()
+    filters = [{"table_name": "orders", "condition": "a = 1"}, {"table_name": "Returns", "condition": "b = 1"}]
+
+    with pytest.raises(InvalidTableFilters) as raised:
+        apply_table_filters(table_group, filters, _conn())
+
+    assert raised.value.messages == ["Table Returns has a filter but is not in the table group."]
+    mock_validate.assert_called_once_with(ANY, table_group, [{"table_name": "orders", "condition": "a = 1"}])
+    assert table_group.table_filters is None
+
+
+@patch(f"{MODULE}.validate_table_filters")
+@patch(f"{MODULE}._table_names", return_value={"orders"})
+def test_apply_reports_a_table_outside_the_group_with_the_conditions_that_fail(_mock_tables, mock_validate):
+    mock_validate.side_effect = InvalidTableFilters(
+        database_errors=[("The filter for table orders is not valid", 'column "regoin" does not exist')]
+    )
+    filters = [{"table_name": "orders", "condition": "regoin = 1"}, {"table_name": "tmp", "condition": "b = 1"}]
+
+    with pytest.raises(InvalidTableFilters) as raised:
+        apply_table_filters(_tg(), filters, _conn())
+
+    assert raised.value.messages == [
+        "Table tmp has a filter but is not in the table group.",
+        'The filter for table orders is not valid: column "regoin" does not exist',
+    ]
+
+
+@patch(f"{MODULE}.validate_table_filters")
+@patch(f"{MODULE}.preview_table_group")
+def test_apply_lists_the_table_group_tables_without_reading_through_the_filters(mock_preview, mock_validate):
+    # The listing counts records through the filters, so a broken filter must not break the listing
+    mock_preview.return_value = ({"tables": {"orders": {}}, "success": True, "message": None}, [MagicMock()], None)
+    filters = [{"table_name": "orders", "condition": "regoin = 1"}]
+    table_group = _tg(table_filters=filters)
+
+    apply_table_filters(table_group, filters, _conn())
+
+    assert mock_preview.call_args.args[0].table_filters is None
+    assert table_group.table_filters == filters
+
+
+@patch(f"{MODULE}.preview_table_group")
+def test_apply_reports_a_target_it_cannot_list(mock_preview):
+    mock_preview.return_value = ({"tables": {}, "success": False, "message": "connection refused"}, None, None)
+
+    with pytest.raises(TableFiltersUnchecked, match="^The table filters could not be checked: connection refused$"):
+        apply_table_filters(_tg(), [{"table_name": "orders", "condition": "a = 1"}], _conn())
