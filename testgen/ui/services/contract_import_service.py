@@ -8,6 +8,7 @@ from typing import Any
 import streamlit as st
 
 from testgen import settings
+from testgen.common.audit.contracts import record_document_imported, stored_document
 from testgen.common.contract_import import (
     ContractIdentityError,
     ContractImportPlan,
@@ -145,7 +146,9 @@ def import_into_contract(text: str, suite: TestSuite, delete_confirmed: bool) ->
     if plan.count(ImportAction.delete) and not delete_confirmed:
         return {"success": False, "message": "This import deletes terms. Confirm the deletion to import the file."}
 
+    stored = stored_document(suite.id)
     applied = apply_import(plan, suite, table_group, SqlFlavorCode(connection.sql_flavor_code))
+    record_document_imported(suite, applied.version_id, stored, applied.written)
     version = SuiteVersion.get(applied.version_id)
     message = f"The contract was imported into {format_version(version.version, VersionState.DRAFT)}."
     if applied.conformance_failed:

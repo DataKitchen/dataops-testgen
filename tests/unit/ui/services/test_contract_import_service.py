@@ -203,28 +203,33 @@ def _import(plan, delete_confirmed=False, applied=None, draft=None):
         patch.object(service, "prepare_import", side_effect=[plan] if not isinstance(plan, Exception) else plan),
         patch.object(service, "apply_import", return_value=applied) as apply,
         patch.object(service.SuiteVersion, "get", return_value=draft),
+        patch.object(service, "stored_document", return_value={"description": {"purpose": "before"}}),
+        patch.object(service, "record_document_imported") as recorded,
     ):
         result = service.import_into_contract("text", suite, delete_confirmed)
-    return result, apply, suite, table_group
+    return result, apply, suite, table_group, recorded
 
 
 def test_an_import_lands_in_the_draft():
     plan = _plan([_change(ImportAction.create, "orders", "id")])
-    result, apply, suite, table_group = _import(plan)
+    result, apply, suite, table_group, recorded = _import(plan)
 
     assert result == {"success": True, "message": "The contract was imported into v4 draft."}
     apply.assert_called_once_with(plan, suite, table_group, service.SqlFlavorCode("postgresql"))
+    applied = apply.return_value
+    recorded.assert_called_once_with(suite, applied.version_id, {"description": {"purpose": "before"}}, applied.written)
 
 
 def test_an_import_with_deletions_needs_them_confirmed():
     plan = _plan([_change(ImportAction.delete, "orders", "ship", reason=ContractTermReason.ABSENT)])
-    result, apply, *_ = _import(plan, delete_confirmed=False)
+    result, apply, *_, recorded = _import(plan, delete_confirmed=False)
 
     assert result == {
         "success": False,
         "message": "This import deletes terms. Confirm the deletion to import the file.",
     }
     apply.assert_not_called()
+    recorded.assert_not_called()
 
 
 def test_an_import_with_confirmed_deletions_is_applied():

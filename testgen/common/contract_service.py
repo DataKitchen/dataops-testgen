@@ -7,6 +7,7 @@ into its own user-facing errors.
 
 import copy
 import json
+import logging
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -45,6 +46,8 @@ from testgen.common.odcs.quality_rules import (
 )
 from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, CustomServerReason, build_server_block
 from testgen.common.odcs.validation import schema_violations, validate_document
+
+LOG = logging.getLogger("testgen")
 
 
 def resolve_write_target(suite: TestSuite) -> tuple[UUID, dict[UUID, UUID]]:
@@ -413,6 +416,7 @@ class SavedMetadata:
     overridden_declarations: list[str]
     unchecked_paths: list[str]
     problems: list[str]
+    conformance_failed: bool = False
 
 
 def save_metadata_document(suite: TestSuite, document: dict[str, Any]) -> SavedMetadata:
@@ -431,7 +435,8 @@ def save_metadata_document(suite: TestSuite, document: dict[str, Any]) -> SavedM
       before is refused (``InvalidContractDocumentError``). Problems it already had are returned.
 
     Commits the session, then reconciles the draft's Schema Conformance tests with the tables the
-    document declares. The declaration lists cover only declarations this save adds or changes:
+    document declares; when that fails, it is logged and rolled back, and ``conformance_failed``
+    says so. The declaration lists cover only declarations this save adds or changes:
     ``unresolved_declarations`` no test type checks, ``untested_declarations`` a test type checks
     but the contract holds no such test on the column, and ``overridden_declarations`` a test on
     the column declares with a different value, which the rendered document shows instead.
@@ -474,8 +479,15 @@ def save_metadata_document(suite: TestSuite, document: dict[str, Any]) -> SavedM
     document["version"] = SuiteVersion.document_version(version.version)
     version.metadata_document = document
     flag_modified(version, "metadata_document")
-    get_current_session().commit()
-    reconcile_contract_conformance(suite.id)
+    session = get_current_session()
+    session.commit()
+    conformance_failed = False
+    try:
+        reconcile_contract_conformance(suite.id)
+    except Exception:
+        LOG.exception(f"Reconciling schema conformance for contract {suite.id} failed after a metadata save")
+        session.rollback()
+        conformance_failed = True
     return SavedMetadata(
         version_id=version_id,
         unverifiable_rules=unverifiable,
@@ -484,6 +496,7 @@ def save_metadata_document(suite: TestSuite, document: dict[str, Any]) -> SavedM
         overridden_declarations=declarations.overridden,
         unchecked_paths=declarations.unchecked,
         problems=[problem.text for problem in problems.problems],
+        conformance_failed=conformance_failed,
     )
 
 

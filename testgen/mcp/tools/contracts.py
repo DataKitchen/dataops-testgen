@@ -17,6 +17,13 @@ from sqlalchemy.exc import IntegrityError
 
 from testgen import settings
 from testgen.common import contract_comparison, contract_creation, contract_import, contract_service
+from testgen.common.audit.contracts import (
+    record_document_imported,
+    record_document_updated,
+    record_draft_discarded,
+    record_version_frozen,
+    stored_document,
+)
 from testgen.common.audit.test_suites import record_contract_created
 from testgen.common.auth import get_jwt_signing_key
 from testgen.common.contract_comparison import TermChangeKind
@@ -478,6 +485,7 @@ def update_contract_metadata(
     patch = _resolve_placeholders(patch, before)
     document = patch if parsed_mode is MetadataUpdateMode.REPLACE else apply_merge_patch(before, patch)
     hide_source_data = mcp_source_data_protected()
+    stored = stored_document(suite.id)
 
     try:
         saved = contract_service.save_metadata_document(suite, document)
@@ -494,6 +502,7 @@ def update_contract_metadata(
         )
     except ValueError as e:
         raise MCPUserError(str(e)) from e
+    record_document_updated(suite, saved.version_id, stored)
 
     version = SuiteVersion.get(saved.version_id)
     doc = MdDoc()
@@ -505,6 +514,11 @@ def update_contract_metadata(
         contract_comparison.document_changes(before, version.metadata_document or {}, hide_source_data),
         heading="Changes",
     )
+    if saved.conformance_failed:
+        doc.text(
+            "The metadata was saved, but updating its schema conformance tests failed. Run test generation on the "
+            "contract to update them."
+        )
     if saved.unverifiable_rules:
         doc.heading(2, f"Stored as unverifiable ({len(saved.unverifiable_rules)})")
         doc.text(
@@ -732,6 +746,7 @@ def freeze_contract_version(
         ) from e
     except ValueError as e:
         raise MCPUserError(str(e)) from e
+    record_version_frozen(suite, frozen)
 
     doc = MdDoc()
     doc.heading(1, f"Froze v{frozen.version} of contract `{suite.test_suite}`")
@@ -762,6 +777,7 @@ def discard_contract_draft(
         removed = contract_service.discard_draft(suite)
     except ValueError as e:
         raise MCPUserError(str(e)) from e
+    record_draft_discarded(suite, draft.version)
     now_at = SuiteVersion.in_force_for(suite.id)
 
     doc = MdDoc()
@@ -877,7 +893,9 @@ def import_contract(
             record_contract_created(created.suite)
             version_id, conformance_failed = created.version_id, created.conformance_failed
         else:
+            stored = stored_document(suite.id)
             applied = contract_import.apply_import(plan, suite, table_group, SqlFlavorCode(connection.sql_flavor_code))
+            record_document_imported(suite, applied.version_id, stored, applied.written)
             version_id, conformance_failed = applied.version_id, applied.conformance_failed
         version = SuiteVersion.get(version_id)
         is_active = version.frozen_at is not None and SuiteVersion.is_active(version.id, suite.id)
