@@ -250,6 +250,22 @@ const TestResultSourceDataHeader = (d) => {
         );
     }
 
+    for (const [title, condition] of [['Table Filter', d.table_filter], ['Match Table Filter', d.match_table_filter]]) {
+        if (condition) {
+            children.push(
+                h4(
+                    { class: 'flex-row fx-gap-1 fx-align-flex-center', style: 'margin: 12px 0 4px' },
+                    title,
+                    withTooltip(
+                        Icon({ size: 16, classes: 'text-disabled' }, 'help'),
+                        { text: 'Defined on the table group. The test read only the records that match this condition.', position: 'top', width: 200 },
+                    ),
+                ),
+                div({ class: 'text-caption text-code', style: 'max-height: 75px; overflow: auto; margin-bottom: 8px' }, condition),
+            );
+        }
+    }
+
     if (d.result_message) {
         children.push(
             h4({ style: 'margin: 12px 0 4px' }, 'Result Detail'),

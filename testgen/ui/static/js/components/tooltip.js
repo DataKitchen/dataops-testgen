@@ -17,8 +17,16 @@
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';
 
-const { div, span } = van.tags;
+const { code, div, span } = van.tags;
 const defaultPosition = 'top';
+
+/** Tooltip text with each backtick-enclosed span rendered as code. Content that is not a string is returned as is. */
+const withCodeSpans = (text) => {
+    if (typeof text !== 'string' || !text.includes('`')) {
+        return text;
+    }
+    return text.split(/`([^`]+)`/).map((part, index) => index % 2 ? code({ class: 'tg-tooltip--code' }, part) : part);
+};
 
 /** The `max-width` of a tooltip given one as a number, or none, leaving it to the stylesheet. */
 const maxWidthStyle = (width) => (getValue(width) ? `max-width: ${getValue(width)}px; ` : '');
@@ -33,7 +41,7 @@ const Tooltip = (/** @type Properties */ props) => {
             class: () => `tg-tooltip ${getValue(props.position) || defaultPosition} ${getValue(props.classes) ?? ''} ${getValue(props.show) ? '' : 'hidden'}`,
             style: () => `opacity: ${getValue(props.show) ? 1 : 0}; ${maxWidthStyle(props.width)}${getValue(props.style) ?? ''}`,
         },
-        props.text,
+        () => span(withCodeSpans(getValue(props.text))),
         div({ class: 'tg-tooltip--triangle' }),
     );
 };
@@ -89,7 +97,7 @@ const withTooltip = (/** @type HTMLElement */ component, /** @type Properties */
             class: () => `tg-tooltip portal ${getValue(tooltipProps.position) || defaultPosition} ${getValue(tooltipProps.classes) ?? ''} ${showTooltip.val ? '' : 'hidden'}`,
             style: () => `opacity: ${showTooltip.val ? 1 : 0}; pointer-events: none; z-index: ${zIndex.val ?? 9999}; ${maxWidthStyle(tooltipProps.width)}${positionStyle.val}${getValue(tooltipProps.style) ?? ''}`,
         },
-        tooltipProps.text,
+        () => span(withCodeSpans(getValue(tooltipProps.text))),
         div({ class: 'tg-tooltip--triangle' }),
     );
 
@@ -179,6 +187,19 @@ stylesheet.replace(`
 /* Help with more than a line or two to say, such as what a custom query may hold. */
 .tg-tooltip--help-wide {
     max-width: 420px;
+}
+
+/* Overrides the app's global code styling, which renders code as a padded block. */
+.tg-tooltip .tg-tooltip--code {
+    display: inline;
+    margin: 0;
+    padding: 0 3px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.15);
+    color: inherit;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 13px;
+    white-space: normal;
 }
 
 .tg-tooltip.portal {

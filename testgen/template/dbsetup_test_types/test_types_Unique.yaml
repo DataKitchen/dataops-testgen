@@ -141,7 +141,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT `{COLUMN_NAME}`, COUNT(*) AS count
-      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE}
+      FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE} {SUBSET_WHERE}
       GROUP BY `{COLUMN_NAME}`
       HAVING COUNT(*) > 1
       ORDER BY COUNT(*) DESC
@@ -153,7 +153,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` {SUBSET_WHERE} GROUP BY `{COLUMN_NAME}` HAVING count > 1 ORDER BY count DESC LIMIT {LIMIT};
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE} {SUBSET_WHERE} GROUP BY `{COLUMN_NAME}` HAVING count > 1 ORDER BY count DESC LIMIT {LIMIT};
     error_type: Test Results
   - id: '1167'
     test_id: '1034'
@@ -161,7 +161,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC;
+      SELECT DISTINCT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count  FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC;
     error_type: Test Results
   - id: '1110'
     test_id: '1034'
@@ -169,7 +169,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Test Results
   - id: '1028'
     test_id: '1034'
@@ -177,7 +177,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Test Results
   - id: '1428'
     test_id: '1034'
@@ -185,7 +185,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Test Results
   - id: '1224'
     test_id: '1034'
@@ -193,7 +193,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Test Results
   - id: '8028'
     test_id: '1034'
@@ -201,7 +201,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC FETCH FIRST {LIMIT} ROWS ONLY
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Test Results
   - id: '8028'
     test_id: '1034'
@@ -209,7 +209,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT}
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT}
     error_type: Test Results
   - id: '10038'
     test_id: 1034
@@ -217,7 +217,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TABLE_NAME}"{TABLE_FILTER_CLOSE} {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Test Results
   - id: '11080'
     test_id: '1034'
@@ -225,6 +225,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} {SUBSET_WHERE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

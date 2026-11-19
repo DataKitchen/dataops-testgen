@@ -141,7 +141,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct
-      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE}
       WHERE TRANSLATE(CAST(`{COLUMN_NAME}` AS STRING), '012345678', '999999999') != '999' {SUBSET_AND}
       GROUP BY `{COLUMN_NAME}`
       ORDER BY record_ct DESC
@@ -153,7 +153,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE TRANSLATE(`{COLUMN_NAME}`,'012345678','999999999') <> '999' {SUBSET_AND} GROUP BY `{COLUMN_NAME}` ORDER BY record_ct DESC LIMIT {LIMIT};
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE} WHERE TRANSLATE(`{COLUMN_NAME}`,'012345678','999999999') <> '999' {SUBSET_AND} GROUP BY `{COLUMN_NAME}` ORDER BY record_ct DESC LIMIT {LIMIT};
     error_type: Test Results
   - id: '1243'
     test_id: '1045'
@@ -161,7 +161,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS record_ct FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
     error_type: Test Results
   - id: '1242'
     test_id: '1045'
@@ -169,7 +169,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
     error_type: Test Results
   - id: '1241'
     test_id: '1045'
@@ -177,7 +177,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
     error_type: Test Results
   - id: '1461'
     test_id: '1045'
@@ -185,7 +185,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
     error_type: Test Results
   - id: '1244'
     test_id: '1045'
@@ -193,7 +193,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
     error_type: Test Results
   - id: '8045'
     test_id: '1045'
@@ -201,7 +201,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC FETCH FIRST {LIMIT} ROWS ONLY
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Test Results
   - id: '8045'
     test_id: '1045'
@@ -209,7 +209,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REPLACE_REGEXPR('[0-9]' IN "{COLUMN_NAME}" WITH '9') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT}
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE REPLACE_REGEXPR('[0-9]' IN "{COLUMN_NAME}" WITH '9') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT}
     error_type: Test Results
   - id: '10042'
     test_id: 1045
@@ -217,7 +217,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TABLE_NAME}" WHERE REGEXP_REPLACE("{COLUMN_NAME}", '[0-9]', '9', 'g') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM {TABLE_FILTER_OPEN}"{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE REGEXP_REPLACE("{COLUMN_NAME}", '[0-9]', '9', 'g') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
     error_type: Test Results
   - id: '11089'
     test_id: '1045'
@@ -225,6 +225,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

@@ -169,7 +169,7 @@ const ScheduleList = (/** @type Properties */ props) => {
                 ? div(
                     scheduleItems.val.map(item => ScheduleListItem(item, columns, getValue(props.permissions), emit)),
                 ) 
-                : div({ class: 'mt-5 mb-3 ml-3 text-secondary', style: 'text-align: center;' }, 'No schedules defined yet.'),
+                : div({ class: 'mt-5 mb-3 ml-3 text-secondary', style: 'text-align: center;' }, 'No schedules defined yet'),
         ),
     );
 

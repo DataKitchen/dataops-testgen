@@ -1,5 +1,6 @@
 import dataclasses
 import hashlib
+import json
 from collections.abc import Iterable
 from datetime import date, datetime
 from typing import ClassVar, TypedDict
@@ -40,6 +41,7 @@ from testgen.common.models.test_definition import TestRunType
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.read_file import replace_templated_functions
+from testgen.common.table_filters import filtered_table_ref, table_filter_condition, table_filter_params
 from testgen.utils import to_sql_timestamp
 
 # Separates the measures of the CAT tests batched into one aggregate query. parse_cat_results splits
@@ -110,6 +112,9 @@ class TestExecutionDef(InputParameters):
     # identity.
     read_schema_name: str | None = None
     read_table_name: str | None = None
+    # The definition's match table when a run-scoped override retargets match_table_name; the table
+    # group's filters are keyed by the definition's table names.
+    catalog_match_table_name: str | None = None
 
     @property
     def source_schema(self) -> str:
@@ -474,7 +479,7 @@ class TestExecutionSQL:
             f"{field.name}={' '.join(str(getattr(test_def, field.name)).split())}"
             for field in dataclasses.fields(InputParameters)
             if field.name not in skipped and getattr(test_def, field.name, None) not in [None, ""]
-        ).replace("'", "`")
+        )
 
     def _input_parameters_literal(self, test_def: TestExecutionDef) -> str:
         """Return the recorded parameters as a template writes them between quotes on the target.
@@ -493,6 +498,7 @@ class TestExecutionSQL:
         # flavor rejects, and the test errors rather than running.
         if self.flavor_service.literal_escapes_backslash:
             recorded = recorded.replace("\\", "\\\\")
+        recorded = recorded.replace("'", self.flavor_service.escaped_single_quote)
         # A custom query runs to thousands of characters; where the flavor caps a string literal,
         # an uncut record errors the test instead of being recorded by it.
         return self.flavor_service.fit_string_literal(recorded)
@@ -581,6 +587,22 @@ class TestExecutionSQL:
 
             params.update(self._freshness_exclusion_params(test_def))
             params.update(self.flavor_service.value_hash_params(test_def.column_chars, test_def.key_column_chars))
+            # Test queries run unbound, with every colon escaped once the query is complete
+            params.update(table_filter_params(
+                self._filter_condition(test_def.table_name),
+                test_def.source_table,
+                test_def.source_schema,
+                quote,
+                escape_colons=False,
+            ))
+            params.update(table_filter_params(
+                self._match_filter_condition(test_def),
+                test_def.match_table_name or "",
+                test_def.match_schema_name or "",
+                quote,
+                prefix="MATCH_",
+                escape_colons=False,
+            ))
 
             # After every user-supplied parameter, since any of them may contain {DATA_SCHEMA}
             params["DATA_SCHEMA"] = test_def.source_schema
@@ -601,6 +623,45 @@ class TestExecutionSQL:
                 params.update({key: FinalParam(value) for key, value in value_list_params.items()})
 
         return params
+
+    def _filter_condition(self, table_name: str | None) -> str | None:
+        return table_filter_condition(self.table_group.table_filters, table_name)
+
+    def _match_filter_condition(self, test_def: TestExecutionDef) -> str | None:
+        """Return the table group's filter for ``test_def``'s match table, when that table is in the table group."""
+        if test_def.match_schema_name not in (self.table_group.table_group_schema, test_def.source_schema):
+            return None
+        return self._filter_condition(test_def.catalog_match_table_name or test_def.match_table_name)
+
+    def update_result_table_filters(self, test_defs: list[TestExecutionDef]) -> list[tuple[str, dict]]:
+        """Return the query that records on this run's results the table filters each test read through.
+
+        A CAT test always reads its table through the filter. A QUERY test reads through the filters its
+        template opens, so a test whose query the user writes, or one that reads only the catalog, records none.
+
+        Args:
+            test_defs: Every test the run executed or reported an error for.
+
+        Returns:
+            The query, or no query when no test read a filtered table.
+        """
+        # Runs on App database
+        filters = [
+            {
+                "test_definition_id": str(test_def.id),
+                "table_filter": self._filter_condition(test_def.table_name)
+                if test_def.run_type == "CAT" or "{TABLE_FILTER_OPEN}" in (test_def.template or "")
+                else None,
+                "match_table_filter": self._match_filter_condition(test_def)
+                if "{MATCH_TABLE_FILTER_OPEN}" in (test_def.template or "")
+                else None,
+            }
+            for test_def in test_defs
+        ]
+        filters = [entry for entry in filters if entry["table_filter"] or entry["match_table_filter"]]
+        if not filters:
+            return []
+        return [self._get_query("update_result_table_filters.sql", extra_params={"TABLE_FILTERS": json.dumps(filters)})]
 
     def _observed_columns(self, test_def: TestExecutionDef) -> str:
         """Return the derived table a metadata test reads a table's observed columns from.
@@ -802,14 +863,18 @@ class TestExecutionSQL:
                     null_value=self.null_value,
                 )
 
-        # Every subset of a table is evaluated once per record in the FROM clause; reserve room for all of them
-        subset_columns_by_table: dict[tuple[str, str], dict[str, None]] = {}
+        # A table's filter and every subset of it are written into the FROM clause; reserve room for the longest
+        subset_columns_by_table: dict[tuple[str, str, str], dict[str, None]] = {}
         for td in test_defs:
+            columns = subset_columns_by_table.setdefault((td.source_schema, td.source_table, td.table_name), {})
             if td.subset_condition:
-                subset_columns_by_table.setdefault((td.source_schema, td.source_table), {})[self._subset_column(td)] = None
+                columns[self._subset_column(td)] = None
         max_query_chars = (self.connection.max_query_chars or DEFAULT_MAX_QUERY_CHARS) - 400
         max_query_chars -= max(
-            (len(self._from_clause(schema, table, columns)) for (schema, table), columns in subset_columns_by_table.items()),
+            (
+                len(self._from_clause(schema, table, catalog_table, columns))
+                for (schema, table, catalog_table), columns in subset_columns_by_table.items()
+            ),
             default=0,
         )
         groups = group_cat_tests(test_defs, max_query_chars, concat_operator, single)
@@ -819,7 +884,9 @@ class TestExecutionSQL:
         for group in groups:
             # Grouped by the definition's table, so every member of a group reads the same one.
             subset_columns = dict.fromkeys(self._subset_column(td) for td in group if td.subset_condition)
-            table_ref = self._from_clause(group[0].source_schema, group[0].source_table, subset_columns)
+            table_ref = self._from_clause(
+                group[0].source_schema, group[0].source_table, group[0].table_name, subset_columns,
+            )
             query = (
                 f"SELECT {len(aggregate_queries)} AS query_index, "
                 f"{concat_operator.join([td.measure_expression for td in group])} AS result_measures, "
@@ -833,14 +900,25 @@ class TestExecutionSQL:
 
         return aggregate_queries, aggregate_test_defs
 
-    def _from_clause(self, schema_name: str, table_name: str, subset_columns: Iterable[str]) -> str:
-        """Return the FROM target of an aggregate query: the table, or a derived table adding ``subset_columns``."""
+    def _from_clause(
+        self, schema_name: str, table_name: str, catalog_table_name: str, subset_columns: Iterable[str],
+    ) -> str:
+        """Return the FROM target of an aggregate query: the table's records that pass its table filter,
+        with ``subset_columns`` added when there are any.
+
+        ``catalog_table_name`` is the table's name in the table group, which its filter is defined for.
+        """
         table_ref = self.flavor_service.get_table_ref(schema_name, table_name, self.connection.sql_flavor_code)
-        if not (columns := "".join(subset_columns)):
-            return table_ref
-        # Aliased by the table's own name, so a subset naming the table still resolves
+        # Aliased by the table's own name, so a subset or filter naming the table still resolves
         alias = f"{self.flavor_service.quote_character}{table_name}{self.flavor_service.quote_character}"
-        return f"(SELECT {alias}.*{columns} FROM {table_ref} {alias}) {alias}"
+        condition = self._filter_condition(catalog_table_name)
+        columns = "".join(subset_columns)
+        if not condition and not columns:
+            return table_ref
+        source = f"{filtered_table_ref(table_ref, condition, schema_name, None, escape_colons=False)} {alias}"
+        if not columns:
+            return source
+        return f"(SELECT {alias}.*{columns} FROM {source}) {alias}"
 
     def _subset_flag(self, test_def: TestExecutionDef) -> str:
         """Return the quoted column that is 1 on the records in ``test_def``'s subset and NULL on the others.

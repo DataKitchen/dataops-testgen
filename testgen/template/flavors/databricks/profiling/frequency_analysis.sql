@@ -6,11 +6,11 @@
 WITH target_table
 AS
     (SELECT *
-     FROM `{DATA_SCHEMA}`.`{DATA_TABLE}`
+     FROM {TABLE_FILTER_OPEN}`{DATA_SCHEMA}`.`{DATA_TABLE}`
 -- TG-IF do_sample_bool
         TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT)
 -- TG-ENDIF
-    ),
+    {TABLE_FILTER_CLOSE} ),
 ranked_vals
 AS (SELECT `{COL_NAME}` AS val,
             COUNT(*) AS  ct,

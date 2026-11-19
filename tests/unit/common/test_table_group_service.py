@@ -18,7 +18,7 @@ from testgen.common.database.table_group_service import (
     SchemaMove,
     apply_schema_move,
     apply_table_group_flavor_rules,
-    catalog_membership,
+    catalog_source,
     is_duplicate_name_error,
     preview_table_group,
     save_new_table_group,
@@ -380,6 +380,89 @@ def test_preview_returns_picklable_shape(mock_session, mock_sql_cls):
     assert isinstance(preview, dict)
     assert not isfunction(data_chars), "data_chars must not be a local closure"
     assert not isfunction(sql_gen), "sql_generator must not be a local closure"
+
+
+def _filtered_preview(mock_session, mock_sql_cls, table_filters, failing=()):
+    """Preview tables ``customer`` and ``rental``, with each filter read failing when its table is in ``failing``."""
+    sql_generator = mock_sql_cls.return_value
+    sql_generator.flavor_service.metadata_via_api = False
+    sql_generator.get_schema_ddf.return_value = ("SELECT ...", {})
+    filter_reads = []
+
+    def respond(query):
+        if "AS checked" in query:
+            filter_reads.append(query)
+            if any(f'"{name}"' in query for name in failing):
+                raise RuntimeError(f'column "regoin" does not exist\nLINE 1: {query}')
+            return []
+        return [_column_row("customer", "id"), _column_row("rental", "id")]
+
+    _session(mock_session, respond)
+    preview, _, _ = preview_table_group(_tg(table_filters=table_filters), connection=_conn(), verify_access=False)
+    return preview, filter_reads
+
+
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+@patch(f"{MODULE}.target_db_session")
+def test_preview_reads_each_table_filter_in_the_same_session(mock_session, mock_sql_cls):
+    filters = [{"table_name": "customer", "condition": "region = 'EMEA'"}]
+
+    preview, filter_reads = _filtered_preview(mock_session, mock_sql_cls, filters)
+
+    assert preview["success"] is True
+    assert preview["message"] is None
+    assert not preview["tables"]["customer"].get("error")
+    assert len(filter_reads) == 1 and "WHERE (region = 'EMEA')" in filter_reads[0]
+
+
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+@patch(f"{MODULE}.target_db_session")
+def test_preview_marks_every_table_whose_filter_fails(mock_session, mock_sql_cls):
+    filters = [
+        {"table_name": "customer", "condition": "regoin = 1"},
+        {"table_name": "rental", "condition": "regoin = 2"},
+    ]
+
+    preview, _ = _filtered_preview(mock_session, mock_sql_cls, filters, failing=("customer", "rental"))
+
+    assert preview["success"] is False
+    assert preview["message"] == "2 table filters are not valid. Check the highlighted tables."
+    assert preview["tables"]["customer"]["error"] == 'The filter is not valid: column "regoin" does not exist'
+    assert preview["tables"]["rental"]["error"] == 'The filter is not valid: column "regoin" does not exist'
+
+
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+@patch(f"{MODULE}.target_db_session")
+def test_preview_names_a_filtered_table_the_table_group_does_not_hold(mock_session, mock_sql_cls):
+    filters = [
+        {"table_name": "customer", "condition": "regoin = 1"},
+        {"table_name": "invoices", "condition": "a = 1"},
+    ]
+
+    preview, _ = _filtered_preview(mock_session, mock_sql_cls, filters, failing=("customer", "invoices"))
+
+    assert preview["success"] is False
+    assert preview["message"] == (
+        "1 table filter is not valid. Check the highlighted tables. "
+        "Table invoices has a filter but is not in the table group."
+    )
+    assert "invoices" not in preview["tables"]
+    assert preview["stats"]["table_ct"] == 2
+
+
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+@patch(f"{MODULE}.target_db_session")
+def test_preview_refuses_an_incomplete_table_filter_before_reading_the_target(mock_session, mock_sql_cls):
+    filters = [{"table_name": "customer", "condition": " "}]
+
+    preview, data_chars, sql_generator = preview_table_group(
+        _tg(table_filters=filters), connection=_conn(), verify_access=False
+    )
+
+    assert preview["success"] is False
+    assert preview["message"] == "Enter a filter condition for table customer."
+    assert (data_chars, sql_generator) == (None, None)
+    mock_session.assert_not_called()
 
 
 @patch(f"{MODULE}.RefreshDataCharsSQL")
@@ -886,21 +969,30 @@ def test_a_failed_write_says_why(mock_preview, _session, mock_make_save):
     assert write_table_group_catalog(_tg(), _conn()) == "deadlock detected"
 
 
-# --- catalog_membership ---
+# --- catalog_source ---
 
 
 def test_an_empty_form_value_matches_the_null_it_replaces():
     stored = TableGroup(table_group_schema="sales", profiling_table_set=None, file_declarations=None)
     posted = TableGroup(table_group_schema="sales", profiling_table_set="", file_declarations=[])
 
-    assert catalog_membership(posted) == catalog_membership(stored)
+    assert catalog_source(posted) == catalog_source(stored)
 
 
-def test_a_changed_mask_changes_the_membership():
+def test_a_changed_mask_changes_the_catalog_source():
     before = TableGroup(table_group_schema="sales", profiling_include_mask="%")
     after = TableGroup(table_group_schema="sales", profiling_include_mask="order%")
 
-    assert catalog_membership(after) != catalog_membership(before)
+    assert catalog_source(after) != catalog_source(before)
+
+
+def test_a_changed_table_filter_changes_the_catalog_source():
+    before = TableGroup(table_group_schema="sales", table_filters=[{"table_name": "orders", "condition": "a = 1"}])
+    after = TableGroup(table_group_schema="sales", table_filters=[{"table_name": "orders", "condition": "a = 2"}])
+    cleared = TableGroup(table_group_schema="sales", table_filters=None)
+
+    assert catalog_source(after) != catalog_source(before)
+    assert catalog_source(cleared) != catalog_source(before)
 
 
 # --- update_catalog_for_edit ---
@@ -910,10 +1002,10 @@ def test_a_changed_mask_changes_the_membership():
 @patch(f"{MODULE}.apply_schema_move", return_value=None)
 def test_a_schema_move_writes_the_catalog_through_the_move(mock_apply, mock_write):
     table_group = TableGroup(table_group_schema="staging", profiling_include_mask="order%")
-    membership_before = catalog_membership(TableGroup(table_group_schema="sales", profiling_include_mask="%"))
+    catalog_before = catalog_source(TableGroup(table_group_schema="sales", profiling_include_mask="%"))
     move = SchemaMove(previous_schema="sales", schema="staging", missing_tables=[], definitions_repointed=0)
 
-    assert update_catalog_for_edit(table_group, membership_before, move) is None
+    assert update_catalog_for_edit(table_group, catalog_before, move) is None
 
     mock_apply.assert_called_once_with(move, table_group.id)
     mock_write.assert_not_called()
@@ -922,10 +1014,10 @@ def test_a_schema_move_writes_the_catalog_through_the_move(mock_apply, mock_writ
 @patch(f"{MODULE}.apply_schema_move", return_value="permission denied for schema staging")
 def test_a_schema_move_says_why_its_catalog_write_failed(_mock_apply):
     table_group = TableGroup(table_group_schema="staging")
-    membership_before = catalog_membership(TableGroup(table_group_schema="sales"))
+    catalog_before = catalog_source(TableGroup(table_group_schema="sales"))
     move = SchemaMove(previous_schema="sales", schema="staging", missing_tables=[], definitions_repointed=0)
 
-    assert update_catalog_for_edit(table_group, membership_before, move) == "permission denied for schema staging"
+    assert update_catalog_for_edit(table_group, catalog_before, move) == "permission denied for schema staging"
 
 
 @patch(f"{MODULE}.get_current_session")
@@ -953,12 +1045,12 @@ def test_apply_schema_move_reports_nothing_when_the_catalog_is_written(_mock_ses
 
 @patch(f"{MODULE}.write_table_group_catalog", return_value="connection refused")
 @patch(f"{MODULE}.apply_schema_move")
-def test_a_membership_change_rewrites_the_catalog_and_says_why_it_failed(mock_apply, mock_write):
+def test_a_catalog_source_change_rewrites_the_catalog_and_says_why_it_failed(mock_apply, mock_write):
     table_group = TableGroup(table_group_schema="sales", profiling_include_mask="order%")
-    membership_before = catalog_membership(TableGroup(table_group_schema="sales", profiling_include_mask="%"))
+    catalog_before = catalog_source(TableGroup(table_group_schema="sales", profiling_include_mask="%"))
     connection = _conn()
 
-    assert update_catalog_for_edit(table_group, membership_before, None, connection) == "connection refused"
+    assert update_catalog_for_edit(table_group, catalog_before, None, connection) == "connection refused"
 
     mock_write.assert_called_once_with(table_group, connection)
     mock_apply.assert_not_called()
@@ -968,9 +1060,9 @@ def test_a_membership_change_rewrites_the_catalog_and_says_why_it_failed(mock_ap
 @patch(f"{MODULE}.apply_schema_move")
 def test_an_edit_that_keeps_the_tables_leaves_the_catalog(mock_apply, mock_write):
     table_group = TableGroup(table_group_schema="sales", profiling_include_mask="%", description="Nightly load")
-    membership_before = catalog_membership(TableGroup(table_group_schema="sales", profiling_include_mask="%"))
+    catalog_before = catalog_source(TableGroup(table_group_schema="sales", profiling_include_mask="%"))
 
-    assert update_catalog_for_edit(table_group, membership_before, None) is None
+    assert update_catalog_for_edit(table_group, catalog_before, None) is None
 
     mock_write.assert_not_called()
     mock_apply.assert_not_called()

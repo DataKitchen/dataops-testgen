@@ -744,6 +744,31 @@ def test_on_restart_clears_the_abandoned_run_and_resets_the_start_time():
         job.profiling_run.init_progress.assert_called_once_with(False)
     # Restamped, not merely assigned: a restart is a new run and its duration starts here.
     assert job.profiling_run.profiling_starttime > ORIGINAL_START
+    assert job.profiling_run.table_filters is job.table_group.table_filters
+
+
+def test_data_chars_pins_the_table_filters_the_run_reads_through():
+    """A filter edited during a pause restarts the run, so no run reads columns through two filters."""
+    filters = [{"table_name": "t", "condition": "a = 1"}]
+    job = ProfilingJob.__new__(ProfilingJob)
+    PausableJob.__init__(job, job_id=uuid4())
+    job.table_group = MagicMock(profile_exclude_xde=False, profile_table_comparison=False, table_filters=filters)
+    job.profiling_run = MagicMock()
+    job.sql_generator = MagicMock(flavor="postgresql")
+    job.data_chars = []
+
+    with (
+        patch.object(ProfilingJob, "once", return_value=False),
+        patch(f"{MODULE}.DataTable") as data_table,
+        patch(f"{MODULE}.resolve_profiling_capabilities", return_value=ProfilingCapabilities()),
+        patch(f"{MODULE}._compute_sampling_params", return_value={}),
+    ):
+        data_table.list_column_chars.return_value = [
+            ColumnChars(schema_name="s", table_name="t", column_name="c", record_ct=5),
+        ]
+        job._data_chars()
+
+    assert job._pins["table_filters"] == filters
 
 
 def test_the_cleanup_methods_exist_on_the_models_on_restart_calls():

@@ -54,14 +54,14 @@ test_types:
       WITH latest_ver AS (
         SELECT {CONCAT_COLUMNS} AS category,
                CAST(COUNT(*) AS FLOAT64) / CAST(SUM(COUNT(*)) OVER () AS FLOAT64) AS pct_of_total
-        FROM `{TARGET_SCHEMA}.{TABLE_NAME}` v1
+        FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}.{TABLE_NAME}`{TABLE_FILTER_CLOSE_UNALIASED} v1
         WHERE {SUBSET_CONDITION}
         GROUP BY {COLUMN_NAME_NO_QUOTES}
       ),
       older_ver AS (
         SELECT {CONCAT_MATCH_GROUPBY} AS category,
                CAST(COUNT(*) AS FLOAT64) / CAST(SUM(COUNT(*)) OVER () AS FLOAT64) AS pct_of_total
-        FROM `{MATCH_SCHEMA_NAME}.{TABLE_NAME}` v2
+        FROM {MATCH_TABLE_FILTER_OPEN}`{MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}`{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
         WHERE {MATCH_SUBSET_CONDITION}
         GROUP BY {MATCH_GROUPBY_NAMES}
       )
@@ -84,13 +84,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` v1
+                FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM `{MATCH_SCHEMA_NAME}`.`{MATCH_TABLE_NAME}` v2
+                FROM {MATCH_TABLE_FILTER_OPEN}`{MATCH_SCHEMA_NAME}`.`{MATCH_TABLE_NAME}`{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} )
       SELECT COALESCE(l.category, o.category) AS category,
@@ -112,13 +112,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      CAST(COUNT(*) as FLOAT) / CAST(SUM(COUNT(*)) OVER () as FLOAT) AS pct_of_total
-                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
+                FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      CAST(COUNT(*) as FLOAT) / CAST(SUM(COUNT(*)) OVER () as FLOAT) AS pct_of_total
-                FROM "{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}" v2
+                FROM {MATCH_TABLE_FILTER_OPEN}"{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}"{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} )
       SELECT TOP {LIMIT} COALESCE(l.category, o.category) AS category,
@@ -139,13 +139,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
+                FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM "{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}" v2
+                FROM {MATCH_TABLE_FILTER_OPEN}"{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}"{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} )
       SELECT COALESCE(l.category, o.category) AS category,
@@ -167,13 +167,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
+                FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM "{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}" v2
+                FROM {MATCH_TABLE_FILTER_OPEN}"{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}"{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} )
       SELECT COALESCE(l.category, o.category) AS category,
@@ -195,13 +195,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
+                FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM "{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}" v2
+                FROM {MATCH_TABLE_FILTER_OPEN}"{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}"{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} )
       SELECT COALESCE(l.category, o.category) AS category,
@@ -223,13 +223,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
+                FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM "{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}" v2
+                FROM {MATCH_TABLE_FILTER_OPEN}"{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}"{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} )
       SELECT COALESCE(l.category, o.category) AS category,
@@ -251,13 +251,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      CAST(COUNT(*) AS NUMBER) / CAST(SUM(COUNT(*)) OVER () AS NUMBER) AS pct_of_total
-                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
+                FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      CAST(COUNT(*) AS NUMBER) / CAST(SUM(COUNT(*)) OVER () AS NUMBER) AS pct_of_total
-                FROM "{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}" v2
+                FROM {MATCH_TABLE_FILTER_OPEN}"{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}"{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} )
       SELECT COALESCE(l.category, o.category) AS category,
@@ -279,13 +279,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      CAST(COUNT(*) AS DECIMAL) / CAST(SUM(COUNT(*)) OVER () AS DECIMAL) AS pct_of_total
-                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
+                FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      CAST(COUNT(*) AS DECIMAL) / CAST(SUM(COUNT(*)) OVER () AS DECIMAL) AS pct_of_total
-                FROM "{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}" v2
+                FROM {MATCH_TABLE_FILTER_OPEN}"{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}"{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} )
       SELECT COALESCE(l.category, o.category) AS category,
@@ -306,13 +306,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      CAST(COUNT(*) AS DOUBLE) / CAST(SUM(COUNT(*)) OVER () AS DOUBLE) AS pct_of_total
-                FROM "{TABLE_NAME}" v1
+                FROM {TABLE_FILTER_OPEN}"{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      CAST(COUNT(*) AS DOUBLE) / CAST(SUM(COUNT(*)) OVER () AS DOUBLE) AS pct_of_total
-                FROM "{MATCH_TABLE_NAME}" v2
+                FROM {MATCH_TABLE_FILTER_OPEN}"{MATCH_TABLE_NAME}"{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} )
       SELECT COALESCE(l.category, o.category) AS category,
@@ -334,13 +334,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
+                FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM "{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}" v2
+                FROM {MATCH_TABLE_FILTER_OPEN}"{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}"{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} )
       SELECT COALESCE(l.category, o.category) AS category,
@@ -366,14 +366,14 @@ test_types:
       WITH latest_ver AS (
         SELECT {CONCAT_COLUMNS} AS category,
                CAST(COUNT(*) AS FLOAT64) / CAST(SUM(COUNT(*)) OVER () AS FLOAT64) AS pct_of_total
-        FROM `{SCHEMA_NAME}.{TABLE_NAME}` v1
+        FROM {TABLE_FILTER_OPEN}`{SCHEMA_NAME}.{TABLE_NAME}`{TABLE_FILTER_CLOSE_UNALIASED} v1
         WHERE {SUBSET_CONDITION}
         GROUP BY {COLUMN_NAME_NO_QUOTES}
       ),
       older_ver AS (
         SELECT {CONCAT_MATCH_GROUPBY} AS category,
                CAST(COUNT(*) AS FLOAT64) / CAST(SUM(COUNT(*)) OVER () AS FLOAT64) AS pct_of_total
-        FROM `{MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}` v2
+        FROM {MATCH_TABLE_FILTER_OPEN}`{MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}`{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
         WHERE {MATCH_SUBSET_CONDITION}
         GROUP BY {MATCH_GROUPBY_NAMES}
       ),
@@ -420,13 +420,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v1
+                FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE} v2
+                FROM {MATCH_TABLE_FILTER_OPEN}{QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE}{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} ),
       dataset
@@ -473,13 +473,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      CAST(COUNT(*) as FLOAT) / CAST(SUM(COUNT(*)) OVER () as FLOAT) AS pct_of_total
-                FROM "{SCHEMA_NAME}"."{TABLE_NAME}" v1
+                FROM {TABLE_FILTER_OPEN}"{SCHEMA_NAME}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      CAST(COUNT(*) as FLOAT) / CAST(SUM(COUNT(*)) OVER () as FLOAT) AS pct_of_total
-                FROM "{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}" v2
+                FROM {MATCH_TABLE_FILTER_OPEN}"{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}"{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} ),
       dataset
@@ -526,13 +526,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v1
+                FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE} v2
+                FROM {MATCH_TABLE_FILTER_OPEN}{QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE}{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} ),
       dataset
@@ -579,13 +579,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v1
+                FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE} v2
+                FROM {MATCH_TABLE_FILTER_OPEN}{QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE}{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} ),
       dataset
@@ -632,13 +632,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v1
+                FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE} v2
+                FROM {MATCH_TABLE_FILTER_OPEN}{QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE}{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} ),
       dataset
@@ -685,13 +685,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v1
+                FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE} v2
+                FROM {MATCH_TABLE_FILTER_OPEN}{QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE}{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} ),
       dataset
@@ -738,13 +738,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      CAST(COUNT(*) AS NUMBER) / CAST(SUM(COUNT(*)) OVER () AS NUMBER) AS pct_of_total
-                FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v1
+                FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      CAST(COUNT(*) AS NUMBER) / CAST(SUM(COUNT(*)) OVER () AS NUMBER) AS pct_of_total
-                FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE} v2
+                FROM {MATCH_TABLE_FILTER_OPEN}{QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE}{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} ),
       dataset
@@ -789,13 +789,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      CAST(COUNT(*) AS DECIMAL) / CAST(SUM(COUNT(*)) OVER () AS DECIMAL) AS pct_of_total
-                FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v1
+                FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      CAST(COUNT(*) AS DECIMAL) / CAST(SUM(COUNT(*)) OVER () AS DECIMAL) AS pct_of_total
-                FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE} v2
+                FROM {MATCH_TABLE_FILTER_OPEN}{QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE}{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} ),
       dataset
@@ -840,13 +840,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      CAST(COUNT(*) AS DOUBLE) / CAST(SUM(COUNT(*)) OVER () AS DOUBLE) AS pct_of_total
-                FROM {QUOTE}{TABLE_NAME}{QUOTE} v1
+                FROM {TABLE_FILTER_OPEN}{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      CAST(COUNT(*) AS DOUBLE) / CAST(SUM(COUNT(*)) OVER () AS DOUBLE) AS pct_of_total
-                FROM {QUOTE}{MATCH_TABLE_NAME}{QUOTE} v2
+                FROM {MATCH_TABLE_FILTER_OPEN}{QUOTE}{MATCH_TABLE_NAME}{QUOTE}{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} ),
       dataset
@@ -893,13 +893,13 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v1
+                FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE_UNALIASED} v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
          AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE} v2
+                FROM {MATCH_TABLE_FILTER_OPEN}{QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE}{MATCH_TABLE_FILTER_CLOSE_UNALIASED} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} ),
       dataset

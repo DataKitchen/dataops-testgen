@@ -51,7 +51,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) AS record_ct
-      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE}
       GROUP BY {GROUPBY_NAMES}
       HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -64,7 +64,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+                 FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -77,7 +77,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT TOP {LIMIT} {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}, BINARY_CHECKSUM({GROUPBY_NAMES})
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -89,7 +89,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -102,7 +102,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -115,7 +115,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -128,7 +128,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -141,7 +141,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -154,7 +154,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -167,7 +167,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM "{TABLE_NAME}"
+                 FROM {TABLE_FILTER_OPEN}"{TABLE_NAME}"{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -180,7 +180,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
@@ -207,7 +207,7 @@ test_types:
              CONCAT(CONCAT('Duplicate records: ', CAST(COALESCE(SUM(record_ct), 0) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test;
@@ -231,7 +231,7 @@ test_types:
              CONCAT(CONCAT('Duplicate records: ', CAST(COALESCE(SUM(record_ct), 0) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test;
@@ -255,7 +255,7 @@ test_types:
              CONCAT(CONCAT('Duplicate records: ', CAST(COALESCE(SUM(record_ct), 0) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                -- Checksum is added because string column grouping is case insensitive
                GROUP BY {GROUPBY_NAMES}, BINARY_CHECKSUM({GROUPBY_NAMES})
                HAVING COUNT(*) > 1
@@ -280,7 +280,7 @@ test_types:
              CONCAT(CONCAT('Duplicate records: ', CAST(COALESCE(SUM(record_ct), 0) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test;
@@ -304,7 +304,7 @@ test_types:
              CONCAT(CONCAT('Duplicate records: ', CAST(COALESCE(SUM(record_ct), 0) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test;
@@ -328,7 +328,7 @@ test_types:
              CONCAT(CONCAT('Duplicate records: ', CAST(COALESCE(SUM(record_ct), 0) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test;
@@ -352,7 +352,7 @@ test_types:
              CONCAT(CONCAT('Duplicate records: ', CAST(COALESCE(SUM(record_ct), 0) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test;
@@ -376,7 +376,7 @@ test_types:
              'Duplicate records: ' || CAST(COALESCE(SUM(record_ct), 0) AS {VARCHAR_TYPE}) || ', Threshold: {SKIP_ERRORS}' AS result_message,
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test
@@ -400,7 +400,7 @@ test_types:
              'Duplicate records: ' || CAST(COALESCE(SUM(record_ct), 0) AS {VARCHAR_TYPE}) || ', Threshold: {SKIP_ERRORS}' AS result_message,
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test
@@ -424,7 +424,7 @@ test_types:
              CONCAT(CONCAT('Duplicate records: ', CAST(COALESCE(SUM(record_ct), 0) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test;
@@ -448,7 +448,7 @@ test_types:
              CONCAT(CONCAT('Duplicate records: ', CAST(COALESCE(SUM(record_ct), 0) AS {VARCHAR_TYPE})), ', Threshold: {SKIP_ERRORS}') AS result_message,
              COALESCE(SUM(record_ct), 0) as result_measure
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
              ) test;

@@ -10,6 +10,7 @@
  * @property {string?} profiling_exclude_mask
  * @property {string?} profiling_table_set
  * @property {FileDeclaration[]?} file_declarations
+ * @property {TableFilter[]?} table_filters
  * @property {string?} table_group_schema
  * @property {string?} profile_id_column_mask
  * @property {string?} profile_sk_column_mask
@@ -40,6 +41,11 @@
  * @property {'csv' | 'parquet' | 'json'} format
  * @property {object?} options
  *
+ * @typedef TableFilter
+ * @type {object}
+ * @property {string} table_name
+ * @property {string} condition
+ *
  * @typedef SampledProfileGaps
  * @type {object}
  * @property {string[]} test_types
@@ -62,6 +68,7 @@
  * @property {boolean?} supportsValueHash
  * @property {boolean?} disablePiiFlag
  * @property {SampledProfileGaps?} samplingGaps
+ * @property {string[]?} tableNames - the table group's catalog tables, suggested for table filters
  * @property {(tg: TableGroup, state: FormState) => void} onChange
  */
 import van from '../van.min.js';
@@ -77,6 +84,7 @@ import { Icon } from './icon.js';
 import { Button } from './button.js';
 import { withTooltip } from './tooltip.js';
 import { SampledProfileGapsHelp } from './sampled_profile_gaps.js';
+import { formatNumber } from '../display_utils.js';
 
 // Flavors whose profiling sample clause cannot sample views — views are profiled in full.
 const SAMPLE_SKIPS_VIEWS_FLAVORS = ['mssql', 'postgresql'];
@@ -185,6 +193,18 @@ const declarationPayload = (row) => {
     };
 };
 
+let nextTableFilterId = 0;
+const tableFilterRow = (filter) => ({
+    id: `table-filter-${nextTableFilterId++}`,
+    tableName: van.state(filter?.table_name ?? ''),
+    condition: van.state(filter?.condition ?? ''),
+});
+
+const tableFilterPayload = (row) => ({
+    table_name: String(row.tableName.val ?? '').trim(),
+    condition: String(row.condition.val ?? '').trim(),
+});
+
 const { div, span } = van.tags;
 
 const normalizeTableList = (value) => {
@@ -209,6 +229,7 @@ const TableGroupForm = (props) => {
     const profilingExcludeMask = van.state(normalizeTableList(tableGroup.profiling_exclude_mask) ?? '');
     const profilingTableSet = van.state(normalizeTableList(tableGroup.profiling_table_set));
     const declarationRows = van.state((tableGroup.file_declarations ?? []).map(declarationRow));
+    const tableFilterRows = van.state((tableGroup.table_filters ?? []).map(tableFilterRow));
     const tableGroupSchema = van.state(tableGroup.table_group_schema);
     const profileIdColumnMask = van.state(tableGroup.profile_id_column_mask ?? '');
     const profileSkColumnMask = van.state(tableGroup.profile_sk_column_mask ?? '');
@@ -284,6 +305,7 @@ const TableGroupForm = (props) => {
             profiling_exclude_mask: normalizeTableList(profilingExcludeMask.val),
             profiling_table_set: normalizeTableList(profilingTableSet.val),
             file_declarations: declarationRows.val.length ? declarationRows.val.map(declarationPayload) : null,
+            table_filters: tableFilterRows.val.length ? tableFilterRows.val.map(tableFilterPayload) : null,
             table_group_schema: tableGroupSchema.val,
             profile_id_column_mask: profileIdColumnMask.val,
             profile_sk_column_mask: profileSkColumnMask.val,
@@ -327,6 +349,7 @@ const TableGroupForm = (props) => {
     const setFieldValidity = (field, validity) => {
         validityPerField.val = {...validityPerField.rawVal, [field]: validity};
     }
+    const hasInvalidField = (fields) => van.derive(() => fields.some(field => validityPerField.val[field] === false));
 
     const declarationsValid = van.derive(() => {
         const rows = declarationRows.val;
@@ -380,12 +403,25 @@ const TableGroupForm = (props) => {
             { style: () => declaresFilesState.val ? '' : 'display: none;' },
             TablesForm(declarationRows, flavorCode),
         ),
+        TableFiltersForm(tableFilterRows, getValue(props.tableNames) ?? []),
+        SamplingForm(
+            {
+                setValidity: setFieldValidity,
+                invalid: hasInvalidField(SAMPLING_FIELDS),
+                sampleSkipsViews,
+                samplingGaps: getValue(props.samplingGaps),
+            },
+            profileUseSampling,
+            profileSamplePercent,
+            profileSampleMinCount,
+        ),
         SettingsForm(
             {
                 editMode: !!tableGroup.id,
                 disablePiiFlag: getValue(props.disablePiiFlag) ?? false,
                 supportsValueHash,
                 setValidity: setFieldValidity,
+                invalid: hasInvalidField(SETTINGS_FIELDS),
             },
             profilingDelayDays,
             profileFlagCdes,
@@ -395,14 +431,8 @@ const TableGroupForm = (props) => {
             includeInDashboard,
             addScorecardDefinition,
         ),
-        SamplingForm(
-            { setValidity: setFieldValidity, sampleSkipsViews, samplingGaps: getValue(props.samplingGaps) },
-            profileUseSampling,
-            profileSamplePercent,
-            profileSampleMinCount,
-        ),
         TaggingForm(
-            { setValidity: setFieldValidity },
+            { setValidity: setFieldValidity, invalid: hasInvalidField(TAG_FIELDS) },
             description,
             dataSource,
             sourceSystem,
@@ -467,6 +497,10 @@ const TablesForm = (declarationRows, flavorCode) => {
         { class: 'flex-column fx-gap-3 border border-radius-1 p-3 mt-1', style: 'position: relative;' },
         Caption({ content: 'Tables', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
         div(
+            { class: 'text-small text-secondary mt-1' },
+            'The tables in the table group, each read from a file or from a pattern that matches several files.',
+        ),
+        div(
             { class: 'tg-declarations' },
             div(
                 { class: 'tg-declarations--row text-caption' },
@@ -491,7 +525,7 @@ const TablesForm = (declarationRows, flavorCode) => {
                 ? ''
                 : div(
                     { class: 'flex-row fx-justify-center fx-gap-1 mt-6 mb-3 text-secondary text-caption' },
-                    'No tables declared yet.',
+                    'No tables declared yet',
                     span({ class: 'text-error' }, '*'),
                 ),
         ),
@@ -579,9 +613,108 @@ const DeclarationRow = (row, declarationRows, removeRow) => {
     );
 };
 
+const TableFiltersForm = (tableFilterRows, tableNames) => {
+    const addRow = () => {
+        tableFilterRows.val = [...tableFilterRows.rawVal, tableFilterRow()];
+    };
+    const removeRow = (id) => {
+        tableFilterRows.val = tableFilterRows.rawVal.filter(row => row.id !== id);
+    };
+
+    const summary = () => {
+        const count = tableFilterRows.val
+            .map(tableFilterPayload)
+            .filter(filter => filter.table_name && filter.condition)
+            .length;
+        return count ? `${count} ${count === 1 ? 'filter' : 'filters'} applied` : '';
+    };
+
+    return ExpansionPanel(
+        {
+            title: 'Table Filters',
+            summary,
+            help: 'Read only matching records from specific tables',
+            description: 'Profiling, tests, and monitors read only the records that match a table\'s filter condition. Tables without a filter are read in full.',
+        },
+        div(
+            { class: 'flex-column fx-gap-3' },
+            () => tableFilterRows.val.length
+                ? div(
+                    { class: 'flex-column fx-gap-2' },
+                    div(
+                        { class: 'tg-table-filters--row text-caption' },
+                        span('Table'),
+                        span(
+                            { class: 'flex-row fx-gap-1 fx-align-flex-center' },
+                            'Filter Condition',
+                            withTooltip(
+                                Icon({ size: 16, classes: 'text-disabled' }, 'help'),
+                                {
+                                    text: 'Condition selecting the records TestGen reads from this table, written like a SQL WHERE clause. Example: `region = \'EMEA\'`.',
+                                    position: 'bottom-left',
+                                    width: 260,
+                                },
+                            ),
+                        ),
+                        span(),
+                    ),
+                    tableFilterRows.val.map(row => TableFilterRow(row, tableNames, removeRow)),
+                )
+                : div({ class: 'flex-row fx-justify-center mt-6 mb-3 text-secondary text-caption' }, 'No table filters yet'),
+            div(
+                { class: 'flex-row' },
+                Button({ type: 'stroked', icon: 'add', label: 'Add Filter', width: 'auto', onclick: addRow }),
+            ),
+        ),
+    );
+};
+
+// Sizes a condition box to show a stored condition without scrolling, up to a few lines. The
+// character count per line approximates the condition column's width in the edit dialog.
+const CONDITION_LINE_CHARS = 60;
+const CONDITION_MAX_LINES = 4;
+const conditionHeight = (condition) => {
+    const lines = Math.min(CONDITION_MAX_LINES, Math.max(1, Math.ceil(condition.length / CONDITION_LINE_CHARS)));
+    return 38 + (lines - 1) * 20;
+};
+
+const TableFilterRow = (row, tableNames, removeRow) => {
+    return div(
+        { class: 'tg-table-filters--row' },
+        Input({
+            name: `table_filter_table_${row.id}`,
+            value: row.tableName,
+            autocompleteOptions: tableNames,
+            onChange: (value) => row.tableName.val = value,
+        }),
+        Textarea({
+            name: `table_filter_condition_${row.id}`,
+            class: 'tg-table-filters--condition',
+            value: row.condition,
+            height: conditionHeight(String(row.condition.rawVal ?? '')),
+            onChange: (value) => row.condition.val = value,
+        }),
+        Button({
+            type: 'icon',
+            icon: 'delete',
+            tooltip: 'Remove filter',
+            tooltipPosition: 'left',
+            onclick: () => removeRow(row.id),
+        }),
+    );
+};
+
 // Validity keys that belong to only one way of naming a table group's tables.
 const SCHEMA_FIELDS = ['table_group_schema'];
 const DECLARATION_FIELDS = ['file_declarations'];
+
+// Validity keys of the fields inside each collapsible panel, so a collapsed panel can flag its errors.
+const SAMPLING_FIELDS = ['profile_sample_percent', 'profile_sample_min_count'];
+const SETTINGS_FIELDS = ['profiling_delay_days'];
+const TAG_FIELDS = [
+    'description', 'data_source', 'source_system', 'source_process', 'data_location', 'business_domain',
+    'stakeholder_group', 'transform_level', 'data_product', 'data_classification',
+];
 
 const CriteriaForm = (
     options,
@@ -594,6 +727,10 @@ const CriteriaForm = (
     return div(
         { class: 'flex-column fx-gap-3 border border-radius-1 p-3 mt-1', style: 'position: relative;' },
         Caption({content: 'Criteria', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
+        div(
+            { class: 'text-small text-secondary mt-1' },
+            'The tables in the schema that belong to the table group.',
+        ),
         div(
             { class: 'flex-row fx-gap-3 fx-flex-wrap fx-align-flex-start' },
             Textarea({
@@ -662,69 +799,75 @@ const SettingsForm = (
     includeInDashboard,
     addScorecardDefinition,
 ) => {
-    return div(
-        { class: 'flex-row fx-gap-3 fx-flex-wrap fx-align-flex-start border border-radius-1 p-3 mt-1', style: 'position: relative;' },
-        Caption({content: 'Settings', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
+    return ExpansionPanel(
+        {
+            title: 'Settings',
+            help: 'Profiling detection and dashboard options',
+            invalid: options.invalid,
+        },
         div(
-            { class: 'tg-column-flex flex-column fx-gap-3' },
-            Checkbox({
-                name: 'profile_flag_cdes',
-                label: 'Detect critical data elements (CDE) during profiling',
-                checked: profileFlagCdes,
-                onChange: (value) => profileFlagCdes.val = value,
-            }),
-            Checkbox({
-                name: 'profile_flag_pii',
-                label: 'Detect PII during profiling',
-                checked: profileFlagPii,
-                onChange: (value) => profileFlagPii.val = value,
-                disabled: options.disablePiiFlag,
-            }),
-            Checkbox({
-                name: 'profile_exclude_xde',
-                label: 'Exclude XDE columns from profiling',
-                checked: profileExcludeXde,
-                onChange: (value) => profileExcludeXde.val = value,
-            }),
+            { class: 'flex-row fx-gap-3 fx-flex-wrap fx-align-flex-start' },
             div(
-                { style: () => options.supportsValueHash.val ? '' : 'display: none;' },
+                { class: 'tg-column-flex flex-column fx-gap-3' },
                 Checkbox({
-                    name: 'profile_table_comparison',
-                    label: 'Profile for table comparison',
-                    help: 'Collects value hashes during profiling, which Table Comparison test generation needs for tests that detect changed, moved, or swapped values. Adds profiling time.',
-                    checked: profileTableComparison,
-                    onChange: (value) => profileTableComparison.val = value,
+                    name: 'profile_flag_cdes',
+                    label: 'Detect critical data elements (CDE) during profiling',
+                    checked: profileFlagCdes,
+                    onChange: (value) => profileFlagCdes.val = value,
                 }),
+                Checkbox({
+                    name: 'profile_flag_pii',
+                    label: 'Detect PII during profiling',
+                    checked: profileFlagPii,
+                    onChange: (value) => profileFlagPii.val = value,
+                    disabled: options.disablePiiFlag,
+                }),
+                Checkbox({
+                    name: 'profile_exclude_xde',
+                    label: 'Exclude XDE columns from profiling',
+                    checked: profileExcludeXde,
+                    onChange: (value) => profileExcludeXde.val = value,
+                }),
+                div(
+                    { style: () => options.supportsValueHash.val ? '' : 'display: none;' },
+                    Checkbox({
+                        name: 'profile_table_comparison',
+                        label: 'Profile for table comparison',
+                        help: 'Collects value hashes during profiling, which Table Comparison test generation needs for tests that detect changed, moved, or swapped values. Adds profiling time.',
+                        checked: profileTableComparison,
+                        onChange: (value) => profileTableComparison.val = value,
+                    }),
+                ),
+                Checkbox({
+                    name: 'include_in_dashboard',
+                    label: 'Include table group in Project Dashboard',
+                    checked: includeInDashboard,
+                    onChange: (value) => includeInDashboard.val = value,
+                }),
+                () => !options.editMode
+                    ? Checkbox({
+                        name: 'add_scorecard_definition',
+                        label: 'Add scorecard for table group',
+                        help: 'Add a new scorecard to the Quality Dashboard upon creation of this table group',
+                        checked: addScorecardDefinition,
+                        onChange: (value) => addScorecardDefinition.val = value,
+                    })
+                    : '',
             ),
-            Checkbox({
-                name: 'include_in_dashboard',
-                label: 'Include table group in Project Dashboard',
-                checked: includeInDashboard,
-                onChange: (value) => includeInDashboard.val = value,
+            Input({
+                name: 'profiling_delay_days',
+                type: 'number',
+                label: 'Min Profiling Age (in days)',
+                value: profilingDelayDays,
+                class: 'tg-column-flex',
+                validators: [ numberBetween(0, 999, 0) ],
+                help: 'Number of days to wait before new profiling will be available to generate tests',
+                onChange: (value, state) => {
+                    profilingDelayDays.val = value;
+                    options.setValidity?.('profiling_delay_days', state.valid);
+                },
             }),
-            () => !options.editMode
-                ? Checkbox({
-                    name: 'add_scorecard_definition',
-                    label: 'Add scorecard for table group',
-                    help: 'Add a new scorecard to the Quality Dashboard upon creation of this table group',
-                    checked: addScorecardDefinition,
-                    onChange: (value) => addScorecardDefinition.val = value,
-                })
-                : '',
         ),
-        Input({
-            name: 'profiling_delay_days',
-            type: 'number',
-            label: 'Min Profiling Age (in days)',
-            value: profilingDelayDays,
-            class: 'tg-column-flex',
-            validators: [ numberBetween(0, 999, 0) ],
-            help: 'Number of days to wait before new profiling will be available to generate tests',
-            onChange: (value, state) => {
-                profilingDelayDays.val = value;
-                options.setValidity?.('profiling_delay_days', state.valid);
-            },
-        }),
     );
 };
 
@@ -734,14 +877,24 @@ const SamplingForm = (
     profileSamplePercent,
     profileSampleMinCount,
 ) => {
+    const samplingOff = van.derive(() => !profileUseSampling.val);
+    const summary = () => profileUseSampling.val
+        ? `${profileSamplePercent.val}% (min ${formatNumber(profileSampleMinCount.val)} rows)`
+        : '';
+
     return ExpansionPanel(
-        { title: 'Sampling Parameters' },
+        {
+            title: 'Sampling Parameters',
+            summary,
+            help: 'Speed up profiling of large tables',
+            description: 'When sampling is on, pattern and character analysis and the list of frequent values are based on a sample of records. Record counts, distinct values, minimums, maximums, and average lengths and values always cover the full table.',
+            invalid: options.invalid,
+        },
         div(
             { class: 'flex-column fx-gap-3' },
             Checkbox({
                 name: 'profile_use_sampling',
                 label: 'Use profile sampling',
-                help: 'When checked, pattern and character analysis and the list of frequent values are based on a sample of records. Record counts, distinct values, minimums, maximums, and average lengths and values always cover the full table',
                 checked: profileUseSampling,
                 onChange: (value) => profileUseSampling.val = value,
             }),
@@ -749,6 +902,7 @@ const SamplingForm = (
                 { class: 'flex-row fx-gap-3' },
                 Input({
                     name: 'profile_sample_percent',
+                    disabled: samplingOff,
                     class: 'fx-flex',
                     type: 'number',
                     label: 'Sample percent',
@@ -762,6 +916,7 @@ const SamplingForm = (
                 }),
                 Input({
                     name: 'profile_sample_min_count',
+                    disabled: samplingOff,
                     class: 'fx-flex',
                     type: 'number',
                     label: 'Min Sample Record Count',
@@ -823,8 +978,27 @@ const TaggingForm = (
     dataProduct,
     dataClassification,
 ) => {
+    const tags = [
+        dataSource, sourceSystem, sourceProcess, dataLocation, businessDomain,
+        stakeholderGroup, transformLevel, dataProduct, dataClassification,
+    ];
+    const summary = () => {
+        const hasDescription = !!String(description.val ?? '').trim();
+        const tagCount = tags.filter(tag => String(tag.val ?? '').trim()).length;
+        const parts = [
+            hasDescription ? 'Description' : '',
+            tagCount ? `${tagCount} ${tagCount === 1 ? 'tag' : 'tags'}` : '',
+        ].filter(part => part);
+        return parts.join(', ');
+    };
+
     return ExpansionPanel(
-        { title: 'Table Group Tags' },
+        {
+            title: 'Table Group Tags',
+            summary,
+            help: 'Description and business context',
+            invalid: options.invalid,
+        },
         Input({
             name: 'description',
             class: 'fx-flex mb-3',
@@ -955,6 +1129,24 @@ stylesheet.replace(`
 .tg-declarations--row > .tg-input--label > .text-caption:first-child,
 .tg-declarations--row > .tg-select--label > :first-child {
     display: none;
+}
+.tg-table-filters--row {
+    display: grid;
+    grid-template-columns: minmax(140px, 1fr) minmax(200px, 2fr) 40px;
+    gap: 12px;
+    align-items: start;
+}
+.tg-table-filters--row > .tg-input--label > .text-caption:first-child,
+.tg-table-filters--condition > .text-caption:first-child {
+    display: none;
+}
+/* Sized by its min-height alone, rather than the two rows a textarea defaults to, and padded so a
+   single line sits level with the table input beside it. */
+.tg-table-filters--condition > textarea {
+    height: 0;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    line-height: 20px;
 }
 .tg-declarations--options {
     grid-column: 1 / -1;

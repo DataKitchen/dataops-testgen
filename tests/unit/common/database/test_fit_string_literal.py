@@ -42,3 +42,15 @@ def test_a_cut_never_leaves_a_backslash_escaping_the_marker():
     cut = get_flavor_service("oracle").fit_string_literal("\\\\" * 3000)
 
     assert (len(cut) - len(cut.rstrip("\\"))) % 2 == 0
+
+
+@pytest.mark.parametrize("quotes_before_cut", [1, 2, 3])
+def test_a_cut_never_leaves_an_unpaired_quote_closing_the_literal(quotes_before_cut):
+    """Oracle escapes a quote by doubling it, so a cut between the two halves of a doubled quote
+    would leave one that ends the literal early."""
+    value = "a" * (3997 - quotes_before_cut) + "''" * 10
+
+    cut = get_flavor_service("oracle").fit_string_literal(value)
+
+    quotes = len(cut.removesuffix("...")) - len(cut.removesuffix("...").rstrip("'"))
+    assert quotes % 2 == 0

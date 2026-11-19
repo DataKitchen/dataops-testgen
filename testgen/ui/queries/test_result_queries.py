@@ -187,7 +187,7 @@ def get_test_results_by_ids(test_result_ids: list[str]) -> pd.DataFrame:
                 ELSE 'Passed'
             END as disposition,
             NULL::VARCHAR(1) as action,
-            r.input_parameters, r.result_message, CASE WHEN result_code = 0 THEN r.severity END as severity,
+            r.input_parameters, r.table_filter, r.match_table_filter, r.result_message, CASE WHEN result_code = 0 THEN r.severity END as severity,
             CASE WHEN r.result_code = 1 THEN 1 ELSE 0 END as passed_ct,
             CASE WHEN r.result_code = 0 THEN 1 ELSE 0 END as exception_ct,
             CASE

@@ -140,7 +140,7 @@ test_types:
     sql_flavor: bigquery
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+      SELECT STDDEV(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1555'
     test_id: '1530'
@@ -148,7 +148,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV_SAMP(CAST(`{COLUMN_NAME}` AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+      SELECT STDDEV_SAMP(CAST(`{COLUMN_NAME}` AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1577'
     test_id: '1530'
@@ -156,7 +156,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT STDEV(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT STDEV(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1599'
     test_id: '1530'
@@ -164,7 +164,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST("{COLUMN_NAME}"::NUMERIC AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT STDDEV(CAST("{COLUMN_NAME}"::NUMERIC AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1621'
     test_id: '1530'
@@ -172,7 +172,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1643'
     test_id: '1530'
@@ -180,7 +180,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1665'
     test_id: '1530'
@@ -188,7 +188,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '8527'
     test_id: '1530'
@@ -196,7 +196,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST("{COLUMN_NAME}" AS NUMBER)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS NUMBER)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
     error_type: Test Results
   - id: '8527'
     test_id: '1530'
@@ -204,7 +204,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST("{COLUMN_NAME}" AS DOUBLE)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS DOUBLE)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
     error_type: Test Results
   - id: '10078'
     test_id: '1530'
@@ -212,7 +212,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST("{COLUMN_NAME}" AS DOUBLE)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TABLE_NAME}";
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS DOUBLE)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM {TABLE_FILTER_OPEN}"{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '11125'
     test_id: '1530'
@@ -220,6 +220,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV(CAST("{COLUMN_NAME}" AS DOUBLE)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS DOUBLE)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   test_templates: []

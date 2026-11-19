@@ -798,6 +798,8 @@ def _build_source_data(row: dict, mask_pii: bool = False) -> dict:
         "test_name_short": row.get("test_name_short", ""),
         "test_description": row.get("test_description", ""),
         "input_parameters": row.get("input_parameters", ""),
+        "table_filter": row.get("table_filter") or "",
+        "match_table_filter": row.get("match_table_filter") or "",
         "result_message": row.get("result_message", ""),
         "status": bad_data_status,
         "message": bad_data_msg or "",

@@ -119,6 +119,7 @@ def _detail_row(**overrides) -> dict:
         "profile_run_started_at": datetime(2026, 5, 1, 12, 0, 0),
         "profile_run_ended_at": datetime(2026, 5, 1, 12, 5, 0),
         "profile_run_log_message": None,
+        "profile_run_table_filters": None,
     }
     base.update(overrides)
     return base
@@ -141,6 +142,25 @@ def test_get_column_detail_returns_dataclass_when_row_exists(session_mock):
     assert result.min_text == "Aaron"
     assert result.profile_run_status == "Complete"
     assert result.hygiene_issue_count == 1
+
+
+@patch("testgen.common.models.data_column.get_current_session")
+def test_get_column_detail_carries_the_filters_of_its_profiling_run(session_mock):
+    filters = [{"table_name": "customers", "condition": "region = 'EU'"}]
+    session_mock.return_value.execute.return_value.mappings.return_value.first.return_value = _detail_row(
+        profile_run_table_filters=filters,
+    )
+
+    result = DataColumnChars.get_column_detail(
+        table_groups_id=uuid4(),
+        table_name="customers",
+        column_name="customer_name",
+    )
+
+    query = session_mock.return_value.execute.call_args.args[0]
+    projected = {column.name: column for column in query.selected_columns}
+    assert str(projected["profile_run_table_filters"].element) == "profiling_runs.table_filters"
+    assert result.profile_run_table_filters == filters
 
 
 @patch("testgen.common.models.data_column.get_current_session")

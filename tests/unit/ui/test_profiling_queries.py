@@ -5,16 +5,27 @@ from uuid import uuid4
 import pandas as pd
 import pytest
 
-from testgen.ui.queries.profiling_queries import add_provenance_columns, get_columns_by_table_group
+from testgen.ui.queries.profiling_queries import (
+    add_provenance_columns,
+    get_columns_by_table_group,
+    get_profiling_results,
+    get_tables_by_table_group,
+)
 
 pytestmark = pytest.mark.unit
 
 MODULE = "testgen.ui.queries.profiling_queries"
 TABLE_GROUP_ID = str(uuid4())
+TABLE_FILTERS = [{"table_name": "orders", "condition": "status <> 'void'"}]
 
 
-def _column(table_name: str, column_name: str) -> dict:
-    return {"table_group_id": TABLE_GROUP_ID, "table_name": table_name, "column_name": column_name}
+def _column(table_name: str, column_name: str, table_filters: list[dict] | None = None) -> dict:
+    return {
+        "table_group_id": TABLE_GROUP_ID,
+        "table_name": table_name,
+        "column_name": column_name,
+        "table_filters": table_filters,
+    }
 
 
 def test_each_column_carries_its_active_test_count():
@@ -58,3 +69,44 @@ def test_provenance_columns_name_sampling_and_percentile_method():
 
     assert data["sampling"].tolist() == [None, None, "Estimated from a 25% sample", None, None]
     assert data["percentiles"].tolist() == ["Approximate", "Exact", None, None, None]
+
+
+def test_tables_carry_the_filter_their_last_catalog_refresh_counted_through():
+    rows = [
+        {"table_name": "orders", "table_filter": "status <> 'void'"},
+        {"table_name": "items", "table_filter": None},
+    ]
+    with patch(f"{MODULE}.fetch_all_from_db", return_value=rows) as mock_fetch:
+        result = get_tables_by_table_group(TABLE_GROUP_ID)
+
+    assert [table["table_filter"] for table in result] == ["status <> 'void'", None]
+    assert "table_chars.table_filter" in mock_fetch.call_args.args[0]
+    assert "table_groups.table_filters" not in mock_fetch.call_args.args[0]
+
+
+def test_columns_carry_the_filter_their_last_profiling_run_used():
+    rows = [_column("orders", "id", TABLE_FILTERS), _column("customers", "id", TABLE_FILTERS)]
+    with patch(f"{MODULE}.fetch_all_from_db", return_value=rows) as mock_fetch:
+        result = get_columns_by_table_group(TABLE_GROUP_ID)
+
+    assert [column["table_filter"] for column in result] == ["status <> 'void'", None]
+    assert not any("table_filters" in column for column in result)
+    query = mock_fetch.call_args.args[0]
+    assert "SELECT profiling_runs.table_filters" in query
+    assert "WHERE profiling_runs.id = column_chars.last_complete_profile_run_id" in query
+    assert "table_groups.table_filters" not in query
+
+
+def test_profiling_results_carry_the_filter_their_run_used():
+    rows = pd.DataFrame([
+        {"table_name": "orders", "column_name": "id", "table_filters": TABLE_FILTERS},
+        {"table_name": "customers", "column_name": "id", "table_filters": TABLE_FILTERS},
+    ])
+    with patch(f"{MODULE}.fetch_df_from_db", return_value=rows) as mock_fetch:
+        result = get_profiling_results.__wrapped__(str(uuid4()))
+
+    assert result["table_filter"].tolist() == ["status <> 'void'", None]
+    assert "table_filters" not in result.columns
+    query = mock_fetch.call_args.args[0]
+    assert "SELECT profiling_runs.table_filters" in query
+    assert "WHERE profiling_runs.id = profile_results.profile_run_id" in query

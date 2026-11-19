@@ -106,6 +106,7 @@ def retarget_read_location(
         if table_names:
             test_def.read_table_name = resolve_table_name(test_def.table_name, table_names)
         if match_table_names and test_def.match_table_name:
+            test_def.catalog_match_table_name = test_def.match_table_name
             test_def.match_table_name = resolve_table_name(test_def.match_table_name, match_table_names)
 
 
@@ -200,6 +201,7 @@ class TestExecutionJob(StoppableJob[int]):
         self.writes_definitions = False
         self.data_chars: list[ColumnChars] = []
         self.valid_test_defs: list[TestExecutionDef] = []
+        self.test_defs: list[TestExecutionDef] = []
         self._started = False
 
     def on_start(self) -> None:
@@ -223,6 +225,7 @@ class TestExecutionJob(StoppableJob[int]):
             test_suite_id=self.test_suite_id,
             test_starttime=datetime.now(UTC) + time_delta,
             version_id=resolved_version_id,
+            table_filters=self.table_group.table_filters,
         )
 
         # This runs in a subprocess — commit after every save so progress is visible
@@ -298,6 +301,7 @@ class TestExecutionJob(StoppableJob[int]):
             retarget_match_schema(test_defs, self.match_schema_name)
         retarget_read_location(test_defs, self.schema_name, self.table_names, self.match_table_names)
         resolve_query_variables(test_defs, self.variables)
+        self.test_defs = test_defs
 
         if not test_defs:
             LOG.info("No active tests to run")
@@ -368,7 +372,10 @@ class TestExecutionJob(StoppableJob[int]):
         LOG.info("Updating test results and test run")
         self.test_run.save()
         get_current_session().commit()
-        execute_db_queries(self.sql_generator.update_test_results())
+        execute_db_queries([
+            *self.sql_generator.update_result_table_filters(self.test_defs),
+            *self.sql_generator.update_test_results(),
+        ])
         # Refresh needed because previous query updates the test run too
         self.test_run.refresh()
 

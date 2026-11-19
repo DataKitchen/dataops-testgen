@@ -3,7 +3,7 @@
 -- again, and on a file source every read parses the whole file.
 WITH column_rows AS MATERIALIZED (
   SELECT "{COL_NAME}"
-    FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+    FROM {TABLE_FILTER_OPEN}"{DATA_SCHEMA}"."{DATA_TABLE}"{TABLE_FILTER_CLOSE}
 )
 , whole_table_measures AS (
   SELECT
@@ -259,5 +259,5 @@ SELECT
 -- TG-ENDIF
 -- TG-IF is_not_A
   COUNT(*) AS record_ct
-  FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+  FROM {TABLE_FILTER_OPEN}"{DATA_SCHEMA}"."{DATA_TABLE}"{TABLE_FILTER_CLOSE}
 -- TG-ENDIF

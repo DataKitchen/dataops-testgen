@@ -25,7 +25,7 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT `{COLUMN_NAME}`, COUNT(*) AS count
-      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE}
       WHERE REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r'^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$')
         AND NOT REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r'.*\s(and|but|or|yet)\s.*')
       GROUP BY `{COLUMN_NAME}`
@@ -38,7 +38,7 @@ profile_anomaly_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE REGEXP_LIKE(`{COLUMN_NAME}`::STRING, '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$') AND NOT REGEXP_LIKE(`{COLUMN_NAME}`::STRING, '.*\\s(and|but|or|yet)\\s.*') GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT {LIMIT};
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE} WHERE REGEXP_LIKE(`{COLUMN_NAME}`::STRING, '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$') AND NOT REGEXP_LIKE(`{COLUMN_NAME}`::STRING, '.*\\s(and|but|or|yet)\\s.*') GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1139'
     test_id: '1025'
@@ -46,7 +46,7 @@ profile_anomaly_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE ( "{COLUMN_NAME}" LIKE '%,%,%,%' OR "{COLUMN_NAME}" LIKE '%|%|%|%' OR "{COLUMN_NAME}" LIKE '%^%^%^%'  OR "{COLUMN_NAME}" LIKE '%' + CHAR(9) + '%' + CHAR(9) + '%' + CHAR(9) + '%' ) AND NOT ( "{COLUMN_NAME}" LIKE '% and %' OR "{COLUMN_NAME}" LIKE '% but %' OR "{COLUMN_NAME}" LIKE '% or %'  OR "{COLUMN_NAME}" LIKE '% yet %' ) AND ISNULL(CAST(LEN("{COLUMN_NAME}") - LEN(REPLACE("{COLUMN_NAME}", ',', '')) as FLOAT)   / CAST(NULLIF(LEN("{COLUMN_NAME}") - LEN(REPLACE("{COLUMN_NAME}", ' ', '')), 0) as FLOAT), 1) > 0.6 GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE ( "{COLUMN_NAME}" LIKE '%,%,%,%' OR "{COLUMN_NAME}" LIKE '%|%|%|%' OR "{COLUMN_NAME}" LIKE '%^%^%^%'  OR "{COLUMN_NAME}" LIKE '%' + CHAR(9) + '%' + CHAR(9) + '%' + CHAR(9) + '%' ) AND NOT ( "{COLUMN_NAME}" LIKE '% and %' OR "{COLUMN_NAME}" LIKE '% but %' OR "{COLUMN_NAME}" LIKE '% or %'  OR "{COLUMN_NAME}" LIKE '% yet %' ) AND ISNULL(CAST(LEN("{COLUMN_NAME}") - LEN(REPLACE("{COLUMN_NAME}", ',', '')) as FLOAT)   / CAST(NULLIF(LEN("{COLUMN_NAME}") - LEN(REPLACE("{COLUMN_NAME}", ' ', '')), 0) as FLOAT), 1) > 0.6 GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
     error_type: Profile Anomaly
   - id: '1082'
     test_id: '1025'
@@ -54,7 +54,7 @@ profile_anomaly_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$' AND "{COLUMN_NAME}" !~ '\s(and|but|or|yet)\s' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE "{COLUMN_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$' AND "{COLUMN_NAME}" !~ '\s(and|but|or|yet)\s' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1057'
     test_id: '1025'
@@ -62,7 +62,7 @@ profile_anomaly_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$' AND "{COLUMN_NAME}" !~ '\\s(and|but|or|yet)\\s' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE "{COLUMN_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$' AND "{COLUMN_NAME}" !~ '\\s(and|but|or|yet)\\s' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1457'
     test_id: '1025'
@@ -70,7 +70,7 @@ profile_anomaly_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$' AND "{COLUMN_NAME}" !~ '\\s(and|but|or|yet)\\s' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE "{COLUMN_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$' AND "{COLUMN_NAME}" !~ '\\s(and|but|or|yet)\\s' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1196'
     test_id: '1025'
@@ -78,7 +78,7 @@ profile_anomaly_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REGEXP_LIKE("{COLUMN_NAME}"::VARCHAR, '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$') AND NOT REGEXP_LIKE("{COLUMN_NAME}"::VARCHAR, '.*\\s(and|but|or|yet)\\s.*') GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE REGEXP_LIKE("{COLUMN_NAME}"::VARCHAR, '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$') AND NOT REGEXP_LIKE("{COLUMN_NAME}"::VARCHAR, '.*\\s(and|but|or|yet)\\s.*') GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1524'
     test_id: '1025'
@@ -86,7 +86,7 @@ profile_anomaly_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REGEXP_LIKE("{COLUMN_NAME}", '^([^,|' || CHR(9) || ']{1,20}[,|' || CHR(9) || ']){2,}[^,|' || CHR(9) || ']{0,20}([,|' || CHR(9) || ']{0,1}[^,|' || CHR(9) || ']{0,20})*$') AND NOT REGEXP_LIKE("{COLUMN_NAME}", '[[:space:]](and|but|or|yet)[[:space:]]') GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC FETCH FIRST {LIMIT} ROWS ONLY
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE REGEXP_LIKE("{COLUMN_NAME}", '^([^,|' || CHR(9) || ']{1,20}[,|' || CHR(9) || ']){2,}[^,|' || CHR(9) || ']{0,20}([,|' || CHR(9) || ']{0,1}[^,|' || CHR(9) || ']{0,20})*$') AND NOT REGEXP_LIKE("{COLUMN_NAME}", '[[:space:]](and|but|or|yet)[[:space:]]') GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Profile Anomaly
   - id: '1524'
     test_id: '1025'
@@ -94,7 +94,7 @@ profile_anomaly_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" LIKE_REGEXPR '^([^,|' || NCHAR(9) || ']{1,20}[,|' || NCHAR(9) || ']){2,}[^,|' || NCHAR(9) || ']{0,20}([,|' || NCHAR(9) || ']{0,1}[^,|' || NCHAR(9) || ']{0,20})*$' AND NOT "{COLUMN_NAME}" LIKE_REGEXPR '[[:space:]](and|but|or|yet)[[:space:]]' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT}
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE "{COLUMN_NAME}" LIKE_REGEXPR '^([^,|' || NCHAR(9) || ']{1,20}[,|' || NCHAR(9) || ']){2,}[^,|' || NCHAR(9) || ']{0,20}([,|' || NCHAR(9) || ']{0,1}[^,|' || NCHAR(9) || ']{0,20})*$' AND NOT "{COLUMN_NAME}" LIKE_REGEXPR '[[:space:]](and|but|or|yet)[[:space:]]' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT}
     error_type: Profile Anomaly
   - id: '10051'
     test_id: 1025
@@ -102,7 +102,7 @@ profile_anomaly_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE REGEXP_LIKE(CAST("{COLUMN_NAME}" AS VARCHAR), '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$') AND NOT REGEXP_LIKE(CAST("{COLUMN_NAME}" AS VARCHAR), '\s(and|but|or|yet)\s') GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE REGEXP_LIKE(CAST("{COLUMN_NAME}" AS VARCHAR), '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$') AND NOT REGEXP_LIKE(CAST("{COLUMN_NAME}" AS VARCHAR), '\s(and|but|or|yet)\s') GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '11102'
     test_id: '1025'
@@ -110,5 +110,5 @@ profile_anomaly_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$' AND NOT regexp_matches("{COLUMN_NAME}", '\s(and|but|or|yet)\s') GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE "{COLUMN_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$' AND NOT regexp_matches("{COLUMN_NAME}", '\s(and|but|or|yet)\s') GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Profile Anomaly

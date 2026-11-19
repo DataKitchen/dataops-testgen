@@ -146,7 +146,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT ({BASELINE_AVG} + (2 * {BASELINE_SD})) AS outlier_threshold, `{COLUMN_NAME}`, COUNT(*) AS count
-      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE}
       WHERE CAST(`{COLUMN_NAME}` AS FLOAT64) > ({BASELINE_AVG} + (2 * {BASELINE_SD})) {SUBSET_AND}
       GROUP BY `{COLUMN_NAME}`
       ORDER BY `{COLUMN_NAME}` DESC;
@@ -157,7 +157,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC;
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE} WHERE `{COLUMN_NAME}` :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC;
     error_type: Test Results
   - id: '1158'
     test_id: '1024'
@@ -165,7 +165,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE CAST("{COLUMN_NAME}" AS FLOAT) > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count  FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE CAST("{COLUMN_NAME}" AS FLOAT) > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
     error_type: Test Results
   - id: '1101'
     test_id: '1024'
@@ -173,7 +173,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_NUM} :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE {COLUMN_NUM} :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
     error_type: Test Results
   - id: '1019'
     test_id: '1024'
@@ -181,7 +181,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE "{COLUMN_NAME}" :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
     error_type: Test Results
   - id: '1419'
     test_id: '1024'
@@ -189,7 +189,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE "{COLUMN_NAME}" :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
     error_type: Test Results
   - id: '1215'
     test_id: '1024'
@@ -197,7 +197,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count  FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE "{COLUMN_NAME}" :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
     error_type: Test Results
   - id: '8019'
     test_id: '1024'
@@ -205,7 +205,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE CAST("{COLUMN_NAME}" AS NUMBER) > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE CAST("{COLUMN_NAME}" AS NUMBER) > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC
     error_type: Test Results
   - id: '8019'
     test_id: '1024'
@@ -213,7 +213,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE CAST("{COLUMN_NAME}" AS DECIMAL) > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE CAST("{COLUMN_NAME}" AS DECIMAL) > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC
     error_type: Test Results
   - id: '10027'
     test_id: 1024
@@ -221,7 +221,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE CAST("{COLUMN_NAME}" AS FLOAT) > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE CAST("{COLUMN_NAME}" AS FLOAT) > ({BASELINE_AVG} + (2*{BASELINE_SD})) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
     error_type: Test Results
   - id: '11056'
     test_id: '1024'
@@ -229,6 +229,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT ({BASELINE_AVG}::DOUBLE + (2*{BASELINE_SD}::DOUBLE)) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}"::DOUBLE > ({BASELINE_AVG}::DOUBLE + (2*{BASELINE_SD}::DOUBLE)) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+      SELECT ({BASELINE_AVG}::DOUBLE + (2*{BASELINE_SD}::DOUBLE)) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE "{COLUMN_NAME}"::DOUBLE > ({BASELINE_AVG}::DOUBLE + (2*{BASELINE_SD}::DOUBLE)) {SUBSET_AND} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
     error_type: Test Results
   test_templates: []

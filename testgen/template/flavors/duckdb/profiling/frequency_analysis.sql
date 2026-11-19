@@ -4,11 +4,11 @@
 -- Every row also carries sample_value_ct, the number of non-null values the read held, blank ones
 -- included. Blank values are ranked after every other value so that they never reach the output.
 WITH target_table AS (
-  SELECT *  FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+  SELECT *  FROM {TABLE_FILTER_OPEN}"{DATA_SCHEMA}"."{DATA_TABLE}"
 -- TG-IF do_sample_bool
         TABLESAMPLE BERNOULLI ({SAMPLE_PERCENT_CALC}%) REPEATABLE (64)
 -- TG-ENDIF
-),
+{TABLE_FILTER_CLOSE} ),
 ranked_vals AS (
   SELECT "{COL_NAME}" AS val,
          COUNT(*) AS ct,

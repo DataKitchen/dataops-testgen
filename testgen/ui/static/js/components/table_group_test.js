@@ -21,6 +21,7 @@
  * @typedef ComponentOptions
  * @type {object}
  * @property {(() => void)?} onVerifyAccess
+ * @property {boolean?} hasTableFilters
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';
@@ -58,15 +59,18 @@ const TableGroupTest = (preview, options) => {
         }
     });
 
+    // A preview refused before reading the target has no tables, so counts and their notes say nothing.
+    const readNothing = (p) => p.success === false && !Object.keys(p.tables ?? {}).length;
+
     return div(
         { class: 'flex-column fx-gap-2' },
         () => getValue(preview)
             ? div(
                 { class: 'flex-row fx-justify-space-between fx-align-flex-end' },
-                span(
+                readNothing(getValue(preview)) ? span() : span(
                     { class: 'text-caption text-right' },
                     getValue(preview).stats?.approx_record_ct != null
-                        ? '* Approximate row counts based on server statistics'
+                        ? `* Approximate row counts based on server statistics${getValue(options.hasTableFilters) ? ', without table filters applied' : ''}`
                         : '* Row counts are available after the first profiling or test run',
                 ),
                 options.onVerifyAccess && getValue(preview).success === true
@@ -90,7 +94,7 @@ const TableGroupTest = (preview, options) => {
                 Spinner({ size: 20 }),
                 span('Loading preview...'),
             ),
-        () => getValue(preview)
+        () => getValue(preview) && !readNothing(getValue(preview))
             ? TableGroupStats({ hideWarning: true, hideApproxCaption: true }, getValue(preview).stats)
             : '',
         () => {
@@ -107,7 +111,10 @@ const TableGroupTest = (preview, options) => {
             const anyTableUnreadable = Object.values(tables).some(
                 ({ can_access, error }) => error || (can_access != null && can_access === false),
             );
-            const tableAccessWarning = anyTableUnreadable ? tableGroupPreview.message : '';
+            // With no tables, the message fills the empty table instead.
+            const tableAccessWarning = hasTables && (anyTableUnreadable || tableGroupPreview.success === false)
+                ? tableGroupPreview.message
+                : '';
 
             const showFiles = Object.values(tables).some(({ file_ct }) => file_ct != null);
             const columns = [showFiles ? '40%' : '50%', '14%', '14%', '14%', '8%'];

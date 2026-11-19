@@ -84,6 +84,18 @@ const TableCriteria = (tableGroup) => {
     );
 };
 
+const TableFiltersLine = (tableGroup) => {
+    const count = (tableGroup.table_filters ?? []).length;
+    if (!count) {
+        return '';
+    }
+    return div(
+        { class: 'flex-row fx-gap-1' },
+        span({ class: 'text-secondary tg-tablegroup--criteria-label' }, 'Filters:'),
+        span(`Applied to ${count} ${count === 1 ? 'table' : 'tables'}`),
+    );
+};
+
 /**
  * @param {Properties} props
  * @returns {HTMLElement}
@@ -165,6 +177,7 @@ const TableGroupList = (props) => {
                 table_group_preview: van.derive(() => getValue(props.edit_dialog)?.table_group_preview),
                 result: van.derive(() => getValue(props.edit_dialog)?.result),
                 sampling_gaps: van.derive(() => getValue(props.edit_dialog)?.sampling_gaps),
+                table_names: van.derive(() => getValue(props.edit_dialog)?.table_names),
             }));
         }
     });
@@ -273,17 +286,29 @@ const TableGroupList = (props) => {
                                         tableGroupDeclaresFiles(tableGroup)
                                             ? CardField(
                                                 'Tables',
-                                                (tableGroup.file_declarations ?? []).length
-                                                    ? TruncatedText(
-                                                        {max: 3, tooltipPosition: 'top-right'},
-                                                        ...tableGroup.file_declarations.map(declaration => declaration.name)
-                                                    )
-                                                    : '--',
+                                                div(
+                                                    { class: 'flex-column fx-gap-1' },
+                                                    (tableGroup.file_declarations ?? []).length
+                                                        ? TruncatedText(
+                                                            {max: 3, tooltipPosition: 'top-right'},
+                                                            ...tableGroup.file_declarations.map(declaration => declaration.name)
+                                                        )
+                                                        : '--',
+                                                    TableFiltersLine(tableGroup),
+                                                ),
                                                 'tg-tablegroup--tables',
                                             )
                                             : [
                                                 CardField(schemaCaption(tableGroup), span(tableGroup.table_group_schema || '--')),
-                                                CardField('Tables', TableCriteria(tableGroup), 'tg-tablegroup--tables'),
+                                                CardField(
+                                                    'Tables',
+                                                    div(
+                                                        { class: 'flex-column fx-gap-1' },
+                                                        TableCriteria(tableGroup),
+                                                        TableFiltersLine(tableGroup),
+                                                    ),
+                                                    'tg-tablegroup--tables',
+                                                ),
                                             ],
                                         tableGroup.profile_use_sampling
                                             ? CardField(

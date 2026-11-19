@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, date, datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -426,6 +427,7 @@ def _make_execution_sql() -> TestExecutionSQL:
     """
     instance = TestExecutionSQL.__new__(TestExecutionSQL)
     instance._freshness_changed_cache = {}
+    instance.table_group = MagicMock(table_filters=None)
     return instance
 
 
@@ -573,9 +575,10 @@ def _make_params_execution_sql() -> TestExecutionSQL:
     flavor_service = MagicMock()
     flavor_service.quote_character = '"'
     flavor_service.varchar_type = "VARCHAR"
+    flavor_service.escaped_single_quote = "''"
     instance.flavor_service = flavor_service
     instance.flavor = "postgresql"
-    instance.table_group = MagicMock(id=uuid4())
+    instance.table_group = MagicMock(id=uuid4(), table_filters=None, table_group_schema="public")
     instance.test_run = MagicMock(test_suite_id=uuid4(), id=uuid4())
     instance.run_date = datetime(2026, 1, 1, tzinfo=UTC)
     instance.variables = None
@@ -744,6 +747,76 @@ def test_custom_query_subset_reads_the_subset_column():
     )
     instance.aggregate_cat_tests([td])
     assert f"COUNT(CASE WHEN {instance._subset_flag(td)} = 1 THEN 1 END)" in td.measure_expression
+
+
+EMEA = "region = 'EMEA'"
+EMEA_FILTER = [{"table_name": "orders", "condition": EMEA}]
+
+
+def test_table_filter_reads_only_the_filtered_records():
+    instance = _subset_execution_sql()
+    instance.table_group.table_filters = EMEA_FILTER
+    td = _make_td(test_type="Required", measure="COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME})")
+    [(query, _)], _ = instance.aggregate_cat_tests([td])
+    assert query.endswith(f'FROM (SELECT * FROM "public"."orders" WHERE ({EMEA})) "orders"')
+
+
+def test_table_filter_applies_beneath_a_subset():
+    instance = _subset_execution_sql()
+    instance.table_group.table_filters = EMEA_FILTER
+    td = _make_td(test_type="Required", measure="COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME})", subset_condition="a = 1")
+    [(query, _)], _ = instance.aggregate_cat_tests([td])
+    assert query.endswith(
+        f'FROM (SELECT "orders".*, CASE WHEN (a = 1) THEN 1 END AS {instance._subset_flag(td)} '
+        f'FROM (SELECT * FROM "public"."orders" WHERE ({EMEA})) "orders") "orders"'
+    )
+
+
+def test_cat_queries_leave_room_for_a_long_table_filter():
+    instance = _subset_execution_sql()
+    instance.connection = Connection(sql_flavor="postgresql", sql_flavor_code="postgresql", max_query_chars=3000)
+    long_filter = "region IN (" + ", ".join(f"'{n:04}'" for n in range(250)) + ")"
+    instance.table_group.table_filters = [{"table_name": "orders", "condition": long_filter}]
+    test_defs = [_make_td(measure=f"COUNT({{COLUMN_NAME}}) + {n}") for n in range(40)]
+
+    queries, _ = instance.aggregate_cat_tests(test_defs)
+
+    assert len(queries) > 1
+    assert all(len(query) <= 3000 for query, _ in queries)
+
+
+def test_table_filter_for_another_table_is_ignored():
+    instance = _subset_execution_sql()
+    instance.table_group.table_filters = [{"table_name": "customers", "condition": "region = 'EMEA'"}]
+    td = _make_td(test_type="Required", measure="COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME})")
+    [(query, _)], _ = instance.aggregate_cat_tests([td])
+    assert query.endswith('FROM "public"."orders"')
+
+
+def test_table_filter_params_cover_the_table_and_a_match_table_in_the_table_group():
+    instance = _subset_execution_sql()
+    instance.table_group.table_filters = [*EMEA_FILTER, {"table_name": "returns", "condition": "kept = 1"}]
+    td = _make_td(match_schema_name="public", match_table_name="returns")
+    params = instance._get_params(td)
+    assert params["TABLE_FILTER_CLOSE"] == f' WHERE ({EMEA})) "orders"'
+    assert params["MATCH_TABLE_FILTER_CLOSE_UNALIASED"] == " WHERE (kept = 1))"
+
+
+def test_a_retargeted_match_table_keeps_the_filter_of_the_table_it_stands_in_for():
+    instance = _subset_execution_sql()
+    instance.table_group.table_filters = [{"table_name": "returns", "condition": "kept = 1"}]
+    td = _make_td(match_schema_name="public", match_table_name="returns_stage", catalog_match_table_name="returns")
+
+    assert instance._get_params(td)["MATCH_TABLE_FILTER_CLOSE_UNALIASED"] == " WHERE (kept = 1))"
+
+
+def test_match_table_outside_the_table_group_schema_is_not_filtered():
+    instance = _subset_execution_sql()
+    instance.table_group.table_filters = [{"table_name": "returns", "condition": "kept = 1"}]
+    td = _make_td(match_schema_name="archive", match_table_name="returns")
+    params = instance._get_params(td)
+    assert params["MATCH_TABLE_FILTER_OPEN"] == ""
+    assert params["TABLE_FILTER_OPEN"] == ""
 
 
 def test_data_schema_is_expanded_inside_a_subset():
@@ -1204,6 +1277,46 @@ def test_the_parameters_a_user_set_are_recorded_either_way():
     assert "threshold_value=7" in instance._get_input_parameters(td)
 
 
+def _recorded_filters(instance: TestExecutionSQL, test_defs: list[TestExecutionDef]) -> list[dict]:
+    [(query, params)] = instance.update_result_table_filters(test_defs)
+    assert "UPDATE test_results" in query
+    return json.loads(params["TABLE_FILTERS"])
+
+
+def test_results_record_the_table_filters_their_test_read_through():
+    instance = _input_params_sql("postgresql")
+    instance.table_group.table_filters = [*EMEA_FILTER, {"table_name": "returns", "condition": "kept = 1"}]
+    cat = _make_td(run_type="CAT")
+    query = _make_td(
+        run_type="QUERY",
+        match_schema_name="public",
+        match_table_name="returns",
+        template="FROM {TABLE_FILTER_OPEN}t{TABLE_FILTER_CLOSE} JOIN {MATCH_TABLE_FILTER_OPEN}m{MATCH_TABLE_FILTER_CLOSE}",
+    )
+
+    assert _recorded_filters(instance, [cat, query]) == [
+        {"test_definition_id": str(cat.id), "table_filter": EMEA, "match_table_filter": None},
+        {"test_definition_id": str(query.id), "table_filter": EMEA, "match_table_filter": "kept = 1"},
+    ]
+
+
+def test_a_test_that_does_not_read_through_the_filter_records_none():
+    """A custom query and a catalog check read the table as written, so no filter applied to them."""
+    instance = _input_params_sql("postgresql")
+    instance.table_group.table_filters = EMEA_FILTER
+    custom = _make_td(run_type="QUERY", template="SELECT ... FROM ({CUSTOM_QUERY}) q")
+    metadata = _make_td(run_type="METADATA", template="SELECT ... FROM data_column_chars")
+
+    assert instance.update_result_table_filters([custom, metadata]) == []
+
+
+def test_filters_stay_out_of_the_input_parameters():
+    instance = _input_params_sql("postgresql")
+    instance.table_group.table_filters = EMEA_FILTER
+
+    assert "filter" not in instance._get_input_parameters(_make_td(subset_condition="a = 'x'"))
+
+
 @pytest.mark.parametrize("flavor", ["bigquery", "databricks", "snowflake", "redshift"])
 def test_a_backslash_is_doubled_where_the_flavor_reads_one_as_an_escape(flavor):
     """The template wraps this string in quotes of its own. Left alone, the backslash of a regex
@@ -1215,7 +1328,8 @@ def test_a_backslash_is_doubled_where_the_flavor_reads_one_as_an_escape(flavor):
         custom_query=r"SELECT COUNT(*) FROM t WHERE REGEXP_CONTAINS(code, r'\d+')",
     )
 
-    assert r"r`\\d+`" in instance._input_parameters_literal(td)
+    quote = instance.flavor_service.escaped_single_quote
+    assert rf"r{quote}\\d+{quote}" in instance._input_parameters_literal(td)
 
 
 def test_a_backslash_stands_where_the_flavor_reads_it_literally():
@@ -1226,7 +1340,7 @@ def test_a_backslash_stands_where_the_flavor_reads_it_literally():
         custom_query=r"SELECT COUNT(*) FROM t WHERE path LIKE 'a\b'",
     )
 
-    assert r"`a\b`" in instance._input_parameters_literal(td)
+    assert r"''a\b''" in instance._input_parameters_literal(td)
 
 
 def test_a_long_record_is_cut_to_what_the_flavor_accepts():
@@ -1266,5 +1380,5 @@ def test_a_row_written_to_the_application_database_is_neither_escaped_nor_cut(fl
 
     recorded = instance._get_input_parameters(td)
 
-    assert r"`\d+`" in recorded
+    assert r"'\d+'" in recorded
     assert len(recorded.encode()) > 5000

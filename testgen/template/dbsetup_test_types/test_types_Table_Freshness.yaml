@@ -71,7 +71,7 @@ test_types:
              END AS result_measure
       FROM (
         SELECT TO_HEX(MD5({CUSTOM_QUERY})) AS fingerprint
-        FROM `{SCHEMA_NAME}.{TABLE_NAME}`
+        FROM {TABLE_FILTER_OPEN}`{SCHEMA_NAME}.{TABLE_NAME}`{TABLE_FILTER_CLOSE}
         WHERE {SUBSET_CONDITION}
       ) test;
   - id: '2412'
@@ -103,7 +103,7 @@ test_types:
                ELSE 1
              END AS result_measure
         FROM ( SELECT MD5({CUSTOM_QUERY}) as fingerprint
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                 WHERE {SUBSET_CONDITION}
              ) test;
   - id: '2212'
@@ -135,7 +135,7 @@ test_types:
                ELSE 1
              END AS result_measure
         FROM ( SELECT LOWER(CONVERT(VARCHAR(40), HASHBYTES('MD5', CAST({CUSTOM_QUERY} AS VARCHAR(MAX))), 2)) as fingerprint
-                 FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+                 FROM {TABLE_FILTER_OPEN}"{SCHEMA_NAME}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
                 WHERE {SUBSET_CONDITION}
              ) test;
   - id: '2312'
@@ -167,7 +167,7 @@ test_types:
                ELSE 1
              END AS result_measure
         FROM ( SELECT MD5({CUSTOM_QUERY}) as fingerprint
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                 WHERE {SUBSET_CONDITION}
              ) test;
   - id: '2012'
@@ -199,7 +199,7 @@ test_types:
                ELSE 1
              END AS result_measure
         FROM ( SELECT MD5({CUSTOM_QUERY}) as fingerprint
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                 WHERE {SUBSET_CONDITION}
              ) test;
   - id: '2512'
@@ -231,7 +231,7 @@ test_types:
                ELSE 1
              END AS result_measure
         FROM ( SELECT MD5({CUSTOM_QUERY}) as fingerprint
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                 WHERE {SUBSET_CONDITION}
              ) test;
   - id: '2112'
@@ -263,7 +263,7 @@ test_types:
                ELSE 1
              END AS result_measure
         FROM ( SELECT MD5({CUSTOM_QUERY}) as fingerprint
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                 WHERE {SUBSET_CONDITION}
              ) test;
   - id: '8012'
@@ -295,7 +295,7 @@ test_types:
                ELSE 1
              END AS result_measure
         FROM ( SELECT LOWER(RAWTOHEX(STANDARD_HASH({CUSTOM_QUERY}, 'MD5'))) as fingerprint
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                 WHERE {SUBSET_CONDITION}
              ) test
   - id: '8012'
@@ -327,7 +327,7 @@ test_types:
                ELSE 1
              END AS result_measure
         FROM ( SELECT LOWER(BINTOHEX(HASH_MD5(TO_BINARY({CUSTOM_QUERY})))) as fingerprint
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                 WHERE {SUBSET_CONDITION}
              ) test
   - id: '10011'
@@ -359,7 +359,7 @@ test_types:
                ELSE 1
              END AS result_measure
         FROM ( SELECT MD5({CUSTOM_QUERY}) as fingerprint
-                 FROM {QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                 WHERE {SUBSET_CONDITION}
              ) test;
   - id: '11072'
@@ -391,6 +391,6 @@ test_types:
                ELSE 1
              END AS result_measure
         FROM ( SELECT MD5({CUSTOM_QUERY}) as fingerprint
-                 FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                 FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                 WHERE {SUBSET_CONDITION}
              ) test;

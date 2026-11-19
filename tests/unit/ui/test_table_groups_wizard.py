@@ -10,6 +10,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from testgen.common.table_filter_validation import InvalidTableFilters
+
 pytestmark = pytest.mark.unit
 
 MODULE = "testgen.ui.views.table_groups"
@@ -18,9 +20,9 @@ PROJECT_CODE = "demo"
 CONNECTIONS = [{"connection_id": 1}]
 
 
-def _payload(**standard_suite) -> dict:
+def _payload(table_filters: list[dict] | None = None, **standard_suite) -> dict:
     return {
-        "table_group": {"table_groups_name": "Sales"},
+        "table_group": {"table_groups_name": "Sales", "table_group_schema": "sales", "table_filters": table_filters},
         "table_group_verified": True,
         "run_profiling": False,
         "standard_test_suite": {"schedule": "0 6 * * *", "timezone": "UTC", **standard_suite},
@@ -32,9 +34,12 @@ def _integrity_error(constraint: str) -> IntegrityError:
     return IntegrityError("INSERT", {}, Exception(f'violates unique constraint "{constraint}"'))
 
 
-def _save(payload: dict, *, suite_save_error=None, table_group_save_error=None) -> tuple[dict, dict[str, MagicMock]]:
+def _save(
+    payload: dict, *, suite_save_error=None, table_group_save_error=None, filter_error=None,
+) -> tuple[dict, dict[str, MagicMock]]:
     """Run the wizard's save flow on ``payload`` and return the wizard data of the second run with
-    the patched mocks. The errors are what saving the test suite and the table group raise.
+    the patched mocks. The errors are what saving the test suite and the table group, and checking
+    the table filters against the database, raise.
     """
     from testgen.common.models import _current_session_wrapper
     from testgen.ui import session as session_module
@@ -46,7 +51,10 @@ def _save(payload: dict, *, suite_save_error=None, table_group_save_error=None) 
     try:
         with (
             patch.object(session_module, "st", MagicMock(session_state={})),
-            patch(f"{MODULE}.Connection"),
+            patch(f"{MODULE}.Connection") as connection_cls,
+            patch(
+                "testgen.common.database.table_group_service.validate_table_filters", side_effect=filter_error,
+            ) as validate_table_filters,
             patch(f"{MODULE}.apply_table_group_flavor_rules"),
             patch(f"{MODULE}.table_group_queries") as mock_queries,
             patch(f"{MODULE}.save_new_table_group", side_effect=table_group_save_error) as save_new_table_group,
@@ -73,6 +81,8 @@ def _save(payload: dict, *, suite_save_error=None, table_group_save_error=None) 
         "save_new_table_group": save_new_table_group,
         "test_suite_cls": test_suite_cls,
         "submit": submit,
+        "connection": connection_cls.get.return_value,
+        "validate_table_filters": validate_table_filters,
     }
 
 
@@ -103,3 +113,43 @@ def test_wizard_saves_the_table_group_and_its_test_suite():
     mocks["save_new_table_group"].assert_called_once()
     mocks["test_suite_cls"].return_value.save.assert_called_once()
     assert data["results"]["success"] is True
+
+
+def test_wizard_saves_table_filters_normalized_and_checked_against_the_connection():
+    _, mocks = _save(_payload(table_filters=[
+        {"table_name": " orders ", "condition": " region = 'EMEA' "},
+        {"table_name": "", "condition": ""},
+    ]))
+
+    expected = [{"table_name": "orders", "condition": "region = 'EMEA'"}]
+    table_group = mocks["save_new_table_group"].call_args.args[0]
+    assert table_group.table_filters == expected
+    mocks["validate_table_filters"].assert_called_once_with(mocks["connection"], table_group, expected)
+    assert table_group.table_group_schema == "sales"
+
+
+def test_wizard_saves_no_table_filters_without_checking_the_database():
+    _, mocks = _save(_payload(table_filters=[{"table_name": " ", "condition": ""}]))
+
+    assert mocks["save_new_table_group"].call_args.args[0].table_filters is None
+    mocks["validate_table_filters"].assert_not_called()
+
+
+def test_wizard_refuses_a_table_filter_without_a_condition():
+    data, mocks = _save(_payload(table_filters=[{"table_name": "orders", "condition": ""}]))
+
+    assert data["results"]["success"] is False
+    assert data["results"]["message"] == "Enter a filter condition for table orders."
+    mocks["save_new_table_group"].assert_not_called()
+    mocks["submit"].assert_not_called()
+
+
+def test_wizard_refuses_a_table_filter_the_database_rejects():
+    data, mocks = _save(
+        _payload(table_filters=[{"table_name": "orders", "condition": "regon = 1"}]),
+        filter_error=InvalidTableFilters("The filter for table orders is not valid: column regon does not exist"),
+    )
+
+    assert data["results"]["success"] is False
+    assert data["results"]["message"] == "The filter for table orders is not valid: column regon does not exist"
+    mocks["save_new_table_group"].assert_not_called()

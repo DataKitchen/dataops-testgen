@@ -21,6 +21,7 @@ from testgen.common.models.data_column import CreateScriptColumn, DataColumnChar
 from testgen.common.models.data_table import CATALOG_TAG_LABELS, DataTable
 from testgen.common.models.table_group import TableGroup
 from testgen.common.pii_masking import get_pii_columns, mask_source_data_pii
+from testgen.common.table_filters import filtered_table_ref, table_filter_condition
 from testgen.ui.services.database_service import fetch_from_target_db
 from testgen.utils import to_dataframe
 
@@ -122,6 +123,23 @@ def build_create_table_script(
     )
 
 
+def _filtered_table_ref(
+    flavor_service: FlavorService,
+    connection: Connection,
+    table_group: TableGroup | None,
+    schema_name: str,
+    table_name: str,
+) -> str:
+    """Return the FROM target that reads a table's records passing the table group's filter for it."""
+    quote = flavor_service.quote_character
+    return filtered_table_ref(
+        flavor_service.get_table_ref(schema_name, table_name, connection.sql_flavor_code),
+        table_filter_condition(table_group.table_filters if table_group else None, table_name),
+        schema_name,
+        f"{quote}{table_name}{quote}",
+    )
+
+
 def fetch_table_sample(
     connection: Connection,
     table_group_id: UUID,
@@ -136,12 +154,13 @@ def fetch_table_sample(
     flavor_service = get_flavor_service(connection.sql_flavor)
     prefix, suffix = flavor_service.row_limit_clauses(limit)
     quote = flavor_service.quote_character
-    table_ref = flavor_service.get_table_ref(schema_name, table_name, connection.sql_flavor_code)
+    table_group = TableGroup.get(table_group_id)
+    table_ref = _filtered_table_ref(flavor_service, connection, table_group, schema_name, table_name)
     columns_expr = f"{quote}{column_name}{quote}" if column_name else "*"
     query = f"SELECT DISTINCT {prefix} {columns_expr} FROM {table_ref} {suffix}".strip()
 
     try:
-        results = fetch_from_target_db(connection, query, table_group=TableGroup.get(table_group_id))
+        results = fetch_from_target_db(connection, query, table_group=table_group)
     except Exception:
         LOG.exception("Table sample fetch encountered an error.")
         return TableSampleResult("ERR", message="The sample data could not be loaded.")
@@ -198,7 +217,8 @@ def fetch_current_values(
     column_ref = f"{flavor_service.quote_character}{column_name}{flavor_service.quote_character}"
     params = flavor_service.value_list_params(column_ref, column, [])
     prefix, suffix = flavor_service.row_limit_clauses(CURRENT_VALUES_MAX_COUNT + 1)
-    table_ref = flavor_service.get_table_ref(schema_name, table_name, connection.sql_flavor_code)
+    table_group = TableGroup.get(table_group_id)
+    table_ref = _filtered_table_ref(flavor_service, connection, table_group, schema_name, table_name)
     where = f"{column_ref} IS NOT NULL"
     if subset_and := subset_params(subset_condition)["SUBSET_AND"]:
         where += " " + expand_subset(subset_and, schema_name)
@@ -208,7 +228,7 @@ def fetch_current_values(
     )
 
     try:
-        rows = fetch_from_target_db(connection, query, table_group=TableGroup.get(table_group_id))
+        rows = fetch_from_target_db(connection, query, table_group=table_group)
     except Exception:
         LOG.exception("Current values fetch encountered an error.")
         return CurrentValuesResult("ERR", message=CURRENT_VALUES_ERROR_MESSAGE)

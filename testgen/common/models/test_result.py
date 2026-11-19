@@ -266,6 +266,8 @@ class TestResult(Entity):
     result_measure: str = Column(String)
     threshold_value: str = Column(String)
     table_groups_id: UUID = Column(postgresql.UUID(as_uuid=True), ForeignKey("table_groups.id"))
+    table_filter: str | None = Column(String)
+    match_table_filter: str | None = Column(String)
 
     # Unmapped columns: result_id, skip_errors, input_parameters, severity,
     # result_signal, test_description, dq_prevalence,

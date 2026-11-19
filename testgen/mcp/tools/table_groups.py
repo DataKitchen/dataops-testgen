@@ -13,7 +13,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from mcp.server.fastmcp import Context
-from pydantic import Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 
 from testgen.common.audit.table_groups import (
@@ -23,9 +23,10 @@ from testgen.common.audit.table_groups import (
 )
 from testgen.common.database.table_group_service import (
     SchemaMoveRefused,
+    apply_table_filters,
     apply_table_group_flavor_rules,
     cascade_delete_table_group,
-    catalog_membership,
+    catalog_source,
     delete_blockers,
     is_duplicate_name_error,
     move_table_group_schema,
@@ -48,6 +49,7 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.data_table import CATALOG_TAG_LABELS
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.table_group import TableGroup, TableGroupDeletionCounts, table_group_defaults
+from testgen.common.table_filter_validation import InvalidTableFilters
 from testgen.mcp.confirmation import confirm_destructive_action
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
@@ -95,6 +97,23 @@ class FileDeclaration(FileDeclarationSpec):
     @classmethod
     def _read_format_in_any_case(cls, value: object) -> object:
         return match_enum(value, FileFormat) or value
+
+
+class TableFilter(BaseModel):
+    """A record filter on one table of a table group."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    table_name: str = Field(description="A table in the table group, named exactly as the target holds it.")
+    condition: str = Field(
+        description="Written like a SQL WHERE clause without the keyword, e.g. ``region = 'EMEA'``."
+    )
+
+
+_TABLE_FILTERS_DESCRIPTION = (
+    "Record filters, at most one per table. TestGen reads only a table's matching records, for profiling, tests, "
+    "and monitors."
+)
 
 
 def _verify_table_naming(
@@ -192,7 +211,7 @@ def get_table_group(
     ],
 ) -> str:
     """Get a table group's full configuration.
-    Returns filters, sampling, profiling flags, catalog tags, and recent activity.
+    Returns criteria, table filters, sampling, profiling flags, catalog tags, and recent activity.
     Use this before editing a table group or generating tests.
     """
     table_group = resolve_table_group(table_group_id)
@@ -227,6 +246,10 @@ def get_table_group(
         doc.field(_DIFF_LABELS["profiling_exclude_mask"], table_group.profiling_exclude_mask, code=True)
     doc.field(_DIFF_LABELS["profile_id_column_mask"], table_group.profile_id_column_mask, code=True)
     doc.field(_DIFF_LABELS["profile_sk_column_mask"], table_group.profile_sk_column_mask, code=True)
+
+    if table_group.table_filters:
+        doc.heading(2, "Table filters")
+        _render_table_filters(doc, table_group)
 
     doc.heading(2, "Settings")
     doc.field(_DIFF_LABELS["profile_flag_cdes"], table_group.profile_flag_cdes)
@@ -283,6 +306,10 @@ def create_table_group(
             description="One entry per table. Required on a file connection, where the tables are named here "
             "instead of read from a schema. Rejected on every other connection.",
         ),
+    ] = None,
+    table_filters: Annotated[
+        list[TableFilter] | None,
+        Field(description=f"{_TABLE_FILTERS_DESCRIPTION} Omit to read every table in full."),
     ] = None,
     description: Annotated[str | None, Field(description="Optional free-text description.")] = None,
     table_set: Annotated[
@@ -401,7 +428,7 @@ def create_table_group(
 
     The table group inherits its project from the connection. ``include_mask``
     and ``exclude_mask`` are table names or patterns in which ``%`` matches any
-    characters (e.g. ``fact_%,dim_%``); ``table_set`` is an explicit list. All filters compose with ``AND``. A file connection takes
+    characters (e.g. ``fact_%,dim_%``); ``table_set`` is an explicit list. All criteria compose with ``AND``. A file connection takes
     ``file_declarations`` instead of any of those, and no ``schema``.
     """
     connection = resolve_connection(connection_id)
@@ -454,6 +481,7 @@ def create_table_group(
     errors = validate_table_group_fields(table_group, connection, field_names=_FIELD_NAMES)
     if errors:
         _raise_validation_error(errors, "Table group creation rejected. No changes saved.")
+    _apply_table_filters(table_group, table_filters, connection)
 
     try:
         scorecard = save_new_table_group(table_group, add_scorecard=add_scorecard)
@@ -487,6 +515,13 @@ def update_table_group(
         Field(
             description="File connections only. Replaces the table group's whole list of tables, so send every "
             "table to keep, not just the ones that changed.",
+        ),
+    ] = None,
+    table_filters: Annotated[
+        list[TableFilter] | None,
+        Field(
+            description=f"{_TABLE_FILTERS_DESCRIPTION} Replaces the whole list, so send every filter to keep, not "
+            "just the ones that changed. Pass an empty list to read every table in full.",
         ),
     ] = None,
     description: Annotated[str | None, Field(description="Free-text description.")] = None,
@@ -591,7 +626,7 @@ def update_table_group(
     to re-parent it. When ``schema`` changes, profiling, test generation, monitors, and test runs
     read the new schema, and tests keep their history. Referential tests keep the schema of their
     second table. The change is refused when the schema
-    cannot be read, when no table in it matches the table group's table filters, or while a job
+    cannot be read, when no table in it matches the table group's table criteria, or while a job
     for the table group is running. The result lists tables the new schema does not have. On a
     file connection, ``schema`` cannot be changed, and ``file_declarations`` replaces the whole
     table list — read the current one with ``get_table_group`` first.
@@ -600,6 +635,7 @@ def update_table_group(
         "table_group_name": table_group_name,
         "schema": schema,
         "file_declarations": file_declarations,
+        "table_filters": table_filters,
         "description": description,
         "table_set": table_set,
         "include_mask": include_mask,
@@ -654,8 +690,10 @@ def update_table_group(
 
     before = _snapshot(table_group)
     previous_name = table_group.table_groups_name
-    membership_before = catalog_membership(table_group)
-    _apply_args_to_table_group(table_group, **{k: v for k, v in supplied.items() if k != "schema"})
+    catalog_before = catalog_source(table_group)
+    _apply_args_to_table_group(
+        table_group, **{k: v for k, v in supplied.items() if k not in ("schema", "table_filters")}
+    )
 
     apply_table_group_flavor_rules(table_group, connection)
     errors = validate_table_group_fields(table_group, connection, field_names=_FIELD_NAMES)
@@ -668,6 +706,11 @@ def update_table_group(
             move = move_table_group_schema(table_group, moving_to)
         except SchemaMoveRefused as refusal:
             raise MCPUserError(refusal.message) from refusal
+    if table_filters is not None:
+        _apply_table_filters(table_group, table_filters, connection)
+    elif move is not None and table_group.table_filters:
+        # The stored conditions are checked again in the schema the table group moves to
+        _apply_table_filters(table_group, [TableFilter(**entry) for entry in table_group.table_filters], connection)
 
     after = _snapshot(table_group)
 
@@ -687,7 +730,7 @@ def update_table_group(
         raise
     record_table_group_updated(table_group, rename_table_group_in_scorecards(table_group, previous_name))
 
-    catalog_error = update_catalog_for_edit(table_group, membership_before, move, connection)
+    catalog_error = update_catalog_for_edit(table_group, catalog_before, move, connection)
     if move:
         doc.field("Test definitions updated", str(move.definitions_repointed))
         if move.missing_tables:
@@ -717,7 +760,7 @@ def preview_table_group(
 ) -> str:
     """Probe the data source for the tables a table group covers.
 
-    On a database, these are the tables matching its filters; on a file data source, its declared files.
+    On a database, these are the tables matching its criteria; on a file data source, its declared files.
 
     Returns counts plus a per-table breakdown, and each table's columns with their types when
     ``include_columns`` is set. Does not save anything to the application database.
@@ -820,6 +863,7 @@ _DIFF_ATTRS: tuple[str, ...] = (
     "profiling_table_set",
     "profiling_include_mask",
     "profiling_exclude_mask",
+    "table_filters",
     "profile_id_column_mask",
     "profile_sk_column_mask",
     "profile_use_sampling",
@@ -850,6 +894,7 @@ _DIFF_LABELS: dict[str, str] = {
     "profiling_table_set": "Table set",
     "profiling_include_mask": "Include mask",
     "profiling_exclude_mask": "Exclude mask",
+    "table_filters": "Table filters",
     "profile_id_column_mask": "ID column mask",
     "profile_sk_column_mask": "SK column mask",
     "profile_use_sampling": "Sampling",
@@ -992,7 +1037,26 @@ def _maybe_raise_duplicate_name(err: IntegrityError) -> None:
 def _snapshot(table_group: TableGroup) -> dict[str, Any]:
     values = {attr: getattr(table_group, attr, None) for attr in _DIFF_ATTRS}
     values["file_declarations"] = _declaration_summary(values["file_declarations"])
+    values["table_filters"] = (
+        "; ".join(f"{entry['table_name']}: {entry['condition']}" for entry in values["table_filters"])
+        if values["table_filters"]
+        else None
+    )
     return values
+
+
+def _apply_table_filters(
+    table_group: TableGroup, table_filters: list[TableFilter] | None, connection: Connection | None
+) -> None:
+    try:
+        apply_table_filters(table_group, [entry.model_dump() for entry in table_filters or []], connection)
+    except InvalidTableFilters as err:
+        raise MCPUserError(str(err)) from err
+
+
+def _render_table_filters(doc: MdDoc, table_group: TableGroup) -> None:
+    for entry in table_group.table_filters or []:
+        doc.field(entry["table_name"], entry["condition"], code=True)
 
 
 def _render_declared_tables(doc: MdDoc, table_group: TableGroup) -> None:
@@ -1051,7 +1115,6 @@ def _render_created_table_group(
         doc.field("Include mask", table_group.profiling_include_mask, code=True)
     if table_group.profiling_exclude_mask:
         doc.field("Exclude mask", table_group.profiling_exclude_mask, code=True)
-
     doc.field("Profile sampling", "Yes" if table_group.profile_use_sampling else "No")
     if table_group.profile_use_sampling:
         doc.field("Sample %", table_group.profile_sample_percent)
@@ -1071,6 +1134,10 @@ def _render_created_table_group(
 
     doc.field("Min profiling age (days)", table_group.profiling_delay_days)
     doc.field("Include in dashboard", "Yes" if table_group.include_in_dashboard else "No")
+
+    if table_group.table_filters:
+        doc.heading(2, "Table filters")
+        _render_table_filters(doc, table_group)
 
     if any(getattr(table_group, attr, None) for attr in _CATALOG_ATTRS):
         doc.heading(2, "Catalog")

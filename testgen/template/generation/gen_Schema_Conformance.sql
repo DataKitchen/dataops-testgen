@@ -24,7 +24,7 @@ WHERE c.table_groups_id = :TABLE_GROUPS_ID ::UUID
       AND COALESCE(NULLIF(tbl ->> 'physicalName', ''), tbl ->> 'name') = c.table_name
   )
   AND EXISTS (SELECT 1 FROM test_types WHERE test_type = 'Schema_Conformance' AND active = 'Y')
-  {TABLE_FILTER}
+  {TABLE_SCOPE}
 
 -- Match "uix_td_autogen_table" unique index exactly
 ON CONFLICT (test_suite_id, version_id, test_type, schema_name, table_name)

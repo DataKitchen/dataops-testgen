@@ -7,6 +7,7 @@ from testgen.common.data_catalog_service import TAG_FIELDS
 from testgen.common.models.data_table import TABLE_GROUP_TAGS
 from testgen.common.models.profile_result import MeasureAcquisition, ProfileResult
 from testgen.common.models.suite_version import SuiteVersion
+from testgen.common.table_filters import table_filter_condition
 from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db, fetch_one_from_db
 from testgen.utils import is_uuid4
 
@@ -104,6 +105,19 @@ def with_measure_display(row: dict) -> dict:
     return row
 
 
+def with_table_filter(row: dict) -> dict:
+    """Replace ``row``'s ``table_filters`` list with ``table_filter``, the condition it defines for ``row``'s table.
+
+    Args:
+        row: A query row carrying ``table_name`` and a ``table_filters`` column.
+
+    Returns:
+        ``row``, with ``table_filter`` set to the condition or None.
+    """
+    row["table_filter"] = table_filter_condition(row.pop("table_filters"), row["table_name"])
+    return row
+
+
 def add_provenance_columns(data: pd.DataFrame) -> None:
     """Add export columns ``sampling`` (the sampled measures' label) and ``percentiles`` ("Exact" or
     "Approximate", blank for a row with no percentiles)."""
@@ -171,7 +185,12 @@ def get_profiling_results(profiling_run_id: str, table_name: str | None = None, 
         ) THEN 'Yes' END AS hygiene_issues,
         CASE WHEN query_error IS NOT NULL THEN 'Error: ' || query_error ELSE NULL END AS result_details,
         tg.project_code,
-        tg.connection_id::VARCHAR AS connection_id
+        tg.connection_id::VARCHAR AS connection_id,
+        (
+            SELECT profiling_runs.table_filters
+            FROM profiling_runs
+            WHERE profiling_runs.id = profile_results.profile_run_id
+        ) AS table_filters
     FROM profile_results
     LEFT JOIN table_groups tg ON (profile_results.table_groups_id = tg.id)
     WHERE profile_run_id = :profiling_run_id
@@ -188,6 +207,10 @@ def get_profiling_results(profiling_run_id: str, table_name: str | None = None, 
 
     results = fetch_df_from_db(query, params)
     results["provenance"] = [ProfileResult.provenance_details(row) for row in results.to_dict("records")]
+    results["table_filter"] = [
+        table_filter_condition(filters, table_name)
+        for filters, table_name in zip(results.pop("table_filters"), results["table_name"], strict=True)
+    ]
     return results
 
 
@@ -331,7 +354,9 @@ def get_tables_by_condition(
         profiling_starttime AS profile_run_date,
         TRUE AS is_latest_profile,
         table_groups.project_code,
-        table_groups.connection_id::VARCHAR AS connection_id
+        table_groups.connection_id::VARCHAR AS connection_id,
+        -- The condition the catalog refresh counted records through
+        table_chars.table_filter
     FROM data_table_chars table_chars
         LEFT JOIN profiling_runs ON (
             table_chars.last_complete_profile_run_id = profiling_runs.id
@@ -486,6 +511,11 @@ def get_columns_by_condition(
         table_chars.approx_record_ct,
         table_groups.project_code,
         table_groups.connection_id::VARCHAR AS connection_id,
+        (
+            SELECT profiling_runs.table_filters
+            FROM profiling_runs
+            WHERE profiling_runs.id = column_chars.last_complete_profile_run_id
+        ) AS table_filters,
         {COLUMN_PROFILING_FIELDS}
     FROM data_column_chars column_chars
         LEFT JOIN data_table_chars table_chars ON (
@@ -502,7 +532,9 @@ def get_columns_by_condition(
     {filter_condition}
     ORDER BY LOWER(column_chars.table_name), ordinal_position;
     """
-    columns = [ with_measure_display(dict(row)) for row in fetch_all_from_db(query, filter_params) ]
+    columns = [
+        with_table_filter(with_measure_display(dict(row))) for row in fetch_all_from_db(query, filter_params)
+    ]
 
     if include_active_tests:
         # Counted apart and merged here: joined into the query above, the planner underestimates

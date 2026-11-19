@@ -26,7 +26,7 @@ profile_anomaly_types:
     lookup_query: |-
       (
         SELECT 'Upper Case' AS casing, `{COLUMN_NAME}`, COUNT(*) AS count
-        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE}
         WHERE CAST(UPPER(CAST(`{COLUMN_NAME}` AS STRING)) AS BYTES) = CAST(CAST(`{COLUMN_NAME}` AS STRING) AS BYTES)
         GROUP BY `{COLUMN_NAME}`
         LIMIT {LIMIT_2}
@@ -34,7 +34,7 @@ profile_anomaly_types:
       UNION ALL
       (
         SELECT 'Mixed Case' AS casing, `{COLUMN_NAME}`, COUNT(*) AS count
-        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE}
         WHERE CAST(CAST(`{COLUMN_NAME}` AS STRING) AS BYTES) <> CAST(UPPER(CAST(`{COLUMN_NAME}` AS STRING)) AS BYTES)
           AND CAST(CAST(`{COLUMN_NAME}` AS STRING) AS BYTES) <> CAST(LOWER(CAST(`{COLUMN_NAME}` AS STRING)) AS BYTES)
         GROUP BY `{COLUMN_NAME}`
@@ -47,11 +47,11 @@ profile_anomaly_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      (SELECT 'Upper Case' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      (SELECT 'Upper Case' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE}
       WHERE CAST(UPPER(`{COLUMN_NAME}`) AS BINARY) = CAST(`{COLUMN_NAME}` AS BINARY)
       GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT_2})
       UNION ALL
-      (SELECT 'Mixed Case' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      (SELECT 'Mixed Case' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE}
       WHERE CAST(`{COLUMN_NAME}` AS BINARY) <> CAST(UPPER(`{COLUMN_NAME}`) AS BINARY) AND CAST(`{COLUMN_NAME}` AS BINARY) <> CAST(LOWER(`{COLUMN_NAME}`) AS BINARY)
       GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT_2})
     error_type: Profile Anomaly
@@ -61,11 +61,11 @@ profile_anomaly_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP {LIMIT_2} 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      SELECT TOP {LIMIT_2} 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
       WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}" COLLATE Latin1_General_BIN
       GROUP BY "{COLUMN_NAME}"
       UNION ALL
-      SELECT TOP {LIMIT_2} 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      SELECT TOP {LIMIT_2} 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
       WHERE "{COLUMN_NAME}" COLLATE Latin1_General_BIN <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" COLLATE Latin1_General_BIN <> LOWER("{COLUMN_NAME}")
       GROUP BY "{COLUMN_NAME}"
     error_type: Profile Anomaly
@@ -75,11 +75,11 @@ profile_anomaly_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
       WHERE UPPER("{COLUMN_NAME}") COLLATE "C" = "{COLUMN_NAME}" COLLATE "C"
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
       UNION ALL
-      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
       WHERE "{COLUMN_NAME}" COLLATE "C" <> UPPER("{COLUMN_NAME}") COLLATE "C" AND "{COLUMN_NAME}" COLLATE "C" <> LOWER("{COLUMN_NAME}") COLLATE "C"
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
     error_type: Profile Anomaly
@@ -89,11 +89,11 @@ profile_anomaly_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
       WHERE COLLATE(UPPER("{COLUMN_NAME}"), 'case_sensitive') = COLLATE("{COLUMN_NAME}", 'case_sensitive')
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
       UNION ALL
-      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
       WHERE COLLATE("{COLUMN_NAME}", 'case_sensitive') <> COLLATE(UPPER("{COLUMN_NAME}"), 'case_sensitive') AND COLLATE("{COLUMN_NAME}", 'case_sensitive') <> COLLATE(LOWER("{COLUMN_NAME}"), 'case_sensitive')
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
     error_type: Profile Anomaly
@@ -103,11 +103,11 @@ profile_anomaly_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
       WHERE COLLATE(UPPER("{COLUMN_NAME}"), 'case_sensitive') = COLLATE("{COLUMN_NAME}", 'case_sensitive')
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
       UNION ALL
-      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
       WHERE COLLATE("{COLUMN_NAME}", 'case_sensitive') <> COLLATE(UPPER("{COLUMN_NAME}"), 'case_sensitive') AND COLLATE("{COLUMN_NAME}", 'case_sensitive') <> COLLATE(LOWER("{COLUMN_NAME}"), 'case_sensitive')
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
     error_type: Profile Anomaly
@@ -117,11 +117,11 @@ profile_anomaly_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
       WHERE COLLATE(UPPER("{COLUMN_NAME}"), 'utf8') = COLLATE("{COLUMN_NAME}", 'utf8')
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
       UNION ALL
-      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
       WHERE COLLATE("{COLUMN_NAME}", 'utf8') <> COLLATE(UPPER("{COLUMN_NAME}"), 'utf8') AND COLLATE("{COLUMN_NAME}", 'utf8') <> COLLATE(LOWER("{COLUMN_NAME}"), 'utf8')
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
     error_type: Profile Anomaly
@@ -131,7 +131,7 @@ profile_anomaly_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT * FROM (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}" GROUP BY "{COLUMN_NAME}" FETCH FIRST {LIMIT_2} ROWS ONLY) UNION ALL SELECT * FROM (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}") GROUP BY "{COLUMN_NAME}" FETCH FIRST {LIMIT_2} ROWS ONLY)
+      SELECT * FROM (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}" GROUP BY "{COLUMN_NAME}" FETCH FIRST {LIMIT_2} ROWS ONLY) UNION ALL SELECT * FROM (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}") GROUP BY "{COLUMN_NAME}" FETCH FIRST {LIMIT_2} ROWS ONLY)
     error_type: Profile Anomaly
   - id: '1526'
     test_id: '1028'
@@ -139,7 +139,7 @@ profile_anomaly_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT * FROM (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}" GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2}) UNION ALL SELECT * FROM (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}") GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
+      SELECT * FROM (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}" GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2}) UNION ALL SELECT * FROM (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}") GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
     error_type: Profile Anomaly
   - id: '10052'
     test_id: 1028
@@ -147,11 +147,11 @@ profile_anomaly_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}"
+      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TABLE_NAME}"{TABLE_FILTER_CLOSE}
       WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
       UNION ALL
-      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}"
+      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TABLE_NAME}"{TABLE_FILTER_CLOSE}
       WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
     error_type: Profile Anomaly
@@ -161,11 +161,11 @@ profile_anomaly_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
       WHERE UPPER("{COLUMN_NAME}") COLLATE "binary" = CAST("{COLUMN_NAME}" AS VARCHAR) COLLATE "binary"
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
       UNION ALL
-      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
       WHERE CAST("{COLUMN_NAME}" AS VARCHAR) COLLATE "binary" <> UPPER("{COLUMN_NAME}") COLLATE "binary" AND CAST("{COLUMN_NAME}" AS VARCHAR) COLLATE "binary" <> LOWER("{COLUMN_NAME}") COLLATE "binary"
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
     error_type: Profile Anomaly

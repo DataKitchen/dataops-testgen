@@ -25,7 +25,11 @@ from testgen.common.database.connection_service import (
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.duckdb_flavor_service import container_path_help
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
-from testgen.common.database.table_group_service import apply_table_group_flavor_rules, save_new_table_group
+from testgen.common.database.table_group_service import (
+    apply_table_filters,
+    apply_table_group_flavor_rules,
+    save_new_table_group,
+)
 from testgen.common.database.test_suite_service import duplicate_name_message, is_duplicate_name_error
 from testgen.common.enums import JobSource
 from testgen.common.flavors import (
@@ -44,6 +48,7 @@ from testgen.common.models.table_group import TableGroup, default_profiling_mask
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.monitor_service import enable_monitoring
 from testgen.common.sampling_requirements import sampled_profile_gaps
+from testgen.common.table_filter_validation import InvalidTableFilters
 from testgen.ui.assets import get_asset_data_url
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
@@ -399,6 +404,7 @@ class ConnectionsPage(Page):
 
             if is_table_group_verified():
                 try:
+                    apply_table_filters(table_group, table_group.table_filters, setup_connection)
                     scorecard = save_new_table_group(table_group, add_scorecard=add_scorecard_definition)
                     record_table_group_created(table_group, scorecard)
 
@@ -475,6 +481,9 @@ class ConnectionsPage(Page):
                         if run_profiling:
                             message = f"Profiling run started for table group {table_group.table_groups_name}."
                         LOG.info("Table group %s created", table_group.id)
+                except InvalidTableFilters as error:
+                    success = False
+                    message = str(error)
                 except Exception as error:
                     get_current_session().rollback()
                     success = False

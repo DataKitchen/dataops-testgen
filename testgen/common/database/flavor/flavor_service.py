@@ -501,8 +501,11 @@ class FlavorService:
             return value
         marker = "..."
         kept = encoded[: self.max_string_literal_bytes - len(marker)].decode(errors="ignore")
-        # A cut landing inside a doubled backslash would leave one escaping the marker.
+        # A cut landing inside a doubled backslash would leave one escaping the marker, and one
+        # inside a doubled quote would leave a quote closing the literal.
         if (len(kept) - len(kept.rstrip("\\"))) % 2:
+            kept = kept[:-1]
+        if self.escaped_single_quote == "''" and (len(kept) - len(kept.rstrip("'"))) % 2:
             kept = kept[:-1]
         return kept + marker
 

@@ -33,6 +33,7 @@ def _mock_overview(**overrides):
     overview.object_type = None
     overview.functional_table_type = "cumulative-transaction"
     overview.record_ct = 1000
+    overview.table_filter = None
     overview.column_ct = 5
     overview.cde_count = 2
     overview.dq_score_profiling = 95.0
@@ -126,6 +127,33 @@ def test_get_table_happy_path(mock_tg_cls, mock_dt_cls, db_session_mock):
     assert "Profiling Run" in result
     assert "Columns" in result
     assert "customer_name" in result
+
+
+@patch("testgen.mcp.tools.profiling.DataTable")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_table_shows_the_filter_its_record_count_read_through(mock_tg_cls, mock_dt_cls, db_session_mock):
+    tg = _mock_table_group()
+    tg.table_filters = [{"table_name": "orders", "condition": "status = 'changed since the count'"}]
+    mock_tg_cls.get.return_value = tg
+    mock_dt_cls.get_profiling_overview.return_value = _mock_overview(table_filter="status <> 'void'")
+
+    from testgen.mcp.tools.profiling import get_table
+    result = get_table(str(uuid4()), "orders")
+
+    assert "- **Column count:** 5\n- **Table filter:** `status <> 'void'`\n" in result
+    assert "changed since the count" not in result
+
+
+@patch("testgen.mcp.tools.profiling.DataTable")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_table_omits_the_table_filter_when_its_count_read_none(mock_tg_cls, mock_dt_cls, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dt_cls.get_profiling_overview.return_value = _mock_overview()
+
+    from testgen.mcp.tools.profiling import get_table
+    result = get_table(str(uuid4()), "orders")
+
+    assert "Table filter" not in result
 
 
 @patch("testgen.mcp.tools.profiling.DataTable")
@@ -1217,6 +1245,7 @@ def _column_detail(**overrides) -> ColumnProfileDetail:
         "profile_run_started_at": datetime(2026, 5, 1, 12, 0, 0),
         "profile_run_ended_at": datetime(2026, 5, 1, 12, 5, 0),
         "profile_run_log_message": None,
+        "profile_run_table_filters": None,
     }
     base.update(overrides)
     return ColumnProfileDetail(**base)
@@ -1247,6 +1276,38 @@ def test_get_column_renders_top_fields_then_catalog_metadata_then_profile(mock_t
     assert "- **Hygiene issues (confirmed):** 2" in profile
     assert "### Counts" in profile
     assert "- **Row count:** 500" in profile
+
+
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_shows_the_filter_its_profiling_run_used(mock_tg_cls, mock_dcc_cls, db_session_mock):
+    tg = _mock_table_group()
+    tg.table_filters = [{"table_name": "customers", "condition": "region = 'US'"}]
+    mock_tg_cls.get.return_value = tg
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(
+        profile_run_table_filters=[{"table_name": "customers", "condition": "region = 'EU'"}],
+    )
+
+    from testgen.mcp.tools.profiling import get_column
+    result = get_column(str(uuid4()), "customers", "customer_name")
+
+    profile = result[result.index("## Profile"):]
+    assert "- **Profiled at:** 2026-05-01 12:00 UTC\n- **Table filter:** `region = 'EU'`\n" in profile
+    assert "region = 'US'" not in result
+
+
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_omits_the_table_filter_when_its_run_had_none(mock_tg_cls, mock_dcc_cls, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(
+        profile_run_table_filters=[{"table_name": "orders", "condition": "status <> 'void'"}],
+    )
+
+    from testgen.mcp.tools.profiling import get_column
+    result = get_column(str(uuid4()), "customers", "customer_name")
+
+    assert "Table filter" not in result
 
 
 @pytest.mark.parametrize(
@@ -2358,6 +2419,52 @@ def test_get_column_frequent_values_happy_path(
     assert "Mexico" in result and "USA" in result and "Canada" in result
     assert "40.00%" in result  # 200/500
     assert "Top values" in result
+
+
+@pytest.mark.parametrize("tool_name", ["get_column_frequent_values", "get_column_patterns"])
+@patch.object(DataColumnChars, "select_where")
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+@patch("testgen.mcp.tools.profiling.ProfileResult")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_single_column_tools_show_the_filter_the_profiling_run_used(
+    mock_tg_cls, mock_pr_cls, mock_run_cls, mock_dcc_select, tool_name, db_session_mock,
+):
+    tg = _mock_table_group()
+    tg.table_filters = [{"table_name": "customers", "condition": "region = 'US'"}]
+    mock_tg_cls.get.return_value = tg
+    mock_pr_cls.get_for_column.return_value = _mock_profile_result()
+    run = _mock_profiling_run_for_tg(tg.id)
+    run.table_filters = [{"table_name": "customers", "condition": "region = 'EU'"}]
+    mock_run_cls.get.return_value = run
+    mock_dcc_select.return_value = [_mock_data_column()]
+
+    from testgen.mcp.tools import profiling
+    result = getattr(profiling, tool_name)(str(uuid4()), "customers", "country")
+
+    assert "- **Table filter:** `region = 'EU'`" in result
+    assert "region = 'US'" not in result
+
+
+@pytest.mark.parametrize("tool_name", ["get_column_frequent_values", "get_column_patterns"])
+@patch.object(DataColumnChars, "select_where")
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+@patch("testgen.mcp.tools.profiling.ProfileResult")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_single_column_tools_omit_the_table_filter_when_the_run_had_none(
+    mock_tg_cls, mock_pr_cls, mock_run_cls, mock_dcc_select, tool_name, db_session_mock,
+):
+    tg = _mock_table_group()
+    mock_tg_cls.get.return_value = tg
+    mock_pr_cls.get_for_column.return_value = _mock_profile_result()
+    run = _mock_profiling_run_for_tg(tg.id)
+    run.table_filters = None
+    mock_run_cls.get.return_value = run
+    mock_dcc_select.return_value = [_mock_data_column()]
+
+    from testgen.mcp.tools import profiling
+    result = getattr(profiling, tool_name)(str(uuid4()), "customers", "country")
+
+    assert "Table filter" not in result
 
 
 @patch.object(DataColumnChars, "select_where")

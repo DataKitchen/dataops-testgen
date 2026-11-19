@@ -51,7 +51,7 @@ test_types:
         SELECT
           TO_HEX(MD5({CUSTOM_QUERY})) AS fingerprint,
           DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME(NULLIF('{BASELINE_SUM}', '')), MINUTE) AS interval_minutes
-        FROM `{SCHEMA_NAME}.{TABLE_NAME}`
+        FROM {TABLE_FILTER_OPEN}`{SCHEMA_NAME}.{TABLE_NAME}`{TABLE_FILTER_CLOSE}
         WHERE {SUBSET_CONDITION}
       )
       SELECT '{TEST_TYPE}' AS test_type,
@@ -101,7 +101,7 @@ test_types:
         SELECT
           MD5({CUSTOM_QUERY}) AS fingerprint,
           DATEDIFF(MINUTE, TO_TIMESTAMP(NULLIF('{BASELINE_SUM}', '')), TIMESTAMP '{RUN_DATE}') AS interval_minutes
-        FROM `{SCHEMA_NAME}`.`{TABLE_NAME}`
+        FROM {TABLE_FILTER_OPEN}`{SCHEMA_NAME}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE}
         WHERE {SUBSET_CONDITION}
       )
       SELECT '{TEST_TYPE}' AS test_type,
@@ -151,7 +151,7 @@ test_types:
         SELECT
           LOWER(CONVERT(VARCHAR(40), HASHBYTES('MD5', CAST({CUSTOM_QUERY} AS VARCHAR(MAX))), 2)) AS fingerprint,
           DATEDIFF(MINUTE, CAST(NULLIF('{BASELINE_SUM}', '') AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2)) AS interval_minutes
-        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+        FROM {TABLE_FILTER_OPEN}"{SCHEMA_NAME}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
         WHERE {SUBSET_CONDITION}
       )
       SELECT '{TEST_TYPE}' AS test_type,
@@ -201,7 +201,7 @@ test_types:
         SELECT
           MD5({CUSTOM_QUERY}) AS fingerprint,
           (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - NULLIF('{BASELINE_SUM}', '')::TIMESTAMP)) / 60)::INTEGER AS interval_minutes
-        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+        FROM {TABLE_FILTER_OPEN}"{SCHEMA_NAME}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
         WHERE {SUBSET_CONDITION}
       )
       SELECT '{TEST_TYPE}' AS test_type,
@@ -251,7 +251,7 @@ test_types:
         SELECT
           MD5({CUSTOM_QUERY}) AS fingerprint,
           DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS interval_minutes
-        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+        FROM {TABLE_FILTER_OPEN}"{SCHEMA_NAME}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
         WHERE {SUBSET_CONDITION}
       )
       SELECT '{TEST_TYPE}' AS test_type,
@@ -301,7 +301,7 @@ test_types:
         SELECT
           MD5({CUSTOM_QUERY}) AS fingerprint,
           DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS interval_minutes
-        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+        FROM {TABLE_FILTER_OPEN}"{SCHEMA_NAME}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
         WHERE {SUBSET_CONDITION}
       )
       SELECT '{TEST_TYPE}' AS test_type,
@@ -351,7 +351,7 @@ test_types:
         SELECT
           MD5({CUSTOM_QUERY}) AS fingerprint,
           DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS interval_minutes
-        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+        FROM {TABLE_FILTER_OPEN}"{SCHEMA_NAME}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
         WHERE {SUBSET_CONDITION}
       )
       SELECT '{TEST_TYPE}' AS test_type,
@@ -402,7 +402,7 @@ test_types:
           LOWER(RAWTOHEX(STANDARD_HASH({CUSTOM_QUERY}, 'MD5'))) AS fingerprint,
           ROUND((CAST(TO_TIMESTAMP('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS') AS DATE) -
                  CAST(TO_TIMESTAMP('{BASELINE_SUM}', 'YYYY-MM-DD HH24:MI:SS') AS DATE)) * 24 * 60) AS interval_minutes
-        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+        FROM {TABLE_FILTER_OPEN}"{SCHEMA_NAME}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
         WHERE {SUBSET_CONDITION}
       )
       SELECT '{TEST_TYPE}' AS test_type,
@@ -452,7 +452,7 @@ test_types:
         SELECT
           LOWER(BINTOHEX(HASH_MD5(TO_BINARY({CUSTOM_QUERY})))) AS fingerprint,
           ROUND(SECONDS_BETWEEN(TO_TIMESTAMP('{BASELINE_SUM}', 'YYYY-MM-DD HH24:MI:SS'), TO_TIMESTAMP('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')) / 60.0) AS interval_minutes
-        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+        FROM {TABLE_FILTER_OPEN}"{SCHEMA_NAME}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
         WHERE {SUBSET_CONDITION}
       )
       SELECT '{TEST_TYPE}' AS test_type,
@@ -502,7 +502,7 @@ test_types:
         SELECT
           MD5({CUSTOM_QUERY}) AS fingerprint,
           DATEDIFF('minute', CAST(NULLIF('{BASELINE_SUM}', '') AS TIMESTAMP), CAST('{RUN_DATE}' AS TIMESTAMP)) AS interval_minutes
-        FROM "{TABLE_NAME}"
+        FROM {TABLE_FILTER_OPEN}"{TABLE_NAME}"{TABLE_FILTER_CLOSE}
         WHERE {SUBSET_CONDITION}
       )
       SELECT '{TEST_TYPE}' AS test_type,
@@ -552,7 +552,7 @@ test_types:
         SELECT
           MD5({CUSTOM_QUERY}) AS fingerprint,
           (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - NULLIF('{BASELINE_SUM}', '')::TIMESTAMP)) / 60)::INTEGER AS interval_minutes
-        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+        FROM {TABLE_FILTER_OPEN}"{SCHEMA_NAME}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
         WHERE {SUBSET_CONDITION}
       )
       SELECT '{TEST_TYPE}' AS test_type,

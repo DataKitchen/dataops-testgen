@@ -67,6 +67,7 @@ from testgen.ui.queries.profiling_queries import (
     get_tables_by_table_group,
     measure_export_columns,
     with_measure_display,
+    with_table_filter,
 )
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db
 from testgen.ui.services.query_cache import (
@@ -892,7 +893,9 @@ def _get_history_run_column(run_id: str, table_name: str, column_name: str) -> d
     query = f"""
     SELECT
         profile_run_id::VARCHAR,
+        table_name,
         general_type,
+        (SELECT profiling_runs.table_filters FROM profiling_runs WHERE profiling_runs.id = :run_id) AS table_filters,
         {COLUMN_PROFILING_FIELDS}
     FROM profile_results
     WHERE profile_run_id = :run_id
@@ -906,7 +909,7 @@ def _get_history_run_column(run_id: str, table_name: str, column_name: str) -> d
     }
     from testgen.ui.services.database_service import fetch_one_from_db
     result = fetch_one_from_db(query, params)
-    return make_json_safe(with_measure_display(dict(result))) if result else None
+    return make_json_safe(with_table_filter(with_measure_display(dict(result)))) if result else None
 
 
 def get_preview_data(

@@ -4,7 +4,7 @@
 -- Every row also carries sample_value_ct, the number of non-null values the read held, blank ones
 -- included. Blank values are ranked after every other value so that they never reach the output.
 WITH target_table AS (
-  SELECT {COL_VALUE} AS "{COL_NAME}" FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+  SELECT {COL_VALUE} AS "{COL_NAME}" FROM {TABLE_FILTER_OPEN}"{DATA_SCHEMA}"."{DATA_TABLE}"{TABLE_FILTER_CLOSE}
 -- TG-IF do_sample_bool
      WHERE RAND() <= 1.0 / {PROFILE_SAMPLE_RATIO}
 -- TG-ENDIF

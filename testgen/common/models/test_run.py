@@ -235,6 +235,7 @@ class TestRun(Entity):
     dq_total_data_points: int = Column(BigInteger)
     dq_score_test_run: float = Column(Float)
     version_id: UUID = Column(postgresql.UUID(as_uuid=True))
+    table_filters: list[dict] | None = Column(postgresql.JSONB)
 
     job_execution = relationship(
         JobExecution,

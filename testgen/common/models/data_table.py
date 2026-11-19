@@ -105,6 +105,7 @@ class TableProfilingOverview:
     table_name: str
     object_type: ObjectType | None
     record_ct: int | None
+    table_filter: str | None
     column_ct: int | None
     file_ct: int | None
     functional_table_type: str | None
@@ -146,6 +147,7 @@ class DataTable(Entity):
     column_ct: int | None = Column(BigInteger)
     record_ct: int | None = Column(BigInteger)
     approx_record_ct: int | None = Column(BigInteger)
+    table_filter: str | None = Column(String)
     file_ct: int | None = Column(Integer)
     critical_data_element: bool | None = Column(Boolean)
     description: str | None = Column(String(1000))
@@ -252,6 +254,7 @@ class DataTable(Entity):
                 cls.table_name,
                 cls.object_type,
                 cls.record_ct,
+                cls.table_filter,
                 cls.column_ct,
                 cls.file_ct,
                 cls.functional_table_type,

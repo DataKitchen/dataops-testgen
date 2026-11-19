@@ -41,7 +41,7 @@ SELECT
   0                       AS skip_errors
 FROM selected_tables s
 WHERE EXISTS (SELECT 1 FROM test_types WHERE test_type = 'Row_Ct' AND active = 'Y')
-  {TABLE_FILTER}
+  {TABLE_SCOPE}
 
 -- Match "uix_td_autogen_table" unique index exactly
 ON CONFLICT (test_suite_id, version_id, test_type, schema_name, table_name)

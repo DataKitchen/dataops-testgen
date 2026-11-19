@@ -31,6 +31,7 @@ from testgen.common.models.scheduler import RUN_PROFILE_JOB_KEY
 from testgen.common.models.table_group import TableGroup, TableGroupSummary
 from testgen.common.pii_masking import PII_REDACTED, mask_profiling_pii
 from testgen.common.profile_frequency import format_frequent, frequent_entries
+from testgen.common.table_filters import table_filter_condition
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.services.source_data_protection import mcp_source_data_only, mcp_source_data_protected
@@ -73,6 +74,12 @@ def _qualified_table_name(schema_name: str | None, table_name: str, qualifies: b
     return f"{schema_name}.{table_name}" if qualifies and schema_name else table_name
 
 
+def _table_filter_field(doc: MdDoc, condition: str | None) -> None:
+    """Add a field showing the table filter ``condition``, when there is one."""
+    if condition:
+        doc.field("Table filter", condition, code=True)
+
+
 @with_database_session
 @mcp_permission("catalog")
 def get_table(
@@ -81,8 +88,9 @@ def get_table(
 ) -> str:
     """Get a table's catalog metadata, latest profile, and column list.
 
-    Returns structural metadata, the semantic table type, quality scores, the description, critical data element
-    flag, and catalog tags, then the latest completed profiling run and the column list. When the table has no value
+    Returns structural metadata, the table filter its record count read through, the semantic table type, quality
+    scores, the description, critical data element flag, and catalog tags, then the latest completed profiling run
+    and the column list. When the table has no value
     of its own for a tag, the table group's value is shown, marked as inherited. Tags with no value are omitted. A
     table that has not been profiled returns its catalog metadata only.
     """
@@ -104,6 +112,7 @@ def get_table(
     doc.field("Semantic table type", format_semantic_table_type(overview.functional_table_type))
     doc.field("Record count", overview.record_ct)
     doc.field("Column count", overview.column_ct)
+    _table_filter_field(doc, overview.table_filter)
     doc.field("Critical data element columns", overview.cde_count)
     doc.field("Profiling Score", friendly_score(overview.dq_score_profiling))
     doc.field("Testing Score", friendly_score(overview.dq_score_testing))
@@ -945,9 +954,9 @@ def get_column(
     """Get a column's catalog metadata and its profile from one profiling run.
 
     The profile is type-specific and comes from the column's latest completed profiling run, or from the run given by
-    `job_execution_id`. A column that has not been profiled returns its catalog metadata only. When the column has no
-    value of its own for a flag or tag, the table's or table group's value is shown, marked as inherited. Tags with no
-    value are omitted.
+    `job_execution_id`, with the table filter that run read through. A column that has not been profiled returns its
+    catalog metadata only. When the column has no value of its own for a flag or tag, the table's or table group's
+    value is shown, marked as inherited. Tags with no value are omitted.
     """
     tg = resolve_table_group(table_group_id)
 
@@ -1049,6 +1058,7 @@ def _render_column_profile_detail(p: dict, qualifies: bool, profiling_excludes_x
 
     doc.field("Profiling Run", p["profile_run_je_id"], code=True)
     doc.field("Profiled at", p["profile_run_started_at"])
+    _table_filter_field(doc, table_filter_condition(p["profile_run_table_filters"], p["table_name"]))
 
     if not p.get("query_error"):
         doc.field("Hygiene issues (confirmed)", p.get("hygiene_issue_count", 0))
@@ -1231,6 +1241,7 @@ def get_column_frequent_values(
     doc.field("Profiling Run", profiling_run.id, code=True)
     doc.field(ProfileResult.measures["record_ct"].sentence_label, profile.record_ct)
     doc.field(ProfileResult.measures["distinct_value_ct"].sentence_label, profile.distinct_value_ct)
+    _table_filter_field(doc, table_filter_condition(profiling_run.table_filters, table_name))
     if pii_flag:
         doc.field("PII", _format_pii(pii_flag))
 
@@ -1293,6 +1304,7 @@ def get_column_patterns(
     doc.field("Profiling Run", profiling_run.id, code=True)
     doc.field(ProfileResult.measures["record_ct"].sentence_label, profile.record_ct)
     doc.field(ProfileResult.measures["distinct_value_ct"].sentence_label, profile.distinct_value_ct)
+    _table_filter_field(doc, table_filter_condition(profiling_run.table_filters, table_name))
 
     if profile.general_type and profile.general_type != "A":
         doc.text("_Pattern data not available — column is not a string type._")

@@ -43,7 +43,7 @@ def reset_table_group_preview() -> None:
 
 
 def preview_cache_key(table_group: TableGroup) -> tuple:
-    """Every field that changes which tables the preview finds.
+    """Every field that changes what the preview finds: its tables, and the table filters it checks.
 
     A field left out serves the previous preview back after it is edited.
     """
@@ -53,6 +53,7 @@ def preview_cache_key(table_group: TableGroup) -> tuple:
         table_group.profiling_include_mask,
         table_group.profiling_exclude_mask,
         json.dumps(table_group.file_declarations, sort_keys=True),
+        json.dumps(table_group.table_filters, sort_keys=True),
     )
 
 

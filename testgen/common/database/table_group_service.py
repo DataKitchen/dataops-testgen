@@ -5,6 +5,8 @@ any future caller:
   surface the returned bullets verbatim.
 * ``validate_table_naming`` — whether a table group names its tables the way its
   connection does: by schema, or by file declarations.
+* ``apply_table_filters`` — normalizes a table group's record filters, checks them
+  against its connection, and stores them.
 * ``is_duplicate_name_error`` — recognizes the name-uniqueness violation.
 * ``preview_table_group`` — schema-introspection preview. Returns
   ``(preview, data_chars, sql_generator)``; the ``save_data_chars`` callback
@@ -58,6 +60,13 @@ from testgen.common.models.table_group import TableGroup, TableGroupMinimal, val
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.run_overrides import MATCH_SCHEMA_OVERRIDE_UNSUPPORTED, SCHEMA_OVERRIDE_UNSUPPORTED
+from testgen.common.table_filter_validation import (
+    InvalidTableFilters,
+    normalize_table_filters,
+    table_filter_errors,
+    validate_table_filters,
+)
+from testgen.common.table_filters import parse_table_filters
 from testgen.ui.services.database_service import TargetQuery, target_db_session
 from testgen.utils import get_exception_message
 
@@ -225,13 +234,33 @@ def validate_table_naming(
     if file_declarations is not None:
         errors.append(
             f"{declarations} applies only to a connection whose tables are files. "
-            f"Use {field('table_group_schema')} and the table filters instead."
+            f"Use {field('table_group_schema')} and the table criteria instead."
         )
     if require and not schema:
         label = table_group_schema_label(connection.sql_flavor_code)
         holding = f" It names the {label.lower()} holding the tables." if label else ""
         errors.append(f"{field('table_group_schema')} is required for this connection.{holding}")
     return errors
+
+
+def apply_table_filters(
+    table_group: TableGroup, value: Sequence[Mapping[str, object]] | None, connection: Connection | None
+) -> None:
+    """Store record filters on a table group after normalizing them and checking each against the target.
+
+    Args:
+        table_group: The table group to set the filters on. Its schema is the one the conditions are checked in.
+        value: Filters as ``{"table_name", "condition"}`` entries; empty or None removes every filter.
+        connection: The table group's connection. Without one, the conditions are not checked against the target.
+
+    Raises:
+        InvalidTableFilters: An entry is incomplete, a table has more than one filter, or a condition fails on
+            the target. Nothing is stored.
+    """
+    filters = normalize_table_filters([dict(entry) for entry in value or []])
+    if filters and connection is not None:
+        validate_table_filters(connection, table_group, filters)
+    table_group.table_filters = filters
 
 
 def apply_table_group_flavor_rules(table_group: TableGroup, connection: Connection | None) -> None:
@@ -399,7 +428,9 @@ def preview_table_group(
     connection: Connection | None = None,
     verify_access: bool = True,
 ) -> tuple[TableGroupPreview, list[ColumnChars] | None, RefreshDataCharsSQL | None]:
-    """Probe the connected target DB for tables matching ``table_group``'s filters.
+    """Probe the connected target DB for tables matching ``table_group``'s table criteria.
+
+    Each table filter is also checked by reading one record through it; a failing one fails the preview.
 
     Returns ``(preview, data_chars, sql_generator)`` — three picklable values.
     No connection and DDF failure blank the second and third tuple elements; an
@@ -430,7 +461,15 @@ def preview_table_group(
     try:
         if connection is None:
             connection = Connection.get(table_group.connection_id)
-        preview, data_chars, sql_generator = _build_preview(table_group, connection, verify_access=verify_access)
+        try:
+            table_filters = normalize_table_filters(table_group.table_filters)
+        except InvalidTableFilters as error:
+            preview["success"] = False
+            preview["message"] = str(error)
+            return preview, None, None
+        preview, data_chars, sql_generator = _build_preview(
+            table_group, connection, verify_access=verify_access, table_filters=table_filters
+        )
 
         if verify_access and preview["success"]:
             if not all(t["can_access"] for t in preview["tables"].values()) and not preview["message"]:
@@ -481,18 +520,22 @@ def _build_preview(
     connection: Connection,
     *,
     verify_access: bool,
+    table_filters: list[dict] | None = None,
 ) -> tuple[TableGroupPreview, list[ColumnChars], RefreshDataCharsSQL]:
     sql_generator = RefreshDataCharsSQL(connection, table_group)
     schema_label = table_group_schema_label(connection.sql_flavor_code)
     declaration_failures: dict[str, str] = {}
     access: dict[str, bool] | None = None
+    filter_errors: dict[str, str] = {}
     if sql_generator.flavor_service.metadata_via_api:
         params = resolve_connection_params(connection.__dict__)
         api_columns = sql_generator.flavor_service.get_schema_columns(params, table_group.table_group_schema) or []
         data_chars = sql_generator.filter_schema_columns(api_columns)
-        if verify_access:
+        if verify_access or table_filters:
             with target_db_session(connection, table_group) as run:
-                access = _probe_access(run, sql_generator, dict.fromkeys(c.table_name for c in data_chars))
+                if verify_access:
+                    access = _probe_access(run, sql_generator, dict.fromkeys(c.table_name for c in data_chars))
+                filter_errors = table_filter_errors(run, connection, table_group, table_filters)
     else:
         with target_db_session(connection, table_group) as run:
             rows = run(*sql_generator.get_schema_ddf())
@@ -515,6 +558,7 @@ def _build_preview(
             # In the same session, because on a file connection opening another rebuilds every view.
             if verify_access:
                 access = _probe_access(run, sql_generator, dict.fromkeys(c.table_name for c in data_chars))
+            filter_errors = table_filter_errors(run, connection, table_group, table_filters)
 
     preview: TableGroupPreview = {
         "stats": {
@@ -571,7 +615,41 @@ def _build_preview(
             # view for a probe to read.
             table["can_access"] = access.get(table_name, False)
 
+    if preview["success"]:
+        _add_table_filter_detail(preview, table_filters, filter_errors)
+
     return preview, data_chars, sql_generator
+
+
+def _add_table_filter_detail(
+    preview: TableGroupPreview, table_filters: list[dict] | None, filter_errors: dict[str, str]
+) -> None:
+    """Mark each table whose filter fails, and name each filtered table the table group does not hold.
+
+    Either one fails the preview, since the filter would fail every run or apply to no records.
+    """
+    tables = preview["tables"]
+    failed = 0
+    missing = []
+    for table_filter in parse_table_filters(table_filters):
+        if table_filter.table_name not in tables:
+            missing.append(table_filter.table_name)
+        elif table_filter.table_name in filter_errors:
+            tables[table_filter.table_name]["error"] = (
+                f"The filter is not valid: {filter_errors[table_filter.table_name]}"
+            )
+            failed += 1
+
+    sentences = [preview["message"]] if preview["message"] else []
+    if failed:
+        sentences.append(
+            ("1 table filter is not valid." if failed == 1 else f"{failed} table filters are not valid.")
+            + " Check the highlighted tables."
+        )
+    sentences.extend(f"Table {name} has a filter but is not in the table group." for name in missing)
+    if failed or missing:
+        preview["success"] = False
+        preview["message"] = " ".join(sentences)
 
 
 def _selected_declarations(sql_generator: RefreshDataCharsSQL) -> list[FileDeclaration]:
@@ -788,7 +866,7 @@ def move_table_group_schema(
     if not preview["tables"]:
         raise SchemaMoveRefused(
             "schema_empty",
-            f"No tables in {schema} match this table group's table filters.",
+            f"No tables in {schema} match this table group's table criteria.",
         )
 
     missing = sorted(_tables_in_use(table_group.id) - set(preview["tables"]))
@@ -808,21 +886,24 @@ def move_table_group_schema(
 
 
 # Membership fields: the ones that decide which tables of the schema belong to a table group.
-CATALOG_MEMBERSHIP_FIELDS = (
+CATALOG_SOURCE_FIELDS = (
     "table_group_schema",
     "profiling_table_set",
     "profiling_include_mask",
     "profiling_exclude_mask",
     "file_declarations",
+    "table_filters",
 )
 
 
-def catalog_membership(table_group: TableGroup) -> tuple:
-    """The table group's membership fields, with every empty value read as ``None``.
+def catalog_source(table_group: TableGroup) -> tuple:
+    """The table group's fields that decide its catalog, with every empty value read as ``None``.
+
+    They select the tables the catalog holds and the records counted in each.
 
     Forms post an empty string for a field the database holds as NULL, and both select the same tables.
     """
-    return tuple(getattr(table_group, name) or None for name in CATALOG_MEMBERSHIP_FIELDS)
+    return tuple(getattr(table_group, name) or None for name in CATALOG_SOURCE_FIELDS)
 
 
 def write_table_group_catalog(table_group: TableGroup, connection: Connection | None = None) -> str | None:
@@ -851,18 +932,19 @@ def write_table_group_catalog(table_group: TableGroup, connection: Connection | 
 
 def update_catalog_for_edit(
     table_group: TableGroup,
-    membership_before: tuple,
+    catalog_before: tuple,
     move: SchemaMove | None,
     connection: Connection | None = None,
 ) -> str | None:
     """Bring a saved table group's data catalog in line with an edit to it.
 
     A schema move rewrites the catalog against the schema it names. Its probe ran with the edited
-    filters applied, so that write also covers a filter change made in the same edit. Without a move,
-    the catalog is rewritten when the edit changed which tables belong to the table group.
+    table criteria and table filters applied, so that write also covers a change to either made in the
+    same edit. Without a move, the catalog is rewritten when the edit changed which tables belong to the
+    table group or the filters their records are counted through.
 
     :param table_group: Saved table group, with the edit applied.
-    :param membership_before: ``catalog_membership`` of the table group before the edit.
+    :param catalog_before: ``catalog_source`` of the table group before the edit.
     :param move: The schema move the edit made, if any.
     :param connection: The table group's connection, when the caller already has it.
     :returns: Why the catalog could not be read or written, or ``None`` when it was written or
@@ -870,7 +952,7 @@ def update_catalog_for_edit(
     """
     if move:
         return apply_schema_move(move, table_group.id)
-    if membership_before != catalog_membership(table_group):
+    if catalog_before != catalog_source(table_group):
         return write_table_group_catalog(table_group, connection)
     return None
 

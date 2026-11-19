@@ -26,7 +26,7 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
-      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE}
       GROUP BY `{COLUMN_NAME}`
       HAVING COUNT(*) > 1
       ORDER BY COUNT(*) DESC
@@ -38,7 +38,7 @@ profile_anomaly_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY `{COLUMN_NAME}` HAVING count > 1 ORDER BY count DESC LIMIT {LIMIT};
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE} GROUP BY `{COLUMN_NAME}` HAVING count > 1 ORDER BY count DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1130'
     test_id: '1016'
@@ -46,7 +46,7 @@ profile_anomaly_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC;
+      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC;
     error_type: Profile Anomaly
   - id: '1073'
     test_id: '1016'
@@ -54,7 +54,7 @@ profile_anomaly_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1048'
     test_id: '1016'
@@ -62,7 +62,7 @@ profile_anomaly_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1448'
     test_id: '1016'
@@ -70,7 +70,7 @@ profile_anomaly_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1187'
     test_id: '1016'
@@ -78,7 +78,7 @@ profile_anomaly_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1515'
     test_id: '1016'
@@ -86,7 +86,7 @@ profile_anomaly_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC FETCH FIRST {LIMIT} ROWS ONLY
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Profile Anomaly
   - id: '1515'
     test_id: '1016'
@@ -94,7 +94,7 @@ profile_anomaly_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT}
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT}
     error_type: Profile Anomaly
   - id: '10063'
     test_id: 1016
@@ -102,7 +102,7 @@ profile_anomaly_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TABLE_NAME}"{TABLE_FILTER_CLOSE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '11114'
     test_id: '1016'
@@ -110,5 +110,5 @@ profile_anomaly_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Profile Anomaly

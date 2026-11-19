@@ -21,6 +21,7 @@ from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import get_flavor_service, process_conditionals, replace_params
 from testgen.common.profile_frequency import build_frequent_patterns, build_frequent_values
 from testgen.common.read_file import read_template_sql_file, replace_templated_functions
+from testgen.common.table_filters import table_filter_params
 
 pytestmark = pytest.mark.unit
 
@@ -59,6 +60,7 @@ def _keyed_hashes(con, key: ColumnChars, columns: list[ColumnChars], max_query_c
     sql = ProfilingSQL.__new__(ProfilingSQL)
     sql.connection = SimpleNamespace(sql_flavor_code=FLAVOR, max_query_chars=max_query_chars)
     sql.flavor_service = get_flavor_service(FLAVOR)
+    sql.table_group = SimpleNamespace(table_filters=None)
     return [value for query, _ in sql.run_keyed_hash(key, columns) for value in con.execute(query).fetchone()]
 
 
@@ -164,6 +166,7 @@ def _profile(
         "DATA_TABLE": "src", "COL_POS": 1, "COL_NAME": column, "COL_NUM": f'"{column}"', "COL_NAME_SANITIZED": column, "COL_TYPE": "",
         "DB_DATA_TYPE": "", "COL_GEN_TYPE": general_type, "PROFILE_RUN_ID": "pr", "MAX_PATTERN_LENGTH": 25,
         "PERCENTILE_METHOD": "exact", "TABLE_HINT": "",
+        **table_filter_params(None, "src", "s", '"'),
         **(service.value_hash_params(chars) if is_hashed else {}),
     }
 
@@ -203,6 +206,8 @@ def _passes(
     params = {
         "TEST_TYPE": test_type, "TEST_DEFINITION_ID": "td", "TEST_SUITE_ID": "ts", "TEST_RUN_ID": "tr",
         "RUN_DATE": RUN_DATE, "SCHEMA_NAME": "s", "TABLE_NAME": table, "QUOTE": '"',
+        **table_filter_params(None, table, "s", '"'),
+        **table_filter_params(None, "", "", '"', prefix="MATCH_"),
         "COLUMN_NAME": f'"{column or ""}"', "COLUMN_NAME_NO_QUOTES": column, "SKIP_ERRORS": 0, "INPUT_PARAMETERS": "",
         "BASELINE_CT": null_if_empty(baseline.get("baseline_ct")),
         "BASELINE_UNIQUE_CT": null_if_empty(baseline.get("baseline_unique_ct")),

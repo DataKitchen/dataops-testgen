@@ -287,7 +287,9 @@ def _lookup(name: str, table: str, subset: str | None, flavor: str = "duckdb") -
     }
     module = "testgen.common.source_data_service"
     with (
-        patch(f"{module}._get_lookup_data", return_value=SimpleNamespace(lookup_query=lookup["lookup_query"], sql_flavor=flavor)),
+        patch(f"{module}._get_lookup_data", return_value=SimpleNamespace(
+            lookup_query=lookup["lookup_query"], sql_flavor=flavor, table_group_schema=None, table_filters=None,
+        )),
         patch(f"{module}.TestDefinition.get_for_project", return_value=definition),
         patch(f"{module}.DataTable.list_column_chars", return_value=[
             ColumnChars("s", table, chars.column_name, general_type=chars.general_type, column_type=chars.column_type)

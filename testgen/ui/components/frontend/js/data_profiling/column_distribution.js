@@ -20,7 +20,7 @@ import { Icon } from '/app/static/js/components/icon.js';
 import { withTooltip } from '/app/static/js/components/tooltip.js';
 import { loadStylesheet, friendlyPercent, getValue } from '/app/static/js/utils.js';
 import { formatNumber, formatTimestamp, PII_REDACTED } from '/app/static/js/display_utils.js';
-import { frequencyItems } from './data_profiling_utils.js';
+import { frequencyItems, TableFilterAttribute, approxCountNote } from './data_profiling_utils.js';
 
 const { div, span } = van.tags;
 const columnTypeFunctionMap = {
@@ -389,9 +389,10 @@ const BaseCounts = (/** @type Column */ item) => {
                 value: formatNumber(value),
                 width: attributeWidth,
             })),
+            TableFilterAttribute(item, attributeWidth),
         ),
         useApprox
-            ? div({ class: 'text-caption text-right mt-1' }, '† Approximate count based on server statistics')
+            ? div({ class: 'text-caption text-right mt-1' }, approxCountNote(item, false))
             : null,
     );
 };
