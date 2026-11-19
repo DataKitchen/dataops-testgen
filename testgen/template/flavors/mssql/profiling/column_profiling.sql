@@ -168,7 +168,7 @@ WITH whole_table_measures AS (
          COUNT_BIG(value_length) AS value_ct,
          MAX(value_length) AS max_length
     FROM ( SELECT CASE
-                    WHEN v > ' '
+                    WHEN DATALENGTH(RTRIM(v)) > 0
                       THEN TRANSLATE(v COLLATE Latin1_General_BIN,
                              'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN' )
                   END AS pattern,
@@ -181,8 +181,8 @@ WITH whole_table_measures AS (
          pattern_ct,
          value_ct,
          CASE
-           WHEN pattern > ' ' AND MAX(max_length) OVER () BETWEEN 3 AND {MAX_PATTERN_LENGTH}
-             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN pattern > ' ' THEN 0 ELSE 1 END, pattern_ct DESC, CAST(pattern AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2)
+           WHEN DATALENGTH(RTRIM(pattern)) > 0 AND MAX(max_length) OVER () BETWEEN 3 AND {MAX_PATTERN_LENGTH}
+             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN DATALENGTH(RTRIM(pattern)) > 0 THEN 0 ELSE 1 END, pattern_ct DESC, CAST(pattern AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2)
          END AS pattern_rank
     FROM pattern_counts
 )

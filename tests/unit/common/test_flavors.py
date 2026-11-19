@@ -197,8 +197,8 @@ def test_value_list_params_compares_column_and_literals_in_one_form(family):
 
 
 def test_value_list_params_compares_bytes_on_mssql():
-    params = get_flavor_service("mssql").value_list_params('"c"', _column("A", "char(5)"), ["é "])
-    assert params["VALUE_LIST_COLUMN"] == 'CAST(CAST(RTRIM("c") AS NVARCHAR(MAX)) AS VARBINARY(MAX))'
+    params = get_flavor_service("mssql").value_list_params('"c"', _column("A", "varchar(5)"), ["é "])
+    assert params["VALUE_LIST_COLUMN"] == 'CAST(CAST("c" AS NVARCHAR(MAX)) AS VARBINARY(MAX))'
     assert params["VALUE_LIST_LITERALS"] == "CAST(N'é ' AS VARBINARY(MAX))"
 
 
@@ -215,6 +215,35 @@ def test_mssql_number_digest_does_not_branch():
     column = _column("N", "bigint")
     text = service.canonical_text('"c"', column)
     assert service.canonical_digest('"c"', column, lambda text: f"D({text})") == f"D({text})"
+
+
+@pytest.mark.parametrize(
+    ("family", "column_type", "db_data_type"),
+    [
+        ("mssql", "char(2)", None),
+        ("mssql", "nchar(2)", None),
+        ("oracle", "char(2)", "CHAR(2)"),
+        ("redshift", "char(2)", None),
+        ("databricks", "char(2)", None),
+    ],
+)
+def test_value_list_params_matches_a_padded_column_without_trailing_spaces(family, column_type, db_data_type):
+    service = get_flavor_service(family)
+    column = _column("A", column_type)
+    column.db_data_type = db_data_type
+    params = service.value_list_params('"c"', column, ["N ", "N", "Y  ", " Y"])
+    assert params["VALUE_LIST_LITERALS"] == ", ".join(
+        service.exact_text(service.string_literal(value)) for value in ["N", "Y", " Y"]
+    )
+    assert params["VALUE_LIST_CT"] == "3"
+
+
+def test_value_list_params_keeps_trailing_spaces_for_an_unpadded_column():
+    service = get_flavor_service("mssql")
+    params = service.value_list_params('"c"', _column("A", "varchar(2)"), ["N ", "N"])
+    assert params["VALUE_LIST_LITERALS"] == ", ".join(
+        service.exact_text(service.string_literal(value)) for value in ["N ", "N"]
+    )
 
 
 def test_value_list_params_compares_bytes_on_redshift():

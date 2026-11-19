@@ -52,11 +52,9 @@ class MssqlFlavorService(FlavorService):
             return ""
         return "WITH (NOLOCK)"
 
-    def text_value(self, column_ref: str, column_type: str | None, db_data_type: str | None = None) -> str:  # noqa: ARG002
+    def pads_text(self, column_type: str | None, db_data_type: str | None = None) -> bool:  # noqa: ARG002
         # CHAR and NCHAR values are stored padded with spaces to the declared length.
-        if column_type and re.fullmatch(r"n?char(\(\d+\))?", column_type.lower()):
-            return f"RTRIM({column_ref})"
-        return column_ref
+        return bool(column_type and re.fullmatch(r"n?char(\(\d+\))?", column_type.lower()))
 
     def value_list_text(self, value_expr: str) -> str:
         return f"CAST({value_expr} AS NVARCHAR(MAX))"

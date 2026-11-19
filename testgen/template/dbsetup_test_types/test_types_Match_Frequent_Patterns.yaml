@@ -69,7 +69,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT val AS frequent_pattern, ct AS count FROM ( SELECT pattern AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(pattern AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2) AS rn FROM ( SELECT TRANSLATE({COLUMN_VALUE} COLLATE Latin1_General_BIN, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN') AS pattern FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} > ' ' ) p GROUP BY pattern HAVING pattern > ' ' ) ranked WHERE rn <= 5 ORDER BY rn;
+      SELECT val AS frequent_pattern, ct AS count FROM ( SELECT pattern AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(pattern AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2) AS rn FROM ( SELECT TRANSLATE({COLUMN_VALUE} COLLATE Latin1_General_BIN, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN') AS pattern FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE DATALENGTH(RTRIM({COLUMN_VALUE})) > 0 ) p GROUP BY pattern HAVING DATALENGTH(RTRIM(pattern)) > 0 ) ranked WHERE rn <= 5 ORDER BY rn;
     error_type: Test Results
   - id: '1613'
     test_id: '1544'
@@ -240,9 +240,9 @@ test_types:
                ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(pattern AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2) AS rn
           FROM ( SELECT TRANSLATE({COLUMN_VALUE} COLLATE Latin1_General_BIN, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN') AS pattern
                    FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
-                  WHERE {COLUMN_VALUE} > ' ' ) p
+                  WHERE DATALENGTH(RTRIM({COLUMN_VALUE})) > 0 ) p
          GROUP BY pattern
-        HAVING pattern > ' '
+        HAVING DATALENGTH(RTRIM(pattern)) > 0
       ),
       test AS (
         SELECT STRING_AGG(CONCAT(CAST(val AS NVARCHAR(MAX)) COLLATE DATABASE_DEFAULT, N' (', CAST(ct AS NVARCHAR(20)), N')'), N', ') WITHIN GROUP (ORDER BY rn) AS measure

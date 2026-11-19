@@ -43,12 +43,10 @@ class OracleFlavorService(FlavorService):
     double_type = "BINARY_DOUBLE"
     wide_decimal_type = "NUMBER(38,0)"
 
-    def text_value(self, column_ref: str, column_type: str | None, db_data_type: str | None = None) -> str:  # noqa: ARG002
+    def pads_text(self, column_type: str | None, db_data_type: str | None = None) -> bool:  # noqa: ARG002
         # CHAR and NCHAR values are stored padded with spaces to the declared length. The catalog's
         # column_type reads char(n) for VARCHAR2 as well, so the declared type tells them apart.
-        if db_data_type and re.fullmatch(r"n?char\(\d+( (char|byte))?\)", db_data_type.lower()):
-            return f"RTRIM({column_ref})"
-        return column_ref
+        return bool(db_data_type and re.fullmatch(r"n?char\(\d+( (char|byte))?\)", db_data_type.lower()))
 
     def exact_text(self, text_expr: str) -> str:
         return f"NLSSORT({text_expr}, 'NLS_SORT=BINARY')"
