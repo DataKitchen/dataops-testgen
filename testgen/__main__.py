@@ -96,7 +96,9 @@ from testgen.common.notifications.base import log_smtp_configuration_problems, s
 from testgen.common.process_setup import ConfigurationError, setup_process
 from testgen.common.standalone_postgres import (
     STANDALONE_URI_ENV_VAR,
+    EmbeddedPostgresError,
     get_server_uri,
+    is_server_running,
     is_standalone_mode,
 )
 from testgen.common.standalone_postgres import (
@@ -229,10 +231,17 @@ def cli(ctx: Context, verbose: bool):
             err=True,
         )
 
+    # Standalone setup writes the configuration and starts the embedded database itself.
+    is_standalone_setup = ctx.invoked_subcommand == "standalone-setup"
     try:
-        setup_process(verbose=verbose, check_configuration=ctx.invoked_subcommand != "standalone-setup")
+        setup_process(
+            verbose=verbose, check_configuration=not is_standalone_setup, start_database=not is_standalone_setup
+        )
     except ConfigurationError as error:
         click.secho(str(error), fg="red")
+        sys.exit(1)
+    except EmbeddedPostgresError as error:
+        click.secho(str(error), fg="red", err=True)
         sys.exit(1)
 
     ctx.obj = Configuration(verbose=verbose)
@@ -604,6 +613,10 @@ def quick_start(
     click.echo("Quick start has successfully finished.")
 
 
+def _can_prompt() -> bool:
+    return sys.stdin is not None and sys.stdin.isatty()
+
+
 @cli.command("standalone-setup", help="Set up TestGen for standalone use with embedded PostgreSQL (no Docker required).")
 @click.option("--username", prompt="Admin username", default="admin", help="Username for the TestGen web UI.")
 @click.option(
@@ -614,8 +627,25 @@ def setup_standalone(username: str, password: str):
     config_dir = get_testgen_home()
     config_path = config_dir / "config.env"
 
-    if config_path.exists():
-        if not click.confirm(f"Config already exists at {config_path}. Overwrite?"):
+    overwrite = config_path.exists()
+    if overwrite:
+        if not _can_prompt():
+            click.secho(
+                f"Config already exists at {config_path}. To overwrite it, run this command in a terminal. "
+                f"To start over, delete {config_dir}.",
+                fg="red",
+                err=True,
+            )
+            sys.exit(1)
+        if is_server_running():
+            # Overwriting drops the database under the running app, which keeps the replaced keys.
+            click.secho(
+                "TestGen is running with the existing configuration. Stop TestGen, then run this command again.",
+                fg="red",
+                err=True,
+            )
+            sys.exit(1)
+        if not click.confirm(f"Config already exists at {config_path}. Overwrite it and erase the existing TestGen data?"):
             click.echo("Aborted.")
             return
 
@@ -694,11 +724,15 @@ def setup_standalone(username: str, password: str):
         streamlit_creds.write_text('[general]\nemail = ""\n')
 
     # Start embedded PostgreSQL (standalone mode is now active via config)
-    start_standalone_postgres()
+    try:
+        start_standalone_postgres()
+    except EmbeddedPostgresError as error:
+        click.secho(str(error), fg="red", err=True)
+        sys.exit(1)
 
-    # Initialize the database
     click.echo("Initializing database...")
-    run_launch_db_config(delete_db=False)
+    # Data written under the replaced config cannot be read with this setup's encryption keys and admin password.
+    run_launch_db_config(delete_db=overwrite)
 
     # Send analytics event for pip install tracking
     try:

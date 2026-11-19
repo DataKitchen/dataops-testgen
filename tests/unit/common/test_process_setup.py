@@ -51,6 +51,17 @@ def test_a_standalone_process_with_no_parent_server_starts_one(setup_parts, monk
     setup_parts["attach"].assert_not_called()
 
 
+def test_a_standalone_process_can_skip_the_database(setup_parts, monkeypatch):
+    setup_parts["standalone"].return_value = True
+    monkeypatch.setenv(STANDALONE_URI_ENV_VAR, "postgresql://postgres:@/postgres")
+
+    setup_process(start_database=False)
+
+    setup_parts["start"].assert_not_called()
+    setup_parts["attach"].assert_not_called()
+    setup_parts["logging"].assert_called_once()
+
+
 def test_standalone_mode_skips_the_configuration_check(setup_parts, monkeypatch):
     """Standalone mode reaches its metadata database without any of the settings checked."""
     setup_parts["standalone"].return_value = True

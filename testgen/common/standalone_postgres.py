@@ -10,6 +10,7 @@ import atexit
 import logging
 import os
 import platform
+import subprocess
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
@@ -33,6 +34,26 @@ NEW_INSTALL_POSTGRES_VERSION = 16
 # time by ``resolve_connection_params``. Angle brackets are illegal in real
 # hostnames, so this can't collide with a user-defined connection.
 EMBEDDED_HOST_SENTINEL = "<embedded>"
+
+ELEVATED_PROCESS_HINT = (
+    "PostgreSQL does not run with administrative permissions, and TestGen was started with them. "
+    'Run TestGen from a Command Prompt that is not elevated (not "Run as administrator"). '
+    "If it still fails, privilege-management software may be elevating TestGen or the installer: "
+    "ask your IT team to exclude them, or install TestGen with Docker."
+)
+
+
+class EmbeddedPostgresError(Exception):
+    """The embedded PostgreSQL server could not start."""
+
+
+class _ErrorCapture(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(level=logging.ERROR)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
 
 
 def get_home_dir() -> Path:
@@ -70,6 +91,8 @@ def start_server(data_dir: Path | None = None) -> None:
 
     Calling this multiple times is safe — the second call is a no-op
     if the server is already running.
+
+    :raises EmbeddedPostgresError: A PostgreSQL command failed while initializing or starting the server.
     """
     global _server
 
@@ -94,11 +117,42 @@ def start_server(data_dir: Path | None = None) -> None:
     postgres_version = existing_version if existing_version is not None else NEW_INSTALL_POSTGRES_VERSION
 
     LOG.info("Starting embedded PostgreSQL (data: %s, pg%s) ...", data_dir, postgres_version)
-    _server = pgserver.get_server(data_dir, postgres_version=postgres_version)
+    # pgserver raises bare subprocess errors; the failed command's output reaches only its error log.
+    capture = _ErrorCapture()
+    pgserver_logger = logging.getLogger("pixeltable_pgserver")
+    pgserver_logger.addHandler(capture)
+    try:
+        _server = pgserver.get_server(data_dir, postgres_version=postgres_version)
+    except subprocess.SubprocessError as error:
+        raise EmbeddedPostgresError(_describe_start_failure(capture.messages, error)) from error
+    finally:
+        pgserver_logger.removeHandler(capture)
     LOG.info("Embedded PostgreSQL ready: %s", _server.get_uri())
 
     _reinitialize_orm_engine()
     atexit.register(stop_server)
+
+
+def _describe_start_failure(pgserver_errors: list[str], error: subprocess.SubprocessError) -> str:
+    output = "\n".join(pgserver_errors)
+    if "administrative permissions" in output:
+        return f"Embedded PostgreSQL could not start. {ELEVATED_PROCESS_HINT}"
+    if not output:
+        output = "\n".join(str(part) for part in (error, getattr(error, "stderr", None)) if part)
+    return f"Embedded PostgreSQL could not start.\n{output}".rstrip()
+
+
+def is_server_running(data_dir: Path | None = None) -> bool:
+    """Return whether a PostgreSQL server is running on the data directory.
+
+    :param data_dir: The cluster's data directory. Defaults to ``<TestGen home>/pgdata``.
+    """
+    try:
+        from pixeltable_pgserver.utils import PostmasterInfo
+    except ImportError:
+        return False
+    info = PostmasterInfo.read_from_pgdata(data_dir or get_home_dir() / "pgdata")
+    return info is not None and info.is_running()
 
 
 def get_server_uri() -> str | None:
