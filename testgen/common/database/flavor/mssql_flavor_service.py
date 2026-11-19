@@ -60,8 +60,40 @@ class MssqlFlavorService(FlavorService):
         return f"CAST({value_expr} AS NVARCHAR(MAX))"
 
     def exact_text(self, text_expr: str) -> str:
-        # Binary collations still ignore trailing spaces, so the bytes are compared instead
-        return f"CAST({text_expr} AS VARBINARY(MAX))"
+        # Binary collations still ignore trailing spaces, so the UTF-16 bytes are compared instead. A
+        # large-object conversion on every row is slow, so only text longer than NVARCHAR(4000) holds
+        # takes one, and is compared by a hash. A leading byte gives the hash an odd length, which
+        # UTF-16 bytes never have. Up to 4000 bytes of character data fit, since no byte holds more
+        # than one UTF-16 code unit.
+        return (
+            f"CASE WHEN DATALENGTH({text_expr}) <= 4000"
+            f" THEN CAST(CAST({text_expr} AS NVARCHAR(4000)) AS VARBINARY(8000))"
+            f" {self._exact_unbounded_branches(f'CAST({text_expr} AS NVARCHAR(MAX))')} END"
+        )
+
+    def exact_value_list_text(self, value_expr: str, column: ColumnChars | None) -> str:
+        if column and column.general_type == "A":
+            return self.exact_text(value_expr)
+        # DATALENGTH measures how a value is stored, which for xml and CLR types can be far shorter
+        # than its text, so these are measured after the conversion
+        return f"CASE {self._exact_unbounded_branches(self.value_list_text(value_expr))} END"
+
+    def exact_literal(self, value: str) -> str:
+        literal = self.string_literal(value)
+        if len(value.encode("utf-16-le", "surrogatepass")) <= 8000:
+            return f"CAST({literal} AS VARBINARY(8000))"
+        return self._exact_hash(f"CAST({literal} AS NVARCHAR(MAX))")
+
+    @staticmethod
+    def _exact_hash(text_expr: str) -> str:
+        return f"0x01 + CAST(HASHBYTES('SHA2_256', {text_expr}) AS BINARY(32))"
+
+    def _exact_unbounded_branches(self, nvarchar_max_expr: str) -> str:
+        """Return the CASE branches that give an NVARCHAR(MAX) expression the form ``exact_text`` returns."""
+        return (
+            f"WHEN DATALENGTH({nvarchar_max_expr}) <= 8000 THEN CAST({nvarchar_max_expr} AS VARBINARY(8000))"
+            f" ELSE {self._exact_hash(nvarchar_max_expr)}"
+        )
 
     def canonical_digest(self, column_ref: str, column: ColumnChars, digest: Callable[[str], str]) -> str:
         if column.general_type != "A":
