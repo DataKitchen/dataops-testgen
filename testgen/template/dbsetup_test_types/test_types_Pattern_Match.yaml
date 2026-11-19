@@ -152,7 +152,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE REGEXP_LIKE(NULLIF(`{COLUMN_NAME}`::STRING, ''),'{BASELINE_VALUE}') != 1 {SUBSET_AND} GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE NOT REGEXP_LIKE(NULLIF(`{COLUMN_NAME}`::STRING, ''),'{BASELINE_VALUE}') {SUBSET_AND} GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
     error_type: Test Results
   - id: '1160'
     test_id: '1026'
