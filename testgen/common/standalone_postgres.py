@@ -44,6 +44,12 @@ ELEVATED_PROCESS_HINT = (
 )
 
 
+# pgserver starts PostgreSQL with ``pg_ctl -l <data dir>/log``. The file is never truncated, so it holds every
+# earlier start too, and a failed start logs all of it under this heading.
+SERVER_LOG_NAME = "log"
+_SERVER_LOG_DUMP_PREFIX = "Failed to start server."
+
+
 class EmbeddedPostgresError(Exception):
     """The embedded PostgreSQL server could not start."""
 
@@ -118,6 +124,8 @@ def start_server(data_dir: Path | None = None) -> None:
     postgres_version = existing_version if existing_version is not None else NEW_INSTALL_POSTGRES_VERSION
 
     LOG.info("Starting embedded PostgreSQL (data: %s, pg%s) ...", data_dir, postgres_version)
+    server_log = data_dir / SERVER_LOG_NAME
+    server_log_offset = server_log.stat().st_size if server_log.exists() else 0
     # pgserver raises bare subprocess errors; the failed command's output reaches only its error log.
     capture = _ErrorCapture()
     pgserver_logger = logging.getLogger("pixeltable_pgserver")
@@ -125,7 +133,8 @@ def start_server(data_dir: Path | None = None) -> None:
     try:
         _server = pgserver.get_server(data_dir, postgres_version=postgres_version)
     except subprocess.SubprocessError as error:
-        raise EmbeddedPostgresError(_describe_start_failure(capture.messages, error)) from error
+        new_server_log = _read_from(server_log, server_log_offset)
+        raise EmbeddedPostgresError(_describe_start_failure(capture.messages, new_server_log, error)) from error
     finally:
         pgserver_logger.removeHandler(capture)
     LOG.info("Embedded PostgreSQL ready: %s", _server.get_uri())
@@ -134,11 +143,29 @@ def start_server(data_dir: Path | None = None) -> None:
     atexit.register(stop_server)
 
 
-def _describe_start_failure(pgserver_errors: list[str], error: subprocess.SubprocessError) -> str:
-    output = "\n".join(pgserver_errors)
+def _read_from(path: Path, offset: int) -> str:
+    """Return the text of *path* from byte *offset* on, or all of it if the file is shorter than that."""
+    try:
+        with path.open("rb") as file:
+            if offset <= path.stat().st_size:
+                file.seek(offset)
+            return file.read().decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _describe_start_failure(pgserver_errors: list[str], new_server_log: str, error: subprocess.SubprocessError) -> str:
+    """Describe a failed start from pgserver's errors and the server log lines written during this start.
+
+    :param pgserver_errors: The messages pgserver logged at ERROR. Its dump of the whole server log is left out.
+    :param new_server_log: The server log text written since the start began.
+    :param error: The subprocess error pgserver raised.
+    """
+    parts = [message for message in pgserver_errors if not message.startswith(_SERVER_LOG_DUMP_PREFIX)]
+    parts.append(new_server_log.strip())
+    output = "\n".join(part for part in parts if part)
     if not output:
         output = "\n".join(str(part) for part in (error, getattr(error, "stderr", None)) if part)
-    # The output can include log lines from earlier attempts, so the hint is added to it rather than replacing it.
     hint = f" {ELEVATED_PROCESS_HINT}" if "administrative permissions" in output else ""
     return f"Embedded PostgreSQL could not start.{hint}\n{output}".rstrip()
 
