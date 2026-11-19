@@ -23,6 +23,29 @@ def _statement_on(statements: list[str], table: str) -> list[str]:
     return [statement for statement in statements if re.match(rf"DELETE FROM {table}\b", statement)]
 
 
+@pytest.fixture(autouse=True)
+def scorecard_cls():
+    with patch("testgen.common.models.table_group.ScoreDefinition") as scorecard_cls:
+        scorecard_cls.created_with_table_group.return_value = []
+        yield scorecard_cls
+
+
+def test_table_group_cascade_deletes_the_scorecards_created_with_each_table_group(scorecard_cls):
+    session = MagicMock()
+    session.execute.return_value.all.return_value = [("demo", "sales"), ("demo", "finance")]
+    created = {"sales": [MagicMock()], "finance": [MagicMock(), MagicMock()]}
+    scorecard_cls.created_with_table_group.side_effect = lambda _project, name: created[name]
+    with (
+        patch("testgen.common.models.table_group.get_current_session", return_value=session),
+        patch.object(TestSuite, "select_minimal_where", return_value=[]),
+        patch.object(TableGroup, "delete_where"),
+    ):
+        TableGroup.cascade_delete([str(uuid4()), str(uuid4())])
+
+    for scorecard in (*created["sales"], *created["finance"]):
+        scorecard.delete.assert_called_once_with()
+
+
 def test_table_group_cascade_deletes_every_job_that_names_the_table_group():
     table_group_id = uuid4()
     session = MagicMock()

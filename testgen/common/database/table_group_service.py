@@ -939,8 +939,6 @@ def cascade_delete_table_group(table_group: TableGroup) -> DeleteBlocker | None:
         return DeleteBlocker.JOB
     if not JobExecution.cancel_queued_catalog_refreshes(TableGroup, table_group.id):
         return DeleteBlocker.CATALOG_REFRESH
-    for scorecard in scorecards_created_with(table_group):
-        scorecard.delete()
     TableGroup.cascade_delete([str(table_group.id)])
     return None
 

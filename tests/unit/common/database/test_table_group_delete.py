@@ -26,17 +26,9 @@ def jobs():
         patch(f"{MODULE}._has_job_in_flight", return_value=False) as in_flight,
         patch(f"{MODULE}.JobExecution") as job_execution,
         patch(f"{MODULE}.TableGroup") as table_group_cls,
-        patch(f"{MODULE}.ScoreDefinition") as scorecard_cls,
     ):
         job_execution.cancel_queued_catalog_refreshes.return_value = True
-        scorecard_cls.created_with_table_group.return_value = []
         yield in_flight, job_execution, table_group_cls
-
-
-@pytest.fixture
-def scorecard_cls():
-    with patch(f"{MODULE}.ScoreDefinition") as scorecard_cls:
-        yield scorecard_cls
 
 
 def test_an_idle_table_group_is_deleted(jobs):
@@ -48,27 +40,6 @@ def test_an_idle_table_group_is_deleted(jobs):
     assert in_flight.call_args.args[0] is table_group
     job_execution.cancel_queued_catalog_refreshes.assert_called_once_with(table_group_cls, table_group.id)
     table_group_cls.cascade_delete.assert_called_once_with([str(table_group.id)])
-
-
-def test_the_scorecards_created_with_the_table_group_are_deleted_with_it(jobs, scorecard_cls):
-    created = [MagicMock(), MagicMock()]
-    scorecard_cls.created_with_table_group.return_value = created
-    table_group = MagicMock(id=uuid4(), project_code="demo", table_groups_name="sales")
-
-    assert cascade_delete_table_group(table_group) is None
-
-    scorecard_cls.created_with_table_group.assert_called_once_with("demo", "sales")
-    for scorecard in created:
-        scorecard.delete.assert_called_once_with()
-
-
-def test_a_refused_delete_keeps_the_scorecards(jobs, scorecard_cls):
-    in_flight, _, _ = jobs
-    in_flight.return_value = True
-
-    assert cascade_delete_table_group(_table_group()) == DeleteBlocker.JOB
-
-    scorecard_cls.created_with_table_group.assert_not_called()
 
 
 def test_a_job_in_flight_blocks_the_delete_and_leaves_queued_refreshes_alone(jobs):

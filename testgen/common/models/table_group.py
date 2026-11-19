@@ -1366,6 +1366,13 @@ class TableGroup(Entity):
 
     @classmethod
     def cascade_delete(cls, ids: list[str]) -> None:
+        named = get_current_session().execute(
+            select(cls.project_code, cls.table_groups_name).where(cls.id.in_(ids))
+        ).all()
+        for project_code, name in named:
+            for scorecard in ScoreDefinition.created_with_table_group(project_code, name):
+                scorecard.delete()
+
         test_suites = TestSuite.select_minimal_where(TestSuite.table_groups_id.in_(ids))
         if test_suites:
             TestSuite.cascade_delete([item.id for item in test_suites])
