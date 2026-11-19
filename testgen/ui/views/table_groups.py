@@ -10,7 +10,11 @@ from testgen.commands.run_catalog_refresh import submit_table_group_setup
 from testgen.common.audit.actions import AuditAction
 from testgen.common.audit.monitors import record_monitoring_enabled
 from testgen.common.audit.recorder import record
-from testgen.common.audit.table_groups import record_table_group_created
+from testgen.common.audit.table_groups import (
+    record_table_group_created,
+    record_table_group_deleted,
+    record_table_group_updated,
+)
 from testgen.common.database.table_group_service import (
     DeleteBlocker,
     SchemaMoveRefused,
@@ -19,8 +23,10 @@ from testgen.common.database.table_group_service import (
     cascade_delete_table_group,
     catalog_membership,
     move_table_group_schema,
+    rename_table_group_in_scorecards,
     save_new_table_group,
     schema_label_for_table_group,
+    scorecards_created_with,
 )
 from testgen.common.database.test_suite_service import duplicate_name_message, is_duplicate_name_error
 from testgen.common.enums import JobSource
@@ -38,6 +44,7 @@ from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries import table_group_queries
+from testgen.ui.queries.scoring_queries import get_all_score_cards
 from testgen.ui.services.query_cache import (
     get_connection_minimal,
     get_profiling_run_summaries,
@@ -591,8 +598,11 @@ class TableGroupsPage(Page):
                         # already written the new one onto it.
                         table_group.table_group_schema = original_schema
                         move = move_table_group_schema(table_group, moving_to)
+                    # The cached table group can hold a name that MCP or the API changed after it was cached.
+                    stored_name = TableGroup.get_minimal(table_group.id).table_groups_name
                     table_group.save()
-                    record(AuditAction.TABLE_GROUP_UPDATED, table_group)
+                    scorecards = rename_table_group_in_scorecards(table_group, stored_name)
+                    record_table_group_updated(table_group, scorecards)
                 except SchemaMoveRefused as refusal:
                     table_group.table_group_schema = original_schema
                     result = {"success": False, "message": refusal.message}
@@ -661,6 +671,7 @@ class TableGroupsPage(Page):
     def _prepare_delete_dialog(self, table_group_id: str) -> None:
         table_group = get_table_group_minimal(table_group_id)
         can_be_deleted = not TableGroup.is_in_use([table_group_id])
+        scorecards = scorecards_created_with(table_group)
         st.session_state["tg_delete_dialog"] = {
             "open": True,
             "table_group": {
@@ -668,12 +679,14 @@ class TableGroupsPage(Page):
                 "schema_label": schema_label_for_table_group(table_group_id),
             },
             "can_be_deleted": can_be_deleted,
+            "scorecard_count": len(scorecards),
         }
 
     @with_database_session
     def _execute_delete(self, table_group_id: str) -> None:
         table_group_name = st.session_state.get("tg_delete_dialog", {}).get("table_group", {}).get("table_groups_name", "")
         table_group = TableGroup.get(table_group_id)
+        scorecards = scorecards_created_with(table_group) if table_group else []
         blocker = cascade_delete_table_group(table_group) if table_group else None
         if blocker == DeleteBlocker.JOB:
             st.toast(
@@ -689,7 +702,8 @@ class TableGroupsPage(Page):
             )
         else:
             if table_group:
-                record(AuditAction.TABLE_GROUP_DELETED, table_group)
+                record_table_group_deleted(table_group, scorecards)
             select_table_groups_minimal_where.clear()
+            get_all_score_cards.clear()
             st.toast(f"Table Group {table_group_name} has been deleted.", icon=":material/check:")
         st.session_state.pop("tg_delete_dialog", None)

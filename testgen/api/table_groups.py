@@ -31,9 +31,11 @@ from testgen.api.schemas import (
     TableGroupUpdateRequest,
     TableGroupUpdateResponse,
 )
-from testgen.common.audit.actions import AuditAction
-from testgen.common.audit.recorder import record
-from testgen.common.audit.table_groups import record_table_group_created
+from testgen.common.audit.table_groups import (
+    record_table_group_created,
+    record_table_group_deleted,
+    record_table_group_updated,
+)
 from testgen.common.database.table_group_service import (
     SchemaMoveRefused,
     apply_table_group_flavor_rules,
@@ -41,7 +43,9 @@ from testgen.common.database.table_group_service import (
     catalog_membership,
     is_duplicate_name_error,
     move_table_group_schema,
+    rename_table_group_in_scorecards,
     save_new_table_group,
+    scorecards_created_with,
     update_catalog_for_edit,
     validate_table_group_fields,
     validate_table_naming,
@@ -329,6 +333,7 @@ def update_table_group(
     )
 
     membership_before = catalog_membership(table_group)
+    previous_name = table_group.table_groups_name
     for name, value in sent.items():
         if name == "table_group_name":
             table_group.table_groups_name = value
@@ -360,7 +365,7 @@ def update_table_group(
                     _REFUSAL_STATUS.get(refusal.reason, 422), refusal.reason, refusal.message
                 ) from refusal
         table_group.save()
-        record(AuditAction.TABLE_GROUP_UPDATED, table_group)
+        record_table_group_updated(table_group, rename_table_group_in_scorecards(table_group, previous_name))
     except IntegrityError as err:
         if is_duplicate_name_error(err):
             raise api_error(
@@ -396,16 +401,18 @@ def delete_table_group(table_group: TableGroup = resolve_table_group("edit")) ->
     test definitions, test runs, results, and schedules; its monitors; its profiling runs and results,
     hygiene issues, data catalog, and schema change history; the jobs that name it or its test suites,
     which leave the job listing; and the notification rules scoped to it or to its test suites.
-    Scorecards are kept.
+    The scorecard created with the table group is deleted too, while it is still named after the table group and
+    filters on it alone. Other scorecards are kept.
 
     The delete is refused while a job for the table group or its test suites is queued or running:
     profiling, test generation, a test run, or monitor generation or a monitor run. Queued data
     catalog refreshes are canceled, and a refresh that has already started refuses the delete too.
     """
+    scorecards = scorecards_created_with(table_group)
     if cascade_delete_table_group(table_group):
         raise api_error(
             409,
             "job_in_flight",
             "A job for this table group is still running. Wait for it to finish, then try again.",
         )
-    record(AuditAction.TABLE_GROUP_DELETED, table_group)
+    record_table_group_deleted(table_group, scorecards)

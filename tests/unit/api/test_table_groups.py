@@ -28,6 +28,16 @@ TG_ID = uuid4()
 
 
 @pytest.fixture(autouse=True)
+def scorecards():
+    """Stand in for the scorecard lookups a rename or delete makes."""
+    with (
+        patch(f"{MODULE}.scorecards_created_with", return_value=[]) as created_with,
+        patch(f"{MODULE}.rename_table_group_in_scorecards", return_value=[]) as rename,
+    ):
+        yield MagicMock(created_with=created_with, rename=rename)
+
+
+@pytest.fixture(autouse=True)
 def catalog_write():
     """Stand in for the catalog write, which would otherwise probe the target."""
     with (
@@ -1181,6 +1191,13 @@ def test_update_table_group_applies_every_field():
     response = result.resp.json()
     for name, value in body.items():
         assert response[name] == value, name
+
+
+def test_update_table_group_points_scorecards_at_the_new_name(scorecards):
+    result = _patch({"table_group_name": "sales_v2"})
+
+    assert result.resp.status_code == 200, result.resp.text
+    scorecards.rename.assert_called_once_with(result.table_group, "sales")
 
 
 def test_update_table_group_leaves_omitted_fields_and_tags_unchanged():

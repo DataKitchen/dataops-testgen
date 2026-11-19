@@ -278,12 +278,16 @@ def _table_group(**values) -> TableGroup:
                                  "profile_flag_cdes": True, "profile_flag_pii": True, **values}))
 
 
-@pytest.mark.parametrize(("blocker", "actions"), [(None, ["table_group.deleted"]), ("job", [])])
+@pytest.mark.parametrize(
+    ("blocker", "actions"), [(None, ["table_group.deleted", "scorecard.deleted"]), ("job", [])],
+)
 def test_deleting_a_table_group_is_recorded_unless_refused(audit_session, audit_log, blocker, actions):
     table_group = _table_group()
+    scorecard = _stored(ScoreDefinition(id=uuid4(), project_code="demo", name="Sales"))
     with (
         patch.object(table_groups, "st"),
         patch.object(TableGroup, "get", return_value=table_group),
+        patch.object(table_groups, "scorecards_created_with", return_value=[scorecard]),
         patch.object(table_groups, "cascade_delete_table_group", return_value=blocker),
         patch.object(table_groups, "select_table_groups_minimal_where"),
     ):

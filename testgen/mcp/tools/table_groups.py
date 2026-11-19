@@ -16,9 +16,11 @@ from mcp.server.fastmcp import Context
 from pydantic import Field, field_validator
 from sqlalchemy.exc import IntegrityError
 
-from testgen.common.audit.actions import AuditAction
-from testgen.common.audit.recorder import record
-from testgen.common.audit.table_groups import record_table_group_created
+from testgen.common.audit.table_groups import (
+    record_table_group_created,
+    record_table_group_deleted,
+    record_table_group_updated,
+)
 from testgen.common.database.table_group_service import (
     SchemaMoveRefused,
     apply_table_group_flavor_rules,
@@ -27,7 +29,9 @@ from testgen.common.database.table_group_service import (
     delete_blockers,
     is_duplicate_name_error,
     move_table_group_schema,
+    rename_table_group_in_scorecards,
     save_new_table_group,
+    scorecards_created_with,
     update_catalog_for_edit,
     validate_table_group_fields,
     validate_table_naming,
@@ -649,6 +653,7 @@ def update_table_group(
         raise MCPPermissionDenied(_PII_FLAG_DENIED_MESSAGE)
 
     before = _snapshot(table_group)
+    previous_name = table_group.table_groups_name
     membership_before = catalog_membership(table_group)
     _apply_args_to_table_group(table_group, **{k: v for k, v in supplied.items() if k != "schema"})
 
@@ -680,7 +685,7 @@ def update_table_group(
     except IntegrityError as err:
         _maybe_raise_duplicate_name(err)
         raise
-    record(AuditAction.TABLE_GROUP_UPDATED, table_group)
+    record_table_group_updated(table_group, rename_table_group_in_scorecards(table_group, previous_name))
 
     catalog_error = update_catalog_for_edit(table_group, membership_before, move, connection)
     if move:
@@ -1117,6 +1122,7 @@ _DELETION_LABELS = {
     "schedules": "Schedules",
     "notification_settings": "Notification settings",
     "contract_versions": "Frozen contract versions",
+    "scorecards": "Scorecards",
 }
 
 
@@ -1182,9 +1188,10 @@ def _delete_planned_table_group(plan: _TableGroupDeletePlan, table_group_id: str
             f"What table group `{plan.name}` holds changed while the request waited for confirmation. Nothing was "
             "deleted. Call `delete_table_group` again to confirm what it holds now."
         )
+    scorecards = scorecards_created_with(table_group)
     if cascade_delete_table_group(table_group):
         raise _blocked_by(table_group, delete_blockers(table_group))
-    record(AuditAction.TABLE_GROUP_DELETED, table_group)
+    record_table_group_deleted(table_group, scorecards)
 
     doc = MdDoc()
     doc.heading(1, f"Deleted table group `{plan.name}`")
@@ -1212,7 +1219,8 @@ async def delete_table_group(
     and contract in the table group with their test definitions in every version, notes, runs,
     results, schedules, and notification settings; its monitor suite with its monitors, runs, and
     results; its profiling runs and results, hygiene issues, data catalog, and schema change
-    history; and its own schedules and notification settings. Scorecards are kept. Refused while
+    history; its own schedules and notification settings; and the scorecard created with it, while it is still
+    named after the table group and filters on it alone. Other scorecards are kept. Refused while
     a job for the table group or one of its test suites is queued or running; data catalog
     refreshes that have not started are canceled instead.
     """

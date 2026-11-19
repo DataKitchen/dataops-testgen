@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, Column, Float, ForeignKey, Integer, String, asc, func, text, update
+from sqlalchemy import BigInteger, Boolean, Column, Float, ForeignKey, Integer, String, asc, func, select, text, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -24,6 +24,7 @@ from testgen.common.models.monitor import (
     parse_schema_event,
     parse_value_event,
 )
+from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_suite import TestSuite
 from testgen.utils import dict_from_kv, is_uuid4
@@ -356,6 +357,7 @@ class TableGroupDeletionCounts:
     schedules: int
     notification_settings: int
     contract_versions: int
+    scorecards: int
 
 
 class TableGroup(Entity):
@@ -1354,11 +1356,23 @@ class TableGroup(Entity):
             (SELECT COUNT(*) FROM suite_versions
                 WHERE test_suite_id IN (SELECT id FROM suites) AND frozen_at IS NOT NULL) AS contract_versions
         """
-        row = get_current_session().execute(text(query), {"table_group_id": str(table_group_id)}).mappings().one()
-        return TableGroupDeletionCounts(**{key: int(value) for key, value in row.items()})
+        session = get_current_session()
+        row = session.execute(text(query), {"table_group_id": str(table_group_id)}).mappings().one()
+        project_code, name = session.execute(
+            select(cls.project_code, cls.table_groups_name).where(cls.id == table_group_id)
+        ).one()
+        scorecards = len(ScoreDefinition.created_with_table_group(project_code, name))
+        return TableGroupDeletionCounts(**{key: int(value) for key, value in row.items()}, scorecards=scorecards)
 
     @classmethod
     def cascade_delete(cls, ids: list[str]) -> None:
+        named = get_current_session().execute(
+            select(cls.project_code, cls.table_groups_name).where(cls.id.in_(ids))
+        ).all()
+        for project_code, name in named:
+            for scorecard in ScoreDefinition.created_with_table_group(project_code, name):
+                scorecard.delete()
+
         test_suites = TestSuite.select_minimal_where(TestSuite.table_groups_id.in_(ids))
         if test_suites:
             TestSuite.cascade_delete([item.id for item in test_suites])

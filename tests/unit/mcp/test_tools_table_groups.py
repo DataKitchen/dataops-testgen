@@ -10,7 +10,6 @@ from mcp.types import ElicitationCapability
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
-from testgen.common.audit.actions import AuditAction
 from testgen.common.database.table_group_service import DeleteBlocker, SchemaMove, SchemaMoveRefused
 from testgen.common.enums import JobKey, JobStatus
 from testgen.common.models.table_group import TableGroupDeletionCounts
@@ -482,6 +481,26 @@ def test_update_table_group_description_diff_table(mock_resolve, mock_tg_cls, db
     assert "| Field | Before | After |" in out
     assert "Description" in out
     assert "Pulled from postgres tutorial DB" in out
+
+
+@patch(f"{MODULE}.record_table_group_updated")
+@patch(f"{MODULE}.rename_table_group_in_scorecards")
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_points_scorecards_at_the_new_name(
+    mock_resolve, mock_tg_cls, mock_rename, mock_record, db_session_mock,
+):
+    tg = _mock_table_group(table_groups_name="sales")
+    mock_resolve.return_value = tg
+    mock_tg_cls.is_in_use.return_value = False
+
+    from testgen.mcp.tools.table_groups import update_table_group
+
+    with _patch_perms():
+        update_table_group(table_group_id=str(tg.id), table_group_name="sales_dw")
+
+    mock_rename.assert_called_once_with(tg, "sales")
+    mock_record.assert_called_once_with(tg, mock_rename.return_value)
 
 
 @patch(f"{MODULE}.TableGroup")
@@ -1857,7 +1876,7 @@ def _deletion_counts(**overrides) -> TableGroupDeletionCounts:
         "notes": 2, "test_runs": 9, "test_results": 120, "monitor_runs": 48, "monitor_results": 288,
         "profiling_runs": 3, "profile_results": 450,
         "hygiene_issues": 12, "catalog_tables": 15, "catalog_columns": 140, "schema_changes": 20,
-        "schedules": 2, "notification_settings": 1, "contract_versions": 2,
+        "schedules": 2, "notification_settings": 1, "contract_versions": 2, "scorecards": 1,
     }
     return TableGroupDeletionCounts(**{**values, **overrides})
 
@@ -1896,9 +1915,12 @@ def deletable_table_group():
         patch(f"{MODULE}.delete_blockers", return_value=[]) as blockers,
         patch(f"{MODULE}.TableGroup.deletion_counts", return_value=_deletion_counts()) as counts,
         patch(f"{MODULE}.cascade_delete_table_group", return_value=None) as delete,
-        patch(f"{MODULE}.record") as audit,
+        patch(f"{MODULE}.scorecards_created_with", return_value=[]) as scorecards,
+        patch(f"{MODULE}.record_table_group_deleted") as audit,
     ):
-        yield MagicMock(table_group=table_group, blockers=blockers, counts=counts, delete=delete, audit=audit)
+        yield MagicMock(
+            table_group=table_group, blockers=blockers, counts=counts, delete=delete, scorecards=scorecards, audit=audit,
+        )
 
 
 def _delete_group(ctx, table_group_id, **kwargs) -> str:
@@ -1921,7 +1943,7 @@ def test_delete_table_group_asks_with_everything_it_removes_monitors_and_catalog
         "- Test suites: 2", "- Contracts: 1", "- Monitor suites: 1", "- Test definitions: 30", "- Monitors: 6",
         "- Test runs: 9", "- Test results: 120", "- Monitor runs: 48", "- Monitor results: 288",
         "- Profile results: 450", "- Hygiene issues: 12", "- Data catalog tables: 15", "- Data catalog columns: 140",
-        "- Schema change history entries: 20", "- Frozen contract versions: 2",
+        "- Schema change history entries: 20", "- Frozen contract versions: 2", "- Scorecards: 1",
     ):
         assert line in message
     deletable_table_group.delete.assert_called_once_with(deletable_table_group.table_group)
@@ -2092,7 +2114,9 @@ def test_delete_table_group_records_the_delete_in_the_audit_trail_once_it_went(d
     """As the UI's and the REST API's deletes do, after the shared delete reports success."""
     _delete_group(_confirming_ctx(), str(deletable_table_group.table_group.id))
 
-    deletable_table_group.audit.assert_called_once_with(AuditAction.TABLE_GROUP_DELETED, deletable_table_group.table_group)
+    deletable_table_group.audit.assert_called_once_with(
+        deletable_table_group.table_group, deletable_table_group.scorecards.return_value,
+    )
 
 
 def test_delete_table_group_records_nothing_when_the_user_declines(deletable_table_group, db_session_mock):
