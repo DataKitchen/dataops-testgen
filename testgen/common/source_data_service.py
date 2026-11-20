@@ -7,6 +7,7 @@ Used by both the Streamlit UI and MCP tools.
 import logging
 from dataclasses import dataclass
 from typing import Literal
+from uuid import UUID
 
 import pandas as pd
 from sqlalchemy import select, text
@@ -38,7 +39,7 @@ from testgen.common.models.test_definition import MISSING_TEST_DEFINITION_MESSAG
 from testgen.common.models.test_result import TestResult
 from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_source_data_pii
 from testgen.common.read_file import replace_templated_functions
-from testgen.common.table_filters import table_filter_condition, table_filter_params
+from testgen.common.table_filters import filter_condition_for_test_table, table_filter_condition, table_filter_params
 from testgen.ui.services.database_service import fetch_from_target_db
 from testgen.utils import dict_from_kv, is_uuid4, to_dataframe, to_sql_timestamp
 
@@ -271,10 +272,11 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
     else:
         table_condition, match_condition = _current_filter_conditions(
             lookup_data,
-            issue_data["schema_name"],
-            issue_data["table_name"],
-            match_schema_name,
-            test_definition.match_table_name,
+            table_groups_id=issue_data["table_groups_id"],
+            schema_name=issue_data["schema_name"],
+            table_name=issue_data["table_name"],
+            match_schema_name=match_schema_name,
+            match_table_name=test_definition.match_table_name,
         )
 
     params = {
@@ -396,6 +398,7 @@ def _build_query_custom(issue_data: dict) -> str | None:
 
 def _current_filter_conditions(
     lookup_data: LookupData,
+    table_groups_id: UUID,
     schema_name: str,
     table_name: str,
     match_schema_name: str | None = None,
@@ -405,12 +408,15 @@ def _current_filter_conditions(
 
     The match table takes a filter only when it is in the table group's schema or the lookup's schema.
     """
+    def catalog_tables() -> list[str]:
+        return DataTable.select_table_names(table_groups_id, limit=None)
+
     match_condition = (
-        table_filter_condition(lookup_data.table_filters, match_table_name, case_fallback=True)
+        filter_condition_for_test_table(lookup_data.table_filters, match_table_name, catalog_tables)
         if match_schema_name in (lookup_data.table_group_schema, schema_name)
         else None
     )
-    return table_filter_condition(lookup_data.table_filters, table_name, case_fallback=True), match_condition
+    return filter_condition_for_test_table(lookup_data.table_filters, table_name, catalog_tables), match_condition
 
 
 def _table_filter_params(
@@ -457,7 +463,12 @@ def _hygiene_filter_condition(lookup_data: LookupData, issue_data: dict) -> str 
     if profile_run_id := issue_data.get("profile_run_id"):
         profiling_run = ProfilingRun.get(profile_run_id)
         return table_filter_condition(profiling_run.table_filters if profiling_run else None, issue_data["table_name"])
-    return _current_filter_conditions(lookup_data, issue_data["schema_name"], issue_data["table_name"])[0]
+    return _current_filter_conditions(
+        lookup_data,
+        table_groups_id=issue_data["table_groups_id"],
+        schema_name=issue_data["schema_name"],
+        table_name=issue_data["table_name"],
+    )[0]
 
 
 def _generate_recency_lookup_query(

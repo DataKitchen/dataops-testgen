@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy.exc import DBAPIError
 
 from testgen.common.table_filter_validation import (
     InvalidTableFilters,
@@ -155,12 +156,13 @@ def test_validate_reports_an_unreachable_target_as_unchecked_filters():
             'HINT:  Perhaps you meant to reference the column "orders.region".\n',
             'column "regoin" does not exist HINT:  Perhaps you meant to reference the column "orders.region".',
         ),
-        ("", "RuntimeError"),
-        ("\n  \n", "RuntimeError"),
+        ("", "The database returned no message."),
+        ("\n  \n", "The database returned no message."),
+        ("x" * 600, f"{'x' * 499}…"),
     ],
-    ids=["multi-line", "postgres-position-lines", "empty", "blank"],
+    ids=["multi-line", "postgres-position-lines", "empty", "blank", "long"],
 )
-def test_errors_keep_the_whole_database_message_on_one_line(message, expected):
+def test_errors_keep_the_database_message_on_one_line(message, expected):
     def run(_query, _params=None):
         raise RuntimeError(message)
 
@@ -169,3 +171,14 @@ def test_errors_keep_the_whole_database_message_on_one_line(message, expected):
     )
 
     assert errors == {"orders": expected}
+
+
+def test_errors_read_the_message_of_a_wrapped_driver_error():
+    def run(_query, _params=None):
+        raise DBAPIError("SELECT 1", {}, TimeoutError())
+
+    errors = table_filter_errors(
+        run, _connection(), SimpleNamespace(table_group_schema="sales"), [{"table_name": "orders", "condition": "a = 1"}]
+    )
+
+    assert errors == {"orders": "The database returned no message."}

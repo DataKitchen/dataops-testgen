@@ -41,7 +41,11 @@ from testgen.common.models.test_definition import TestRunType
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.read_file import replace_templated_functions
-from testgen.common.table_filters import filtered_table_ref, table_filter_condition, table_filter_params
+from testgen.common.table_filters import (
+    filter_condition_for_test_table,
+    filtered_table_ref,
+    table_filter_params,
+)
 from testgen.utils import to_sql_timestamp
 
 # Separates the measures of the CAT tests batched into one aggregate query. parse_cat_results splits
@@ -328,6 +332,8 @@ class TestExecutionSQL:
     # The columns of the location this run reads, when it reads somewhere other than the table
     # group. Metadata tests describe the table group's catalog without it.
     run_columns: list[ColumnChars] | None = None
+    # The names of the tables in the table group's catalog.
+    catalog_table_names: frozenset[str] = frozenset()
 
     null_value = "<NULL>"
     test_results_table = "test_results"
@@ -625,7 +631,7 @@ class TestExecutionSQL:
         return params
 
     def _filter_condition(self, table_name: str | None) -> str | None:
-        return table_filter_condition(self.table_group.table_filters, table_name, case_fallback=True)
+        return filter_condition_for_test_table(self.table_group.table_filters, table_name, lambda: self.catalog_table_names)
 
     def _match_filter_condition(self, test_def: TestExecutionDef) -> str | None:
         """Return the table group's filter for ``test_def``'s match table, when that table is in the table group."""

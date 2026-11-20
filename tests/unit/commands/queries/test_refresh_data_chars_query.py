@@ -620,7 +620,24 @@ def test_row_counts_read_a_filtered_table_through_its_filter_in_a_query_of_its_o
     )
 
 
-def test_staged_rows_record_the_filter_their_row_count_read_through():
+def test_row_counts_with_every_table_filtered_send_no_empty_query():
+    table_group = TableGroup(
+        id=uuid4(),
+        table_group_schema="sales",
+        table_filters=[
+            {"table_name": "orders", "condition": "region = 'EMEA'"},
+            {"table_name": "returns", "condition": "region = 'EMEA'"},
+        ],
+    )
+    sql_generator = RefreshDataCharsSQL(Connection(sql_flavor="postgresql", sql_flavor_code="postgresql"), table_group)
+
+    queries = sql_generator.get_row_counts(["orders", "returns"])
+
+    assert [count.filtered_table for count in queries] == ["orders", "returns"]
+    assert all(count.query for count in queries)
+
+
+def test_staged_rows_record_the_table_filter_with_or_without_a_count():
     sql_generator = _filtered_sql_generator()
     columns = [
         ColumnChars(schema_name="sales", table_name="orders", column_name="id", record_ct=4),
@@ -631,5 +648,5 @@ def test_staged_rows_record_the_filter_their_row_count_read_through():
     rows = sql_generator.get_staging_data_chars(columns, datetime.now(UTC), uuid4())
 
     position = RefreshDataCharsSQL.staging_columns.index("table_filter")
-    assert [row[position] for row in rows] == ["region = 'EMEA'", None, None]
+    assert [row[position] for row in rows] == ["region = 'EMEA'", None, "region = 'EMEA'"]
     assert all(len(row) == len(RefreshDataCharsSQL.staging_columns) for row in rows)

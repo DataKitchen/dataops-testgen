@@ -211,7 +211,9 @@ class RefreshDataCharsSQL:
             else:
                 unfiltered_queries.append(query)
         max_query_chars = self.connection.max_query_chars or DEFAULT_MAX_QUERY_CHARS
-        chunked_queries = chunk_queries(unfiltered_queries, " UNION ALL ", max_query_chars)
+        chunked_queries = (
+            chunk_queries(unfiltered_queries, " UNION ALL ", max_query_chars) if unfiltered_queries else []
+        )
         return [*(RowCountQuery(query, None) for query in chunked_queries), *filtered_queries]
 
     def get_file_counts(self, skip: Collection[str] = ()) -> list[tuple[str, None]]:
@@ -259,10 +261,9 @@ class RefreshDataCharsSQL:
                 column.approx_record_ct,
                 column.record_ct,
                 column.file_ct,
-                # The table filter the record count read through
-                table_filter_condition(self.table_group.table_filters, column.table_name)
-                if column.record_ct is not None
-                else None,
+                # Stored even without a record count, so the approximate count shown in its place is labeled
+                # as unfiltered
+                table_filter_condition(self.table_group.table_filters, column.table_name),
             ]
             for column in data_chars
         ]

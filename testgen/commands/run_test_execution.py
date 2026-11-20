@@ -282,6 +282,7 @@ class TestExecutionJob(StoppableJob[int]):
 
     def _prepare_tests(self) -> None:
         self.sql_generator = TestExecutionSQL(self.connection, self.table_group, self.test_suite, self.test_run)
+        self.sql_generator.catalog_table_names = frozenset(column.table_name for column in self.data_chars)
 
         if self.test_suite.suite_type == SuiteType.MONITOR:
             _sync_monitor_definitions(self.sql_generator, self.data_chars)

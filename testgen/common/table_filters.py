@@ -1,3 +1,4 @@
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 
 from testgen.common.clean_sql import escape_bind_colons, expand_subset
@@ -27,26 +28,52 @@ def parse_table_filters(value: list[dict] | None) -> list[TableFilter]:
     return filters
 
 
-def table_filter_condition(
-    value: list[dict] | None, table_name: str | None, case_fallback: bool = False,
-) -> str | None:
+def table_filter_condition(value: list[dict] | None, table_name: str | None) -> str | None:
     """Return the filter condition a table group defines for ``table_name``, or None.
 
     Args:
         value: The table group's ``table_filters`` column.
-        table_name: The table's name, matched exactly unless ``case_fallback`` applies.
-        case_fallback: Without an exact match, use the one filter whose table name differs only in letter case.
+        table_name: The table's name, matched exactly.
+    """
+    if not table_name:
+        return None
+    return next((f.condition for f in parse_table_filters(value) if f.table_name == table_name), None)
+
+
+def catalog_table_name(table_name: str | None, catalog_tables: Collection[str]) -> str | None:
+    """Return the catalog's name for ``table_name``: the exact name, else the one catalog table whose name
+    differs from it only in letter case, else ``table_name`` unchanged.
+
+    Args:
+        table_name: A table name as a test definition stores it.
+        catalog_tables: The names of the tables in the table group's catalog.
+    """
+    if not table_name or table_name in catalog_tables:
+        return table_name
+    folded = [name for name in catalog_tables if name.lower() == table_name.lower()]
+    return folded[0] if len(folded) == 1 else table_name
+
+
+def filter_condition_for_test_table(
+    value: list[dict] | None, table_name: str | None, catalog_tables: Callable[[], Collection[str]],
+) -> str | None:
+    """Return the filter condition for the table a test definition names, resolved as :func:`catalog_table_name`
+    resolves it.
+
+    Args:
+        value: The table group's ``table_filters`` column.
+        table_name: The table's name as the test definition stores it.
+        catalog_tables: Returns the names of the tables in the table group's catalog. Called only when no filter
+            names ``table_name`` exactly and one names it apart from letter case.
     """
     if not table_name:
         return None
     filters = parse_table_filters(value)
-    if exact := next((f.condition for f in filters if f.table_name == table_name), None):
-        return exact
-    if case_fallback:
-        folded = [f.condition for f in filters if f.table_name.lower() == table_name.lower()]
-        if len(folded) == 1:
-            return folded[0]
-    return None
+    if not any(f.table_name.lower() == table_name.lower() for f in filters):
+        return None
+    if all(f.table_name != table_name for f in filters):
+        table_name = catalog_table_name(table_name, catalog_tables())
+    return next((f.condition for f in filters if f.table_name == table_name), None)
 
 
 def filtered_table_ref(

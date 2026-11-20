@@ -233,10 +233,7 @@ def test_a_failed_filtered_count_leaves_only_its_table_uncounted(mock_sql, mock_
 
     assert {(c.table_name, c.record_ct) for c in data_chars} == {("claims", 7), ("orders", None)}
     mock_write.assert_called_once()
-    assert (
-        'Could not count the rows of table orders through its table filter. column "region" does not exist'
-        in caplog.text
-    )
+    assert 'Could not count the rows of table orders. column "region" does not exist' in caplog.text
 
 
 @patch(f"{MODULE}.write_data_chars")

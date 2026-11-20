@@ -138,10 +138,15 @@ def validate_table_filters(
 
 # PostgreSQL follows its message with the statement line and a caret under the error position.
 _POSITION_LINE = re.compile(r"^(LINE \d+:.*|\^)$")
+# Some drivers append query plans, job IDs, or help links, which would crowd out the cause.
+_MAX_ERROR_CHARS = 500
 
 
 def _error_text(error: Exception) -> str:
-    """The database's message for ``error`` on one line, without PostgreSQL's position lines, or the
-    exception's type name when the message is empty."""
+    """The database's message for ``error`` on one line, without PostgreSQL's position lines, shortened to
+    ``_MAX_ERROR_CHARS``, or "The database returned no message." when it is empty."""
     lines = (line.strip() for line in str(getattr(error, "orig", None) or error).splitlines())
-    return " ".join(line for line in lines if line and not _POSITION_LINE.match(line)) or type(error).__name__
+    text = " ".join(line for line in lines if line and not _POSITION_LINE.match(line))
+    if not text:
+        return "The database returned no message."
+    return text if len(text) <= _MAX_ERROR_CHARS else f"{text[:_MAX_ERROR_CHARS - 1].rstrip()}…"

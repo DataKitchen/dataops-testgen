@@ -5,6 +5,8 @@ from sqlalchemy.dialects import postgresql
 from testgen.common.clean_sql import escape_bind_colons
 from testgen.common.database.database_service import replace_params
 from testgen.common.table_filters import (
+    catalog_table_name,
+    filter_condition_for_test_table,
     filtered_table_ref,
     parse_table_filters,
     table_filter_condition,
@@ -38,17 +40,39 @@ def test_condition_matches_table_name_exactly():
     assert table_filter_condition(FILTERS, None) is None
 
 
-def test_case_fallback_uses_the_one_filter_differing_only_in_case():
-    filters = [{"table_name": "Orders", "condition": "region = 'APAC'"}]
-
-    assert table_filter_condition(filters, "orders") is None
-    assert table_filter_condition(filters, "orders", case_fallback=True) == "region = 'APAC'"
-    assert table_filter_condition(filters, "returns", case_fallback=True) is None
+def test_catalog_name_resolves_a_name_differing_only_in_letter_case():
+    assert catalog_table_name("orders", ["Orders", "returns"]) == "Orders"
+    assert catalog_table_name("returns", ["Orders", "returns"]) == "returns"
 
 
-def test_case_fallback_prefers_an_exact_match_and_skips_an_ambiguous_one():
-    assert table_filter_condition(FILTERS, "Orders", case_fallback=True) == "region = 'APAC'"
-    assert table_filter_condition(FILTERS, "ORDERS", case_fallback=True) is None
+def test_catalog_name_keeps_an_exact_catalog_table_over_one_differing_in_case():
+    # On a case-sensitive database both tables exist, and a test on orders must not read Orders' filter
+    catalog = ["Orders", "orders"]
+    filters = [{"table_name": "Orders", "condition": "region = 'EMEA'"}]
+
+    assert table_filter_condition(filters, catalog_table_name("orders", catalog)) is None
+    assert table_filter_condition(filters, catalog_table_name("Orders", catalog)) == "region = 'EMEA'"
+
+
+def test_catalog_name_leaves_an_unknown_or_ambiguous_name_as_written():
+    assert catalog_table_name("ORDERS", ["Orders", "orders"]) == "ORDERS"
+    assert catalog_table_name("missing", ["Orders"]) == "missing"
+    assert catalog_table_name(None, ["Orders"]) is None
+
+
+def test_filter_for_a_test_table_reads_the_catalog_only_for_a_name_differing_in_case():
+    filters = [{"table_name": "Orders", "condition": "region = 'EMEA'"}]
+    calls = []
+
+    def catalog():
+        calls.append(1)
+        return ["Orders"]
+
+    assert filter_condition_for_test_table(filters, "Orders", catalog) == "region = 'EMEA'"
+    assert filter_condition_for_test_table(filters, "returns", catalog) is None
+    assert calls == []
+    assert filter_condition_for_test_table(filters, "orders", catalog) == "region = 'EMEA'"
+    assert calls == [1]
 
 
 def test_unfiltered_params_leave_the_table_ref_unchanged():

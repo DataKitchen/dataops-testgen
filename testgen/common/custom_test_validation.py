@@ -18,8 +18,9 @@ from testgen.common import query_variables
 from testgen.common.clean_sql import strip_trailing_semicolons
 from testgen.common.database.database_service import fetch_dict_from_db, get_flavor_service, replace_params
 from testgen.common.models.connection import Connection
+from testgen.common.models.data_table import DataTable
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
-from testgen.common.table_filters import filtered_table_ref, table_filter_condition
+from testgen.common.table_filters import filter_condition_for_test_table, filtered_table_ref
 from testgen.ui.services.database_service import fetch_from_target_db
 
 
@@ -78,7 +79,9 @@ def filtered_table_source(
     filters = table_group.table_filters if table_group else None
     return filtered_table_ref(
         flavor_service.get_table_ref(schema, table_name, connection.sql_flavor_code),
-        table_filter_condition(filters, table_name, case_fallback=True),
+        filter_condition_for_test_table(
+            filters, table_name, lambda: DataTable.select_table_names(table_group.id, limit=None) if table_group else []
+        ),
         schema,
         f"{quote}{table_name}{quote}",
     )

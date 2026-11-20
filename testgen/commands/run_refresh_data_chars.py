@@ -141,8 +141,9 @@ def run_data_chars_refresh(
             fatal_errors = []
             for index, error in error_data.items():
                 if table := count_queries[index].filtered_table:
-                    # The table's tests and profiling report the broken filter on their own.
-                    LOG.warning(f"Could not count the rows of table {table} through its table filter. {error}")
+                    # Not fatal: the table's tests and profiled columns read through the same filter and
+                    # report whatever stops this count on their own.
+                    LOG.warning(f"Could not count the rows of table {table}. {error}")
                 else:
                     fatal_errors.append(error)
             if fatal_errors:
