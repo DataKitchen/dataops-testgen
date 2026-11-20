@@ -660,6 +660,53 @@ def test_update_table_group_duplicate_name_maps_to_user_error(mock_resolve, mock
     assert str(exc.value) == "A Table Group with the same name already exists."
 
 
+DUPLICATE_NAME = 'duplicate key value violates unique constraint "table_groups_name_unique"'
+
+
+@patch(f"{SERVICE_MODULE}.validate_table_filters")
+@patch(f"{SERVICE_MODULE}._catalog_table_names")
+@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_maps_a_duplicate_name_raised_by_the_filter_check(
+    mock_resolve, mock_tg_cls, mock_conn_cls, mock_catalog, _mock_validate, db_session_mock
+):
+    # The check's catalog query autoflushes the renamed table group
+    mock_catalog.side_effect = _integrity_error(DUPLICATE_NAME)
+    tg = _mock_table_group(table_groups_name="Sample TG")
+    mock_resolve.return_value = tg
+    mock_tg_cls.is_in_use.return_value = False
+    mock_conn_cls.get.return_value = _mock_connection()
+
+    from testgen.mcp.tools.table_groups import update_table_group
+
+    with _patch_perms(), pytest.raises(MCPUserError) as exc:
+        update_table_group(
+            table_group_id=str(tg.id), table_group_name="Existing Name", table_filters=[TableFilter(**ORDERS_FILTER)]
+        )
+    assert str(exc.value) == "A Table Group with the same name already exists."
+    tg.save.assert_not_called()
+
+
+@patch(f"{MODULE}.move_table_group_schema")
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_maps_a_duplicate_name_raised_by_the_move(
+    mock_resolve, mock_tg_cls, mock_move, db_session_mock
+):
+    mock_move.side_effect = _integrity_error(DUPLICATE_NAME)
+    tg = _mock_table_group(table_groups_name="Sample TG", table_group_schema="public")
+    mock_resolve.return_value = tg
+    mock_tg_cls.is_in_use.return_value = False
+
+    from testgen.mcp.tools.table_groups import update_table_group
+
+    with _patch_perms(), pytest.raises(MCPUserError) as exc:
+        update_table_group(table_group_id=str(tg.id), table_group_name="Existing Name", schema="staging")
+    assert str(exc.value) == "A Table Group with the same name already exists."
+    tg.save.assert_not_called()
+
+
 @patch(f"{MODULE}.resolve_table_group")
 def test_update_table_group_not_accessible(mock_resolve, db_session_mock):
     mock_resolve.side_effect = MCPResourceNotAccessible("Table group", "abc")

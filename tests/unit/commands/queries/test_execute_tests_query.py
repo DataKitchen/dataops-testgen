@@ -785,6 +785,14 @@ def test_cat_queries_leave_room_for_a_long_table_filter():
     assert all(len(query) <= 3000 for query, _ in queries)
 
 
+def test_table_filter_applies_to_a_test_naming_its_table_in_another_letter_case():
+    instance = _subset_execution_sql()
+    instance.table_group.table_filters = [{"table_name": "Orders", "condition": EMEA}]
+    td = _make_td(test_type="Required", measure="COUNT({SUBSET_ROW}) - COUNT({COLUMN_NAME})")
+    [(query, _)], _ = instance.aggregate_cat_tests([td])
+    assert query.endswith(f'FROM (SELECT * FROM "public"."orders" WHERE ({EMEA})) "orders"')
+
+
 def test_table_filter_for_another_table_is_ignored():
     instance = _subset_execution_sql()
     instance.table_group.table_filters = [{"table_name": "customers", "condition": "region = 'EMEA'"}]

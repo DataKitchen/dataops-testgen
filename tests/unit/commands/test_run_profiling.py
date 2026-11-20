@@ -16,7 +16,7 @@ from testgen.commands.run_profiling import (
     _write_query_error,
     report_profiling_run,
 )
-from testgen.common.database.column_chars import ColumnChars
+from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.database.database_service import WorkerOutcome
 from testgen.common.database.flavor.flavor_service import SQLFlavor
 from testgen.common.database.profiling_capabilities import ProfilingCapabilities
@@ -769,6 +769,47 @@ def test_data_chars_pins_the_table_filters_the_run_reads_through():
         job._data_chars()
 
     assert job._pins["table_filters"] == filters
+
+
+def test_data_chars_profiles_a_table_whose_row_count_failed():
+    """A table filter that fails its row count leaves the table uncounted, and the run still profiles it."""
+    job = ProfilingJob.__new__(ProfilingJob)
+    PausableJob.__init__(job, job_id=uuid4())
+    job.table_group = MagicMock(
+        profile_exclude_xde=False,
+        profile_table_comparison=False,
+        table_filters=[{"table_name": "broken", "condition": "regoin = 1"}],
+        profile_use_sampling=True,
+        profile_sample_percent="30",
+        profile_sample_min_count=10,
+    )
+    job.profiling_run = MagicMock()
+    job.sql_generator = MagicMock(flavor="postgresql", table_group=job.table_group)
+    job.sql_generator.connection.sql_flavor_code = "postgresql"
+    job.data_chars = []
+
+    with (
+        patch.object(ProfilingJob, "once", return_value=False),
+        patch(f"{MODULE}.DataTable") as data_table,
+        patch(f"{MODULE}.resolve_profiling_capabilities", return_value=ProfilingCapabilities()),
+    ):
+        columns = [
+            _col("counted", "a", record_ct=1000),
+            _col("broken", "a", record_ct=None),
+            _col("broken", "b", record_ct=None),
+        ]
+        for column in columns:
+            column.object_type = ObjectType.TABLE
+        data_table.list_column_chars.return_value = columns
+        job._data_chars()
+
+    assert job.profiling_run.record_ct == 1000
+    assert job.profiling_run.data_point_ct == 1000
+    assert set(job.sampling_params) == {"counted"}
+    assert job._pins["record_counts"] == {"counted": 1000, "broken": None}
+    assert [c.table_name for c in _order_largest_work_first(job.data_chars, job.table_record_counts)] == [
+        "counted", "broken", "broken",
+    ]
 
 
 def test_the_cleanup_methods_exist_on_the_models_on_restart_calls():

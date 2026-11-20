@@ -38,6 +38,19 @@ def test_condition_matches_table_name_exactly():
     assert table_filter_condition(FILTERS, None) is None
 
 
+def test_case_fallback_uses_the_one_filter_differing_only_in_case():
+    filters = [{"table_name": "Orders", "condition": "region = 'APAC'"}]
+
+    assert table_filter_condition(filters, "orders") is None
+    assert table_filter_condition(filters, "orders", case_fallback=True) == "region = 'APAC'"
+    assert table_filter_condition(filters, "returns", case_fallback=True) is None
+
+
+def test_case_fallback_prefers_an_exact_match_and_skips_an_ambiguous_one():
+    assert table_filter_condition(FILTERS, "Orders", case_fallback=True) == "region = 'APAC'"
+    assert table_filter_condition(FILTERS, "ORDERS", case_fallback=True) is None
+
+
 def test_unfiltered_params_leave_the_table_ref_unchanged():
     template = 'SELECT COUNT(*) FROM {TABLE_FILTER_OPEN}"s"."orders"{TABLE_FILTER_CLOSE} WHERE x > 0'
     params = table_filter_params(None, "orders", "s", '"')

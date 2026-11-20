@@ -406,11 +406,11 @@ def _current_filter_conditions(
     The match table takes a filter only when it is in the table group's schema or the lookup's schema.
     """
     match_condition = (
-        table_filter_condition(lookup_data.table_filters, match_table_name)
+        table_filter_condition(lookup_data.table_filters, match_table_name, case_fallback=True)
         if match_schema_name in (lookup_data.table_group_schema, schema_name)
         else None
     )
-    return table_filter_condition(lookup_data.table_filters, table_name), match_condition
+    return table_filter_condition(lookup_data.table_filters, table_name, case_fallback=True), match_condition
 
 
 def _table_filter_params(

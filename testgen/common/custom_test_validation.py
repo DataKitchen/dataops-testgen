@@ -78,7 +78,7 @@ def filtered_table_source(
     filters = table_group.table_filters if table_group else None
     return filtered_table_ref(
         flavor_service.get_table_ref(schema, table_name, connection.sql_flavor_code),
-        table_filter_condition(filters, table_name),
+        table_filter_condition(filters, table_name, case_fallback=True),
         schema,
         f"{quote}{table_name}{quote}",
     )

@@ -27,16 +27,26 @@ def parse_table_filters(value: list[dict] | None) -> list[TableFilter]:
     return filters
 
 
-def table_filter_condition(value: list[dict] | None, table_name: str | None) -> str | None:
+def table_filter_condition(
+    value: list[dict] | None, table_name: str | None, case_fallback: bool = False,
+) -> str | None:
     """Return the filter condition a table group defines for ``table_name``, or None.
 
     Args:
         value: The table group's ``table_filters`` column.
-        table_name: The table's name, matched exactly.
+        table_name: The table's name, matched exactly unless ``case_fallback`` applies.
+        case_fallback: Without an exact match, use the one filter whose table name differs only in letter case.
     """
     if not table_name:
         return None
-    return next((f.condition for f in parse_table_filters(value) if f.table_name == table_name), None)
+    filters = parse_table_filters(value)
+    if exact := next((f.condition for f in filters if f.table_name == table_name), None):
+        return exact
+    if case_fallback:
+        folded = [f.condition for f in filters if f.table_name.lower() == table_name.lower()]
+        if len(folded) == 1:
+            return folded[0]
+    return None
 
 
 def filtered_table_ref(

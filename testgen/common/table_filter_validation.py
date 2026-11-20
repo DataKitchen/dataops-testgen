@@ -1,4 +1,5 @@
 import logging
+import re
 from collections.abc import Sequence
 
 from testgen.common.database.database_service import get_flavor_service
@@ -135,5 +136,12 @@ def validate_table_filters(
         )
 
 
+# PostgreSQL follows its message with the statement line and a caret under the error position.
+_POSITION_LINE = re.compile(r"^(LINE \d+:.*|\^)$")
+
+
 def _error_text(error: Exception) -> str:
-    return str(getattr(error, "orig", None) or error).strip().splitlines()[0]
+    """The database's message for ``error`` on one line, without PostgreSQL's position lines, or the
+    exception's type name when the message is empty."""
+    lines = (line.strip() for line in str(getattr(error, "orig", None) or error).splitlines())
+    return " ".join(line for line in lines if line and not _POSITION_LINE.match(line)) or type(error).__name__

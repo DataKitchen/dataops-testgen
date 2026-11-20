@@ -140,3 +140,32 @@ def test_validate_reports_an_unreachable_target_as_unchecked_filters():
         validate_table_filters(
             _connection(), SimpleNamespace(table_group_schema="sales"), [{"table_name": "orders", "condition": "a = 1"}]
         )
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        (
+            "000904 (42000): SQL compilation error:\nerror line 1 at position 61\ninvalid identifier 'REGOIN'",
+            "000904 (42000): SQL compilation error: error line 1 at position 61 invalid identifier 'REGOIN'",
+        ),
+        (
+            'column "regoin" does not exist\nLINE 1: SELECT  1 AS checked FROM (SELECT * FROM "sales"."orders" WHERE (regoin = 1)...\n'
+            "                                                                     ^\n"
+            'HINT:  Perhaps you meant to reference the column "orders.region".\n',
+            'column "regoin" does not exist HINT:  Perhaps you meant to reference the column "orders.region".',
+        ),
+        ("", "RuntimeError"),
+        ("\n  \n", "RuntimeError"),
+    ],
+    ids=["multi-line", "postgres-position-lines", "empty", "blank"],
+)
+def test_errors_keep_the_whole_database_message_on_one_line(message, expected):
+    def run(_query, _params=None):
+        raise RuntimeError(message)
+
+    errors = table_filter_errors(
+        run, _connection(), SimpleNamespace(table_group_schema="sales"), [{"table_name": "orders", "condition": "a = 1"}]
+    )
+
+    assert errors == {"orders": expected}

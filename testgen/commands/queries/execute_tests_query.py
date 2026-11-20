@@ -625,7 +625,7 @@ class TestExecutionSQL:
         return params
 
     def _filter_condition(self, table_name: str | None) -> str | None:
-        return table_filter_condition(self.table_group.table_filters, table_name)
+        return table_filter_condition(self.table_group.table_filters, table_name, case_fallback=True)
 
     def _match_filter_condition(self, test_def: TestExecutionDef) -> str | None:
         """Return the table group's filter for ``test_def``'s match table, when that table is in the table group."""
