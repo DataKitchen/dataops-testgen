@@ -94,6 +94,7 @@ from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.notifications.base import log_smtp_configuration_problems, smtp_configured
 from testgen.common.process_setup import ConfigurationError, setup_process
+from testgen.common.process_tree import end_with_this_process
 from testgen.common.standalone_postgres import (
     STANDALONE_URI_ENV_VAR,
     EmbeddedPostgresError,
@@ -175,7 +176,8 @@ def _forward_signal_to_child(child: subprocess.Popen, signum: int) -> None:
     # children-watcher loop hung forever. Force-kill is safe: children no
     # longer call pgserver.get_server(), so there's no on-disk PID registry
     # state to clean up — only the parent owns the pgserver handle and
-    # exits via the normal atexit path.
+    # exits via the normal atexit path. TerminateProcess does not reach a
+    # child's own children: run_ui binds Streamlit to its process for that.
     if sys.platform == "win32":
         child.terminate()
     else:
@@ -1060,6 +1062,7 @@ def run_ui():
         env=child_env,
         **_subprocess_spawn_kwargs(),
     )
+    end_with_this_process(process)
     def term_ui(signum, _):
         LOG.info(f"Sending termination signal {signum} to Testgen UI")
         _forward_signal_to_child(process, signum)

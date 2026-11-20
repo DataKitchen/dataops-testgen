@@ -91,6 +91,9 @@ dependencies = [
     "authlib~=1.9.5",
     "fastapi==0.135.1",
     "anyio>=4.0",
+
+    # Job objects, so a Windows process can take its children down with it
+    "pywin32>=311; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
@@ -108,6 +111,7 @@ dev = [
     "pre-commit==3.6.2",
     "types-PyYAML==6.0.12.20240311",
     "types-setuptools==69.2.0.20240317",
+    "types-pywin32==312.0.0.20261104",
     "semver==3.0.2",
     "pytest==8.1.1",
     "pytest-cov==4.1.0",
