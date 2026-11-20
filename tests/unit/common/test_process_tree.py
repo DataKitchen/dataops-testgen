@@ -10,14 +10,21 @@ from testgen.common.process_tree import end_with_this_process
 
 pytestmark = pytest.mark.unit
 
-# Starts a grandchild, binds it to this process, then waits to be ended. The grandchild reports its own PID:
-# in a Windows venv, sys.executable is a redirector that runs the interpreter as a further process, so
-# Popen.pid would name the redirector rather than the interpreter that must end.
+# Starts a grandchild, binds it to this process, and only then reports the grandchild's PID, so the test cannot
+# end this process before the bind. The grandchild reports its own PID: in a Windows venv, sys.executable is a
+# redirector that runs the interpreter as a further process, so Popen.pid would name the redirector rather
+# than the interpreter that must end.
 _PARENT_SCRIPT = """
 import subprocess, sys, time
 from testgen.common.process_tree import end_with_this_process
-grandchild = subprocess.Popen([sys.executable, "-c", "import os, time; print(os.getpid(), flush=True); time.sleep(120)"])
+grandchild = subprocess.Popen(
+    [sys.executable, "-c", "import os, time; print(os.getpid(), flush=True); time.sleep(120)"],
+    stdout=subprocess.PIPE,
+    text=True,
+)
+grandchild_pid = grandchild.stdout.readline().strip()
 end_with_this_process(grandchild)
+print(grandchild_pid, flush=True)
 time.sleep(120)
 """
 

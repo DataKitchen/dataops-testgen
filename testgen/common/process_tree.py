@@ -18,16 +18,14 @@ def end_with_this_process(child: subprocess.Popen) -> None:
     """Make Windows end *child* when this process ends, however it ends.
 
     On Windows, *child* goes into a job object that ends every process in it when its only handle
-    closes, which happens when this process ends. That covers this process being ended with
-    TerminateProcess, which runs no handler that could stop *child*. On other platforms this does
-    nothing.
+    closes, which happens when this process ends. On other platforms this does nothing.
 
     A failure is logged, and leaves *child* running outside the job.
     """
     try:
         _bind_to_this_process(child.pid)
     except _BIND_ERRORS as error:
-        LOG.warning(f"Process {child.pid} may outlive this process: {error}")
+        LOG.warning(f"Process {child.pid} may keep running after TestGen stops: {error}")
 
 
 if sys.platform == "win32":
