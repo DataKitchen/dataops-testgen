@@ -6,6 +6,7 @@ Used by both the Streamlit UI and MCP tools.
 """
 import logging
 from dataclasses import dataclass
+from functools import cache
 from typing import Literal
 from uuid import UUID
 
@@ -408,6 +409,7 @@ def _current_filter_conditions(
 
     The match table takes a filter only when it is in the table group's schema or the lookup's schema.
     """
+    @cache
     def catalog_tables() -> list[str]:
         return DataTable.select_table_names(table_groups_id, limit=None)
 

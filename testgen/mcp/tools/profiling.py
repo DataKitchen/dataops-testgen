@@ -88,7 +88,7 @@ def get_table(
 ) -> str:
     """Get a table's catalog metadata, latest profile, and column list.
 
-    Returns structural metadata, the table filter its record count read through, the semantic table type, quality
+    Returns structural metadata, the table filter defined for the table, the semantic table type, quality
     scores, the description, critical data element flag, and catalog tags, then the latest completed profiling run
     and the column list. When the table has no value
     of its own for a tag, the table group's value is shown, marked as inherited. Tags with no value are omitted. A
