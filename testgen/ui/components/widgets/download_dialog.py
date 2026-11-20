@@ -134,8 +134,7 @@ def download_dialog(
         with st.container(height=70, border=False):
             p_bar = st.progress(0.0, progress_bar_msg)
 
-        with st.container(height=55, border=False):
-            _, button_col = st.columns([.8, .2])
+        button_row = st.container(height=55, border=False)
 
         def _update_progress(progress: float):
             p_bar.progress(progress, progress_bar_msg)
@@ -146,16 +145,17 @@ def download_dialog(
 
         @st.fragment
         def render_button():
-            if st.download_button(
-                label=":material/download: Download",
-                data=file_content,
-                file_name=file_name,
-                mime=file_type,
-                use_container_width=True,
-            ):
-                safe_rerun()
+            with st.container(horizontal=True, horizontal_alignment="right"):
+                if st.download_button(
+                    label=":material/download: Download",
+                    data=file_content,
+                    file_name=file_name,
+                    mime=file_type,
+                    width="content",
+                ):
+                    safe_rerun()
 
-        with button_col:
+        with button_row:
             render_button()
 
     return st.dialog(title=dialog_title, width="small")(_dialog_content)()
