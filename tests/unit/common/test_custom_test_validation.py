@@ -13,6 +13,7 @@ from testgen.common import query_variables
 from testgen.common.custom_test_validation import (
     CustomQueryResult,
     InvalidMetricQuery,
+    filtered_table_source,
     render_metric_validation_query,
     validate_aggregate_expression,
     validate_custom_query,
@@ -341,3 +342,22 @@ def test_render_metric_validation_query_gives_each_variable_its_default():
 
     assert "SUM(amount) * 3" in query
     assert "FACTOR" not in query
+
+
+@pytest.mark.parametrize(
+    ("catalog", "expected"),
+    [
+        (["Orders"], """(SELECT * FROM "sales"."orders" WHERE (region = 'EMEA')) "orders\""""),
+        (["Orders", "orders"], '"sales"."orders"'),
+    ],
+    ids=["one-table-differing-in-case", "exact-table-exists"],
+)
+@patch("testgen.common.custom_test_validation.DataTable.select_table_names")
+def test_filtered_table_source_resolves_the_table_against_the_catalog(mock_catalog, catalog, expected):
+    mock_catalog.return_value = catalog
+    table_group = MagicMock(table_filters=[{"table_name": "Orders", "condition": "region = 'EMEA'"}])
+
+    source = filtered_table_source(_connection(), table_group, "sales", "orders")
+
+    assert source == expected
+    mock_catalog.assert_called_once_with(table_group.id, limit=None)

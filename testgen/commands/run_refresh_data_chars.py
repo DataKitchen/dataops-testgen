@@ -138,7 +138,16 @@ def run_data_chars_refresh(
         write_data_chars(data_chars, sql_generator, run_date)
 
         if error_data:
-            raise RuntimeError(f"Error refreshing row counts for data catalog. {next(iter(error_data.values()))}")
+            fatal_errors = []
+            for index, error in error_data.items():
+                if table := count_queries[index].filtered_table:
+                    # Not fatal: the table's tests and profiled columns read through the same filter and
+                    # report whatever stops this count on their own.
+                    LOG.warning(f"Could not count the rows of table {table}. {error}")
+                else:
+                    fatal_errors.append(error)
+            if fatal_errors:
+                raise RuntimeError(f"Error refreshing row counts for data catalog. {fatal_errors[0]}")
     else:
         LOG.warning("No tables detected in table group")
 

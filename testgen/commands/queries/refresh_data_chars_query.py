@@ -1,6 +1,7 @@
 import re
 from collections.abc import Collection, Iterable
 from datetime import datetime
+from typing import NamedTuple
 from uuid import UUID
 
 from testgen.common import read_template_sql_file
@@ -23,6 +24,13 @@ def _like_to_regex(pattern: str) -> re.Pattern[str]:
 
 # Oracle allows at most this many expressions in an IN list.
 IN_LIST_LIMIT = 1000
+
+
+class RowCountQuery(NamedTuple):
+    query: str
+    params: None
+    filtered_table: str | None = None
+    """The table whose filtered rows the query counts, or None for a query counting unfiltered tables."""
 
 
 class RefreshDataCharsSQL:
@@ -175,24 +183,38 @@ class RefreshDataCharsSQL:
             extra_params={"TABLE_CRITERIA": self._get_table_criteria()},
         )
 
-    def get_row_counts(self, table_names: Iterable[str]) -> list[tuple[str, None]]:
+    def get_row_counts(self, table_names: Iterable[str]) -> list[RowCountQuery]:
+        """Return the queries that count each table's rows, through its table filter when it has one.
+
+        The unfiltered tables share queries. Each filtered table gets a query of its own, so a filter that
+        fails fails only its table's count.
+        """
         # Runs on Target database
         schema = self.schema_name
         flavor_code = self.connection.sql_flavor_code
         quote = self.flavor_service.quote_character
-        count_queries = [
-            f"SELECT '{table}' AS table_name, {self.flavor_service.count_function}(*) AS row_count "
-            "FROM " + filtered_table_ref(
-                self.flavor_service.get_table_ref(schema, table, flavor_code),
-                table_filter_condition(self.table_group.table_filters, table),
-                schema,
-                f"{quote}{table}{quote}",
+        unfiltered_queries: list[str] = []
+        filtered_queries: list[RowCountQuery] = []
+        for table in table_names:
+            condition = table_filter_condition(self.table_group.table_filters, table)
+            query = (
+                f"SELECT '{table}' AS table_name, {self.flavor_service.count_function}(*) AS row_count "
+                "FROM " + filtered_table_ref(
+                    self.flavor_service.get_table_ref(schema, table, flavor_code),
+                    condition,
+                    schema,
+                    f"{quote}{table}{quote}",
+                )
             )
-            for table in table_names
-        ]
+            if condition:
+                filtered_queries.append(RowCountQuery(query, None, table))
+            else:
+                unfiltered_queries.append(query)
         max_query_chars = self.connection.max_query_chars or DEFAULT_MAX_QUERY_CHARS
-        chunked_queries = chunk_queries(count_queries, " UNION ALL ", max_query_chars)
-        return [ (query, None) for query in chunked_queries ]
+        chunked_queries = (
+            chunk_queries(unfiltered_queries, " UNION ALL ", max_query_chars) if unfiltered_queries else []
+        )
+        return [*(RowCountQuery(query, None) for query in chunked_queries), *filtered_queries]
 
     def get_file_counts(self, skip: Collection[str] = ()) -> list[tuple[str, None]]:
         """One query per declaration, so a declaration whose files cannot be listed fails only its own count.
@@ -239,10 +261,9 @@ class RefreshDataCharsSQL:
                 column.approx_record_ct,
                 column.record_ct,
                 column.file_ct,
-                # The table filter the record count read through
-                table_filter_condition(self.table_group.table_filters, column.table_name)
-                if column.record_ct is not None
-                else None,
+                # Stored even without a record count, so the approximate count shown in its place is labeled
+                # as unfiltered
+                table_filter_condition(self.table_group.table_filters, column.table_name),
             ]
             for column in data_chars
         ]

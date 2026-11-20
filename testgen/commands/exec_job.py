@@ -87,7 +87,7 @@ def exec_job(job_execution_id: UUID, doorbell: Doorbell | None = None) -> None:
             if stopped.reason == StopReason.CANCEL:
                 _settle(job_execution_id, lambda job: job.mark_canceled())
             else:
-                _settle(job_execution_id, lambda job: job.mark_failed("The run was stopped before it finished"))
+                _settle(job_execution_id, lambda job: job.mark_failed("The run was stopped before it finished."))
         except Exception as e:
             LOG.exception("Job %s failed", job_execution_id)
             message = get_exception_message(e)

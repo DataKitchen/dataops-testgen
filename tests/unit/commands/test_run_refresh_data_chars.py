@@ -10,7 +10,7 @@ from uuid import UUID
 
 import pytest
 
-from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
+from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL, RowCountQuery
 from testgen.commands.run_refresh_data_chars import (
     read_target_columns,
     run_data_chars_refresh,
@@ -214,6 +214,39 @@ def test_a_catalog_refresh_records_no_file_counts(mock_sql, mock_threaded, mock_
     assert {(c.object_type, c.file_ct) for c in data_chars} == {(None, None)}
     sql_generator.get_file_counts.assert_not_called()
     mock_threaded.assert_called_once()
+
+
+# --- row counts ---
+
+COUNT_QUERIES = [RowCountQuery("unfiltered counts", None), RowCountQuery("orders through its filter", None, "orders")]
+
+
+@patch(f"{MODULE}.write_data_chars")
+@patch.object(_JOB, "fetch_counts")
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+def test_a_failed_filtered_count_leaves_only_its_table_uncounted(mock_sql, mock_threaded, mock_write, caplog):
+    mock_sql.return_value = sql_generator = _file_refresh_generator()
+    sql_generator.get_row_counts.return_value = COUNT_QUERIES
+    mock_threaded.return_value = ([{"table_name": "claims", "row_count": 7}], {1: 'column "region" does not exist'})
+
+    data_chars = run_data_chars_refresh(_JOB, _connection(SqlFlavorCode.POSTGRESQL), MagicMock(), datetime.now(UTC))
+
+    assert {(c.table_name, c.record_ct) for c in data_chars} == {("claims", 7), ("orders", None)}
+    mock_write.assert_called_once()
+    assert 'Could not count the rows of table orders. column "region" does not exist' in caplog.text
+
+
+@patch(f"{MODULE}.write_data_chars")
+@patch.object(_JOB, "fetch_counts")
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+def test_a_failed_unfiltered_count_fails_the_refresh(mock_sql, mock_threaded, mock_write):
+    mock_sql.return_value = sql_generator = _file_refresh_generator()
+    sql_generator.get_row_counts.return_value = COUNT_QUERIES
+    mock_threaded.return_value = ([], {0: "permission denied", 1: 'column "region" does not exist'})
+
+    with pytest.raises(RuntimeError, match="^Error refreshing row counts for data catalog. permission denied$"):
+        run_data_chars_refresh(_JOB, _connection(SqlFlavorCode.POSTGRESQL), MagicMock(), datetime.now(UTC))
+    mock_write.assert_called_once()
 
 
 # --- the scanned schema ---

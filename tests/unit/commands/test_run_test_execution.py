@@ -9,6 +9,7 @@ from sqlalchemy.engine.row import RowMapping
 
 from testgen.commands.queries.execute_tests_query import TestExecutionDef
 from testgen.commands.run_test_execution import (
+    TestExecutionJob,
     _run_tests,
     attach_column_chars,
     resolve_query_variables,
@@ -17,6 +18,7 @@ from testgen.commands.run_test_execution import (
     retarget_read_location,
 )
 from testgen.common.database.column_chars import ColumnChars
+from testgen.common.enums import SuiteType
 
 pytestmark = pytest.mark.unit
 
@@ -313,3 +315,22 @@ def test_a_retargeted_custom_test_reports_its_table_as_an_unretargeted_one_does(
     restored = restore_result_identity(results, columns, [td])
 
     assert restored == [[str(td.id), "public", ""]]
+
+
+def test_prepare_tests_hands_the_catalog_s_table_names_to_the_query_builder():
+    """Without them, a test naming its table in another letter case would miss the table's filter."""
+    job = TestExecutionJob.__new__(TestExecutionJob)
+    job.connection = job.table_group = job.test_run = MagicMock()
+    job.test_suite = MagicMock(suite_type=SuiteType.STANDARD)
+    job.writes_definitions = False
+    job.match_schema_name = job.schema_name = job.table_names = job.match_table_names = job.variables = None
+    job.data_chars = [_column("id"), ColumnChars(schema_name="s", table_name="Orders", column_name="id")]
+
+    with (
+        patch("testgen.commands.run_test_execution.TestExecutionSQL") as sql_class,
+        patch("testgen.commands.run_test_execution.fetch_dict_from_db", return_value=[]),
+    ):
+        sql_class.return_value.get_active_test_definitions.return_value = ("query", {})
+        job._prepare_tests()
+
+    assert job.sql_generator.catalog_table_names == {column.table_name for column in job.data_chars}

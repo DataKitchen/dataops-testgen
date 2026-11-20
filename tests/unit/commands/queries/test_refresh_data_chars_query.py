@@ -278,14 +278,14 @@ def test_get_row_counts_handles_null_max_query_chars():
     result = sql_generator.get_row_counts(["orders", "customers"])
 
     assert result
-    assert all(isinstance(query, str) and query for query, _ in result)
+    assert all(isinstance(count.query, str) and count.query for count in result)
 
 
 @pytest.mark.parametrize(("flavor", "count"), [("postgresql", "COUNT(*)"), ("mssql", "COUNT_BIG(*)")])
 def test_row_counts_use_the_flavor_count(flavor, count):
     sql_generator = RefreshDataCharsSQL(Connection(sql_flavor=flavor), TableGroup(table_group_schema="s"))
 
-    (query, _), = sql_generator.get_row_counts(["orders"])
+    [(query, _, _)] = sql_generator.get_row_counts(["orders"])
 
     assert f"{count} AS row_count" in query
 
@@ -382,7 +382,7 @@ def test_every_read_of_the_scanned_schema_agrees():
     ddf_query, ddf_params = sql_generator.get_schema_ddf()
     assert ddf_params["DATA_SCHEMA"] == "onboard_2026_09_10"
 
-    (count_query, _), = sql_generator.get_row_counts(["orders"])
+    [(count_query, _, _)] = sql_generator.get_row_counts(["orders"])
     assert '"onboard_2026_09_10"."orders"' in count_query
 
     access_query, _ = sql_generator.verify_access("orders")
@@ -606,14 +606,38 @@ def _filtered_sql_generator() -> RefreshDataCharsSQL:
     return RefreshDataCharsSQL(Connection(sql_flavor="postgresql", sql_flavor_code="postgresql"), table_group)
 
 
-def test_row_counts_read_a_filtered_table_through_its_filter():
-    [(query, _)] = _filtered_sql_generator().get_row_counts(["orders", "customers"])
+def test_row_counts_read_a_filtered_table_through_its_filter_in_a_query_of_its_own():
+    unfiltered, filtered = _filtered_sql_generator().get_row_counts(["orders", "customers", "returns"])
 
-    assert """FROM (SELECT * FROM "sales"."orders" WHERE (region = 'EMEA')) "orders\"""" in query
-    assert 'FROM "sales"."customers"' in query
+    assert unfiltered.filtered_table is None
+    assert 'FROM "sales"."customers" UNION ALL ' in unfiltered.query
+    assert 'FROM "sales"."returns"' in unfiltered.query
+    assert "orders" not in unfiltered.query
+    assert filtered.filtered_table == "orders"
+    assert filtered.query == (
+        """SELECT 'orders' AS table_name, COUNT(*) AS row_count """
+        """FROM (SELECT * FROM "sales"."orders" WHERE (region = 'EMEA')) "orders\""""
+    )
 
 
-def test_staged_rows_record_the_filter_their_row_count_read_through():
+def test_row_counts_with_every_table_filtered_send_no_empty_query():
+    table_group = TableGroup(
+        id=uuid4(),
+        table_group_schema="sales",
+        table_filters=[
+            {"table_name": "orders", "condition": "region = 'EMEA'"},
+            {"table_name": "returns", "condition": "region = 'EMEA'"},
+        ],
+    )
+    sql_generator = RefreshDataCharsSQL(Connection(sql_flavor="postgresql", sql_flavor_code="postgresql"), table_group)
+
+    queries = sql_generator.get_row_counts(["orders", "returns"])
+
+    assert [count.filtered_table for count in queries] == ["orders", "returns"]
+    assert all(count.query for count in queries)
+
+
+def test_staged_rows_record_the_table_filter_with_or_without_a_count():
     sql_generator = _filtered_sql_generator()
     columns = [
         ColumnChars(schema_name="sales", table_name="orders", column_name="id", record_ct=4),
@@ -624,5 +648,5 @@ def test_staged_rows_record_the_filter_their_row_count_read_through():
     rows = sql_generator.get_staging_data_chars(columns, datetime.now(UTC), uuid4())
 
     position = RefreshDataCharsSQL.staging_columns.index("table_filter")
-    assert [row[position] for row in rows] == ["region = 'EMEA'", None, None]
+    assert [row[position] for row in rows] == ["region = 'EMEA'", None, "region = 'EMEA'"]
     assert all(len(row) == len(RefreshDataCharsSQL.staging_columns) for row in rows)

@@ -124,7 +124,7 @@ class ProfilingJob(PausableJob[ColumnChars]):
         self.sql_generator: ProfilingSQL | None = None
         self.data_chars: list[ColumnChars] = []
         self.sampling_params: dict[str, TableSampling] = {}
-        self.table_record_counts: dict[str, int] = {}
+        self.table_record_counts: dict[str, int | None] = {}
         self.capabilities = ProfilingCapabilities()
 
     def canonical_key(self, key: ColumnChars) -> str:
@@ -262,8 +262,10 @@ class ProfilingJob(PausableJob[ColumnChars]):
         distinct_tables = {(column.table_name, column.record_ct) for column in self.data_chars}
         self.profiling_run.table_ct = len(distinct_tables)
         self.profiling_run.column_ct = len(self.data_chars)
-        self.profiling_run.record_ct = sum(table[1] for table in distinct_tables)
-        self.profiling_run.data_point_ct = sum(column.record_ct for column in self.data_chars)
+        # A table whose filter failed its row count has none, and still profiles: each of its columns
+        # records the filter's error.
+        self.profiling_run.record_ct = sum(count or 0 for _, count in distinct_tables)
+        self.profiling_run.data_point_ct = sum(column.record_ct or 0 for column in self.data_chars)
 
         if not self.data_chars:
             LOG.info("No columns were selected to profile.")
@@ -286,7 +288,10 @@ class ProfilingJob(PausableJob[ColumnChars]):
         # a test run can refresh them mid-pause. Pin them too, or a resumed run samples some columns
         # at the old size and scales them by the new ratio. Coerced to int: a target COUNT can come
         # back as Decimal, which the checkpoint's JSON cannot serialize and would not compare equal.
-        self.pin("record_counts", {table: int(count) for table, count in self.table_record_counts.items()})
+        self.pin(
+            "record_counts",
+            {table: None if count is None else int(count) for table, count in self.table_record_counts.items()},
+        )
         # A filter changed mid-pause would leave one run that read some columns through each filter
         self.pin("table_filters", self.table_group.table_filters)
 
@@ -580,6 +585,8 @@ def _compute_sampling_params(
             continue
         if sampleable_types is not None and column.object_type not in sampleable_types:
             continue
+        if column.record_ct is None:
+            continue
         result = calculate_sampling_params(
             table_name=column.table_name,
             record_count=column.record_ct,
@@ -592,7 +599,7 @@ def _compute_sampling_params(
 
 
 def _order_largest_work_first(
-    columns: list[ColumnChars], table_record_counts: dict[str, int]
+    columns: list[ColumnChars], table_record_counts: dict[str, int | None]
 ) -> list[ColumnChars]:
     """Order work keys deterministically, largest table first.
 
@@ -603,7 +610,7 @@ def _order_largest_work_first(
     return sorted(
         columns,
         key=lambda column: (
-            -table_record_counts.get(column.table_name, 0),
+            -(table_record_counts.get(column.table_name) or 0),
             column.schema_name,
             column.table_name,
             column.column_name,

@@ -874,6 +874,48 @@ def test_a_lookup_without_a_result_reads_through_the_current_filter(_mock_lookup
     assert query == "SELECT * FROM (SELECT * FROM orders WHERE (region = 'NY'))"
 
 
+@pytest.mark.parametrize(
+    ("catalog", "expected"),
+    [
+        (["Orders"], "SELECT * FROM (SELECT * FROM orders WHERE (region = 'NY'))"),
+        (["Orders", "orders"], "SELECT * FROM orders"),
+    ],
+    ids=["one-table-differing-in-case", "exact-table-exists"],
+)
+@patch(f"{MODULE}.DataTable.select_table_names")
+@patch(f"{MODULE}.TestDefinition.get_for_project", return_value=_FakeTestDefinition())
+@patch(f"{MODULE}._get_lookup_data")
+def test_a_lookup_without_a_result_resolves_its_table_against_the_catalog(
+    mock_lookup, _mock_td, mock_catalog, catalog, expected
+):
+    mock_lookup.return_value = dataclasses.replace(
+        _filtered_lookup_data(), table_filters=[{"table_name": "Orders", "condition": "region = 'NY'"}]
+    )
+    mock_catalog.return_value = catalog
+
+    query = _build_query_standard(_standard_issue_data(), limit=500)
+
+    assert query == expected
+    mock_catalog.assert_called_with("tg-uuid-1", limit=None)
+
+
+@patch(f"{MODULE}.DataTable.select_table_names", return_value=["Returns"])
+@patch(f"{MODULE}.TestDefinition.get_for_project")
+@patch(f"{MODULE}._get_lookup_data")
+def test_a_lookup_without_a_result_resolves_its_match_table_against_the_catalog(mock_lookup, mock_td, _mock_catalog):
+    mock_lookup.return_value = LookupData(
+        lookup_query="SELECT * FROM {MATCH_TABLE_FILTER_OPEN}returns{MATCH_TABLE_FILTER_CLOSE_UNALIASED}",
+        sql_flavor="postgresql",
+        table_group_schema="demo",
+        table_filters=[{"table_name": "Returns", "condition": "region = 'NY'"}],
+    )
+    mock_td.return_value = _FakeTestDefinition(match_schema_name="demo", match_table_name="returns")
+
+    query = _build_query_standard(_standard_issue_data(), limit=500)
+
+    assert query == "SELECT * FROM (SELECT * FROM returns WHERE (region = 'NY'))"
+
+
 @patch(f"{MODULE}.ProfilingRun.get")
 @patch(f"{MODULE}._get_lookup_data", side_effect=lambda *_: _filtered_lookup_data())
 def test_a_hygiene_lookup_reads_through_the_filter_its_profiling_run_used(_mock_lookup, mock_run):

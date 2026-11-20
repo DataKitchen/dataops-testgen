@@ -706,35 +706,37 @@ def update_table_group(
     if errors:
         _raise_validation_error(errors, "Update rejected. No changes saved.")
 
-    if table_filters is not None:
-        # Stored unchecked first, so a move reads the schema it moves to through these filters
-        _apply_table_filters(table_group, table_filters, None)
     move = None
-    if moving_to:
-        try:
-            move = move_table_group_schema(table_group, moving_to)
-        except SchemaMoveRefused as refusal:
-            raise MCPUserError(refusal.message) from refusal
-    if table_group.table_filters and (table_filters is not None or move is not None):
-        _apply_table_filters(
-            table_group,
-            [TableFilter(**entry) for entry in table_group.table_filters],
-            connection,
-            move.tables if move is not None else None,
-        )
-
-    after = _snapshot(table_group)
-
-    doc = MdDoc()
-    doc.heading(1, f"Table Group `{table_group.table_groups_name}` updated")
-    doc.field("ID", str(table_group.id), code=True)
-
-    diff_attrs, diff_labels = _diff_shape(schema_label)
-    rendered = render_diff_table(doc, before, after, attrs=diff_attrs, labels=diff_labels)
-    if not rendered:
-        return report_no_change(doc)
-
+    # The filter checks and the move query the session, which autoflushes the edited name, so a
+    # duplicate name can surface there as well as on save.
     try:
+        if table_filters is not None:
+            # Stored unchecked first, so a move reads the schema it moves to through these filters
+            _apply_table_filters(table_group, table_filters, None)
+        if moving_to:
+            try:
+                move = move_table_group_schema(table_group, moving_to)
+            except SchemaMoveRefused as refusal:
+                raise MCPUserError(refusal.message) from refusal
+        if table_group.table_filters and (table_filters is not None or move is not None):
+            _apply_table_filters(
+                table_group,
+                [TableFilter(**entry) for entry in table_group.table_filters],
+                connection,
+                move.tables if move is not None else None,
+            )
+
+        after = _snapshot(table_group)
+
+        doc = MdDoc()
+        doc.heading(1, f"Table Group `{table_group.table_groups_name}` updated")
+        doc.field("ID", str(table_group.id), code=True)
+
+        diff_attrs, diff_labels = _diff_shape(schema_label)
+        rendered = render_diff_table(doc, before, after, attrs=diff_attrs, labels=diff_labels)
+        if not rendered:
+            return report_no_change(doc)
+
         table_group.save()
     except IntegrityError as err:
         _maybe_raise_duplicate_name(err)
