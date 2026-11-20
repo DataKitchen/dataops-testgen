@@ -7,9 +7,11 @@ user — no Docker, no system Postgres, no root access required.
 """
 
 import atexit
+import json
 import logging
 import os
 import platform
+import subprocess
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
@@ -33,6 +35,32 @@ NEW_INSTALL_POSTGRES_VERSION = 16
 # time by ``resolve_connection_params``. Angle brackets are illegal in real
 # hostnames, so this can't collide with a user-defined connection.
 EMBEDDED_HOST_SENTINEL = "<embedded>"
+
+ELEVATED_PROCESS_HINT = (
+    "PostgreSQL does not run with administrative permissions, and TestGen was started with them. "
+    'Run TestGen from a Command Prompt that is not elevated (not "Run as administrator"). '
+    "If it still fails, privilege-management software may be elevating TestGen or the installer: "
+    "ask your IT team to exclude them, or install TestGen with Docker."
+)
+
+
+# pgserver starts PostgreSQL with ``pg_ctl -l <data dir>/log``. The file is never truncated, so it holds every
+# earlier start too, and a failed start logs all of it under this heading.
+SERVER_LOG_NAME = "log"
+_SERVER_LOG_DUMP_PREFIX = "Failed to start server."
+
+
+class EmbeddedPostgresError(Exception):
+    """The embedded PostgreSQL server could not start."""
+
+
+class _ErrorCapture(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(level=logging.ERROR)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
 
 
 def get_home_dir() -> Path:
@@ -70,6 +98,8 @@ def start_server(data_dir: Path | None = None) -> None:
 
     Calling this multiple times is safe — the second call is a no-op
     if the server is already running.
+
+    :raises EmbeddedPostgresError: A PostgreSQL command failed while initializing or starting the server.
     """
     global _server
 
@@ -94,11 +124,71 @@ def start_server(data_dir: Path | None = None) -> None:
     postgres_version = existing_version if existing_version is not None else NEW_INSTALL_POSTGRES_VERSION
 
     LOG.info("Starting embedded PostgreSQL (data: %s, pg%s) ...", data_dir, postgres_version)
-    _server = pgserver.get_server(data_dir, postgres_version=postgres_version)
+    server_log = data_dir / SERVER_LOG_NAME
+    server_log_offset = server_log.stat().st_size if server_log.exists() else 0
+    # pgserver raises bare subprocess errors; the failed command's output reaches only its error log.
+    capture = _ErrorCapture()
+    pgserver_logger = logging.getLogger("pixeltable_pgserver")
+    pgserver_logger.addHandler(capture)
+    try:
+        _server = pgserver.get_server(data_dir, postgres_version=postgres_version)
+    except subprocess.SubprocessError as error:
+        new_server_log = _read_from(server_log, server_log_offset)
+        raise EmbeddedPostgresError(_describe_start_failure(capture.messages, new_server_log, error)) from error
+    finally:
+        pgserver_logger.removeHandler(capture)
     LOG.info("Embedded PostgreSQL ready: %s", _server.get_uri())
 
     _reinitialize_orm_engine()
     atexit.register(stop_server)
+
+
+def _read_from(path: Path, offset: int) -> str:
+    """Return the text of *path* from byte *offset* on, or all of it if the file is shorter than that."""
+    try:
+        with path.open("rb") as file:
+            if offset <= path.stat().st_size:
+                file.seek(offset)
+            return file.read().decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _describe_start_failure(pgserver_errors: list[str], new_server_log: str, error: subprocess.SubprocessError) -> str:
+    """Describe a failed start from pgserver's errors and the server log lines written during this start.
+
+    :param pgserver_errors: The messages pgserver logged at ERROR. Its dump of the whole server log is left out.
+    :param new_server_log: The server log text written since the start began.
+    :param error: The subprocess error pgserver raised.
+    """
+    parts = [message for message in pgserver_errors if not message.startswith(_SERVER_LOG_DUMP_PREFIX)]
+    parts.append(new_server_log.strip())
+    output = "\n".join(part for part in parts if part)
+    if not output:
+        output = "\n".join(str(part) for part in (error, getattr(error, "stderr", None)) if part)
+    hint = f" {ELEVATED_PROCESS_HINT}" if "administrative permissions" in output else ""
+    return f"Embedded PostgreSQL could not start.{hint}\n{output}".rstrip()
+
+
+def is_server_in_use(data_dir: Path | None = None) -> bool:
+    """Return whether a live process holds a handle on the embedded server.
+
+    pgserver records the PID of every process that opens a handle on the server in ``.handle_pids.json`` in the
+    data directory. A PID stays listed after its process dies without exiting cleanly, so a listed PID counts
+    only while that process is alive.
+
+    :param data_dir: The cluster's data directory. Defaults to ``<TestGen home>/pgdata``.
+    """
+    try:
+        import psutil
+    except ImportError:
+        return False
+    handles_path = (data_dir or get_home_dir() / "pgdata") / ".handle_pids.json"
+    try:
+        pids = json.loads(handles_path.read_text() or "[]")
+    except (OSError, ValueError):
+        return False
+    return isinstance(pids, list) and any(isinstance(pid, int) and psutil.pid_exists(pid) for pid in pids)
 
 
 def get_server_uri() -> str | None:
