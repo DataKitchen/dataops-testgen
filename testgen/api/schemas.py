@@ -86,11 +86,11 @@ PAGE_ITEMS = "The resources on this page."
 
 JOB_STATUS = (
     "Where the job is: `pending` (waiting to start), `queued` (waiting for a free worker), `claimed` (starting), "
-    "`running`, `completed`, `error`, `cancel_requested` (stopping), `interrupt_requested` (stopping because "
-    "TestGen is shutting down), or `canceled`. A profiling job can also be paused or interrupted and later "
-    "continue: `pause_requested`, `paused`, `resume_requested`, and `interrupted` (stopped by a shutdown, and "
-    "continued automatically). Any other interrupted job ends as `error`. `completed`, `error`, and `canceled` "
-    "are final."
+    "`running`, `completed`, `error`, `cancel_requested` (stopping), `interrupt_requested` (a run stopping "
+    "because TestGen is shutting down), or `canceled`. A profiling job can also be paused or interrupted and "
+    "later continue: `pause_requested`, `paused`, `resume_requested`, and `interrupted` (stopped by a shutdown, "
+    "and continued automatically). Any other interrupted run ends as `error`. `completed`, `error`, and "
+    "`canceled` are final."
 )
 JOB_KEY_VALUES = "`run-profile` (profiling), `run-tests` (a test run), or `run-test-generation` (test generation)"
 RESULT_STATUS_VALUES = "`passed`, `failed`, `warning`, `error`, or `log`"
