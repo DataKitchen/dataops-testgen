@@ -31,7 +31,7 @@ profile_anomaly_types:
     lookup_query: |-
       (
         SELECT 'Date' AS data_type, `{COLUMN_NAME}`, COUNT(*) AS count
-        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE}
         WHERE SAFE_CAST(CAST(`{COLUMN_NAME}` AS STRING) AS DATE) IS NOT NULL
         GROUP BY `{COLUMN_NAME}`
         ORDER BY count DESC
@@ -40,7 +40,7 @@ profile_anomaly_types:
       UNION ALL
       (
         SELECT 'Non-Date' AS data_type, `{COLUMN_NAME}`, COUNT(*) AS count
-        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE}
         WHERE SAFE_CAST(CAST(`{COLUMN_NAME}` AS STRING) AS DATE) IS NULL
         GROUP BY `{COLUMN_NAME}`
         ORDER BY count DESC
@@ -54,7 +54,7 @@ profile_anomaly_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT A.* FROM (SELECT DISTINCT 'Date' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE <%IS_DATE;`{COLUMN_NAME}`%> = 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT {LIMIT_2}) AS A UNION ALL SELECT B.* FROM (SELECT DISTINCT  'Non-Date' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE <%IS_DATE;`{COLUMN_NAME}`%> != 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT {LIMIT_2}) AS B ORDER BY data_type, count DESC;
+      SELECT A.* FROM (SELECT DISTINCT 'Date' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;`{COLUMN_NAME}`%> = 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT {LIMIT_2}) AS A UNION ALL SELECT B.* FROM (SELECT DISTINCT  'Non-Date' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;`{COLUMN_NAME}`%> != 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT {LIMIT_2}) AS B ORDER BY data_type, count DESC;
     error_type: Profile Anomaly
   - id: '1126'
     test_id: '1012'
@@ -62,7 +62,7 @@ profile_anomaly_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT A.* FROM (  SELECT  DISTINCT TOP {LIMIT_2} 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT TOP {LIMIT_2} 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC )  AS B ORDER BY data_type, count DESC;
+      SELECT A.* FROM (  SELECT  DISTINCT TOP {LIMIT_2} 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT TOP {LIMIT_2} 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC )  AS B ORDER BY data_type, count DESC;
     error_type: Profile Anomaly
   - id: '1069'
     test_id: '1012'
@@ -70,7 +70,7 @@ profile_anomaly_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT A.* FROM (  SELECT  DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2})  AS B ORDER BY data_type, count DESC;
+      SELECT A.* FROM (  SELECT  DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2})  AS B ORDER BY data_type, count DESC;
     error_type: Profile Anomaly
   - id: '1044'
     test_id: '1012'
@@ -78,7 +78,7 @@ profile_anomaly_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT A.* FROM (  SELECT DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2})  AS B ORDER BY data_type, count DESC;
+      SELECT A.* FROM (  SELECT DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2})  AS B ORDER BY data_type, count DESC;
     error_type: Profile Anomaly
   - id: '1444'
     test_id: '1012'
@@ -86,7 +86,7 @@ profile_anomaly_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT A.* FROM (  SELECT DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2})  AS B ORDER BY data_type, count DESC;
+      SELECT A.* FROM (  SELECT DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2})  AS B ORDER BY data_type, count DESC;
     error_type: Profile Anomaly
   - id: '1183'
     test_id: '1012'
@@ -94,7 +94,7 @@ profile_anomaly_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT A.* FROM (SELECT DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) AS A UNION ALL SELECT B.* FROM (SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) AS B ORDER BY data_type, count DESC;
+      SELECT A.* FROM (SELECT DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) AS A UNION ALL SELECT B.* FROM (SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) AS B ORDER BY data_type, count DESC;
     error_type: Profile Anomaly
   - id: '1511'
     test_id: '1012'
@@ -102,7 +102,7 @@ profile_anomaly_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT A.* FROM (SELECT DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC FETCH FIRST {LIMIT_2} ROWS ONLY) A UNION ALL SELECT B.* FROM (SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC FETCH FIRST {LIMIT_2} ROWS ONLY) B ORDER BY data_type, count DESC
+      SELECT A.* FROM (SELECT DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC FETCH FIRST {LIMIT_2} ROWS ONLY) A UNION ALL SELECT B.* FROM (SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC FETCH FIRST {LIMIT_2} ROWS ONLY) B ORDER BY data_type, count DESC
     error_type: Profile Anomaly
   - id: '1511'
     test_id: '1012'
@@ -110,7 +110,7 @@ profile_anomaly_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT A.* FROM (SELECT DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) A UNION ALL SELECT B.* FROM (SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) B ORDER BY data_type, count DESC
+      SELECT A.* FROM (SELECT DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) A UNION ALL SELECT B.* FROM (SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) B ORDER BY data_type, count DESC
     error_type: Profile Anomaly
   - id: '10048'
     test_id: 1012
@@ -118,7 +118,7 @@ profile_anomaly_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT A.* FROM (  SELECT  DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2})  AS B ORDER BY data_type, count DESC;
+      SELECT A.* FROM (  SELECT  DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2})  AS B ORDER BY data_type, count DESC;
     error_type: Profile Anomaly
   - id: '11099'
     test_id: '1012'
@@ -126,5 +126,5 @@ profile_anomaly_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT A.* FROM (  SELECT  DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2})  AS B ORDER BY data_type, count DESC;
+      SELECT A.* FROM (  SELECT  DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2})  AS B ORDER BY data_type, count DESC;
     error_type: Profile Anomaly

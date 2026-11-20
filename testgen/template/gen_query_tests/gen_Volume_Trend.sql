@@ -24,7 +24,7 @@ WHERE c.table_groups_id = :TABLE_GROUPS_ID ::UUID
   AND c.drop_date IS NULL
   -- Only insert if test type is active
   AND EXISTS (SELECT 1 FROM test_types WHERE test_type = 'Volume_Trend' AND active = 'Y')
-  {TABLE_FILTER}
+  {TABLE_SCOPE}
 
 -- Match "uix_td_autogen_table" unique index exactly
 ON CONFLICT (test_suite_id, version_id, test_type, schema_name, table_name) 

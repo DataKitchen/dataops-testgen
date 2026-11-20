@@ -153,6 +153,7 @@ class ProfilingRun(Entity):
     schema_name: str = Column(String)
     profiling_starttime: datetime = Column(postgresql.TIMESTAMP)
     progress: list[ProgressStep] = Column(postgresql.JSONB, default=[])
+    table_filters: list[dict] | None = Column(postgresql.JSONB)
     table_ct: int = Column(BigInteger)
     column_ct: int = Column(BigInteger)
     record_ct: int = Column(BigInteger)

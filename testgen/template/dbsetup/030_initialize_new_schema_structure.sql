@@ -32,7 +32,8 @@ CREATE TABLE stg_data_chars_updates (
    object_type           VARCHAR(20),
    approx_record_ct      BIGINT,
    record_ct             BIGINT,
-   file_ct               INTEGER
+   file_ct               INTEGER,
+   table_filter          VARCHAR
 );
 
 CREATE TABLE stg_test_definition_updates (
@@ -107,6 +108,7 @@ CREATE TABLE table_groups
     table_groups_name        VARCHAR(100),
     table_group_schema       VARCHAR(100),
     file_declarations        JSONB,
+    table_filters            JSONB,
     profiling_table_set      TEXT,
     profiling_include_mask   TEXT,
     profiling_exclude_mask   TEXT,
@@ -146,6 +148,7 @@ CREATE TABLE profiling_runs (
    schema_name             VARCHAR(50),
    profiling_starttime     TIMESTAMP,
    progress                JSONB,
+   table_filters           JSONB,
    table_ct                BIGINT,
    column_ct               BIGINT,
    record_ct               BIGINT,
@@ -463,6 +466,7 @@ CREATE TABLE data_table_chars (
    last_refresh_date     TIMESTAMP,
    approx_record_ct      BIGINT,
    record_ct             BIGINT,
+   table_filter          VARCHAR,
    column_ct             BIGINT,
    file_ct               INTEGER,
    last_complete_profile_run_id UUID,
@@ -665,6 +669,7 @@ CREATE TABLE test_runs (
    dq_total_data_points    BIGINT,
    dq_score_test_run       FLOAT,
    version_id              UUID,
+   table_filters           JSONB,
    CONSTRAINT test_runs_test_suites_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
@@ -684,6 +689,8 @@ CREATE TABLE test_results (
    column_names           VARCHAR(500),
    skip_errors            INTEGER,
    input_parameters       VARCHAR,
+   table_filter           VARCHAR,
+   match_table_filter     VARCHAR,
    result_code            INTEGER,
    severity               VARCHAR(10),
    result_status          VARCHAR(10),

@@ -18,6 +18,7 @@
  * @property {number} profile_run_date
  * @property {string?} profiling_error
  * @property {number?} record_ct
+ * @property {string?} table_filter
  * @property {number?} value_ct
  * @property {number?} distinct_value_ct
  * @property {number?} null_value_ct

@@ -1557,7 +1557,7 @@ const AddDialogComponent = ({ open, info, validateResult, currentValues, onClose
                 if (!groups.length) {
                     return div(
                         { class: 'tg-picker-empty', 'data-testid': 'test-picker-empty' },
-                        span('No tests match this filter combination.'),
+                        span('No tests match this filter combination'),
                         Button({ type: 'stroked', label: 'Clear filters and search', onclick: clearAll }),
                     );
                 }

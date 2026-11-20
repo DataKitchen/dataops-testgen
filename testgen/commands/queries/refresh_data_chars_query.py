@@ -11,6 +11,7 @@ from testgen.common.database.flavor.flavor_service import resolve_connection_par
 from testgen.common.flavors import declares_files
 from testgen.common.models.connection import DEFAULT_MAX_QUERY_CHARS, Connection
 from testgen.common.models.table_group import TableGroup, split_criteria
+from testgen.common.table_filters import filtered_table_ref, table_filter_condition
 from testgen.utils import chunk_queries, to_sql_timestamp
 
 
@@ -44,6 +45,7 @@ class RefreshDataCharsSQL:
         "approx_record_ct",
         "record_ct",
         "file_ct",
+        "table_filter",
     )
 
     def __init__(
@@ -58,7 +60,7 @@ class RefreshDataCharsSQL:
             connection: The connection to read through.
             table_group: The table group whose catalog this describes.
             schema_name: Schema to read, when it is not the table group's own.
-            table_names: Exact tables to read, in place of the table group's table filters.
+            table_names: Exact tables to read, in place of the table group's table criteria.
         """
         self.connection = connection
         self.table_group = table_group
@@ -177,9 +179,15 @@ class RefreshDataCharsSQL:
         # Runs on Target database
         schema = self.schema_name
         flavor_code = self.connection.sql_flavor_code
+        quote = self.flavor_service.quote_character
         count_queries = [
             f"SELECT '{table}' AS table_name, {self.flavor_service.count_function}(*) AS row_count "
-            f"FROM {self.flavor_service.get_table_ref(schema, table, flavor_code)}"
+            "FROM " + filtered_table_ref(
+                self.flavor_service.get_table_ref(schema, table, flavor_code),
+                table_filter_condition(self.table_group.table_filters, table),
+                schema,
+                f"{quote}{table}{quote}",
+            )
             for table in table_names
         ]
         max_query_chars = self.connection.max_query_chars or DEFAULT_MAX_QUERY_CHARS
@@ -231,6 +239,10 @@ class RefreshDataCharsSQL:
                 column.approx_record_ct,
                 column.record_ct,
                 column.file_ct,
+                # The table filter the record count read through
+                table_filter_condition(self.table_group.table_filters, column.table_name)
+                if column.record_ct is not None
+                else None,
             ]
             for column in data_chars
         ]

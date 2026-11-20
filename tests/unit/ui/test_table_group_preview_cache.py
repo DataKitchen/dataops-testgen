@@ -16,6 +16,7 @@ def _table_group(**overrides) -> TableGroup:
         "profiling_include_mask": None,
         "profiling_exclude_mask": None,
         "file_declarations": [{"name": "claims", "uri": "claims_2024.csv", "format": "csv"}],
+        "table_filters": [{"table_name": "claims", "condition": "region = 'EMEA'"}],
     }
     return TableGroup(**{**defaults, **overrides})
 
@@ -48,6 +49,20 @@ def test_editing_a_criteria_field_changes_the_key(field):
 ])
 def test_editing_the_declarations_changes_the_key(declarations):
     assert preview_cache_key(_table_group()) != preview_cache_key(_table_group(file_declarations=declarations))
+
+
+@pytest.mark.parametrize("table_filters", [
+    [{"table_name": "claims", "condition": "region = 'APAC'"}],
+    [{"table_name": "members", "condition": "region = 'EMEA'"}],
+    [
+        {"table_name": "claims", "condition": "region = 'EMEA'"},
+        {"table_name": "members", "condition": "active"},
+    ],
+    [],
+    None,
+])
+def test_editing_the_table_filters_changes_the_key(table_filters):
+    assert preview_cache_key(_table_group()) != preview_cache_key(_table_group(table_filters=table_filters))
 
 
 def test_the_key_is_hashable():

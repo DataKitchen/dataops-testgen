@@ -558,7 +558,9 @@ def test_the_attachment_survives_a_rollback(customer_database):
         engine.dispose()
 
 
-def profiling_sql(name, column_type, db_data_type, general_type, *, table="profiled", sampled=False):
+def profiling_sql(
+    name, column_type, db_data_type, general_type, *, table="profiled", sampled=False, table_filters=None,
+):
     """Render the real profiling query for one column, the way a profiling run would."""
     import datetime
     import uuid
@@ -570,7 +572,7 @@ def profiling_sql(name, column_type, db_data_type, general_type, *, table="profi
     connection_record = SimpleNamespace(sql_flavor="duckdb", sql_flavor_code="duckdb", connection_id=1)
     table_group = SimpleNamespace(
         project_code="DEMO", id=uuid.uuid4(), table_group_schema="sales",
-        profile_id_column_mask="%_id", profile_sk_column_mask="%_sk",
+        profile_id_column_mask="%_id", profile_sk_column_mask="%_sk", table_filters=table_filters,
     )
     profiling_run = SimpleNamespace(id=uuid.uuid4(), profiling_starttime=datetime.datetime(2026, 9, 8, 12, 0))
     builder = ProfilingSQL(connection_record, table_group, profiling_run)
@@ -614,6 +616,35 @@ def test_the_profiling_query_runs_for_every_general_type(customer_database, gene
     name, column_type, db_data_type = column_for[general_type]
     sql = profiling_sql(name, column_type, db_data_type, general_type, sampled=sampled)
     run_profiling_sql(customer_database, sql)
+
+
+@pytest.mark.parametrize("sampled", [False, True], ids=["unsampled", "sampled"])
+@pytest.mark.parametrize("general_type", ["A", "N", "D", "B", "X"])
+def test_the_filtered_profiling_query_runs_for_every_general_type(customer_database, general_type, sampled):
+    column_for = {
+        "A": ("note", "varchar(65535)", "VARCHAR"),
+        "N": ("amount", "numeric(12,4)", "DECIMAL(12,4)"),
+        "D": ("placed_at", "timestamp", "TIMESTAMP"),
+        "B": ("shipped", "boolean", "BOOLEAN"),
+        "X": ("payload", "blob", "BLOB"),
+    }
+    name, column_type, db_data_type = column_for[general_type]
+    table_filters = [{"table_name": "profiled", "condition": "note = 'alpha'"}]
+    sql = profiling_sql(name, column_type, db_data_type, general_type, sampled=sampled, table_filters=table_filters)
+    assert "note = 'alpha'" in sql
+    run_profiling_sql(customer_database, sql)
+
+
+def test_a_table_filter_profiles_only_the_matching_records(customer_database):
+    def profile(table_filters):
+        sql = profiling_sql("rate", "numeric(18,6)", "DECIMAL(18,6)", "N", table="tiny", table_filters=table_filters)
+        return run_profiling_sql(customer_database, sql)[0]
+
+    unfiltered = profile(None)
+    # The literal holds a colon that SQLAlchemy would otherwise read as a bind parameter
+    filtered = profile([{"table_name": "tiny", "condition": "rate > 0 AND ':x' <> ':y'"}])
+    assert (unfiltered["record_ct"], filtered["record_ct"]) == (5, 3)
+    assert filtered["min_value"] > 0
 
 
 @pytest.mark.parametrize(

@@ -8,11 +8,11 @@ WITH ranked_vals AS (
          COUNT(*) AS ct,
          ROW_NUMBER() OVER (ORDER BY CASE WHEN "{COL_NAME}" > ' ' THEN 0 ELSE 1 END, COUNT(*) DESC, TO_BINARY("{COL_NAME}")) AS rn,
          SUM(COUNT(*)) OVER () AS sample_value_ct
-    FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+    FROM {TABLE_FILTER_OPEN}"{DATA_SCHEMA}"."{DATA_TABLE}"
 -- TG-IF do_sample_bool
         TABLESAMPLE BERNOULLI({SAMPLE_PERCENT_CALC})
 -- TG-ENDIF
-   WHERE "{COL_NAME}" IS NOT NULL
+   {TABLE_FILTER_CLOSE} WHERE "{COL_NAME}" IS NOT NULL
    GROUP BY "{COL_NAME}"
 ),
 grouped_vals AS (
@@ -27,11 +27,11 @@ SELECT top_val AS value,
        MAX(sample_value_ct) AS sample_value_ct,
        (SELECT CASE WHEN COUNT(*) <= 70 THEN LOWER(BINTOHEX(HASH_MD5(TO_BINARY(STRING_AGG(val, '|' ORDER BY TO_BINARY(val)))))) END
           FROM (SELECT DISTINCT "{COL_NAME}" AS val
-                  FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+                  FROM {TABLE_FILTER_OPEN}"{DATA_SCHEMA}"."{DATA_TABLE}"
 -- TG-IF do_sample_bool
                        TABLESAMPLE BERNOULLI({SAMPLE_PERCENT_CALC})
 -- TG-ENDIF
-                 WHERE "{COL_NAME}" IS NOT NULL)) AS distinct_value_hash
+                 {TABLE_FILTER_CLOSE} WHERE "{COL_NAME}" IS NOT NULL)) AS distinct_value_hash
   FROM grouped_vals
  GROUP BY top_val
  ORDER BY 3

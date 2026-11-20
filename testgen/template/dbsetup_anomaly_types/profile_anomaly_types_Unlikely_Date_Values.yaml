@@ -28,7 +28,7 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT `{COLUMN_NAME}`, CAST(CAST('{PROFILE_RUN_DATE}' AS DATETIME) AS DATE) AS profile_run_date, COUNT(*) AS count
-      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` a
+      FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE_UNALIASED} a
       WHERE (CAST(`{COLUMN_NAME}` AS DATE) < DATE '1900-01-01')
          OR (CAST(`{COLUMN_NAME}` AS DATE) > DATE_ADD(CAST(CAST('{PROFILE_RUN_DATE}' AS DATETIME) AS DATE), INTERVAL 30 YEAR))
       GROUP BY `{COLUMN_NAME}`
@@ -41,7 +41,7 @@ profile_anomaly_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` a WHERE (`{COLUMN_NAME}` < '1900-01-01'::DATE) OR (`{COLUMN_NAME}` > '{PROFILE_RUN_DATE}' :: DATE + INTERVAL '30 year' ) GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC LIMIT {LIMIT};
+      SELECT DISTINCT `{COLUMN_NAME}`, '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count  FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE_UNALIASED} a WHERE (`{COLUMN_NAME}` < '1900-01-01'::DATE) OR (`{COLUMN_NAME}` > '{PROFILE_RUN_DATE}' :: DATE + INTERVAL '30 year' ) GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1132'
     test_id: '1018'
@@ -49,7 +49,7 @@ profile_anomaly_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP {LIMIT} "{COLUMN_NAME}", CAST( '{PROFILE_RUN_DATE}' AS DATE) AS profile_run_date, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a WHERE ("{COLUMN_NAME}" < CAST('1900-01-01' AS DATE) )    OR ("{COLUMN_NAME}" > DATEADD(YEAR, 30, CAST('{PROFILE_RUN_DATE}' AS DATE ))) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+      SELECT TOP {LIMIT} "{COLUMN_NAME}", CAST( '{PROFILE_RUN_DATE}' AS DATE) AS profile_run_date, COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} a WHERE ("{COLUMN_NAME}" < CAST('1900-01-01' AS DATE) )    OR ("{COLUMN_NAME}" > DATEADD(YEAR, 30, CAST('{PROFILE_RUN_DATE}' AS DATE ))) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
     error_type: Profile Anomaly
   - id: '1075'
     test_id: '1018'
@@ -57,7 +57,7 @@ profile_anomaly_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a WHERE ("{COLUMN_NAME}" < '1900-01-01'::DATE) OR ("{COLUMN_NAME}" > '{PROFILE_RUN_DATE}' :: DATE  + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} a WHERE ("{COLUMN_NAME}" < '1900-01-01'::DATE) OR ("{COLUMN_NAME}" > '{PROFILE_RUN_DATE}' :: DATE  + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1050'
     test_id: '1018'
@@ -65,7 +65,7 @@ profile_anomaly_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a WHERE ("{COLUMN_NAME}" < '1900-01-01'::DATE) OR ("{COLUMN_NAME}" > '{PROFILE_RUN_DATE}' :: DATE + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} a WHERE ("{COLUMN_NAME}" < '1900-01-01'::DATE) OR ("{COLUMN_NAME}" > '{PROFILE_RUN_DATE}' :: DATE + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1450'
     test_id: '1018'
@@ -73,7 +73,7 @@ profile_anomaly_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a WHERE ("{COLUMN_NAME}" < '1900-01-01'::DATE) OR ("{COLUMN_NAME}" > '{PROFILE_RUN_DATE}' :: DATE + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} a WHERE ("{COLUMN_NAME}" < '1900-01-01'::DATE) OR ("{COLUMN_NAME}" > '{PROFILE_RUN_DATE}' :: DATE + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1189'
     test_id: '1018'
@@ -81,7 +81,7 @@ profile_anomaly_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a WHERE ("{COLUMN_NAME}" < '1900-01-01'::DATE) OR ("{COLUMN_NAME}" > '{PROFILE_RUN_DATE}' :: DATE + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count  FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} a WHERE ("{COLUMN_NAME}" < '1900-01-01'::DATE) OR ("{COLUMN_NAME}" > '{PROFILE_RUN_DATE}' :: DATE + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1517'
     test_id: '1018'
@@ -89,7 +89,7 @@ profile_anomaly_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", TO_DATE('{PROFILE_RUN_DATE}', 'YYYY-MM-DD') AS profile_run_date, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a WHERE ("{COLUMN_NAME}" < TO_DATE('1900-01-01', 'YYYY-MM-DD')) OR ("{COLUMN_NAME}" > ADD_MONTHS(TO_DATE('{PROFILE_RUN_DATE}', 'YYYY-MM-DD'), 360)) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC FETCH FIRST {LIMIT} ROWS ONLY
+      SELECT DISTINCT "{COLUMN_NAME}", TO_DATE('{PROFILE_RUN_DATE}', 'YYYY-MM-DD') AS profile_run_date, COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} a WHERE ("{COLUMN_NAME}" < TO_DATE('1900-01-01', 'YYYY-MM-DD')) OR ("{COLUMN_NAME}" > ADD_MONTHS(TO_DATE('{PROFILE_RUN_DATE}', 'YYYY-MM-DD'), 360)) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Profile Anomaly
   - id: '1517'
     test_id: '1018'
@@ -97,7 +97,7 @@ profile_anomaly_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", TO_DATE('{PROFILE_RUN_DATE}', 'YYYY-MM-DD') AS profile_run_date, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a WHERE ("{COLUMN_NAME}" < TO_DATE('1900-01-01', 'YYYY-MM-DD')) OR ("{COLUMN_NAME}" > ADD_MONTHS(TO_DATE('{PROFILE_RUN_DATE}', 'YYYY-MM-DD'), 360)) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT}
+      SELECT DISTINCT "{COLUMN_NAME}", TO_DATE('{PROFILE_RUN_DATE}', 'YYYY-MM-DD') AS profile_run_date, COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} a WHERE ("{COLUMN_NAME}" < TO_DATE('1900-01-01', 'YYYY-MM-DD')) OR ("{COLUMN_NAME}" > ADD_MONTHS(TO_DATE('{PROFILE_RUN_DATE}', 'YYYY-MM-DD'), 360)) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT}
     error_type: Profile Anomaly
   - id: '10076'
     test_id: 1018
@@ -105,7 +105,7 @@ profile_anomaly_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", CAST('{PROFILE_RUN_DATE}' AS DATE) AS profile_run_date, COUNT(*) AS count FROM "{TABLE_NAME}" a WHERE ("{COLUMN_NAME}" < CAST('1900-01-01' AS DATE)) OR ("{COLUMN_NAME}" > CAST('{PROFILE_RUN_DATE}' AS DATE)  + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", CAST('{PROFILE_RUN_DATE}' AS DATE) AS profile_run_date, COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} a WHERE ("{COLUMN_NAME}" < CAST('1900-01-01' AS DATE)) OR ("{COLUMN_NAME}" > CAST('{PROFILE_RUN_DATE}' AS DATE)  + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '11127'
     test_id: '1018'
@@ -113,5 +113,5 @@ profile_anomaly_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a WHERE ("{COLUMN_NAME}" < '1900-01-01'::DATE) OR ("{COLUMN_NAME}" > '{PROFILE_RUN_DATE}' :: DATE  + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE_UNALIASED} a WHERE ("{COLUMN_NAME}" < '1900-01-01'::DATE) OR ("{COLUMN_NAME}" > '{PROFILE_RUN_DATE}' :: DATE  + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
     error_type: Profile Anomaly

@@ -5,9 +5,9 @@
 -- included. Blank values are ranked after every other value so that they never reach the output.
 WITH target_table AS (
 -- TG-IF do_sample_bool
-    SELECT {COL_VALUE} AS "{COL_NAME}" FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT) {TABLE_HINT}
+    SELECT {COL_VALUE} AS "{COL_NAME}" FROM {TABLE_FILTER_OPEN}"{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT) {TABLE_HINT}{TABLE_FILTER_CLOSE}
 -- TG-ELSE
-    SELECT {COL_VALUE} AS "{COL_NAME}" FROM "{DATA_SCHEMA}"."{DATA_TABLE}" {TABLE_HINT}
+    SELECT {COL_VALUE} AS "{COL_NAME}" FROM {TABLE_FILTER_OPEN}"{DATA_SCHEMA}"."{DATA_TABLE}" {TABLE_HINT}{TABLE_FILTER_CLOSE}
 -- TG-ENDIF
     ),
 -- Grouped by binary value: under the collation, values that differ only in case or trailing spaces would

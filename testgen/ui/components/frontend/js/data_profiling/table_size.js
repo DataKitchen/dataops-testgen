@@ -9,6 +9,7 @@ import { Card } from '/app/static/js/components/card.js';
 import { Attribute } from '/app/static/js/components/attribute.js';
 import { Button } from '/app/static/js/components/button.js';
 import { formatNumber, formatTimestamp } from '/app/static/js/display_utils.js';
+import { TableFilterAttribute, approxCountNote } from './data_profiling_utils.js';
 
 const { div, span } = van.tags;
 
@@ -36,10 +37,11 @@ const TableSizeCard = (/** @type Properties */ _props, /** @type Table */ item) 
                     value: formatNumber(value),
                     width: 250,
                 })),
+                TableFilterAttribute(item, 250),
             ),
             div({ class: 'text-caption text-right mt-1' }, `** as of ${formatTimestamp(item.last_refresh_date)}`),
             useApprox
-                ? div({ class: 'text-caption text-right mt-1' }, '† Approximate counts based on server statistics')
+                ? div({ class: 'text-caption text-right mt-1' }, approxCountNote(item))
                 : null,
         ),
         actionContent: Button({

@@ -7,6 +7,7 @@ import pytest
 
 from testgen.common.database.database_service import process_conditionals, replace_params
 from testgen.common.read_file import read_template_sql_file
+from testgen.common.table_filters import table_filter_params
 
 pytestmark = pytest.mark.unit
 
@@ -14,11 +15,11 @@ pytestmark = pytest.mark.unit
 VALUES = ["b", "B", "a", "A", "é", "e", "", " ", "  x", "Z", "z", "a", "a", "B", "B", "z", "Z", None, None]
 
 
-def _run(values: list[str | None]) -> list[dict]:
+def _run(values: list[str | None], table_filter: str | None = None) -> list[dict]:
     sql = read_template_sql_file("frequency_analysis.sql", "flavors/duckdb/profiling")
     sql = replace_params(
         process_conditionals(sql, {"do_sample_bool": False}),
-        {"DATA_SCHEMA": "main", "DATA_TABLE": "t", "COL_NAME": "col"},
+        {"DATA_SCHEMA": "main", "DATA_TABLE": "t", "COL_NAME": "col", **table_filter_params(table_filter, "t", "main", '"')},
     )
     con = duckdb.connect()
     con.execute("CREATE TABLE t (col VARCHAR)")
@@ -43,3 +44,9 @@ def test_frequent_values_break_count_ties_in_byte_order_and_skip_blanks():
     expected = sorted(counts.items(), key=lambda item: (-item[1], item[0].encode("utf-8")))[:10]
 
     assert [(row["value"], row["value_ct"]) for row in _run(VALUES) if row["value"] is not None] == expected
+
+
+def test_a_table_filter_analyzes_only_the_matching_records():
+    kept = [value for value in VALUES if value is None or value.lower() == value]
+
+    assert _run(VALUES, table_filter="col IS NULL OR col = LOWER(col)") == _run(kept)

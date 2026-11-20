@@ -124,7 +124,7 @@ test_types:
     sql_flavor: bigquery
     lookup_type: null
     lookup_query: |-
-      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS BIGNUMERIC) AS baseline_hash_sum FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS BIGNUMERIC) AS baseline_hash_sum FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '11310'
     test_id: '1546'
@@ -132,7 +132,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_hash_sum FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_hash_sum FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '11311'
     test_id: '1546'
@@ -140,7 +140,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_hash_sum FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '11312'
     test_id: '1546'
@@ -148,7 +148,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS NUMERIC(38,0)) AS baseline_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS NUMERIC(38,0)) AS baseline_hash_sum FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '11313'
     test_id: '1546'
@@ -156,7 +156,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_hash_sum FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '11314'
     test_id: '1546'
@@ -164,7 +164,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_hash_sum FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '11315'
     test_id: '1546'
@@ -172,7 +172,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS NUMBER(38,0)) AS baseline_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS NUMBER(38,0)) AS baseline_hash_sum FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '11316'
     test_id: '1546'
@@ -180,7 +180,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS NUMBER(38,0)) AS baseline_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS NUMBER(38,0)) AS baseline_hash_sum FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
     error_type: Test Results
   - id: '11317'
     test_id: '1546'
@@ -188,6 +188,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_hash_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT SUM({MULTISET_HASH_TERM}) AS current_hash_sum, CAST('{BASELINE_VALUE}' AS DECIMAL(38,0)) AS baseline_hash_sum FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   test_templates: []

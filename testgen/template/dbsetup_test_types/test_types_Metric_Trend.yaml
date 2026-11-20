@@ -135,7 +135,7 @@ test_types:
       SELECT {CUSTOM_QUERY} AS current_count,
         {LOWER_TOLERANCE} AS lower_bound,
         {UPPER_TOLERANCE} AS upper_bound
-      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+      FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1485'
     test_id: '1514'
@@ -146,7 +146,7 @@ test_types:
       SELECT {CUSTOM_QUERY} AS current_count,
         {LOWER_TOLERANCE} AS lower_bound,
         {UPPER_TOLERANCE} AS upper_bound
-      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+      FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1486'
     test_id: '1514'
@@ -157,7 +157,7 @@ test_types:
       SELECT {CUSTOM_QUERY} AS current_count,
         {LOWER_TOLERANCE} AS lower_bound,
         {UPPER_TOLERANCE} AS upper_bound
-      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1487'
     test_id: '1514'
@@ -168,7 +168,7 @@ test_types:
       SELECT {CUSTOM_QUERY} AS current_count,
         {LOWER_TOLERANCE} AS lower_bound,
         {UPPER_TOLERANCE} AS upper_bound
-      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1488'
     test_id: '1514'
@@ -179,7 +179,7 @@ test_types:
       SELECT {CUSTOM_QUERY} AS current_count,
         {LOWER_TOLERANCE} AS lower_bound,
         {UPPER_TOLERANCE} AS upper_bound
-      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1489'
     test_id: '1514'
@@ -190,7 +190,7 @@ test_types:
       SELECT {CUSTOM_QUERY} AS current_count,
         {LOWER_TOLERANCE} AS lower_bound,
         {UPPER_TOLERANCE} AS upper_bound
-      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1490'
     test_id: '1514'
@@ -201,7 +201,7 @@ test_types:
       SELECT {CUSTOM_QUERY} AS current_count,
         {LOWER_TOLERANCE} AS lower_bound,
         {UPPER_TOLERANCE} AS upper_bound
-      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '8514'
     test_id: '1514'
@@ -212,7 +212,7 @@ test_types:
       SELECT {CUSTOM_QUERY} AS current_count,
         {LOWER_TOLERANCE} AS lower_bound,
         {UPPER_TOLERANCE} AS upper_bound
-      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
     error_type: Test Results
   - id: '8514'
     test_id: '1514'
@@ -223,7 +223,7 @@ test_types:
       SELECT {CUSTOM_QUERY} AS current_count,
         {LOWER_TOLERANCE} AS lower_bound,
         {UPPER_TOLERANCE} AS upper_bound
-      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
     error_type: Test Results
   - id: '10022'
     test_id: 1514
@@ -234,7 +234,7 @@ test_types:
       SELECT {CUSTOM_QUERY} AS current_count,
         {LOWER_TOLERANCE} AS lower_bound,
         {UPPER_TOLERANCE} AS upper_bound
-      FROM "{TABLE_NAME}";
+      FROM {TABLE_FILTER_OPEN}"{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '11046'
     test_id: '1514'
@@ -245,6 +245,6 @@ test_types:
       SELECT {CUSTOM_QUERY} AS current_count,
         {LOWER_TOLERANCE} AS lower_bound,
         {UPPER_TOLERANCE} AS upper_bound
-      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   test_templates: []

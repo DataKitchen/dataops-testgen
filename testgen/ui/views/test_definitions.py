@@ -22,7 +22,11 @@ from testgen.common.audit.test_definitions import (
     record_tests_deleted,
     record_tests_moved,
 )
-from testgen.common.custom_test_validation import validate_custom_query, validate_metric_query
+from testgen.common.custom_test_validation import (
+    filtered_table_source,
+    validate_custom_query,
+    validate_metric_query,
+)
 from testgen.common.data_catalog_service import fetch_current_values
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.database.table_group_service import (
@@ -1695,7 +1699,7 @@ def validate_test(test_definition: dict, table_group: TableGroupMinimal) -> None
         )
         flavor_service = get_flavor_service(connection.sql_flavor)
         concat_operator = flavor_service.concat_operator
-        table_ref = flavor_service.get_table_ref(schema, table_name, connection.sql_flavor_code)
+        table_ref = filtered_table_source(connection, table_group, schema, table_name)
         query = f"""
         SELECT
             COALESCE(

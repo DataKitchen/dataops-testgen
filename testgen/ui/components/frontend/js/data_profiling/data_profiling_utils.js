@@ -89,6 +89,7 @@
  * * Value Counts
  * @property {number?} approx_record_ct
  * @property {number} record_ct
+ * @property {string?} table_filter
  * @property {number} value_ct
  * @property {number} distinct_value_ct
  * @property {number} null_value_ct
@@ -160,6 +161,7 @@
  * @property {string} functional_table_type
  * @property {number} approx_record_ct
  * @property {number} record_ct
+ * @property {string?} table_filter
  * @property {number} column_ct
  * @property {number?} file_ct
  * @property {number} add_date
@@ -203,7 +205,10 @@
  */
 import van from '/app/static/js/van.min.js';
 import { Link } from '/app/static/js/components/link.js';
+import { Attribute } from '/app/static/js/components/attribute.js';
 import { formatTimestamp } from '/app/static/js/display_utils.js';
+import { withTooltip } from '/app/static/js/components/tooltip.js';
+import { loadStylesheet } from '/app/static/js/utils.js';
 
 /**
  * @typedef FrequencyAnalysis
@@ -224,7 +229,7 @@ const frequencyItems = (frequent) => {
     return items;
 };
 
-const { span, b } = van.tags;
+const { div, span, b } = van.tags;
 
 const TABLE_ICON = { icon: 'table' };
 const COLUMN_ICONS = {
@@ -287,4 +292,45 @@ const LatestProfilingTime = (/** @type Properties */ props, /** @type Table | Co
     );
 }
 
-export { TABLE_ICON, getColumnIcon, LatestProfilingTime, frequencyItems };
+/**
+ * The condition that limits which records of the item's table are read, or null when the table has none.
+ *
+ * @param {Column | Table} item
+ * @param {number} width
+ */
+const TableFilterAttribute = (item, width) => {
+    if (!item.table_filter) {
+        return null;
+    }
+    loadStylesheet('table-filter-attribute', tableFilterStylesheet);
+    return Attribute({
+        label: 'Table Filter',
+        help: 'Defined on the table group. Only the records that match this condition were read.',
+        value: withTooltip(
+            span({ class: 'text-code tg-table-filter--value', 'data-testid': 'table-filter' }, item.table_filter),
+            // A node rather than a string, so backticks quoting identifiers in the condition stay literal.
+            { text: div({ class: 'text-code tg-table-filter--tooltip' }, item.table_filter), position: 'top-right', width: 400 },
+        ),
+        width,
+    });
+};
+
+const tableFilterStylesheet = new CSSStyleSheet();
+tableFilterStylesheet.replace(`
+.text-code.tg-table-filter--value {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
+}
+.tg-table-filter--tooltip {
+    text-align: left;
+}
+`);
+
+/** The approximate-count footnote, noting that server statistics count the whole table when a filter applies. */
+const approxCountNote = (item, plural = true) =>
+    `† Approximate ${plural ? 'counts' : 'count'} based on server statistics${item.table_filter ? ', without the table filter applied' : ''}`;
+
+export { TABLE_ICON, getColumnIcon, LatestProfilingTime, frequencyItems, TableFilterAttribute, approxCountNote };

@@ -140,7 +140,7 @@ test_types:
     sql_flavor: bigquery
     lookup_type: null
     lookup_query: |-
-      SELECT CAST(MAX(`{COLUMN_NAME}`) AS FLOAT64) AS current_max_val, CAST({BASELINE_VALUE} AS FLOAT64) AS baseline_max_val FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+      SELECT CAST(MAX(`{COLUMN_NAME}`) AS FLOAT64) AS current_max_val, CAST({BASELINE_VALUE} AS FLOAT64) AS baseline_max_val FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1552'
     test_id: '1527'
@@ -148,7 +148,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT CAST(MAX(`{COLUMN_NAME}`) AS DOUBLE) AS current_max_val, CAST('{BASELINE_VALUE}' AS DOUBLE) AS baseline_max_val FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+      SELECT CAST(MAX(`{COLUMN_NAME}`) AS DOUBLE) AS current_max_val, CAST('{BASELINE_VALUE}' AS DOUBLE) AS baseline_max_val FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1574'
     test_id: '1527'
@@ -156,7 +156,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT CAST(MAX("{COLUMN_NAME}") AS FLOAT) AS current_max_val, CAST({BASELINE_VALUE} AS FLOAT) AS baseline_max_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT CAST(MAX("{COLUMN_NAME}") AS FLOAT) AS current_max_val, CAST({BASELINE_VALUE} AS FLOAT) AS baseline_max_val FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1596'
     test_id: '1527'
@@ -164,7 +164,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT CAST(CAST(MAX({COLUMN_NUM}) AS VARCHAR) AS DOUBLE PRECISION) AS current_max_val, CAST({BASELINE_VALUE} AS DOUBLE PRECISION) AS baseline_max_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT CAST(CAST(MAX({COLUMN_NUM}) AS VARCHAR) AS DOUBLE PRECISION) AS current_max_val, CAST({BASELINE_VALUE} AS DOUBLE PRECISION) AS baseline_max_val FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1618'
     test_id: '1527'
@@ -172,7 +172,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT CAST(MAX("{COLUMN_NAME}") AS FLOAT8) AS current_max_val, CASE WHEN CAST(CAST(MAX("{COLUMN_NAME}") AS REAL) AS FLOAT8) = CAST(MAX("{COLUMN_NAME}") AS FLOAT8) THEN CAST(CAST({BASELINE_VALUE} AS REAL) AS FLOAT8) ELSE CAST({BASELINE_VALUE} AS FLOAT8) END AS baseline_max_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT CAST(MAX("{COLUMN_NAME}") AS FLOAT8) AS current_max_val, CASE WHEN CAST(CAST(MAX("{COLUMN_NAME}") AS REAL) AS FLOAT8) = CAST(MAX("{COLUMN_NAME}") AS FLOAT8) THEN CAST(CAST({BASELINE_VALUE} AS REAL) AS FLOAT8) ELSE CAST({BASELINE_VALUE} AS FLOAT8) END AS baseline_max_val FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1640'
     test_id: '1527'
@@ -180,7 +180,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT CAST(MAX("{COLUMN_NAME}") AS FLOAT8) AS current_max_val, CASE WHEN CAST(CAST(MAX("{COLUMN_NAME}") AS REAL) AS FLOAT8) = CAST(MAX("{COLUMN_NAME}") AS FLOAT8) THEN CAST(CAST({BASELINE_VALUE} AS REAL) AS FLOAT8) ELSE CAST({BASELINE_VALUE} AS FLOAT8) END AS baseline_max_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT CAST(MAX("{COLUMN_NAME}") AS FLOAT8) AS current_max_val, CASE WHEN CAST(CAST(MAX("{COLUMN_NAME}") AS REAL) AS FLOAT8) = CAST(MAX("{COLUMN_NAME}") AS FLOAT8) THEN CAST(CAST({BASELINE_VALUE} AS REAL) AS FLOAT8) ELSE CAST({BASELINE_VALUE} AS FLOAT8) END AS baseline_max_val FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '1662'
     test_id: '1527'
@@ -188,7 +188,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT CAST(MAX("{COLUMN_NAME}") AS FLOAT) AS current_max_val, CAST({BASELINE_VALUE} AS FLOAT) AS baseline_max_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT CAST(MAX("{COLUMN_NAME}") AS FLOAT) AS current_max_val, CAST({BASELINE_VALUE} AS FLOAT) AS baseline_max_val FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '8524'
     test_id: '1527'
@@ -196,7 +196,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT CAST(MAX("{COLUMN_NAME}") AS BINARY_DOUBLE) AS current_max_val, CAST({BASELINE_VALUE} AS BINARY_DOUBLE) AS baseline_max_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      SELECT CAST(MAX("{COLUMN_NAME}") AS BINARY_DOUBLE) AS current_max_val, CAST({BASELINE_VALUE} AS BINARY_DOUBLE) AS baseline_max_val FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
     error_type: Test Results
   - id: '8524'
     test_id: '1527'
@@ -204,7 +204,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT CAST(MAX("{COLUMN_NAME}") AS DOUBLE) AS current_max_val, CAST('{BASELINE_VALUE}' AS DOUBLE) AS baseline_max_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      SELECT CAST(MAX("{COLUMN_NAME}") AS DOUBLE) AS current_max_val, CAST('{BASELINE_VALUE}' AS DOUBLE) AS baseline_max_val FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE}
     error_type: Test Results
   - id: '10075'
     test_id: '1527'
@@ -212,7 +212,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT CAST(MAX("{COLUMN_NAME}") AS DOUBLE PRECISION) AS current_max_val, CAST({BASELINE_VALUE} AS DOUBLE PRECISION) AS baseline_max_val FROM "{TABLE_NAME}";
+      SELECT CAST(MAX("{COLUMN_NAME}") AS DOUBLE PRECISION) AS current_max_val, CAST({BASELINE_VALUE} AS DOUBLE PRECISION) AS baseline_max_val FROM {TABLE_FILTER_OPEN}"{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   - id: '11119'
     test_id: '1527'
@@ -220,6 +220,6 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT CAST(MAX("{COLUMN_NAME}") AS DOUBLE) AS current_max_val, CAST('{BASELINE_VALUE}' AS DOUBLE) AS baseline_max_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+      SELECT CAST(MAX("{COLUMN_NAME}") AS DOUBLE) AS current_max_val, CAST('{BASELINE_VALUE}' AS DOUBLE) AS baseline_max_val FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE};
     error_type: Test Results
   test_templates: []

@@ -5,7 +5,7 @@
 -- included. Blank values are ranked after every other value so that they never reach the output.
 WITH target_table
 AS (
-  SELECT * FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+  SELECT * FROM {TABLE_FILTER_OPEN}"{DATA_SCHEMA}"."{DATA_TABLE}"{TABLE_FILTER_CLOSE}
 -- TG-IF do_sample_bool
       SAMPLE ({SAMPLE_SIZE} rows)
 -- TG-ENDIF

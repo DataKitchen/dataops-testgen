@@ -125,7 +125,7 @@ class TableGroupSchemaChange(BaseModel):
         default_factory=list,
         description=(
             "Tables in the table group's catalog that it no longer selects after the move, because the new "
-            "schema does not have them or because the request's table filters exclude them. The change still "
+            "schema does not have them or because the request's table criteria exclude them. The change still "
             f"applies. Their tests {TESTS_FAIL_VALIDATION_ON_EACH_RUN}, and the next monitor run deletes their "
             "monitors along with the thresholds they learned."
         ),
@@ -1430,12 +1430,28 @@ class FileDeclarationCreate(FileDeclarationSpec):
     header: StrictBool | None = Field(default=None, description=HEADER_DESCRIPTION)
 
 
+class TableFilter(BaseModel):
+    """A record filter on one table of a table group.
+
+    Unknown fields are rejected.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    table_name: str = Field(description="A table in the table group, named exactly as the target holds it.")
+    condition: str = Field(description="Written like a SQL `WHERE` clause without the keyword, e.g. `region = 'EMEA'`.")
+
+
 # Descriptions shared by the table group response and requests; the requests each add what omitting or clearing a
 # field does.
 _TG_DESCRIPTIONS = {
     "table_group_name": "Unique within the project; 3 to 40 characters.",
     "schema_name": "The schema that holds the tables, or the data space on Salesforce Data 360.",
     "file_declarations": "The table group's tables, one per file or pattern.",
+    "table_filters": (
+        "Record filters, at most one per table. TestGen reads only a table's matching records, for profiling, tests,"
+        " and monitors."
+    ),
     "table_set": "Database connections only. Table names to restrict the group to.",
     "include_masks": (
         "Database connections only. Table names or patterns a table must match to be included. `%` matches any"
@@ -1499,6 +1515,10 @@ class TableGroupResponse(BaseModel):
         default=None,
         description="File connections only. The table group's tables, one per file or pattern. `null` on a database "
         "connection.",
+    )
+    table_filters: list[TableFilter] = Field(
+        default_factory=list,
+        description=f"{_TG_DESCRIPTIONS['table_filters']} Empty when every table is read in full.",
     )
     profile_id_column_mask: str | None = Field(default=None, description=_TG_DESCRIPTIONS["profile_id_column_mask"])
     profile_sk_column_mask: str | None = Field(default=None, description=_TG_DESCRIPTIONS["profile_sk_column_mask"])
@@ -1572,6 +1592,12 @@ class TableGroupCreate(BaseModel):
         default=None,
         description=f"File connections only, and required there. {_TG_DESCRIPTIONS['file_declarations']}",
     )
+    table_filters: list[TableFilter] | None = Field(
+        default=None,
+        description=(
+            f"{_TG_DESCRIPTIONS['table_filters']} Omit to read every table in full."
+        ),
+    )
     description: str | None = None
 
     table_set: list[str] | None = Field(
@@ -1636,6 +1662,10 @@ class TableGroupUpdateRequest(BaseModel):
     file_declarations: list[FileDeclarationCreate] | None = Field(
         default=None,
         description=f"File connections only. {_TG_DESCRIPTIONS['file_declarations']} {_REPLACES_LIST}",
+    )
+    table_filters: list[TableFilter] | None = _update_field(
+        "table_filters",
+        f"{_REPLACES_LIST} Send `[]` to read every table in full.",
     )
     description: str | None = Field(default=None, description='Send `""` to clear it.')
 

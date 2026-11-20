@@ -87,6 +87,7 @@ def _resolve_hygiene_context(issue_id: str) -> dict:
         "table_name": issue.table_name,
         "column_name": issue.column_name,
         "profiling_starttime": run.profiling_starttime if run else None,
+        "profile_run_id": issue.profile_run_id,
         "project_code": issue.project_code,
     }
 

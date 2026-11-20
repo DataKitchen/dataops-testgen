@@ -127,3 +127,24 @@ def test_a_columns_tests_include_contracts(fetch_name):
         fetch.__wrapped__("tg-id", "orders", "amount")
 
     assert "test_suites.suite_type IN ('standard', 'contract')" in fetch_all.call_args.args[0]
+
+
+def test_a_history_column_carries_the_filter_its_run_used():
+    from testgen.ui.views import data_catalog
+
+    row = {
+        "profile_run_id": "run-1",
+        "table_name": "orders",
+        "general_type": "N",
+        "table_filters": [
+            {"table_name": "orders", "condition": "status <> 'void'"},
+            {"table_name": "customers", "condition": "region = 'EU'"},
+        ],
+    }
+    with patch("testgen.ui.services.database_service.fetch_one_from_db", return_value=row) as fetch_one:
+        column = data_catalog._get_history_run_column.__wrapped__("run-1", "orders", "amount")
+
+    assert column["table_filter"] == "status <> 'void'"
+    assert "table_filters" not in column
+    query = fetch_one.call_args.args[0]
+    assert "SELECT profiling_runs.table_filters FROM profiling_runs WHERE profiling_runs.id = :run_id" in query

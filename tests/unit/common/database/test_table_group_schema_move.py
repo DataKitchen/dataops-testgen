@@ -115,6 +115,19 @@ def test_the_move_does_not_write_the_catalog_itself(_job, _repoint, _in_use, moc
     assert table_group.table_group_schema == "onboard_2026_09_16"
 
 
+@patch(f"{MODULE}.make_save_data_chars")
+@patch(f"{MODULE}._tables_in_use", return_value=set())
+@patch(f"{MODULE}._repoint_definitions", return_value=0)
+@patch(f"{MODULE}._has_job_in_flight", return_value=False)
+def test_the_move_reports_the_tables_the_table_group_holds_in_the_new_schema(_job, _repoint, _in_use, _make):
+    with patch(f"{MODULE}.preview_table_group", return_value=_preview({"orders": {}, "returns": {}})):
+        move = move_table_group_schema(
+            _table_group("public"), "onboard_2026_09_16", connection=_connection(SqlFlavorCode.POSTGRESQL)
+        )
+
+    assert move.tables == frozenset({"orders", "returns"})
+
+
 @patch(f"{MODULE}.get_current_session")
 def test_applying_a_move_commits_before_writing_the_catalog(mock_session):
     """Ordering is the whole point: the catalog must describe a move that is already durable."""

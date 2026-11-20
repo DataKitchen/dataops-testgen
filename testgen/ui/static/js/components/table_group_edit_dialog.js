@@ -16,6 +16,7 @@
  * @property {boolean?} can_view_pii
  * @property {TableGroupPreview?} table_group_preview
  * @property {import('./table_group_form.js').SampledProfileGaps?} sampling_gaps
+ * @property {string[]?} table_names
  * @property {EditResult?} result
  */
 import van from '../van.min.js';
@@ -63,6 +64,7 @@ const TableGroupEditDialog = (props) => {
         disableConnectionSelector: false,
         disablePiiFlag: !(getValue(props.can_view_pii) ?? false),
         samplingGaps: getValue(props.sampling_gaps),
+        tableNames: getValue(props.table_names),
         onChange: (updatedTableGroup, state) => {
             tableGroupState.val = updatedTableGroup;
             formValid.val = state.valid;
@@ -106,6 +108,7 @@ const TableGroupEditDialog = (props) => {
             div(
                 { style: () => phase.val === 'verify' ? '' : 'display:none' },
                 TableGroupTest(tableGroupPreview, {
+                    hasTableFilters: () => !!tableGroupState.val?.table_filters?.length,
                     onVerifyAccess: () => {
                         emit('PreviewEditTableGroupClicked', {
                             payload: {

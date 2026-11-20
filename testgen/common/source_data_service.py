@@ -16,6 +16,7 @@ from testgen.common import query_variables
 from testgen.common.clean_sql import (
     NonNumericValueError,
     concat_columns,
+    escape_bind_colons,
     null_if_empty,
     parse_value_list,
     strip_trailing_semicolons,
@@ -31,10 +32,13 @@ from testgen.common.models.connection import Connection, SQLFlavor
 from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import MISSING_TEST_DEFINITION_MESSAGE, TestDefinition
+from testgen.common.models.test_result import TestResult
 from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_source_data_pii
 from testgen.common.read_file import replace_templated_functions
+from testgen.common.table_filters import table_filter_condition, table_filter_params
 from testgen.ui.services.database_service import fetch_from_target_db
 from testgen.utils import dict_from_kv, is_uuid4, to_dataframe, to_sql_timestamp
 
@@ -48,6 +52,8 @@ class LookupData:
     sql_flavor: SQLFlavor | None = None
     sql_flavor_code: str | None = None
     lookup_redactable_columns: str | None = None
+    table_group_schema: str | None = None
+    table_filters: list[dict] | None = None
 
 
 @dataclass
@@ -88,8 +94,9 @@ def fetch_test_result_source_data(
             return SourceDataResult("NA", "Source data lookup is not available for this test.", None, None)
 
         connection = Connection.get_by_table_group(issue_data["table_groups_id"])
+        # The query is shown as written; only the text sent to SQLAlchemy has its colons escaped
         results = fetch_from_target_db(
-            connection, lookup_query, table_group=TableGroup.get(issue_data["table_groups_id"])
+            connection, escape_bind_colons(lookup_query), table_group=TableGroup.get(issue_data["table_groups_id"])
         )
 
         if results:
@@ -160,6 +167,12 @@ def build_hygiene_query(issue_data: dict, limit: int = DEFAULT_LIMIT) -> str | N
         "LIMIT": limit,
         "LIMIT_2": int(limit / 2),
         "LIMIT_4": int(limit / 4),
+        **_table_filter_params(
+            get_flavor_service(lookup_data.sql_flavor).quote_character,
+            issue_data["schema_name"],
+            issue_data["table_name"],
+            _hygiene_filter_condition(lookup_data, issue_data),
+        ),
     }
 
     lookup_query = replace_params(lookup_query, params)
@@ -180,8 +193,9 @@ def fetch_hygiene_source_data(
             return SourceDataResult("NA", "Source data lookup is not available for this hygiene issue.", None, None)
 
         connection = Connection.get_by_table_group(issue_data["table_groups_id"])
+        # The query is shown as written; only the text sent to SQLAlchemy has its colons escaped
         results = fetch_from_target_db(
-            connection, lookup_query, table_group=TableGroup.get(issue_data["table_groups_id"])
+            connection, escape_bind_colons(lookup_query), table_group=TableGroup.get(issue_data["table_groups_id"])
         )
 
         if results:
@@ -251,6 +265,17 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
     # falls back to its stored value.
     run_parameters = dict_from_kv(issue_data.get("input_parameters"))
     column, key_column = _catalog_columns(flavor_service, issue_data, test_definition)
+    match_schema_name = run_parameters.get("match_schema_name") or test_definition.match_schema_name
+    if issue_data.get("test_result_id"):
+        table_condition, match_condition = _recorded_filter_conditions(issue_data)
+    else:
+        table_condition, match_condition = _current_filter_conditions(
+            lookup_data,
+            issue_data["schema_name"],
+            issue_data["table_name"],
+            match_schema_name,
+            test_definition.match_table_name,
+        )
 
     params = {
         "TARGET_SCHEMA": issue_data["schema_name"],
@@ -309,6 +334,15 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         "LIMIT_2": int(limit / 2),
         "LIMIT_4": int(limit / 4),
         **flavor_service.value_hash_params(column, key_column),
+        **_table_filter_params(
+            flavor_service.quote_character,
+            issue_data["schema_name"],
+            issue_data["table_name"],
+            table_condition,
+            match_schema_name,
+            run_parameters.get("match_table_name") or test_definition.match_table_name,
+            match_condition,
+        ),
         # After every user-supplied parameter, since any of them may contain {DATA_SCHEMA}
         "DATA_SCHEMA": issue_data["schema_name"],
         # Substituted last, in one pass, so placeholder text in a listed value is never expanded
@@ -360,6 +394,72 @@ def _build_query_custom(issue_data: dict) -> str | None:
     return replace_params(query, params)
 
 
+def _current_filter_conditions(
+    lookup_data: LookupData,
+    schema_name: str,
+    table_name: str,
+    match_schema_name: str | None = None,
+    match_table_name: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Return the table group's current filter conditions for a lookup's table and its match table.
+
+    The match table takes a filter only when it is in the table group's schema or the lookup's schema.
+    """
+    match_condition = (
+        table_filter_condition(lookup_data.table_filters, match_table_name)
+        if match_schema_name in (lookup_data.table_group_schema, schema_name)
+        else None
+    )
+    return table_filter_condition(lookup_data.table_filters, table_name), match_condition
+
+
+def _table_filter_params(
+    quote: str,
+    schema_name: str,
+    table_name: str,
+    condition: str | None,
+    match_schema_name: str | None = None,
+    match_table_name: str | None = None,
+    match_condition: str | None = None,
+) -> dict[str, FinalParam]:
+    """Return the parameters that narrow a lookup's table, and its match table, to their filter conditions."""
+    # The fetch escapes the whole query, which is also shown to users
+    return {
+        **table_filter_params(condition, table_name, schema_name, quote, escape_colons=False),
+        **table_filter_params(
+            match_condition, match_table_name or "", match_schema_name or "", quote, prefix="MATCH_",
+            escape_colons=False,
+        ),
+    }
+
+
+def _recorded_filter_conditions(issue_data: dict) -> tuple[str | None, str | None]:
+    """Return the filter conditions a test result's run read its table and its match table through.
+
+    They may differ from the table group's filters. When ``issue_data`` lacks the recorded columns, they are
+    read from the test result its ``test_result_id`` names; a missing result gives no conditions.
+    """
+    if "table_filter" in issue_data:
+        return issue_data["table_filter"] or None, issue_data.get("match_table_filter") or None
+    row = get_current_session().execute(
+        select(TestResult.table_filter, TestResult.match_table_filter).where(
+            TestResult.id == issue_data["test_result_id"]
+        )
+    ).first()
+    return (row.table_filter or None, row.match_table_filter or None) if row else (None, None)
+
+
+def _hygiene_filter_condition(lookup_data: LookupData, issue_data: dict) -> str | None:
+    """Return the filter condition the issue's profiling run read its table through.
+
+    Without the run, the table group's current filter stands in for it.
+    """
+    if profile_run_id := issue_data.get("profile_run_id"):
+        profiling_run = ProfilingRun.get(profile_run_id)
+        return table_filter_condition(profiling_run.table_filters if profiling_run else None, issue_data["table_name"])
+    return _current_filter_conditions(lookup_data, issue_data["schema_name"], issue_data["table_name"])[0]
+
+
 def _generate_recency_lookup_query(
     test_id: str, detail_exp: str, column_names: str, sql_flavor: SQLFlavor, sql_flavor_code: str,
 ) -> str:
@@ -383,7 +483,7 @@ def _generate_recency_lookup_query(
         SELECT
             '{column}' AS column_name,
             MAX({quote}{column}{quote}) AS max_date_available
-        FROM {table_ref}
+        FROM {{TABLE_FILTER_OPEN}}{table_ref}{{TABLE_FILTER_CLOSE}}
         """
         for column in columns
     ]
@@ -406,7 +506,9 @@ def _get_lookup_data(
                 t.lookup_query,
                 c.sql_flavor,
                 c.sql_flavor_code,
-                t.lookup_redactable_columns
+                t.lookup_redactable_columns,
+                tg.table_group_schema,
+                tg.table_filters
             FROM target_data_lookups t
             INNER JOIN table_groups tg
                 ON (:table_group_id = tg.id)

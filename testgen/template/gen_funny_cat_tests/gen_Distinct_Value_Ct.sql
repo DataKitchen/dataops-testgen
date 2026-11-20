@@ -112,7 +112,7 @@ FROM latest_results r
 INNER JOIN selected_columns c USING (table_name, column_name)
   -- Only insert if test type is active
 WHERE EXISTS (SELECT 1 FROM test_types WHERE test_type = 'Distinct_Value_Ct' AND active = 'Y')
-  {TABLE_FILTER}
+  {TABLE_SCOPE}
 
 -- Match "uix_td_autogen_column" unique index exactly
 ON CONFLICT (test_suite_id, version_id, test_type, schema_name, table_name, column_name)

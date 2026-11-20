@@ -223,6 +223,7 @@ const TableGroupWizard = (props) => {
       return TableGroupTest(
         tableGroupPreview,
         {
+          hasTableFilters: () => !!stepsState.tableGroup.val?.table_filters?.length,
           onVerifyAccess: () => {
             emit('PreviewTableGroupClicked', {
               payload: {

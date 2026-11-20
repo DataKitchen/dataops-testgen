@@ -66,6 +66,7 @@ class TableGroupMinimal(EntityMinimal):
     table_groups_name: str
     table_group_schema: str
     file_declarations: list[dict] | None
+    table_filters: list[dict] | None
     profiling_table_set: str
     profiling_include_mask: str
     profiling_exclude_mask: str
@@ -379,6 +380,7 @@ class TableGroup(Entity):
     table_groups_name: str = Column(String)
     table_group_schema: str = Column(String)
     file_declarations: list[dict] | None = Column(postgresql.JSONB)
+    table_filters: list[dict] | None = Column(postgresql.JSONB)
     profiling_table_set: str = Column(NullIfEmptyString)
     profiling_include_mask: str = Column(NullIfEmptyString)
     profiling_exclude_mask: str = Column(NullIfEmptyString)
@@ -412,7 +414,8 @@ class TableGroup(Entity):
         name="table_groups_name",
         project="project_code",
         values=(
-            "table_groups_name", "connection_id", "table_group_schema", "file_declarations", "profiling_table_set",
+            "table_groups_name", "connection_id", "table_group_schema", "file_declarations", "table_filters",
+            "profiling_table_set",
             "profiling_include_mask", "profiling_exclude_mask", "profile_id_column_mask", "profile_sk_column_mask",
             "profile_use_sampling", "profile_sample_percent", "profile_sample_min_count", "profiling_delay_days",
             "profile_flag_cdes", "profile_flag_pii", "profile_exclude_xde", "profile_table_comparison",

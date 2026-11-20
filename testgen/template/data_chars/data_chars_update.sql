@@ -29,6 +29,7 @@ WITH new_chars AS (
       MAX(object_type) AS object_type,
       MAX(approx_record_ct) AS approx_record_ct,
       MAX(record_ct) AS record_ct,
+      MAX(table_filter) AS table_filter,
       MAX(file_ct) AS file_ct,
       COUNT(*) AS column_ct
    FROM stg_data_chars_updates
@@ -45,6 +46,7 @@ updated_records AS (
       object_type = n.object_type,
       approx_record_ct = n.approx_record_ct,
       record_ct = n.record_ct,
+      table_filter = n.table_filter,
       file_ct = n.file_ct,
       column_ct = n.column_ct,
       last_refresh_date = n.run_date,
@@ -82,6 +84,7 @@ WITH new_chars AS (
       MAX(object_type) AS object_type,
       MAX(approx_record_ct) AS approx_record_ct,
       MAX(record_ct) AS record_ct,
+      MAX(table_filter) AS table_filter,
       MAX(file_ct) AS file_ct,
       COUNT(*) AS column_ct
    FROM stg_data_chars_updates
@@ -102,6 +105,7 @@ inserted_records AS (
          object_type,
          approx_record_ct,
          record_ct,
+         table_filter,
          file_ct,
          column_ct
       )
@@ -113,6 +117,7 @@ inserted_records AS (
       n.object_type,
       n.approx_record_ct,
       n.record_ct,
+      n.table_filter,
       n.file_ct,
       n.column_ct
    FROM new_chars n

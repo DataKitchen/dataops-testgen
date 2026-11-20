@@ -117,6 +117,7 @@ def test_maps_a_referential_second_table_on_its_own():
 
     assert test_def.match_table_name == "prod_orders"
     assert test_def.source_table == "orders"
+    assert test_def.catalog_match_table_name == "orders"
 
 
 @pytest.mark.parametrize("empty", ["", None])

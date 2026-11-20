@@ -18,7 +18,8 @@ from testgen.common import query_variables
 from testgen.common.clean_sql import strip_trailing_semicolons
 from testgen.common.database.database_service import fetch_dict_from_db, get_flavor_service, replace_params
 from testgen.common.models.connection import Connection
-from testgen.common.models.table_group import TableGroup
+from testgen.common.models.table_group import TableGroup, TableGroupMinimal
+from testgen.common.table_filters import filtered_table_ref, table_filter_condition
 from testgen.ui.services.database_service import fetch_from_target_db
 
 
@@ -68,6 +69,21 @@ def validate_custom_query(
     return CustomQueryResult(row_count=row_count, preview_rows=preview_rows)
 
 
+def filtered_table_source(
+    connection: Connection, table_group: TableGroup | TableGroupMinimal | None, schema: str, table_name: str,
+) -> str:
+    """Return the FROM target that reads a table's records passing the table group's filter for it."""
+    flavor_service = get_flavor_service(connection.sql_flavor)
+    quote = flavor_service.quote_character
+    filters = table_group.table_filters if table_group else None
+    return filtered_table_ref(
+        flavor_service.get_table_ref(schema, table_name, connection.sql_flavor_code),
+        table_filter_condition(filters, table_name),
+        schema,
+        f"{quote}{table_name}{quote}",
+    )
+
+
 def validate_aggregate_expression(
     connection: Connection,
     schema: str,
@@ -96,7 +112,7 @@ def validate_aggregate_expression(
     DB errors propagate as-is.
     """
     flavor_service = get_flavor_service(connection.sql_flavor)
-    table_ref = flavor_service.get_table_ref(schema, table_name, connection.sql_flavor_code)
+    table_ref = filtered_table_source(connection, table_group, schema, table_name)
     metric_sql = (
         f"SELECT CAST({expression.strip()} AS {flavor_service.varchar_type}) AS metric_value FROM {table_ref}"
     )

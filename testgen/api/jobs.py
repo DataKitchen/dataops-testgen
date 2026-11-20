@@ -67,7 +67,7 @@ router = APIRouter(tags=["Jobs"], dependencies=[Depends(db_session, scope="funct
     status_code=status.HTTP_202_ACCEPTED,
 )
 def submit_profiling(table_group: TableGroup = resolve_table_group("edit")):  # noqa: B008
-    """Profiles the table group's tables, as its table filters or file declarations select them."""
+    """Profiles the table group's tables, as its table criteria or file declarations select them."""
     job = launch_run(
         job_key=JobKey.run_profile,
         kwargs={"table_group_id": str(table_group.id)},

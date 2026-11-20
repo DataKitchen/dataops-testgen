@@ -33,6 +33,16 @@ def strip_trailing_semicolons(sql: str | None) -> str | None:
     return re.sub(r"[\s;]+$", "", sql) if sql else sql
 
 
+def escape_bind_colons(sql: str) -> str:
+    """Return ``sql`` with every colon escaped as ``\\:``, so SQLAlchemy reads none as a bind parameter.
+
+    SQLAlchemy sends an escaped colon to the database as a plain colon, so the text means the same.
+    """
+    # Escaping only the colons SQLAlchemy would bind leaves a backslash before one followed by another
+    # colon, such as in [[:space:]], because SQLAlchemy unescapes only colons it would have bound.
+    return sql.replace(":", "\\:")
+
+
 def subset_params(subset_condition: str | None) -> dict[str, str]:
     """Return the template parameters that restrict a test to the records matching its subset condition.
 

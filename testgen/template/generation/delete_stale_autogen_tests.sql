@@ -11,4 +11,4 @@ WHERE test_suite_id = :TEST_SUITE_ID ::UUID
   AND NOT (test_type = ANY(:MANAGED_TEST_TYPES))
   -- Filter by test types if specified (NULL = no filter)
   AND (:TEST_TYPES_FILTER IS NULL OR test_type = ANY(:TEST_TYPES_FILTER))
-  {TABLE_FILTER};
+  {TABLE_SCOPE};

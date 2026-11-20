@@ -68,7 +68,7 @@ def test_every_upsert_names_the_version_in_its_conflict_list():
     )
 
 
-def test_every_table_scoped_upsert_honours_the_table_filter():
+def test_every_table_scoped_upsert_honours_the_table_scope():
     """A contract covers the tables its document names, which may be a subset of the table group.
 
     Schema_Drift is the one exception: it writes no table_name, so there is nothing to filter by.
@@ -77,16 +77,16 @@ def test_every_table_scoped_upsert_honours_the_table_filter():
         str(path.relative_to(TEMPLATE_ROOT))
         for path in _upserting_templates()
         if "table_name" in _inserted_columns(path.read_text())
-        and "{TABLE_FILTER}" not in path.read_text()
+        and "{TABLE_SCOPE}" not in path.read_text()
     )
 
-    assert offenders == [], "table-scoped upserts ignoring the table filter: " + ", ".join(offenders)
+    assert offenders == [], "table-scoped upserts ignoring the table scope: " + ", ".join(offenders)
 
 
-def test_the_schema_scoped_upsert_takes_no_table_filter():
+def test_the_schema_scoped_upsert_takes_no_table_scope():
     schema_drift = TEMPLATE_ROOT / "gen_query_tests" / "gen_Schema_Drift.sql"
 
-    assert "{TABLE_FILTER}" not in schema_drift.read_text()
+    assert "{TABLE_SCOPE}" not in schema_drift.read_text()
 
 
 def test_every_upsert_writes_the_version_it_conflicts_on():

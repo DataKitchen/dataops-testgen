@@ -1,9 +1,10 @@
 """Tests for testgen.api.table_groups."""
 
 import re
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -19,6 +20,22 @@ from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.table_group import TableGroup
 
 pytestmark = pytest.mark.unit
+
+
+class _AnyTable:
+    """Stands in for the table group's tables, holding every name; membership is tested in the service tests."""
+
+    def __contains__(self, _name: object) -> bool:
+        return True
+
+
+@pytest.fixture(autouse=True)
+def _table_group_holds_every_table():
+    with (
+        patch("testgen.common.database.table_group_service._table_names", return_value=_AnyTable()),
+        patch("testgen.common.database.table_group_service._catalog_table_names", return_value=set()),
+    ):
+        yield
 
 MODULE = "testgen.api.table_groups"
 SERVICE_MODULE = "testgen.common.database.table_group_service"
@@ -119,6 +136,7 @@ def _table_group(**overrides):
         "data_product": "Sales Mart",
         "data_classification": "Internal",
         "file_declarations": None,
+        "table_filters": None,
     }
     return MagicMock(**{**defaults, **overrides})
 
@@ -690,6 +708,21 @@ def test_create_table_group_reports_every_validation_failure():
     mock_save.assert_not_called()
 
 
+def test_create_table_group_reports_field_and_table_filter_failures_together():
+    resp, mock_save, _ = _post({
+        "table_group_name": "ab",
+        "schema_name": "sales",
+        "table_filters": [{"table_name": "orders", "condition": " "}],
+    })
+
+    assert resp.status_code == 400
+    assert _error_entries(resp) == [
+        {"code": "invalid_table_group", "detail": "`table_group_name` must be between 3 and 40 characters."},
+        {"code": "invalid_table_filters", "detail": "Enter a filter condition for table orders."},
+    ]
+    mock_save.assert_not_called()
+
+
 def test_create_table_group_responds_with_the_row_as_stored():
     """The 201 body is built after the saved row is reloaded, so it matches a later GET:
     the column type stores an empty string as NULL."""
@@ -877,7 +910,7 @@ def test_create_on_a_database_connection_rejects_file_declarations():
         {
             "code": "invalid_table_group",
             "detail": "`file_declarations` applies only to a connection whose tables are files. Use `schema_name` "
-            "and the table filters instead.",
+            "and the table criteria instead.",
         }
     ]
     mock_save.assert_not_called()
@@ -1416,7 +1449,7 @@ def test_update_table_group_probes_the_new_schema_with_the_new_filters():
 
     def refuse(table_group, schema, **_kwargs):
         seen["include"] = table_group.profiling_include_mask
-        raise SchemaMoveRefused("schema_empty", f"No tables in {schema} match this table group's table filters.")
+        raise SchemaMoveRefused("schema_empty", f"No tables in {schema} match this table group's table criteria.")
 
     result = _patch(
         {"schema_name": "onboard_2026_09_16", "include_masks": ["invoices%"]}, move_error=refuse
@@ -1469,7 +1502,7 @@ def test_update_table_group_on_a_database_connection_rejects_file_declarations()
         {
             "code": "invalid_table_group",
             "detail": "`file_declarations` applies only to a connection whose tables are files. Use `schema_name` "
-            "and the table filters instead.",
+            "and the table criteria instead.",
         }
     ]
 
@@ -1544,7 +1577,7 @@ def test_update_request_says_which_lists_replace_the_stored_one():
     update = _client().app.openapi()["components"]["schemas"]["TableGroupUpdateRequest"]["properties"]
 
     replacing = {name for name, prop in update.items() if "Replaces the whole list." in prop.get("description", "")}
-    assert replacing == {"table_set", "include_masks", "exclude_masks", "file_declarations"}
+    assert replacing == {"table_set", "include_masks", "exclude_masks", "file_declarations", "table_filters"}
 
 
 def test_update_request_shares_each_create_field_description():
@@ -1558,6 +1591,283 @@ def test_update_request_shares_each_create_field_description():
         shared = create[name].get("description", "").removeprefix("Database connections only, and required there. ")
         shared = shared.removeprefix("File connections only, and required there. ").split(" Omit ")[0]
         assert shared in prop.get("description", ""), name
+
+
+# --- Table filters ---
+
+ORDERS_FILTER = {"table_name": "orders", "condition": "region = 'EMEA'"}
+
+
+@pytest.fixture
+def validate_filters():
+    with patch(f"{SERVICE_MODULE}.validate_table_filters") as mock_validate:
+        yield mock_validate
+
+
+def test_create_table_group_stores_the_checked_table_filters(validate_filters):
+    resp, mock_save, _ = _post({
+        "table_group_name": "client_42",
+        "schema_name": "client_42",
+        "table_filters": [{"table_name": " orders ", "condition": " region = 'EMEA' "}],
+    })
+
+    assert resp.status_code == 201, resp.text
+    saved = _saved(mock_save)
+    assert saved.table_filters == [ORDERS_FILTER]
+    validate_filters.assert_called_once_with(CONNECTION, saved, [ORDERS_FILTER])
+    assert resp.json()["table_filters"] == [ORDERS_FILTER]
+
+
+def test_create_table_group_without_table_filters_reads_every_table_in_full(validate_filters):
+    resp, mock_save, _ = _post({"table_group_name": "client_42", "schema_name": "client_42"})
+
+    assert resp.status_code == 201, resp.text
+    assert _saved(mock_save).table_filters is None
+    validate_filters.assert_not_called()
+    assert resp.json()["table_filters"] == []
+
+
+def test_create_table_group_refuses_an_incomplete_table_filter(validate_filters):
+    resp, mock_save, _ = _post({
+        "table_group_name": "client_42",
+        "schema_name": "client_42",
+        "table_filters": [ORDERS_FILTER, {"table_name": "orders", "condition": "id > 0"}],
+    })
+
+    assert resp.status_code == 400
+    assert _error_entries(resp) == [
+        {"code": "invalid_table_filters", "detail": "Table orders has more than one filter."}
+    ]
+    validate_filters.assert_not_called()
+    mock_save.assert_not_called()
+
+
+def test_create_table_group_refuses_a_table_filter_the_target_rejects(validate_filters):
+    from testgen.common.table_filter_validation import InvalidTableFilters
+
+    message = 'The filter for table orders is not valid: column "regin" does not exist'
+    validate_filters.side_effect = InvalidTableFilters(message)
+
+    resp, mock_save, _ = _post({
+        "table_group_name": "client_42",
+        "schema_name": "client_42",
+        "table_filters": [{"table_name": "orders", "condition": "regin = 'EMEA'"}],
+    })
+
+    assert resp.status_code == 400
+    assert _error_entries(resp) == [{"code": "invalid_table_filters", "detail": message}]
+    mock_save.assert_not_called()
+
+
+@pytest.mark.parametrize("entry", [{"table_name": "orders"}, {**ORDERS_FILTER, "where": "x"}])
+def test_create_table_group_rejects_a_malformed_table_filter(entry):
+    resp, mock_save, _ = _post({"table_group_name": "client_42", "schema_name": "client_42", "table_filters": [entry]})
+
+    assert resp.status_code == 422
+    mock_save.assert_not_called()
+
+
+def test_get_table_group_reports_the_table_filters():
+    response = get_table_group(table_group=_table_group(table_filters=[ORDERS_FILTER]))
+
+    assert [entry.model_dump() for entry in response.table_filters] == [ORDERS_FILTER]
+
+
+def test_get_table_group_reports_no_table_filters_as_an_empty_list():
+    assert get_table_group(table_group=_table_group(table_filters=None)).table_filters == []
+
+
+def test_update_table_group_replaces_the_table_filters(validate_filters, target_connection):
+    table_group = _table_group(table_filters=[{"table_name": "customers", "condition": "active"}])
+
+    result = _patch({"table_filters": [ORDERS_FILTER]}, table_group=table_group)
+
+    assert result.resp.status_code == 200, result.resp.text
+    assert table_group.table_filters == [ORDERS_FILTER]
+    validate_filters.assert_called_once_with(target_connection, table_group, [ORDERS_FILTER])
+    table_group.save.assert_called_once_with()
+    assert result.resp.json()["table_filters"] == [ORDERS_FILTER]
+
+
+def test_update_table_group_leaves_the_table_filters_when_omitted(validate_filters):
+    table_group = _table_group(table_filters=[ORDERS_FILTER])
+
+    result = _patch({"description": "Orders"}, table_group=table_group)
+
+    assert result.resp.status_code == 200, result.resp.text
+    assert table_group.table_filters == [ORDERS_FILTER]
+    validate_filters.assert_not_called()
+    assert result.resp.json()["table_filters"] == [ORDERS_FILTER]
+
+
+def test_update_table_group_clears_the_table_filters_sent_empty(validate_filters):
+    table_group = _table_group(table_filters=[ORDERS_FILTER])
+
+    result = _patch({"table_filters": []}, table_group=table_group)
+
+    assert result.resp.status_code == 200, result.resp.text
+    assert table_group.table_filters is None
+    validate_filters.assert_not_called()
+    assert result.resp.json()["table_filters"] == []
+
+
+def test_update_table_group_rejects_null_table_filters(validate_filters):
+    result = _patch({"table_filters": None}, table_group=_table_group(table_filters=[ORDERS_FILTER]))
+
+    assert result.resp.status_code == 422
+    assert _error_entries(result.resp)[0]["code"] == "null_field"
+    result.table_group.save.assert_not_called()
+
+
+def test_update_table_group_refuses_an_incomplete_table_filter(validate_filters):
+    result = _patch({"table_filters": [{"table_name": "", "condition": "region = 'EMEA'"}]})
+
+    assert result.resp.status_code == 400
+    assert _error_entries(result.resp) == [
+        {"code": "invalid_table_filters", "detail": "Each table filter needs a table name."}
+    ]
+    result.table_group.save.assert_not_called()
+
+
+def test_update_table_group_refuses_a_table_filter_the_target_rejects(validate_filters):
+    from testgen.common.table_filter_validation import InvalidTableFilters
+
+    message = 'The filter for table orders is not valid: column "regin" does not exist'
+    validate_filters.side_effect = InvalidTableFilters(message)
+
+    result = _patch({"table_filters": [{"table_name": "orders", "condition": "regin = 'EMEA'"}]})
+
+    assert result.resp.status_code == 400
+    assert _error_entries(result.resp) == [{"code": "invalid_table_filters", "detail": message}]
+    result.table_group.save.assert_not_called()
+
+
+def test_update_table_group_reports_every_table_filter_the_target_rejects(validate_filters):
+    from testgen.common.table_filter_validation import InvalidTableFilters
+
+    messages = [
+        'The filter for table orders is not valid: column "regin" does not exist',
+        'The filter for table returns is not valid: column "kep" does not exist',
+    ]
+    validate_filters.side_effect = InvalidTableFilters(*messages)
+
+    result = _patch({"table_filters": [ORDERS_FILTER, {"table_name": "returns", "condition": "kep = 1"}]})
+
+    assert result.resp.status_code == 400
+    assert _error_entries(result.resp) == [{"code": "invalid_table_filters", "detail": m} for m in messages]
+
+
+def test_update_table_group_checks_the_table_filters_in_the_schema_it_moves_to(validate_filters):
+    table_group = _table_group()
+
+    def move_to(tg, schema, **_kwargs):
+        tg.table_group_schema = schema
+        return _move(schema=schema)
+
+    # `move_error` is the move's side effect, which here performs the move instead of refusing it.
+    result = _patch(
+        {"schema_name": "onboard", "table_filters": [ORDERS_FILTER]}, table_group=table_group, move_error=move_to
+    )
+
+    assert result.resp.status_code == 200, result.resp.text
+    assert validate_filters.call_args.args[1].table_group_schema == "onboard"
+
+
+def test_update_table_group_checks_the_stored_table_filters_in_the_schema_it_moves_to(validate_filters):
+    table_group = _table_group()
+    table_group.table_filters = [ORDERS_FILTER]
+
+    def move_to(tg, schema, **_kwargs):
+        tg.table_group_schema = schema
+        return _move(schema=schema)
+
+    result = _patch({"schema_name": "onboard"}, table_group=table_group, move_error=move_to)
+
+    assert result.resp.status_code == 200, result.resp.text
+    assert validate_filters.call_args.args[1].table_group_schema == "onboard"
+    assert table_group.table_filters == [ORDERS_FILTER]
+
+
+def test_update_table_group_refuses_a_move_the_stored_table_filters_do_not_fit(validate_filters):
+    from testgen.common.table_filter_validation import InvalidTableFilters
+
+    message = 'The filter for table orders is not valid: column "region" does not exist'
+    validate_filters.side_effect = InvalidTableFilters(message)
+    table_group = _table_group()
+    table_group.table_filters = [ORDERS_FILTER]
+
+    def move_to(tg, schema, **_kwargs):
+        tg.table_group_schema = schema
+        return _move(schema=schema)
+
+    result = _patch({"schema_name": "onboard"}, table_group=table_group, move_error=move_to)
+
+    assert result.resp.status_code == 400
+    assert _error_entries(result.resp) == [{"code": "invalid_table_filters", "detail": message}]
+    table_group.save.assert_not_called()
+
+
+def test_update_table_group_moves_through_the_table_filters_it_sets(validate_filters):
+    # The move's probe writes the catalog, so it must read the schema it moves to through the request's filters
+    new_filter = {"table_name": "orders", "condition": "region = 'EU'"}
+    table_group = _table_group()
+    table_group.table_filters = [ORDERS_FILTER]
+    probed_with = []
+
+    def move_to(tg, schema, **_kwargs):
+        probed_with.append(tg.table_filters)
+        tg.table_group_schema = schema
+        return replace(_move(schema=schema), tables=frozenset({"orders"}))
+
+    result = _patch(
+        {"schema_name": "onboard", "table_filters": [new_filter]}, table_group=table_group, move_error=move_to
+    )
+
+    assert result.resp.status_code == 200, result.resp.text
+    assert probed_with == [[new_filter]]
+    validate_filters.assert_called_once_with(ANY, table_group, [new_filter])
+    assert validate_filters.call_args.args[1].table_group_schema == "onboard"
+
+
+def test_update_table_group_answers_422_when_the_table_filters_cannot_be_checked(validate_filters):
+    from testgen.common.table_filter_validation import TableFiltersUnchecked
+
+    message = "The table filters could not be checked: connection refused"
+    validate_filters.side_effect = TableFiltersUnchecked(message)
+
+    result = _patch({"table_filters": [ORDERS_FILTER]})
+
+    assert result.resp.status_code == 422
+    assert _error_entries(result.resp) == [{"code": "target_unreachable", "detail": message}]
+    result.table_group.save.assert_not_called()
+
+
+def test_update_table_group_moves_to_a_schema_without_a_filtered_table(validate_filters):
+    # A missing table is listed rather than refused, whether or not it has a filter
+    table_group = _table_group()
+    table_group.table_filters = [ORDERS_FILTER]
+
+    def move_to(tg, schema, **_kwargs):
+        tg.table_group_schema = schema
+        return replace(_move(schema=schema, missing=["orders"]), tables=frozenset({"customers"}))
+
+    with patch(f"{SERVICE_MODULE}._catalog_table_names", return_value={"orders", "customers"}):
+        result = _patch({"schema_name": "onboard"}, table_group=table_group, move_error=move_to)
+
+    assert result.resp.status_code == 200, result.resp.text
+    assert result.resp.json()["schema_change"]["missing_tables"] == ["orders"]
+    assert table_group.table_filters == [ORDERS_FILTER]
+    validate_filters.assert_not_called()
+
+
+def test_update_table_group_without_a_move_leaves_the_stored_table_filters_unchecked(validate_filters):
+    table_group = _table_group()
+    table_group.table_filters = [ORDERS_FILTER]
+
+    result = _patch({"description": "Sales"}, table_group=table_group)
+
+    assert result.resp.status_code == 200, result.resp.text
+    validate_filters.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -211,3 +211,38 @@ def test_wizard_reports_a_test_suite_name_another_suite_in_the_project_holds():
     assert data["results"]["message"] == "A test suite named Sales Tests already exists in this project."
     session.rollback.assert_called_once()
     submit.assert_not_called()
+
+
+def test_wizard_reports_a_table_filter_it_cannot_save():
+    from testgen.common.models import _current_session_wrapper
+    from testgen.common.table_filter_validation import InvalidTableFilters
+    from testgen.ui import session as session_module
+
+    _current_session_wrapper.value = MagicMock()
+    try:
+        with (
+            patch.object(session_module, "st", MagicMock(session_state={})),
+            patch(f"{MODULE}.TableGroup"),
+            patch(
+                f"{MODULE}.apply_table_filters",
+                side_effect=InvalidTableFilters("Enter a filter condition for table orders."),
+            ),
+            patch(f"{MODULE}.save_new_table_group") as save_new_table_group,
+            patch(f"{MODULE}.submit_table_group_setup") as submit,
+            patch(f"{MODULE}.table_group_queries") as mock_queries,
+            patch(f"{MODULE}.session"),
+        ):
+            mock_queries.get_table_group_preview.return_value = None
+            from testgen.ui.views.connections import ConnectionsPage
+
+            page = ConnectionsPage.__new__(ConnectionsPage)
+            _, handlers = page.setup_data_configuration(PROJECT_CODE, CONNECTION_ID)
+            handlers["on_SaveTableGroupClicked_change"](_payload(_monitor_suite(generate=False)))
+            data, _ = page.setup_data_configuration(PROJECT_CODE, CONNECTION_ID)
+    finally:
+        _current_session_wrapper.value = None
+
+    assert data["results"]["success"] is False
+    assert data["results"]["message"] == "Enter a filter condition for table orders."
+    save_new_table_group.assert_not_called()
+    submit.assert_not_called()

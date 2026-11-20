@@ -52,7 +52,7 @@ test_types:
     sql_flavor: bigquery
     lookup_type: null
     lookup_query: |-
-      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` IS NOT NULL GROUP BY `{COLUMN_NAME}` ORDER BY CAST(`{COLUMN_NAME}` AS BYTES) LIMIT {LIMIT};
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE} WHERE `{COLUMN_NAME}` IS NOT NULL GROUP BY `{COLUMN_NAME}` ORDER BY CAST(`{COLUMN_NAME}` AS BYTES) LIMIT {LIMIT};
     error_type: Test Results
   - id: '1567'
     test_id: '1542'
@@ -60,7 +60,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` IS NOT NULL GROUP BY `{COLUMN_NAME}` ORDER BY CAST(`{COLUMN_NAME}` AS BINARY) LIMIT {LIMIT};
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM {TABLE_FILTER_OPEN}`{TARGET_SCHEMA}`.`{TABLE_NAME}`{TABLE_FILTER_CLOSE} WHERE `{COLUMN_NAME}` IS NOT NULL GROUP BY `{COLUMN_NAME}` ORDER BY CAST(`{COLUMN_NAME}` AS BINARY) LIMIT {LIMIT};
     error_type: Test Results
   - id: '1589'
     test_id: '1542'
@@ -68,7 +68,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP {LIMIT} {COLUMN_VALUE} AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} IS NOT NULL GROUP BY {COLUMN_VALUE} ORDER BY CAST({COLUMN_VALUE} AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2;
+      SELECT TOP {LIMIT} {COLUMN_VALUE} AS "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE {COLUMN_VALUE} IS NOT NULL GROUP BY {COLUMN_VALUE} ORDER BY CAST({COLUMN_VALUE} AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2;
     error_type: Test Results
   - id: '1611'
     test_id: '1542'
@@ -76,7 +76,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT {COLUMN_VALUE} AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} IS NOT NULL GROUP BY {COLUMN_VALUE} ORDER BY {COLUMN_VALUE} COLLATE "C" LIMIT {LIMIT};
+      SELECT {COLUMN_VALUE} AS "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE {COLUMN_VALUE} IS NOT NULL GROUP BY {COLUMN_VALUE} ORDER BY {COLUMN_VALUE} COLLATE "C" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1633'
     test_id: '1542'
@@ -84,7 +84,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT {COLUMN_VALUE} AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} IS NOT NULL GROUP BY {COLUMN_VALUE} ORDER BY COLLATE({COLUMN_VALUE}, 'case_sensitive') LIMIT {LIMIT};
+      SELECT {COLUMN_VALUE} AS "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE {COLUMN_VALUE} IS NOT NULL GROUP BY {COLUMN_VALUE} ORDER BY COLLATE({COLUMN_VALUE}, 'case_sensitive') LIMIT {LIMIT};
     error_type: Test Results
   - id: '1655'
     test_id: '1542'
@@ -92,7 +92,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT {COLUMN_VALUE} AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} IS NOT NULL GROUP BY {COLUMN_VALUE} ORDER BY COLLATE({COLUMN_VALUE}, 'case_sensitive') LIMIT {LIMIT};
+      SELECT {COLUMN_VALUE} AS "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE {COLUMN_VALUE} IS NOT NULL GROUP BY {COLUMN_VALUE} ORDER BY COLLATE({COLUMN_VALUE}, 'case_sensitive') LIMIT {LIMIT};
     error_type: Test Results
   - id: '1677'
     test_id: '1542'
@@ -100,7 +100,7 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY TO_BINARY("{COLUMN_NAME}", 'UTF-8') LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY TO_BINARY("{COLUMN_NAME}", 'UTF-8') LIMIT {LIMIT};
     error_type: Test Results
   - id: '8539'
     test_id: '1542'
@@ -108,7 +108,7 @@ test_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY NLSSORT("{COLUMN_NAME}", 'NLS_SORT=BINARY') FETCH FIRST {LIMIT} ROWS ONLY
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY NLSSORT("{COLUMN_NAME}", 'NLS_SORT=BINARY') FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Test Results
   - id: '8539'
     test_id: '1542'
@@ -116,7 +116,7 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY TO_BINARY("{COLUMN_NAME}") LIMIT {LIMIT}
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY TO_BINARY("{COLUMN_NAME}") LIMIT {LIMIT}
     error_type: Test Results
   - id: '10090'
     test_id: '1542'
@@ -124,7 +124,7 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '11149'
     test_id: '1542'
@@ -132,7 +132,7 @@ test_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM {TABLE_FILTER_OPEN}"{TARGET_SCHEMA}"."{TABLE_NAME}"{TABLE_FILTER_CLOSE} WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   test_templates:
   - id: '2521'
@@ -142,7 +142,7 @@ test_types:
       WITH test AS (
         SELECT TO_HEX(MD5(STRING_AGG(CAST(val AS STRING), '|' ORDER BY CAST(val AS BYTES)))) AS measure
           FROM ( SELECT DISTINCT LEFT({COLUMN_NAME}, 71) AS val
-                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                   FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                   WHERE {COLUMN_NAME} IS NOT NULL
                   LIMIT 71 ) distinct_vals
       )
@@ -182,7 +182,7 @@ test_types:
         SELECT MD5(CONCAT_WS('|', TRANSFORM(ARRAY_SORT(COLLECT_SET(CAST(val AS BINARY))),
                                              val -> CAST(val AS STRING)))) AS measure
           FROM ( SELECT DISTINCT LEFT({COLUMN_NAME}, 71) AS val
-                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                   FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                   WHERE {COLUMN_NAME} IS NOT NULL
                   LIMIT 71 ) distinct_vals
       )
@@ -222,7 +222,7 @@ test_types:
         SELECT STRING_AGG(val, N'|') WITHIN GROUP (ORDER BY val, DATALENGTH(val)) AS agg
           FROM ( SELECT CAST(bin AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2 AS val
                    FROM ( SELECT DISTINCT TOP 71 CAST(LEFT(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)), 71) AS VARBINARY(MAX)) AS bin
-                            FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                            FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                            WHERE {COLUMN_VALUE} IS NOT NULL ) distinct_bins ) distinct_vals
       ),
       -- Row numbers come from constants: Fabric rejects a query that reads a system view alongside user
@@ -297,7 +297,7 @@ test_types:
       WITH test AS (
         SELECT MD5(STRING_AGG(val, '|' ORDER BY val)) AS measure
           FROM ( SELECT DISTINCT LEFT({COLUMN_VALUE}, 71) COLLATE "C" AS val
-                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                   FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                   WHERE {COLUMN_VALUE} IS NOT NULL
                   LIMIT 71 ) distinct_vals
       )
@@ -336,7 +336,7 @@ test_types:
       WITH test AS (
         SELECT MD5(LISTAGG(val, '|') WITHIN GROUP (ORDER BY COLLATE(val, 'case_sensitive'))) AS measure
           FROM ( SELECT DISTINCT COLLATE(LEFT({COLUMN_VALUE}, 71), 'case_sensitive') AS val
-                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                   FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                   WHERE {COLUMN_VALUE} IS NOT NULL
                   LIMIT 71 ) distinct_vals
       )
@@ -375,7 +375,7 @@ test_types:
       WITH test AS (
         SELECT MD5(LISTAGG(val, '|') WITHIN GROUP (ORDER BY COLLATE(val, 'case_sensitive'))) AS measure
           FROM ( SELECT DISTINCT COLLATE(LEFT({COLUMN_VALUE}, 71), 'case_sensitive') AS val
-                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                   FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                   WHERE {COLUMN_VALUE} IS NOT NULL
                   LIMIT 71 ) distinct_vals
       )
@@ -414,7 +414,7 @@ test_types:
       WITH test AS (
         SELECT MD5(LISTAGG(TO_VARCHAR(val, 'UTF-8'), '|') WITHIN GROUP (ORDER BY val)) AS measure
           FROM ( SELECT DISTINCT TO_BINARY(LEFT({COLUMN_NAME}, 71), 'UTF-8') AS val
-                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                   FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                   WHERE {COLUMN_NAME} IS NOT NULL
                   LIMIT 71 ) distinct_vals
       )
@@ -456,7 +456,7 @@ test_types:
                  LISTAGG(val, '|') WITHIN GROUP (ORDER BY NLSSORT(val, 'NLS_SORT=BINARY')), 'MD5'))) AS measure
           FROM ( SELECT val, SUM(LENGTHB(val)) OVER () + COUNT(*) OVER () - 1 AS list_bytes
                    FROM ( SELECT DISTINCT TO_CHAR(SUBSTR({COLUMN_NAME}, 1, 71)) AS val
-                            FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                            FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                            WHERE {COLUMN_NAME} IS NOT NULL
                            FETCH FIRST 71 ROWS ONLY ) distinct_vals ) sized_vals
          WHERE list_bytes <= 4000
@@ -496,7 +496,7 @@ test_types:
       WITH test AS (
         SELECT LOWER(BINTOHEX(HASH_MD5(TO_BINARY(STRING_AGG(val, '|' ORDER BY TO_BINARY(val)))))) AS measure
           FROM ( SELECT DISTINCT LEFT({COLUMN_NAME}, 71) AS val
-                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                   FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                   WHERE {COLUMN_NAME} IS NOT NULL
                   LIMIT 71 ) distinct_vals
       )
@@ -535,7 +535,7 @@ test_types:
       WITH test AS (
         SELECT MD5(ARRAY_JOIN(ARRAY_AGG(val), '|')) AS measure
           FROM ( SELECT DISTINCT SUBSTR({COLUMN_NAME}, 1, 71) AS val
-                   FROM {QUOTE}{TABLE_NAME}{QUOTE}
+                   FROM {TABLE_FILTER_OPEN}{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                   WHERE {COLUMN_NAME} IS NOT NULL
                   ORDER BY val
                   LIMIT 71 ) sorted_vals
@@ -575,7 +575,7 @@ test_types:
       WITH test AS (
         SELECT MD5(STRING_AGG(val, '|' ORDER BY val)) AS measure
           FROM ( SELECT DISTINCT LEFT({COLUMN_NAME}, 71) AS val
-                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                   FROM {TABLE_FILTER_OPEN}{QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}{TABLE_FILTER_CLOSE}
                   WHERE {COLUMN_NAME} IS NOT NULL
                   LIMIT 71 ) distinct_vals
       )

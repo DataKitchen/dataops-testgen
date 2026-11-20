@@ -10,6 +10,7 @@ from testgen.common.models.profile_result import PercentileMethod, ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.common.read_file import replace_templated_functions
+from testgen.common.table_filters import filtered_table_ref, table_filter_condition, table_filter_params
 from testgen.utils import to_sql_timestamp
 
 
@@ -112,6 +113,12 @@ class ProfilingSQL:
                 "COL_NUM": self.flavor_service.numeric_value(
                     f"{quote}{column_chars.column_name}{quote}", column_chars.column_type
                 ),
+                **table_filter_params(
+                    table_filter_condition(self.table_group.table_filters, column_chars.table_name),
+                    column_chars.table_name,
+                    self.table_group.table_group_schema,
+                    quote,
+                ),
             })
         if table_sampling:
             params.update({
@@ -167,6 +174,13 @@ class ProfilingSQL:
             key_column.schema_name, key_column.table_name, self.connection.sql_flavor_code
         )
         table_ref = f"{table_ref} {self.flavor_service.table_hint(self.connection.sql_flavor_code)}".rstrip()
+        quote = self.flavor_service.quote_character
+        table_ref = filtered_table_ref(
+            table_ref,
+            table_filter_condition(self.table_group.table_filters, key_column.table_name),
+            key_column.schema_name,
+            f"{quote}{key_column.table_name}{quote}",
+        )
         max_chars = (self.connection.max_query_chars or DEFAULT_MAX_QUERY_CHARS) - len(table_ref) - 100
 
         batches: list[list[str]] = [[]]

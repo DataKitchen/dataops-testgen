@@ -1,5 +1,7 @@
 """API v1 — table groups."""
 
+from collections.abc import Collection
+
 from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.exc import IntegrityError
 
@@ -22,6 +24,7 @@ from testgen.api.schemas import (
     CatalogTags,
     ErrorResponse,
     FileDeclaration,
+    TableFilter,
     TableGroupCreate,
     TableGroupCreateResponse,
     TableGroupItem,
@@ -38,9 +41,10 @@ from testgen.common.audit.table_groups import (
 )
 from testgen.common.database.table_group_service import (
     SchemaMoveRefused,
+    apply_table_filters,
     apply_table_group_flavor_rules,
     cascade_delete_table_group,
-    catalog_membership,
+    catalog_source,
     is_duplicate_name_error,
     move_table_group_schema,
     rename_table_group_in_scorecards,
@@ -57,10 +61,17 @@ from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup, split_criteria, table_group_defaults
 from testgen.common.models.user import User
+from testgen.common.table_filter_validation import (
+    InvalidTableFilters,
+    TableFiltersUnchecked,
+    table_filter_problems,
+)
 
 _error_responses = {404: {"model": ErrorResponse, "description": "Not found"}}
 
 router = APIRouter(tags=["Table Groups"], dependencies=[Depends(db_session, scope="function")], responses=_error_responses)
+
+
 
 _LIST_COLUMNS = {
     "table_set": "profiling_table_set",
@@ -142,9 +153,10 @@ def get_table_group(table_group: TableGroup = resolve_table_group("view")):  # n
     responses={
         400: {
             "model": ErrorResponse,
-            "description": "One entry per field or file declaration that failed validation",
+            "description": "One entry per field, file declaration, or table filter that failed validation",
         },
         409: {"model": ErrorResponse, "description": "A table group with this name already exists in the project"},
+        422: {"model": ErrorResponse, "description": "The data source could not be reached to check the table filters"},
     },
 )
 def create_table_group(
@@ -183,7 +195,9 @@ def create_table_group(
     )
     fields = body.model_dump(
         exclude_none=True,
-        exclude={"table_group_name", "schema_name", "file_declarations", "catalog_tags", "add_scorecard"},
+        exclude={
+            "table_group_name", "schema_name", "file_declarations", "table_filters", "catalog_tags", "add_scorecard",
+        },
     )
     for name, value in fields.items():
         if name in _LIST_COLUMNS:
@@ -195,8 +209,15 @@ def create_table_group(
             setattr(table_group, name, value)
 
     apply_table_group_flavor_rules(table_group, connection)
-    if errors := validate_table_group_fields(table_group, connection):
-        raise api_errors(400, "invalid_table_group", errors)
+    errors = validate_table_group_fields(table_group, connection)
+    filter_problems = table_filter_problems(_filter_entries(body.table_filters))
+    if errors or filter_problems:
+        raise api_error_entries(
+            400,
+            [("invalid_table_group", error) for error in errors]
+            + [("invalid_table_filters", problem) for problem in filter_problems],
+        )
+    _apply_table_filters(table_group, body.table_filters, connection)
 
     try:
         scorecard = save_new_table_group(table_group, add_scorecard=body.add_scorecard)
@@ -232,6 +253,7 @@ def _to_response(table_group: TableGroup, connection: Connection | None = None) 
             if declares_files(flavor_code)
             else None
         ),
+        table_filters=[TableFilter.model_validate(entry) for entry in table_group.table_filters or []],
         profile_id_column_mask=table_group.profile_id_column_mask,
         profile_sk_column_mask=table_group.profile_sk_column_mask,
         profile_use_sampling=table_group.profile_use_sampling,
@@ -245,6 +267,24 @@ def _to_response(table_group: TableGroup, connection: Connection | None = None) 
         include_in_dashboard=table_group.include_in_dashboard,
         catalog_tags=CatalogTags.model_validate(table_group, from_attributes=True),
     )
+
+
+def _filter_entries(table_filters: list[TableFilter] | None) -> list[dict]:
+    return [entry.model_dump() for entry in table_filters or []]
+
+
+def _apply_table_filters(
+    table_group: TableGroup,
+    table_filters: list[TableFilter] | None,
+    connection: Connection | None,
+    tables: Collection[str] | None = None,
+) -> None:
+    try:
+        apply_table_filters(table_group, _filter_entries(table_filters), connection, tables)
+    except TableFiltersUnchecked as err:
+        raise api_error(422, "target_unreachable", err.messages[0]) from err
+    except InvalidTableFilters as err:
+        raise api_error_entries(400, [("invalid_table_filters", message) for message in err.messages]) from err
 
 
 _PII_FLAG_DENIED = (
@@ -268,8 +308,8 @@ _REFUSAL_STATUS = {
     responses={
         400: {
             "model": ErrorResponse,
-            "description": "One entry per field or file declaration that failed validation, and one "
-            "`pii_permission_required` entry when the request changes PII detection without permission to "
+            "description": "One entry per field, file declaration, or table filter that failed validation, and "
+            "one `pii_permission_required` entry when the request changes PII detection without permission to "
             "view PII",
         },
         409: {
@@ -277,7 +317,11 @@ _REFUSAL_STATUS = {
             "description": "A job for this table group is still running, or another table group in the project "
             "has this name",
         },
-        422: {"model": ErrorResponse, "description": "A supplied field cannot be applied"},
+        422: {
+            "model": ErrorResponse,
+            "description": "A supplied field cannot be applied, or the data source could not be reached to check "
+            "the table filters",
+        },
     },
 )
 def update_table_group(
@@ -287,7 +331,7 @@ def update_table_group(
 ) -> TableGroupUpdateResponse:
     """Omitted fields are left as they are, and nothing is saved when any field is refused.
 
-    `table_set`, the masks, and `file_declarations` replace the stored list. Catalog tags are merged:
+    `table_set`, the masks, `file_declarations`, and `table_filters` replace the stored list. Catalog tags are merged:
     a tag the request does not name is left as it is.
 
     Changing `profile_flag_pii` requires permission to view PII. Without it, the 400 carries a
@@ -296,7 +340,7 @@ def update_table_group(
     When `schema_name` changes, profiling, test generation, monitors, and test runs read the new
     schema, and tests keep their history. Referential tests keep the schema of their second table.
     The change is refused with `schema_unreadable` when the schema cannot be read, and with
-    `schema_empty` when no table in it matches the table group's table filters, as edited by the same
+    `schema_empty` when no table in it matches the table group's table criteria, as edited by the same
     request. Tables the table group no longer selects after the move are listed under
     `schema_change.missing_tables`.
 
@@ -332,7 +376,7 @@ def update_table_group(
         and not has_project_permission(user, table_group.project_code, "view_pii")
     )
 
-    membership_before = catalog_membership(table_group)
+    catalog_before = catalog_source(table_group)
     previous_name = table_group.table_groups_name
     for name, value in sent.items():
         if name == "table_group_name":
@@ -341,15 +385,17 @@ def update_table_group(
             setattr(table_group, _LIST_COLUMNS[name], ",".join(value))
         elif name == "file_declarations":
             table_group.file_declarations = [declaration.to_payload() for declaration in value]
-        elif name not in ("schema_name", "catalog_tags"):
+        elif name not in ("schema_name", "table_filters", "catalog_tags"):
             setattr(table_group, name, value)
     for name, value in tags.items():
         setattr(table_group, name, value)
 
     apply_table_group_flavor_rules(table_group, connection)
     errors.extend(validate_table_group_fields(table_group, connection))
-    if errors or pii_denied:
+    filter_problems = table_filter_problems(_filter_entries(body.table_filters)) if "table_filters" in sent else []
+    if errors or filter_problems or pii_denied:
         entries = [("invalid_table_group", error) for error in errors]
+        entries.extend(("invalid_table_filters", problem) for problem in filter_problems)
         if pii_denied:
             entries.append(("pii_permission_required", _PII_FLAG_DENIED))
         raise api_error_entries(400, entries)
@@ -357,6 +403,9 @@ def update_table_group(
     move = None
     # The move's queries autoflush the edited name, so a duplicate can surface there as well as on save.
     try:
+        if "table_filters" in sent:
+            # Stored unchecked first, so a move reads the schema it moves to through these filters
+            _apply_table_filters(table_group, body.table_filters, None)
         if body.schema_name is not None and body.schema_name != table_group.table_group_schema:
             try:
                 move = move_table_group_schema(table_group, body.schema_name, connection=connection)
@@ -364,6 +413,13 @@ def update_table_group(
                 raise api_error(
                     _REFUSAL_STATUS.get(refusal.reason, 422), refusal.reason, refusal.message
                 ) from refusal
+        if table_group.table_filters and ("table_filters" in sent or move is not None):
+            _apply_table_filters(
+                table_group,
+                [TableFilter(**entry) for entry in table_group.table_filters],
+                connection,
+                move.tables if move is not None else None,
+            )
         table_group.save()
         record_table_group_updated(table_group, rename_table_group_in_scorecards(table_group, previous_name))
     except IntegrityError as err:
@@ -373,7 +429,7 @@ def update_table_group(
             ) from err
         raise
 
-    catalog_error = update_catalog_for_edit(table_group, membership_before, move, connection)
+    catalog_error = update_catalog_for_edit(table_group, catalog_before, move, connection)
     get_current_session().refresh(table_group)
 
     return TableGroupUpdateResponse(

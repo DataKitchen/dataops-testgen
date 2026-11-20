@@ -243,6 +243,7 @@ class ColumnProfileDetail(EntityMinimal):
     profile_run_started_at: datetime | None
     profile_run_ended_at: datetime | None
     profile_run_log_message: str | None
+    profile_run_table_filters: list[dict] | None
 
 
 @dataclass
@@ -637,6 +638,7 @@ class DataColumnChars(Entity):
                 ProfilingRun.profiling_starttime.label("profile_run_started_at"),
                 JobExecution.completed_at.label("profile_run_ended_at"),
                 JobExecution.error_message.label("profile_run_log_message"),
+                ProfilingRun.table_filters.label("profile_run_table_filters"),
             )
             .outerjoin(DataTable, DataTable.id == cls.table_id)
             .outerjoin(TableGroup, TableGroup.id == cls.table_groups_id)

@@ -358,7 +358,7 @@ def test_monitor_generation_binds_the_table_names_it_is_given():
         tg.monitor_run("insert", table_names=["o'brien"])
 
     extra_params = queries.call_args.kwargs["extra_params"]
-    assert extra_params["TABLE_FILTER"] == "AND table_name = ANY(:TABLE_NAMES)"
+    assert extra_params["TABLE_SCOPE"] == "AND table_name = ANY(:TABLE_NAMES)"
     assert extra_params["TABLE_NAMES"] == ["o'brien"]
 
 
@@ -369,14 +369,14 @@ def test_generation_for_declared_tables_binds_the_list_rather_than_interpolating
     generation = _generation(table_names=["orders", "customers"])
     params = generation._get_params()
 
-    assert params["TABLE_FILTER"] == "AND table_name = ANY(:TABLE_NAMES)"
+    assert params["TABLE_SCOPE"] == "AND table_name = ANY(:TABLE_NAMES)"
     assert params["TABLE_NAMES"] == ["orders", "customers"]
 
 
 def test_generation_without_declared_tables_applies_no_table_filter():
     params = _generation(table_names=None)._get_params()
 
-    assert params["TABLE_FILTER"] == ""
+    assert params["TABLE_SCOPE"] == ""
 
 
 @patch(f"{MODULE}.execute_db_queries")
@@ -420,7 +420,7 @@ def test_a_contract_declaring_no_tables_generates_for_none_of_them():
     """
     params = _generation(table_names=[])._get_params()
 
-    assert params["TABLE_FILTER"] == "AND table_name = ANY(:TABLE_NAMES)"
+    assert params["TABLE_SCOPE"] == "AND table_name = ANY(:TABLE_NAMES)"
     assert params["TABLE_NAMES"] == []
 
 

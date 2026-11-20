@@ -493,7 +493,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
         ? div(
           nsItems.val.map(item => NotificationItem(item, columns, getValue(props.permissions))),
         )
-        : div({ class: 'mt-5 mb-3 ml-3 text-secondary', style: 'text-align: center;' }, 'No notifications defined yet.'),
+        : div({ class: 'mt-5 mb-3 ml-3 text-secondary', style: 'text-align: center;' }, 'No notifications defined yet'),
     ),
   );
 

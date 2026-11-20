@@ -147,6 +147,7 @@ class ProfilingJob(PausableJob[ColumnChars]):
                 table_groups_id=self.table_group.id,
                 schema_name=self.table_group.table_group_schema,
                 profiling_starttime=datetime.now(UTC) + self.time_delta,
+                table_filters=self.table_group.table_filters,
             )
         self.profiling_run.init_progress(self._prepares_table_comparison())
         self.profiling_run.save()
@@ -162,6 +163,7 @@ class ProfilingJob(PausableJob[ColumnChars]):
     def on_restart(self) -> None:
         # The world moved under the pause, so the results are a fresh run's, not the old one's.
         self.profiling_run.profiling_starttime = datetime.now(UTC) + self.time_delta
+        self.profiling_run.table_filters = self.table_group.table_filters
 
         # A run that starts over keeps its id, and the usual reason to start over is that a
         # column went away. Rewriting the columns that remain would leave the ones that do not
@@ -285,6 +287,8 @@ class ProfilingJob(PausableJob[ColumnChars]):
         # at the old size and scales them by the new ratio. Coerced to int: a target COUNT can come
         # back as Decimal, which the checkpoint's JSON cannot serialize and would not compare equal.
         self.pin("record_counts", {table: int(count) for table, count in self.table_record_counts.items()})
+        # A filter changed mid-pause would leave one run that read some columns through each filter
+        self.pin("table_filters", self.table_group.table_filters)
 
     def _refresh_catalog(self) -> None:
         self.data_chars = run_data_chars_refresh(

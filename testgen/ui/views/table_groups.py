@@ -19,9 +19,10 @@ from testgen.common.database.table_group_service import (
     DeleteBlocker,
     SchemaMoveRefused,
     apply_schema_move,
+    apply_table_filters,
     apply_table_group_flavor_rules,
     cascade_delete_table_group,
-    catalog_membership,
+    catalog_source,
     move_table_group_schema,
     rename_table_group_in_scorecards,
     save_new_table_group,
@@ -32,6 +33,7 @@ from testgen.common.database.test_suite_service import duplicate_name_message, i
 from testgen.common.enums import JobSource
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.data_table import DataTable
 from testgen.common.models.notification_settings import ProfilingRunNotificationSettings
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal, default_profiling_masks
@@ -39,6 +41,7 @@ from testgen.common.models.test_suite import TestSuite
 from testgen.common.monitor_service import enable_monitoring
 from testgen.common.run_service import launch_run
 from testgen.common.sampling_requirements import sampled_profile_gaps
+from testgen.common.table_filter_validation import InvalidTableFilters
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
@@ -390,7 +393,8 @@ class TableGroupsPage(Page):
                 if int(conn["connection_id"]) == int(table_group.connection_id)
             ]
 
-        apply_table_group_flavor_rules(table_group, Connection.get(table_group.connection_id))
+        connection = Connection.get(table_group.connection_id)
+        apply_table_group_flavor_rules(table_group, connection)
 
         if should_preview():
             table_group_preview = table_group_queries.get_table_group_preview(
@@ -409,6 +413,7 @@ class TableGroupsPage(Page):
             success = True
             if is_table_group_verified():
                 try:
+                    apply_table_filters(table_group, table_group.table_filters, connection)
                     scorecard = save_new_table_group(table_group, add_scorecard=add_scorecard_definition)
                     record_table_group_created(table_group, scorecard)
 
@@ -483,6 +488,9 @@ class TableGroupsPage(Page):
                         if run_profiling:
                             message = f"Profiling run started for table group {table_group.table_groups_name}."
 
+                except InvalidTableFilters as error:
+                    success = False
+                    message = str(error)
                 except IntegrityError as error:
                     get_current_session().rollback()
                     success = False
@@ -554,7 +562,7 @@ class TableGroupsPage(Page):
 
         table_group = get_table_group(table_group_id)
         original_schema = table_group.table_group_schema
-        membership_before = catalog_membership(table_group)
+        catalog_before = catalog_source(table_group)
 
         edit_tg_data = get_edit_tg()
         can_view_pii = session.auth.user_has_permission("view_pii")
@@ -574,7 +582,8 @@ class TableGroupsPage(Page):
                 if int(c["connection_id"]) == int(table_group.connection_id)
             ]
 
-        apply_table_group_flavor_rules(table_group, Connection.get(table_group.connection_id))
+        connection = Connection.get(table_group.connection_id)
+        apply_table_group_flavor_rules(table_group, connection)
 
         table_group_preview = None
         if should_preview():
@@ -593,6 +602,9 @@ class TableGroupsPage(Page):
                 )
                 move = None
                 try:
+                    apply_table_filters(
+                        table_group, table_group.table_filters, connection, table_group_preview["tables"]
+                    )
                     if moving_to:
                         # The move reads the schema being left off the instance, and the form has
                         # already written the new one onto it.
@@ -603,13 +615,15 @@ class TableGroupsPage(Page):
                     table_group.save()
                     scorecards = rename_table_group_in_scorecards(table_group, stored_name)
                     record_table_group_updated(table_group, scorecards)
+                except InvalidTableFilters as error:
+                    result = {"success": False, "message": str(error)}
                 except SchemaMoveRefused as refusal:
                     table_group.table_group_schema = original_schema
                     result = {"success": False, "message": refusal.message}
                 except IntegrityError:
                     result = {"success": False, "message": "A Table Group with the same name already exists."}
                 else:
-                    if move or membership_before != catalog_membership(table_group):
+                    if move or catalog_before != catalog_source(table_group):
                         submit_table_group_setup(table_group, JobSource.ui)
                     if move:
                         # The job refreshes the catalog after the move commits, reading the schema
@@ -628,6 +642,7 @@ class TableGroupsPage(Page):
             "table_group": table_group.to_dict(json_safe=True),
             "table_group_preview": table_group_preview,
             "sampling_gaps": sampled_profile_gaps().to_props(),
+            "table_names": DataTable.select_table_names(table_group.id, limit=None),
             "result": result,
         }
         handlers = {
