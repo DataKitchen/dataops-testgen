@@ -35,6 +35,10 @@ RUN apk update && apk upgrade && apk add --no-cache \
         # both it and its extensions link against libstdc++ at runtime. Naming it here keeps the
         # apk del below from removing it along with g++
         libstdc++ \
+        # The MSSQL ODBC driver loads libcurl at connect time for Entra ID sign-in, and its package
+        # does not declare it. Without it, sign-in waits out the login timeout and fails with HYT00.
+        # Naming it here keeps the apk del below from removing it along with curl
+        libcurl \
         # Allocator preloaded over musl's at the end of this file. It is a runtime dependency, so
         # it has to stay out of the apk del list below
         mimalloc2 \
