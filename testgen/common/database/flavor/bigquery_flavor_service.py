@@ -95,9 +95,13 @@ class BigqueryFlavorService(FlavorService):
         if not statements or (run_id := job_context.get().job_id) is None:
             return 0
         client = statements[0].dbapi_connection._client
-        run_jobs = [
-            job for job in client.list_jobs(state_filter="running") if (job.labels or {}).get(RUN_LABEL) == str(run_id)
-        ]
+        # Keyed by id: a job that starts between the two listings appears in both.
+        run_jobs = list({
+            job.job_id: job
+            for state in ("pending", "running")
+            for job in client.list_jobs(state_filter=state)
+            if (job.labels or {}).get(RUN_LABEL) == str(run_id)
+        }.values())
 
         def cancel(job: Any) -> bool:
             client.cancel_job(job.job_id, location=job.location)

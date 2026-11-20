@@ -153,11 +153,33 @@ def test_bigquery_cancels_the_run_s_own_jobs_with_one_scan_for_every_statement(r
     own = [SimpleNamespace(job_id=f"own-{i}", location="US", labels={RUN_LABEL: str(run_id)}) for i in range(2)]
     other = SimpleNamespace(job_id="other", location="US", labels={RUN_LABEL: str(uuid4())})
     unlabeled = SimpleNamespace(job_id="unlabeled", location="US", labels=None)
-    client.list_jobs.return_value = [*own, other, unlabeled]
+    client.list_jobs.side_effect = lambda state_filter: [*own, other, unlabeled] if state_filter == "running" else []
 
     assert BigqueryFlavorService().cancel_statements(statements) == 2
-    client.list_jobs.assert_called_once_with(state_filter="running")
+    assert [c.kwargs for c in client.list_jobs.call_args_list] == [
+        {"state_filter": "pending"}, {"state_filter": "running"},
+    ]
     assert [c.args for c in client.cancel_job.call_args_list] == [("own-0",), ("own-1",)]
+
+
+def test_bigquery_cancels_the_run_s_queued_jobs(run_id):
+    statements = _statements(1)
+    client = statements[0].dbapi_connection._client
+    queued = SimpleNamespace(job_id="queued", location="US", labels={RUN_LABEL: str(run_id)})
+    client.list_jobs.side_effect = lambda state_filter: [queued] if state_filter == "pending" else []
+
+    assert BigqueryFlavorService().cancel_statements(statements) == 1
+    assert [c.args for c in client.cancel_job.call_args_list] == [("queued",)]
+
+
+def test_bigquery_cancels_a_job_listed_both_queued_and_running_once(run_id):
+    statements = _statements(1)
+    client = statements[0].dbapi_connection._client
+    starting = SimpleNamespace(job_id="starting", location="US", labels={RUN_LABEL: str(run_id)})
+    client.list_jobs.return_value = [starting]
+
+    assert BigqueryFlavorService().cancel_statements(statements) == 1
+    assert [c.args for c in client.cancel_job.call_args_list] == [("starting",)]
 
 
 def test_bigquery_counts_no_cancel_when_no_job_of_the_run_is_running(run_id):
