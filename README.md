@@ -101,7 +101,7 @@ Then walk through the [Data Observability Overview Demo](https://docs.datakitche
 
 ## Use it from an AI assistant (MCP)
 
-TestGen ships a Model Context Protocol (MCP) server in the open-source edition, with more than 100 tools in eight groups. Connect Claude, Claude Code, Cursor, GitHub Copilot, or any MCP client, and ask about your data in plain English. The assistant can profile tables, generate and run tests, work on data contracts, and triage failures. Every tool runs under your own TestGen role, so the assistant can do only what you can do.
+TestGen ships a Model Context Protocol (MCP) server with 122 tools in eight groups. 117 of them are in the open-source edition; the other five, for creating connections and projects and managing project members, are Enterprise. Connect Claude, Claude Code, Cursor, GitHub Copilot, or any MCP client, and ask about your data in plain English. The assistant can profile tables, generate and run tests, work on data contracts, and triage failures. Every tool runs under your own TestGen role, so the assistant can do only what you can do.
 
 The installer serves the API and MCP server on port 8530 by default. Change it with `--api-port`.
 
