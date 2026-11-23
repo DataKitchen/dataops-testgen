@@ -1,9 +1,17 @@
 # DataOps TestGen
+
+DataOps TestGen is an open-source data quality tool that profiles your tables, generates data quality tests and data contracts from the profile, and runs them on a schedule inside your database.
+
 ![apache 2.0 license Badge](https://img.shields.io/badge/License%20-%20Apache%202.0%20-%20blue) ![PRs Badge](https://img.shields.io/badge/PRs%20-%20Welcome%20-%20green) [![Latest Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fhub.docker.com%2Fv2%2Frepositories%2Fdatakitchen%2Fdataops-testgen%2Ftags%2F&query=results%5B0%5D.name&label=latest%20version&color=06A04A)](https://hub.docker.com/r/datakitchen/dataops-testgen) [![Docker Pulls](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fhub.docker.com%2Fv2%2Frepositories%2Fdatakitchen%2Fdataops-testgen%2F&query=pull_count&style=flat&label=docker%20pulls&color=06A04A)](https://hub.docker.com/r/datakitchen/dataops-testgen) [![Documentation](https://img.shields.io/badge/docs-On%20datakitchen.io-06A04A?style=flat)](https://docs.datakitchen.io/testgen/what-is-testgen/) [![Static Badge](https://img.shields.io/badge/Slack-Join%20Discussion-blue?style=flat&logo=slack)](https://data-observability-slack.datakitchen.io/join)
 
-DataOps TestGen is an open-source data quality tool that profiles tables, generates tests from the profiling results, and runs them on a schedule with freshness, volume, and schema monitoring.
+TestGen covers testing and monitoring in one tool: it watches freshness, volume, and schema between test runs. The open-source edition includes the full web UI, not just a library. You also get a REST API and an MCP server, so you can drive TestGen from your pipelines or an AI assistant. It is Apache 2.0 licensed and runs the same core engine and UI as TestGen Enterprise.
 
-The open-source edition includes the full web UI, not just a library. You also get a REST API and an MCP server, so you can drive TestGen from your pipelines or an AI assistant. It is Apache 2.0 licensed and runs the same core engine and UI as TestGen Enterprise.
+Install it with two commands (Python 3.9+, 8 GB memory; details in [Quick start](#quick-start)):
+
+```shell
+curl -o dk-installer.py 'https://raw.githubusercontent.com/DataKitchen/data-observability-installer/main/dk-installer.py'
+python3 dk-installer.py tg install
+```
 
 [Interactive Product Tour](https://datakitchen.storylane.io/share/byag8vimd5tn) | [Product page](https://datakitchen.io/products/dataops-testgen/) | [Documentation](https://docs.datakitchen.io/testgen/what-is-testgen/)
 
@@ -12,6 +20,7 @@ The open-source edition includes the full web UI, not just a library. You also g
 - Profiles every column in a table group and records type-specific statistics.
 - Flags hygiene issues in new data, so you can review a dataset before it reaches production and send problems back to the supplier.
 - Generates data quality validation tests from the profile. You can add your own SQL tests too.
+- Writes a [data contract](https://docs.datakitchen.io/testgen/test-suites/contracts/) for each table: the schema plus a test behind every term, kept in numbered versions. Contracts import and export as [ODCS](https://github.com/bitol-io/open-data-contract-standard) (Open Data Contract Standard) YAML.
 - Runs tests on a schedule, as SQL inside your database. Your data stays where it is.
 - Watches each table between test runs with freshness, volume, and schema monitors.
 - Gives you one place to manage data quality across datasets, locations, and teams.
@@ -25,6 +34,22 @@ The open-source edition includes the full web UI, not just a library. You also g
 <p align="center">
 <img alt="DataOps TestGen: one place to manage data quality" src="https://raw.githubusercontent.com/DataKitchen/dataops-testgen/main/docs/assets/images/readme/feature-centralized-quality.png" width="70%">
 </p>
+
+## How TestGen compares with Great Expectations and Soda
+
+All three are open source and check data where it lives. The main difference is who writes the tests.
+
+| | DataOps TestGen | Great Expectations (GX Core) | Soda Core |
+|---|---|---|---|
+| License | Apache 2.0 | Apache 2.0 | Elastic License 2.0 |
+| Who writes the tests | TestGen generates them from a profile of every column; you can add your own SQL tests | You write each expectation in Python | You write each check in SodaCL (YAML) |
+| Data profiling | Yes | Yes | Partial |
+| Web UI in the open-source edition | Yes | No | No (the UI is Soda Cloud) |
+| Freshness, volume, and schema monitoring | Yes | Partial | Partial |
+| Data contracts | Generated from the profile; reads and writes ODCS | Partial | Yes, in SodaCL; no ODCS round trip |
+| MCP server for AI assistants | Yes | No | No |
+
+Great Expectations' commercial product, GX Cloud, shut down on June 1, 2026; GX Core continues under Fivetran stewardship. This comparison is DataKitchen's, last reviewed June 2026 (data contracts row November 2026). Full write-ups: [TestGen vs Great Expectations](https://datakitchen.io/comparisons/datakitchen-vs-great-expectations-gx-oss/) and [TestGen vs Soda Core](https://datakitchen.io/comparisons/datakitchen-vs-soda-oss/).
 
 ## Supported databases
 
@@ -104,6 +129,15 @@ The core profiling, testing, and monitoring engine is free and open source, with
 | Support | Community Slack | DataKitchen support |
 
 See [datakitchen.io/pricing](https://datakitchen.io/pricing/) for current pricing.
+
+## The 2026 landscape
+
+How TestGen fits among the other tools, in DataKitchen's yearly landscape posts:
+
+* [The 2026 Open-Source Data Quality and Data Observability Landscape](https://datakitchen.io/blog/the-2026-open-source-data-quality-and-data-observability-landscape/)
+* [The 2026 Data Quality and Data Observability Commercial Software Landscape](https://datakitchen.io/blog/the-2026-data-quality-and-data-observability-commercial-software-landscape/)
+* [The 2026 Open Source Data Profiling Software Landscape](https://datakitchen.io/blog/the-2026-open-source-data-profiling-software-landscape/)
+* [The 2026 Data Contracts Software Landscape: Open Source and Commercial](https://datakitchen.io/blog/the-2026-data-contracts-software-landscape/)
 
 ## Documentation
 
